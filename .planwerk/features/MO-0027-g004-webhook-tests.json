@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0027",
+  "title": "G004: Webhook Tests",
+  "slug": "g004-webhook-tests",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Test defaulting and validation webhooks: verify defaults are applied for omitted fields, verify invalid configurations are rejected with clear error messages, verify edge cases in validation logic.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.430279"
+    }
+  },
+  "origin": "plan"
+}

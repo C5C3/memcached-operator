@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0002",
+  "title": "A002: Memcached CRD Types (v1alpha1)",
+  "slug": "a002-memcached-crd-types-v1alpha1",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Define the Memcached custom resource types: MemcachedSpec (replicas, image, resources, memcached config block with maxMemoryMB/maxConnections/threads/maxItemSize/verbosity/extraArgs), MemcachedStatus (conditions, readyReplicas, observedGeneration). Include nested structs for highAvailability, monitoring, and security sections.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.418698"
+    }
+  },
+  "origin": "plan"
+}

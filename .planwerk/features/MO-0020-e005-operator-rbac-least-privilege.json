@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0020",
+  "title": "E005: Operator RBAC (Least-Privilege)",
+  "slug": "e005-operator-rbac-least-privilege",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Define ClusterRole and ClusterRoleBinding with minimal permissions: CRUD on Memcached CRs, Deployments, Services, PDBs, ServiceMonitors, NetworkPolicies. Read-only on Secrets (for SASL/TLS). Generate RBAC manifests via kubebuilder markers.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.426925"
+    }
+  },
+  "origin": "plan"
+}

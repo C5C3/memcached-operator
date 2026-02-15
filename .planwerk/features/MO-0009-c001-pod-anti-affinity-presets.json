@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0009",
+  "title": "C001: Pod Anti-Affinity Presets",
+  "slug": "c001-pod-anti-affinity-presets",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Implement soft (preferredDuringSchedulingIgnoredDuringExecution) and hard (requiredDuringSchedulingIgnoredDuringExecution) pod anti-affinity presets based on spec.highAvailability.antiAffinityPreset. Spread Memcached pods across nodes to avoid single points of failure.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.422012"
+    }
+  },
+  "origin": "plan"
+}

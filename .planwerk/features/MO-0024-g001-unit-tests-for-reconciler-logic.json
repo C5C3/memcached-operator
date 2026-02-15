@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0024",
+  "title": "G001: Unit Tests for Reconciler Logic",
+  "slug": "g001-unit-tests-for-reconciler-logic",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Write unit tests for the reconciler's resource-building logic: Deployment construction, Service construction, PDB construction, ServiceMonitor construction, NetworkPolicy construction. Test field mapping from CRD spec to Kubernetes resource specs. Mock the Kubernetes client for isolated testing.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.428862"
+    }
+  },
+  "origin": "plan"
+}

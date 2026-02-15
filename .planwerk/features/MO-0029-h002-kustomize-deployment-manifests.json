@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0029",
+  "title": "H002: Kustomize Deployment Manifests",
+  "slug": "h002-kustomize-deployment-manifests",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Organize config/ directory with Kustomize overlays: base (CRD, RBAC, Deployment), default (with webhook and cert-manager), samples (example Memcached CRs). Follow Kubebuilder conventions for config/manager, config/rbac, config/crd, config/webhook.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.431252"
+    }
+  },
+  "origin": "plan"
+}

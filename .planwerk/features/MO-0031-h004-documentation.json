@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0031",
+  "title": "H004: Documentation",
+  "slug": "h004-documentation",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Write operator documentation: installation guide, CRD reference with all fields documented, upgrade guide, troubleshooting, architecture overview. Include example CRs for common use cases (minimal, HA, monitoring-enabled, TLS-enabled).",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.432214"
+    }
+  },
+  "origin": "plan"
+}

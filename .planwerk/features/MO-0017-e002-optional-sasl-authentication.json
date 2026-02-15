@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0017",
+  "title": "E002: Optional SASL Authentication",
+  "slug": "e002-optional-sasl-authentication",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Support optional SASL authentication for Memcached. When enabled in the CRD spec, configure Memcached with -Y flag and mount credentials from a referenced Secret. Clients must provide SASL credentials to connect.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.425552"
+    }
+  },
+  "origin": "plan"
+}

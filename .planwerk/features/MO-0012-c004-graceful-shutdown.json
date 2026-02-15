@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0012",
+  "title": "C004: Graceful Shutdown",
+  "slug": "c004-graceful-shutdown",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Configure a preStop lifecycle hook and appropriate terminationGracePeriodSeconds so Memcached processes can drain connections before pod termination, preventing cache stampedes during rolling updates.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.423322"
+    }
+  },
+  "origin": "plan"
+}

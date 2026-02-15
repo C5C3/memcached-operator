@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0008",
+  "title": "B005: Idempotent Create-or-Update Logic",
+  "slug": "b005-idempotent-create-or-update-logic",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Implement a generic create-or-update pattern (using controllerutil.CreateOrUpdate or equivalent) ensuring every reconciliation produces the same outcome. Handle resource version conflicts with retries. Ensure level-triggered reconciliation reacts to current state, not event sequences.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.421561"
+    }
+  },
+  "origin": "plan"
+}

@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0013",
+  "title": "D001: Memcached Exporter Sidecar Injection",
+  "slug": "d001-memcached-exporter-sidecar-injection",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "When spec.monitoring.enabled is true, inject a prom/memcached-exporter:v0.15.4 sidecar container into the Deployment pod template. Expose metrics port 9150. Apply exporter-specific resource requests/limits from spec.monitoring.exporterResources.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.423776"
+    }
+  },
+  "origin": "plan"
+}

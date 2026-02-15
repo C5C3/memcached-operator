@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0023",
+  "title": "F003: Webhook Certificate Management",
+  "slug": "f003-webhook-certificate-management",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Set up webhook TLS certificate provisioning — either via cert-manager integration or self-signed certificate generation. Configure the webhook server in the operator manager.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.428372"
+    }
+  },
+  "origin": "plan"
+}

@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0018",
+  "title": "E003: Optional TLS Encryption",
+  "slug": "e003-optional-tls-encryption",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Support optional TLS encryption for Memcached connections. When enabled, configure Memcached with TLS flags, mount TLS certificates from referenced Secrets or cert-manager Certificate resources. Configure port 11212 for TLS alongside or instead of 11211.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.426015"
+    }
+  },
+  "origin": "plan"
+}

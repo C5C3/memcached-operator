@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0030",
+  "title": "H003: CI Pipeline",
+  "slug": "h003-ci-pipeline",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Set up CI (GitHub Actions) with: lint (golangci-lint), unit tests, envtest integration tests, Docker image build, CRD schema validation. Run on PRs and main branch pushes.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.431737"
+    }
+  },
+  "origin": "plan"
+}

@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0007",
+  "title": "B004: Status Conditions & ObservedGeneration",
+  "slug": "b004-status-conditions-observedgeneration",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Update the Memcached CR status with standard conditions (Available, Progressing, Degraded), readyReplicas count, and observedGeneration. Follow Kubernetes API conventions for condition types and transitions.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.421119"
+    }
+  },
+  "origin": "plan"
+}

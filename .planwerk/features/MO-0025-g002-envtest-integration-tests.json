@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0025",
+  "title": "G002: envtest Integration Tests",
+  "slug": "g002-envtest-integration-tests",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Write integration tests using controller-runtime's envtest framework. Test the full reconciliation loop against a real API server: CR creation triggers Deployment + Service creation, spec updates propagate correctly, deletion cleans up owned resources, status conditions are set correctly.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.429326"
+    }
+  },
+  "origin": "plan"
+}

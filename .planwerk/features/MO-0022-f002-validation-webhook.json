@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0022",
+  "title": "F002: Validation Webhook",
+  "slug": "f002-validation-webhook",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Implement a validating admission webhook that rejects invalid CRD configurations: replicas >= 0, maxMemoryMB > 0, threads > 0, valid maxItemSize format, valid antiAffinityPreset values (soft/hard), consistent resource limits (memory limit >= maxMemoryMB + overhead), valid verbosity range (0-2).",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.427911"
+    }
+  },
+  "origin": "plan"
+}

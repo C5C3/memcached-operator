@@ -1,0 +1,706 @@
+{
+  "feature_id": "MO-0001",
+  "title": "A001: Initialize Operator SDK project structure",
+  "slug": "a001-initialize-operator-sdk-project-structure",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Scaffold the Go operator project using Operator SDK / Kubebuilder with Go 1.24+, controller-runtime, API group memcached.c5c3.io, and initial version v1alpha1. Set up Go module, Makefile, Dockerfile, and directory structure (api/, internal/controller/, config/).",
+  "stories": [
+    {
+      "title": "Developer initializes the operator project scaffold",
+      "role": "developer",
+      "want": "a fully scaffolded Go operator project with standard Operator SDK / Kubebuilder directory structure",
+      "so_that": "I can immediately begin implementing CRD types and reconciliation logic on a solid foundation",
+      "criteria": [
+        "Running `go build ./...` from the project root compiles without errors",
+        "The directory structure contains api/v1alpha1/, internal/controller/, cmd/, and config/ directories",
+        "The go.mod declares module github.com/cobaltcore-dev/memcached-operator with Go 1.24+ and controller-runtime dependency",
+        "The PROJECT file declares domain c5c3.io, group memcached, version v1alpha1, kind Memcached with go.kubebuilder.io/v4 layout"
+      ]
+    },
+    {
+      "title": "Developer runs make targets for code generation",
+      "role": "developer",
+      "want": "a Makefile with standard operator development targets (manifests, generate, build, test, docker-build, deploy)",
+      "so_that": "I have a consistent and automated workflow for building, testing, and deploying the operator",
+      "criteria": [
+        "`make build` compiles the manager binary to bin/manager without errors",
+        "`make manifests` generates CRD YAML in config/crd/bases/ and RBAC in config/rbac/",
+        "`make generate` produces DeepCopy methods in zz_generated.deepcopy.go",
+        "`make test` runs envtest-based integration tests with KUBEBUILDER_ASSETS set",
+        "`make docker-build` builds a container image using the multi-stage Dockerfile"
+      ]
+    },
+    {
+      "title": "Developer builds a container image for the operator",
+      "role": "developer",
+      "want": "a multi-stage Dockerfile that produces a minimal, secure container image",
+      "so_that": "the operator can be deployed to Kubernetes clusters with a small attack surface",
+      "criteria": [
+        "Dockerfile uses golang:1.24 as builder stage and gcr.io/distroless/static:nonroot as runtime",
+        "The final image runs as non-root user (UID 65532)",
+        "CGO_ENABLED=0 is set for a fully static binary",
+        "TARGETOS and TARGETARCH build args support multi-platform builds"
+      ]
+    },
+    {
+      "title": "Developer has an entry point that boots the controller manager",
+      "role": "developer",
+      "want": "a cmd/main.go that initializes the scheme, creates a controller manager, and registers the reconciler",
+      "so_that": "the operator starts correctly with leader election, health probes, and metrics",
+      "criteria": [
+        "main.go registers both clientgoscheme and the memcached v1alpha1 scheme",
+        "Manager is created with configurable metrics address, health probe address, and leader election",
+        "Leader election ID is set to a unique value for the memcached operator",
+        "Health (/healthz) and readiness (/readyz) probes are registered",
+        "The MemcachedReconciler is wired to the manager via SetupWithManager"
+      ]
+    },
+    {
+      "title": "Developer has stub CRD types ready for extension",
+      "role": "developer",
+      "want": "minimal api/v1alpha1 types (Memcached, MemcachedList, MemcachedSpec, MemcachedStatus) with groupversion_info.go",
+      "so_that": "I can extend the spec and status fields in the next feature (MO-0002) without re-scaffolding",
+      "criteria": [
+        "MemcachedSpec and MemcachedStatus structs exist with placeholder comments indicating extension point",
+        "Memcached and MemcachedList types have correct kubebuilder markers (+kubebuilder:object:root=true, +kubebuilder:subresource:status)",
+        "groupversion_info.go declares GroupVersion with group memcached.c5c3.io and version v1alpha1",
+        "SchemeBuilder and AddToScheme are exported for registration in main.go"
+      ]
+    },
+    {
+      "title": "Developer has a stub reconciler ready for implementation",
+      "role": "developer",
+      "want": "a minimal MemcachedReconciler in internal/controller/ with SetupWithManager and empty Reconcile method",
+      "so_that": "I can implement reconciliation logic in subsequent features (MO-0004+) on a working scaffold",
+      "criteria": [
+        "MemcachedReconciler struct embeds client.Client and has a Scheme field",
+        "SetupWithManager registers the controller to watch Memcached resources",
+        "Reconcile method has correct signature and returns empty Result with nil error",
+        "RBAC markers are present for memcacheds resources (get, list, watch, create, update, patch, delete) and status subresource"
+      ]
+    },
+    {
+      "title": "Developer has Kustomize config for deployment",
+      "role": "developer",
+      "want": "a config/ directory with Kustomize overlays for CRD, RBAC, manager, default, and samples",
+      "so_that": "the operator can be deployed to a cluster using `make deploy` with proper RBAC and CRD registration",
+      "criteria": [
+        "config/default/kustomization.yaml references ../crd, ../rbac, and ../manager",
+        "config/manager/manager.yaml defines a Deployment for the controller manager",
+        "config/rbac/ contains service account, role, role binding, and leader election RBAC",
+        "config/samples/ contains a sample Memcached CR YAML"
+      ]
+    },
+    {
+      "title": "Developer can run tests against the scaffold",
+      "role": "developer",
+      "want": "a working test suite with envtest bootstrap in internal/controller/suite_test.go",
+      "so_that": "I can write TDD-style tests from the start and validate each subsequent feature",
+      "criteria": [
+        "suite_test.go bootstraps envtest with CRD paths pointing to config/crd/bases/",
+        "Test client is created with the memcached v1alpha1 scheme registered",
+        "BeforeSuite starts envtest environment, AfterSuite tears it down",
+        "`make test` passes with zero test failures on the initial scaffold"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The project SHALL have a valid Go module with Go 1.24+ and controller-runtime as a dependency",
+      "priority": "SHALL",
+      "rationale": "A valid Go module is the foundation for all compilation, testing, and dependency management",
+      "scenarios": [
+        {
+          "name": "Go module compiles",
+          "when": "running `go build ./...` from the project root",
+          "then": "the build succeeds with exit code 0",
+          "and_then": [
+            "no compilation errors or unresolved imports"
+          ]
+        },
+        {
+          "name": "Go version is 1.24+",
+          "when": "inspecting go.mod",
+          "then": "the go directive specifies 1.24 or higher",
+          "and_then": [
+            "controller-runtime version is compatible with Go 1.24"
+          ]
+        },
+        {
+          "name": "Dependencies resolve",
+          "when": "running `go mod tidy`",
+          "then": "no dependencies are added or removed",
+          "and_then": [
+            "go.sum is consistent with go.mod"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The project SHALL follow the Operator SDK go.kubebuilder.io/v4 directory layout with api/, internal/controller/, cmd/, and config/ directories",
+      "priority": "SHALL",
+      "rationale": "Standard layout ensures compatibility with controller-gen, envtest, and community tooling",
+      "scenarios": [
+        {
+          "name": "Standard directories exist",
+          "when": "listing the project root",
+          "then": "directories api/v1alpha1/, internal/controller/, cmd/, and config/ exist",
+          "and_then": [
+            "config/ contains subdirectories: crd/, rbac/, manager/, default/, samples/"
+          ]
+        },
+        {
+          "name": "PROJECT file is valid",
+          "when": "reading the PROJECT file",
+          "then": "it declares domain c5c3.io, layout go.kubebuilder.io/v4, and a Memcached resource",
+          "and_then": [
+            "the resource specifies group memcached, version v1alpha1, kind Memcached"
+          ]
+        },
+        {
+          "name": "Entry point is in cmd/",
+          "when": "inspecting cmd/main.go",
+          "then": "it contains the main function that boots the controller manager",
+          "and_then": [
+            "no main.go exists at the project root"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The project SHALL define minimal CRD types for Memcached in api/v1alpha1/ with correct API group memcached.c5c3.io",
+      "priority": "SHALL",
+      "rationale": "CRD types are required for scheme registration, code generation, and downstream features",
+      "scenarios": [
+        {
+          "name": "Types are well-formed",
+          "when": "running `make generate`",
+          "then": "DeepCopy methods are generated in zz_generated.deepcopy.go without errors",
+          "and_then": [
+            "Memcached and MemcachedList types implement runtime.Object"
+          ]
+        },
+        {
+          "name": "API group is correct",
+          "when": "inspecting groupversion_info.go",
+          "then": "GroupVersion is set to {Group: \"memcached.c5c3.io\", Version: \"v1alpha1\"}",
+          "and_then": [
+            "SchemeBuilder and AddToScheme are exported"
+          ]
+        },
+        {
+          "name": "CRD YAML is generated",
+          "when": "running `make manifests`",
+          "then": "a CRD YAML file is created in config/crd/bases/ for memcached.c5c3.io_memcacheds.yaml",
+          "and_then": [
+            "the CRD specifies apiVersion apiextensions.k8s.io/v1 with correct group, names, and scope"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The project SHALL include a stub MemcachedReconciler with SetupWithManager in internal/controller/",
+      "priority": "SHALL",
+      "rationale": "The reconciler scaffold enables wiring to the manager and provides the extension point for reconciliation logic",
+      "scenarios": [
+        {
+          "name": "Reconciler compiles",
+          "when": "building the project",
+          "then": "MemcachedReconciler compiles without errors",
+          "and_then": [
+            "it is registered in cmd/main.go via SetupWithManager"
+          ]
+        },
+        {
+          "name": "RBAC markers are present",
+          "when": "running `make manifests`",
+          "then": "config/rbac/role.yaml contains permissions for memcacheds and memcacheds/status",
+          "and_then": [
+            "the generated role includes verbs: get, list, watch, create, update, patch, delete"
+          ]
+        },
+        {
+          "name": "Controller watches Memcached CR",
+          "when": "SetupWithManager is called",
+          "then": "the controller is registered to watch Memcached custom resources",
+          "and_then": [
+            "Reconcile is called when a Memcached resource is created, updated, or deleted"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The project SHALL include a Makefile with standard operator development targets",
+      "priority": "SHALL",
+      "rationale": "Makefile targets provide a consistent development workflow and are required by CI and deployment processes",
+      "scenarios": [
+        {
+          "name": "Build target works",
+          "when": "running `make build`",
+          "then": "a manager binary is produced at bin/manager",
+          "and_then": [
+            "the binary is statically linked"
+          ]
+        },
+        {
+          "name": "Test target works",
+          "when": "running `make test`",
+          "then": "envtest binaries are downloaded and tests run with KUBEBUILDER_ASSETS set",
+          "and_then": [
+            "test output shows pass with coverage report"
+          ]
+        },
+        {
+          "name": "Code generation targets work",
+          "when": "running `make manifests generate`",
+          "then": "CRD YAML, RBAC YAML, and DeepCopy methods are generated",
+          "and_then": [
+            "generated files are consistent and up-to-date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The project SHALL include a multi-stage Dockerfile producing a minimal distroless image",
+      "priority": "SHALL",
+      "rationale": "A minimal container image reduces attack surface and is required for Kubernetes deployment",
+      "scenarios": [
+        {
+          "name": "Dockerfile builds successfully",
+          "when": "running `docker build -t test .`",
+          "then": "the image is built without errors",
+          "and_then": [
+            "the final image is based on gcr.io/distroless/static:nonroot"
+          ]
+        },
+        {
+          "name": "Image runs as non-root",
+          "when": "inspecting the image metadata",
+          "then": "the USER is set to 65532:65532",
+          "and_then": [
+            "the binary runs without root privileges"
+          ]
+        },
+        {
+          "name": "Binary is statically linked",
+          "when": "inspecting the build stage",
+          "then": "CGO_ENABLED=0 is set",
+          "and_then": [
+            "TARGETOS and TARGETARCH build args are used for multi-platform support"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The project SHALL include a cmd/main.go that initializes the manager with leader election, health probes, and metrics",
+      "priority": "SHALL",
+      "rationale": "The entry point must correctly wire all components for production-ready operation",
+      "scenarios": [
+        {
+          "name": "Scheme registration",
+          "when": "main.go init() runs",
+          "then": "both clientgoscheme and memcached v1alpha1 are registered on the scheme",
+          "and_then": [
+            "the manager can deserialize Memcached CRs"
+          ]
+        },
+        {
+          "name": "Leader election configured",
+          "when": "the manager starts",
+          "then": "leader election is configurable via CLI flag",
+          "and_then": [
+            "leader election ID is unique to the memcached operator"
+          ]
+        },
+        {
+          "name": "Health probes registered",
+          "when": "the manager starts",
+          "then": "healthz and readyz endpoints are available",
+          "and_then": [
+            "health check returns 200 when the manager is running"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The project SHALL include Kustomize config for CRD, RBAC, manager deployment, and sample CR",
+      "priority": "SHALL",
+      "rationale": "Kustomize config is required for `make install`, `make deploy`, and downstream OLM packaging",
+      "scenarios": [
+        {
+          "name": "CRD can be installed",
+          "when": "running `make install` against a cluster",
+          "then": "the Memcached CRD is registered in the API server",
+          "and_then": [
+            "kubectl get crd memcacheds.memcached.c5c3.io succeeds"
+          ]
+        },
+        {
+          "name": "Manager can be deployed",
+          "when": "running `make deploy`",
+          "then": "the controller manager Deployment is created with correct RBAC",
+          "and_then": [
+            "the ServiceAccount, ClusterRole, and ClusterRoleBinding are created"
+          ]
+        },
+        {
+          "name": "Sample CR is valid",
+          "when": "applying config/samples/memcached_v1alpha1_memcached.yaml",
+          "then": "the Memcached CR is created without validation errors",
+          "and_then": [
+            "the CR appears in kubectl get memcacheds"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The project SHALL include an envtest-based test suite in internal/controller/suite_test.go",
+      "priority": "SHALL",
+      "rationale": "An envtest suite is required for TDD workflow and integration testing of the reconciler against a real API server",
+      "scenarios": [
+        {
+          "name": "Test suite bootstraps envtest",
+          "when": "running `make test`",
+          "then": "envtest starts a local API server and etcd",
+          "and_then": [
+            "the Memcached CRD is loaded from config/crd/bases/"
+          ]
+        },
+        {
+          "name": "Test client has correct scheme",
+          "when": "suite_test.go BeforeSuite runs",
+          "then": "the test client can create and get Memcached resources",
+          "and_then": [
+            "the v1alpha1 scheme is registered"
+          ]
+        },
+        {
+          "name": "Suite cleans up",
+          "when": "tests complete",
+          "then": "AfterSuite tears down the envtest environment",
+          "and_then": [
+            "no orphaned processes remain"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The project SHALL pass go vet and golangci-lint without errors",
+      "priority": "SHALL",
+      "rationale": "Static analysis catches bugs early and enforces code quality standards from project inception",
+      "scenarios": [
+        {
+          "name": "go vet passes",
+          "when": "running `go vet ./...`",
+          "then": "no issues are reported",
+          "and_then": [
+            "all generated code is also vet-clean"
+          ]
+        },
+        {
+          "name": "golangci-lint passes",
+          "when": "running `make lint`",
+          "then": "no lint errors are reported",
+          "and_then": [
+            "a .golangci.yml config file exists with project-appropriate rules"
+          ]
+        },
+        {
+          "name": "Lint config is present",
+          "when": "inspecting the project root",
+          "then": "a .golangci.yml file exists",
+          "and_then": [
+            "it configures appropriate linters for a Kubernetes operator project"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Initialize Go module and PROJECT file with correct domain, group, and layout (REQ-001, REQ-002)",
+      "description": "Create go.mod with module github.com/cobaltcore-dev/memcached-operator, Go 1.24, and controller-runtime dependency. Create PROJECT file with domain c5c3.io, layout go.kubebuilder.io/v4, repo path, and Memcached resource entry (group: memcached, version: v1alpha1, kind: Memcached, namespaced: true). Run `go mod tidy` to resolve dependencies. Create .gitignore with Go and operator-sdk patterns.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create api/v1alpha1/groupversion_info.go with memcached.c5c3.io group (REQ-003)",
+      "description": "Create api/v1alpha1/groupversion_info.go declaring GroupVersion{Group: \"memcached.c5c3.io\", Version: \"v1alpha1\"}, SchemeBuilder, and AddToScheme. Follow standard Kubebuilder v4 pattern with package doc comment.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create api/v1alpha1/memcached_types.go with stub Spec/Status and kubebuilder markers (REQ-003)",
+      "description": "Create memcached_types.go with: MemcachedSpec (empty, with comment indicating extension in MO-0002), MemcachedStatus (Conditions []metav1.Condition), Memcached (+kubebuilder:object:root=true, +kubebuilder:subresource:status), MemcachedList. Register types in init(). Include omitzero tags per v4 convention.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create internal/controller/memcached_controller.go with stub reconciler and RBAC markers (REQ-004)",
+      "description": "Create MemcachedReconciler struct (embeds client.Client, has Scheme *runtime.Scheme). Add Reconcile method returning empty Result. Add SetupWithManager watching Memcached CRs. Add RBAC markers for memcacheds (get/list/watch/create/update/patch/delete), memcacheds/status (get/update/patch), and memcacheds/finalizers (update).",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Create cmd/main.go with manager initialization, scheme registration, and health probes (REQ-007)",
+      "description": "Create cmd/main.go with: scheme registration (clientgoscheme + v1alpha1), flag parsing (metricsAddr :8443, probeAddr :8081, enableLeaderElection, secureMetrics), manager creation with Options, MemcachedReconciler setup, healthz/readyz probes, signal handler. Use controller-runtime v4 conventions: secure metrics with authn/authz, HTTP/2 disabled.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Create Makefile with all standard operator targets (REQ-005)",
+      "description": "Create Makefile with targets: manifests (controller-gen crd rbac), generate (controller-gen object), fmt, vet, test (envtest), lint (golangci-lint), build, run, docker-build, docker-push, docker-buildx, install, uninstall, deploy, undeploy, build-installer. Include tool dependency management for CONTROLLER_GEN, ENVTEST, KUSTOMIZE, GOLANGCI_LINT with version pinning and auto-download to bin/.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Create multi-stage Dockerfile with distroless runtime (REQ-006)",
+      "description": "Create Dockerfile: builder stage (golang:1.24, TARGETOS/TARGETARCH args, CGO_ENABLED=0, go mod download, go build -a -o manager cmd/main.go), runtime stage (gcr.io/distroless/static:nonroot, USER 65532:65532, ENTRYPOINT /manager). Create .dockerignore excluding .git, bin/, testbin/, vendor/.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Create config/crd/ and config/rbac/ Kustomize structure (REQ-008)",
+      "description": "Create config/crd/kustomization.yaml (resources: bases/), config/crd/patches/ dir. Create config/rbac/kustomization.yaml with resources: role.yaml, role_binding.yaml, service_account.yaml, leader_election_role.yaml, leader_election_role_binding.yaml, metrics_auth_role.yaml, metrics_auth_role_binding.yaml, metrics_reader_role.yaml. Create all RBAC YAML files with standard Kubebuilder v4 content. Create config/rbac/service_account.yaml.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Create config/manager/ and config/default/ Kustomize structure (REQ-008)",
+      "description": "Create config/manager/manager.yaml (Deployment for controller-manager with resource limits, security context, liveness/readiness probes, leader election args). Create config/manager/kustomization.yaml. Create config/default/kustomization.yaml referencing ../crd, ../rbac, ../manager with namespace and namePrefix. Create config/default/manager_metrics_patch.yaml for metrics endpoint config.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Create config/samples/ and config/prometheus/ (REQ-008)",
+      "description": "Create config/samples/memcached_v1alpha1_memcached.yaml with a minimal valid Memcached CR. Create config/samples/kustomization.yaml. Create config/prometheus/monitor.yaml (ServiceMonitor template). Create config/prometheus/kustomization.yaml. Create config/network-policy/ with allow-metrics-traffic.yaml and kustomization.yaml.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.4",
+      "title": "Create .golangci.yml lint configuration (REQ-010)",
+      "description": "Create .golangci.yml with linters appropriate for a Kubernetes operator: govet, errcheck, staticcheck, gosimple, unused, ineffassign, typecheck. Exclude generated files (zz_generated.*). Configure reasonable timeouts and Go version.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Create internal/controller/suite_test.go with envtest bootstrap (REQ-009)",
+      "description": "Create suite_test.go with: Ginkgo/Gomega test runner, envtest.Environment with CRDDirectoryPaths pointing to config/crd/bases/, scheme registration for v1alpha1, k8sClient creation, BeforeSuite/AfterSuite lifecycle. Include getFirstFoundEnvTestBinaryDir() helper for IDE compatibility.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Run make generate, make manifests, and make test to validate the full scaffold (REQ-001, REQ-003, REQ-005, REQ-009)",
+      "description": "Run `make generate` to produce zz_generated.deepcopy.go. Run `make manifests` to produce CRD YAML and RBAC YAML. Run `go vet ./...` to verify static analysis passes. Run `make test` to verify envtest suite passes. Fix any issues found. Verify go.sum is consistent with `go mod tidy`.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-005",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Write initial controller test verifying reconciler setup and empty reconcile (REQ-004, REQ-009)",
+      "description": "Create internal/controller/memcached_controller_test.go with Ginkgo test: create a Memcached CR via test client, verify it is created successfully, verify reconciler does not error. This validates the full scaffold wiring: types → scheme → envtest → controller. Use Eventually/Consistently patterns.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Write reference documentation for the project scaffold (REQ-002, REQ-005)",
+      "description": "Create docs/reference/backend/project-structure.md documenting: directory layout, key files and their purposes, Makefile targets with descriptions, Go module and dependency versions, PROJECT file format. Reference the Operator SDK / Kubebuilder conventions used.",
+      "level": 5,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002",
+        "REQ-005"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/suite_test.go",
+      "test_function": "TestControllers (suite bootstrap)",
+      "story": "Developer can run tests against the scaffold",
+      "expected": "envtest environment starts successfully with Memcached CRD loaded, test client can interact with API server",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "test_reconciler_handles_missing_resource",
+      "story": "Developer has a stub reconciler ready for implementation",
+      "expected": "Reconcile returns no error when the Memcached resource does not exist (deleted between queue and reconcile)",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "test_create_memcached_cr",
+      "story": "Developer has stub CRD types ready for extension",
+      "expected": "A Memcached CR can be created via the test client and retrieved with correct group/version/kind",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "test_reconciler_succeeds_for_valid_cr",
+      "story": "Developer has a stub reconciler ready for implementation",
+      "expected": "Reconcile returns empty Result and nil error for a valid Memcached CR",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "Makefile (build validation)",
+      "test_function": "make build",
+      "story": "Developer runs make targets for code generation",
+      "expected": "Binary compiles to bin/manager without errors",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "Makefile (generate validation)",
+      "test_function": "make generate",
+      "story": "Developer runs make targets for code generation",
+      "expected": "zz_generated.deepcopy.go is produced with DeepCopyObject methods for Memcached and MemcachedList",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "Makefile (manifests validation)",
+      "test_function": "make manifests",
+      "story": "Developer runs make targets for code generation",
+      "expected": "CRD YAML generated at config/crd/bases/memcached.c5c3.io_memcacheds.yaml with correct group and names",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "go vet",
+      "test_function": "go vet ./...",
+      "story": "Developer initializes the operator project scaffold",
+      "expected": "No vet errors in any package including generated code",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": ".golangci.yml",
+      "test_function": "make lint",
+      "story": "Developer initializes the operator project scaffold",
+      "expected": "No lint errors reported by golangci-lint with the project configuration",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "Dockerfile",
+      "test_function": "docker build",
+      "story": "Developer builds a container image for the operator",
+      "expected": "Multi-stage build produces image with non-root user and distroless base",
+      "requirement_id": "REQ-006"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All Go code compiles without errors: `go build ./...` succeeds",
+    "`make generate` produces zz_generated.deepcopy.go without errors",
+    "`make manifests` produces CRD YAML in config/crd/bases/ and RBAC YAML in config/rbac/",
+    "`make test` passes with envtest suite running successfully",
+    "`go vet ./...` reports no issues on all packages",
+    "PROJECT file correctly declares domain c5c3.io, group memcached, version v1alpha1, kind Memcached, layout go.kubebuilder.io/v4",
+    "Dockerfile builds successfully with multi-stage build, distroless base, and non-root user",
+    "All Kustomize configs are valid: config/default/kustomization.yaml references correct subdirectories",
+    "RBAC markers on reconciler generate correct ClusterRole permissions in config/rbac/role.yaml",
+    "Reference documentation covers project structure, Makefile targets, and directory layout"
+  ],
+  "implementation_notes": "This feature scaffolds the complete Go operator project from scratch. Since no code exists yet, all files are created manually following Kubebuilder v4 / Operator SDK conventions rather than using `operator-sdk init` (which may not be available in the build environment). The module path is github.com/cobaltcore-dev/memcached-operator based on the project context (CobaltCore/C5C3). The API group is memcached.c5c3.io (not cache.example.com from Kubebuilder defaults). Key architectural decisions: (1) Use go.kubebuilder.io/v4 layout with cmd/main.go entry point and internal/controller/ for reconciler. (2) Use controller-runtime's built-in metrics authentication instead of kube-rbac-proxy (v4 convention). (3) CRD types are minimal stubs - full spec/status fields are defined in MO-0002. (4) Reconciler is a stub - actual reconciliation logic is implemented in MO-0004+. (5) envtest is the test framework for integration tests, with Ginkgo/Gomega as the BDD test runner. (6) Tool dependencies (controller-gen, envtest, kustomize, golangci-lint) are managed via Makefile with auto-download to bin/. Potential pitfall: ensure go.sum is committed after `go mod tidy` to avoid CI failures. The config/ directory follows exact Kubebuilder v4 conventions so that future `make manifests` and `make deploy` work correctly.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.418035"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:28:27.598055"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:36:36.223126"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "782fd3ca-da90-481a-8662-2a42fb1521bb",
+      "timestamp": "2026-02-18T20:36:36.223151",
+      "total_duration": 484.72394490242004,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 484.72394490242004,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}

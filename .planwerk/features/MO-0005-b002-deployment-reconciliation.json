@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0005",
+  "title": "B002: Deployment Reconciliation",
+  "slug": "b002-deployment-reconciliation",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Reconcile a Deployment for the Memcached pods. Map CRD spec fields to container args (-m, -c, -t, -I, -v/-vv, extraArgs), set resource requests/limits, configure the memcached:1.6 container image (or user-specified), expose port 11211. Set owner references for garbage collection. Detect drift and update.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.420033"
+    }
+  },
+  "origin": "plan"
+}

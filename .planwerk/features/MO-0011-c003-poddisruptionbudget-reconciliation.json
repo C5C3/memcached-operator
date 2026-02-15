@@ -1,0 +1,24 @@
+{
+  "feature_id": "MO-0011",
+  "title": "C003: PodDisruptionBudget Reconciliation",
+  "slug": "c003-poddisruptionbudget-reconciliation",
+  "status": "draft",
+  "phase": null,
+  "summary": "",
+  "description": "Create and reconcile a PodDisruptionBudget when spec.highAvailability.podDisruptionBudget.enabled is true. Support minAvailable configuration (default: 1). Set owner references for cleanup.",
+  "stories": [],
+  "requirements": [],
+  "tasks": [],
+  "test_specifications": [],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [],
+  "implementation_notes": "",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.422888"
+    }
+  },
+  "origin": "plan"
+}
