@@ -1,0 +1,735 @@
+{
+  "feature_id": "MO-0002",
+  "title": "A002: Implement Memcached CRD types for v1alpha1 API",
+  "slug": "a002-implement-memcached-crd-types-for-v1alpha1",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Define the Memcached custom resource types: MemcachedSpec (replicas, image, resources, memcached config block with maxMemoryMB/maxConnections/threads/maxItemSize/verbosity/extraArgs), MemcachedStatus (conditions, readyReplicas, observedGeneration). Include nested structs for highAvailability, monitoring, and security sections.",
+  "stories": [
+    {
+      "title": "Operator developer can define a Memcached CR with runtime configuration",
+      "role": "operator developer",
+      "want": "to specify memcached runtime parameters (memory, connections, threads, item size, verbosity, extra args) in the Memcached CR spec",
+      "so_that": "the reconciler can translate these into memcached command-line flags for the managed Deployment",
+      "criteria": [
+        "MemcachedConfig struct exists with fields: maxMemoryMB (int32), maxConnections (int32), threads (int32), maxItemSize (string), verbosity (int32), extraArgs ([]string)",
+        "Kubebuilder validation markers enforce: maxMemoryMB 16-65536, maxConnections 1-65536, threads 1-128, maxItemSize matches ^[0-9]+(k|m)$, verbosity 0-2",
+        "Kubebuilder default markers set: maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, verbosity=0",
+        "MemcachedSpec.Memcached field is optional and uses json tag memcached"
+      ]
+    },
+    {
+      "title": "Operator developer can configure high availability settings",
+      "role": "operator developer",
+      "want": "to specify pod anti-affinity, topology spread constraints, and PDB configuration in the Memcached CR",
+      "so_that": "the reconciler can apply HA primitives to the managed Deployment and create PDBs",
+      "criteria": [
+        "HighAvailabilitySpec struct exists with fields: antiAffinityPreset (string, enum soft/hard), topologySpreadConstraints ([]corev1.TopologySpreadConstraint), podDisruptionBudget (*PDBSpec)",
+        "PDBSpec struct exists with fields: enabled (bool, default false), minAvailable (*intstr.IntOrString), maxUnavailable (*intstr.IntOrString)",
+        "MemcachedSpec.HighAvailability field is optional pointer type",
+        "All fields have appropriate JSON tags and kubebuilder markers"
+      ]
+    },
+    {
+      "title": "Operator developer can configure Prometheus monitoring",
+      "role": "operator developer",
+      "want": "to enable monitoring with exporter sidecar and ServiceMonitor configuration in the Memcached CR",
+      "so_that": "the reconciler can inject the memcached-exporter sidecar and create ServiceMonitor resources",
+      "criteria": [
+        "MonitoringSpec struct exists with fields: enabled (bool, default false), exporterImage (string, default prom/memcached-exporter:v0.15.4), exporterResources (corev1.ResourceRequirements), serviceMonitor (*ServiceMonitorSpec)",
+        "ServiceMonitorSpec struct exists with fields: additionalLabels (map[string]string), interval (string, default 30s), scrapeTimeout (string, default 10s)",
+        "MemcachedSpec.Monitoring field is optional pointer type",
+        "All fields have appropriate JSON tags and kubebuilder markers"
+      ]
+    },
+    {
+      "title": "Operator developer can configure security settings",
+      "role": "operator developer",
+      "want": "to specify pod security contexts and optional SASL/TLS configuration in the Memcached CR",
+      "so_that": "the reconciler can apply security hardening to the managed pods and enable authentication/encryption",
+      "criteria": [
+        "SecuritySpec struct exists with fields: podSecurityContext (*corev1.PodSecurityContext), containerSecurityContext (*corev1.SecurityContext), sasl (*SASLSpec), tls (*TLSSpec)",
+        "SASLSpec struct exists with fields: enabled (bool, default false), credentialsSecretRef (corev1.LocalObjectReference)",
+        "TLSSpec struct exists with fields: enabled (bool, default false), certificateSecretRef (corev1.LocalObjectReference)",
+        "MemcachedSpec.Security field is optional pointer type"
+      ]
+    },
+    {
+      "title": "Operator developer can observe Memcached cluster status",
+      "role": "operator developer",
+      "want": "the Memcached CR status to reflect readyReplicas, observedGeneration, and standard conditions",
+      "so_that": "I can monitor the reconciliation state and detect when the cluster is fully available",
+      "criteria": [
+        "MemcachedStatus has readyReplicas (int32) field tracking ready pod count",
+        "MemcachedStatus has observedGeneration (int64) field tracking last reconciled generation",
+        "MemcachedStatus retains existing conditions field with merge patch strategy",
+        "Printer columns display Replicas, Ready, and Age for kubectl get output"
+      ]
+    },
+    {
+      "title": "Invalid Memcached CR is rejected by CRD validation",
+      "role": "cluster admin",
+      "want": "the Kubernetes API to reject Memcached CRs with invalid field values via CRD schema validation",
+      "so_that": "misconfigured resources never enter the system and cause reconciliation failures",
+      "criteria": [
+        "CR with replicas > 64 or < 0 is rejected",
+        "CR with maxMemoryMB outside 16-65536 is rejected",
+        "CR with maxItemSize not matching ^[0-9]+(k|m)$ is rejected",
+        "CR with antiAffinityPreset not in (soft, hard) is rejected",
+        "CR with verbosity outside 0-2 is rejected"
+      ]
+    },
+    {
+      "title": "CRD reference documentation exists for all types",
+      "role": "operator developer",
+      "want": "comprehensive reference documentation for all CRD types, fields, validation rules, and defaults",
+      "so_that": "I can understand the full API surface without reading Go source code",
+      "criteria": [
+        "Reference doc covers all structs: MemcachedSpec, MemcachedConfig, HighAvailabilitySpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec, MemcachedStatus",
+        "Each field lists type, default value, validation constraints, and description",
+        "Document includes example YAML for a fully-specified Memcached CR",
+        "Document is placed in docs/reference/backend/"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The system SHALL define a MemcachedConfig struct with validated memcached runtime parameters",
+      "priority": "SHALL",
+      "rationale": "Core memcached configuration maps directly to command-line flags used by the reconciler to construct container args",
+      "scenarios": [
+        {
+          "name": "Valid memcached config accepted",
+          "when": "a Memcached CR is created with memcached.maxMemoryMB=256, maxConnections=2048, threads=8, maxItemSize=2m, verbosity=1",
+          "then": "the CR is accepted and stored with the specified values",
+          "and_then": [
+            "all fields are accessible via the typed Go API"
+          ]
+        },
+        {
+          "name": "Invalid maxMemoryMB rejected",
+          "when": "a Memcached CR is created with memcached.maxMemoryMB=10 (below minimum 16)",
+          "then": "the Kubernetes API returns a validation error",
+          "and_then": [
+            "the error message references the minimum constraint"
+          ]
+        },
+        {
+          "name": "Invalid maxItemSize format rejected",
+          "when": "a Memcached CR is created with memcached.maxItemSize=2gb (not matching ^[0-9]+(k|m)$)",
+          "then": "the Kubernetes API returns a validation error",
+          "and_then": [
+            "the error message references the expected pattern"
+          ]
+        },
+        {
+          "name": "Defaults applied for omitted config fields",
+          "when": "a Memcached CR is created with an empty memcached block",
+          "then": "maxMemoryMB defaults to 64, maxConnections to 1024, threads to 4, maxItemSize to 1m, verbosity to 0",
+          "and_then": [
+            "extraArgs defaults to empty slice"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The system SHALL define a HighAvailabilitySpec struct with anti-affinity, topology spread, and PDB configuration",
+      "priority": "SHALL",
+      "rationale": "HA primitives are essential for production-grade Memcached deployments to survive node failures and zone outages",
+      "scenarios": [
+        {
+          "name": "Valid HA config with soft anti-affinity accepted",
+          "when": "a Memcached CR is created with highAvailability.antiAffinityPreset=soft",
+          "then": "the CR is accepted with the soft preset stored",
+          "and_then": [
+            "the field is accessible via the typed Go API"
+          ]
+        },
+        {
+          "name": "Invalid antiAffinityPreset rejected",
+          "when": "a Memcached CR is created with highAvailability.antiAffinityPreset=medium",
+          "then": "the Kubernetes API returns a validation error referencing the enum constraint (soft, hard)",
+          "and_then": []
+        },
+        {
+          "name": "PDB config with minAvailable accepted",
+          "when": "a Memcached CR is created with highAvailability.podDisruptionBudget.enabled=true and minAvailable=2",
+          "then": "the CR is accepted with the PDB configuration stored",
+          "and_then": [
+            "both enabled flag and minAvailable are accessible"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The system SHALL define a MonitoringSpec struct with exporter sidecar and ServiceMonitor configuration",
+      "priority": "SHALL",
+      "rationale": "Prometheus monitoring via memcached-exporter sidecar is the standard observability pattern for this operator",
+      "scenarios": [
+        {
+          "name": "Monitoring enabled with defaults",
+          "when": "a Memcached CR is created with monitoring.enabled=true and no other monitoring fields",
+          "then": "exporterImage defaults to prom/memcached-exporter:v0.15.4",
+          "and_then": [
+            "serviceMonitor interval defaults to 30s, scrapeTimeout defaults to 10s"
+          ]
+        },
+        {
+          "name": "Custom exporter image accepted",
+          "when": "a Memcached CR is created with monitoring.exporterImage=custom/exporter:v1.0",
+          "then": "the CR is accepted with the custom image stored",
+          "and_then": []
+        },
+        {
+          "name": "ServiceMonitor with additional labels accepted",
+          "when": "a Memcached CR is created with monitoring.serviceMonitor.additionalLabels={release: prometheus}",
+          "then": "the CR is accepted with the labels map stored",
+          "and_then": [
+            "labels are accessible for reconciler to apply to the ServiceMonitor resource"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The system SHALL define a SecuritySpec struct with pod security contexts and optional SASL/TLS configuration",
+      "priority": "SHALL",
+      "rationale": "Security hardening is mandatory for production deployments; SASL and TLS are optional Phase 3 features whose types must be defined now",
+      "scenarios": [
+        {
+          "name": "Security with pod security context accepted",
+          "when": "a Memcached CR is created with security.podSecurityContext.runAsNonRoot=true",
+          "then": "the CR is accepted with the pod security context stored",
+          "and_then": [
+            "the full corev1.PodSecurityContext fields are available"
+          ]
+        },
+        {
+          "name": "SASL config with secret reference accepted",
+          "when": "a Memcached CR is created with security.sasl.enabled=true and credentialsSecretRef.name=my-sasl-secret",
+          "then": "the CR is accepted with the SASL configuration stored",
+          "and_then": [
+            "credentialsSecretRef is accessible for reconciler to mount the secret"
+          ]
+        },
+        {
+          "name": "TLS config with certificate reference accepted",
+          "when": "a Memcached CR is created with security.tls.enabled=true and certificateSecretRef.name=my-tls-cert",
+          "then": "the CR is accepted with the TLS configuration stored",
+          "and_then": [
+            "certificateSecretRef is accessible for reconciler to mount certificates"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The system SHALL expand MemcachedSpec with image, resources, and all nested section fields",
+      "priority": "SHALL",
+      "rationale": "The complete spec surface area must be defined for the reconciler to consume in subsequent features",
+      "scenarios": [
+        {
+          "name": "Custom image accepted with default",
+          "when": "a Memcached CR is created without specifying image",
+          "then": "the image field defaults to memcached:1.6",
+          "and_then": [
+            "a custom image like memcached:1.6.40 is accepted when specified"
+          ]
+        },
+        {
+          "name": "Resource requirements accepted",
+          "when": "a Memcached CR is created with resources.requests.memory=256Mi and resources.limits.memory=512Mi",
+          "then": "the CR is accepted with the resource requirements stored as corev1.ResourceRequirements",
+          "and_then": []
+        },
+        {
+          "name": "All nested sections accepted together",
+          "when": "a Memcached CR is created with memcached, highAvailability, monitoring, and security sections all populated",
+          "then": "the CR is accepted with all nested sections stored correctly",
+          "and_then": [
+            "each section is independently accessible via its typed pointer field"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The system SHALL expand MemcachedStatus with readyReplicas and observedGeneration fields",
+      "priority": "SHALL",
+      "rationale": "Status fields are required for the reconciler to report cluster state and for kubectl/tooling to display meaningful output",
+      "scenarios": [
+        {
+          "name": "Status includes readyReplicas",
+          "when": "the MemcachedStatus struct is inspected",
+          "then": "the readyReplicas field (int32) exists with json tag readyReplicas and is optional",
+          "and_then": []
+        },
+        {
+          "name": "Status includes observedGeneration",
+          "when": "the MemcachedStatus struct is inspected",
+          "then": "the observedGeneration field (int64) exists with json tag observedGeneration and is optional",
+          "and_then": []
+        },
+        {
+          "name": "Existing conditions field preserved",
+          "when": "the MemcachedStatus is expanded with new fields",
+          "then": "the existing Conditions []metav1.Condition field remains unchanged with patchMergeKey=type and listType=map markers",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The system SHALL generate valid DeepCopy methods for all new types via controller-gen",
+      "priority": "SHALL",
+      "rationale": "DeepCopy is required by controller-runtime for all API types to satisfy the runtime.Object interface",
+      "scenarios": [
+        {
+          "name": "make generate succeeds without errors",
+          "when": "make generate is run after adding all new types",
+          "then": "zz_generated.deepcopy.go is regenerated with DeepCopyInto methods for all new structs",
+          "and_then": [
+            "go build ./... succeeds with no compilation errors"
+          ]
+        },
+        {
+          "name": "DeepCopy covers all nested types",
+          "when": "zz_generated.deepcopy.go is inspected",
+          "then": "DeepCopyInto methods exist for MemcachedConfig, HighAvailabilitySpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec",
+          "and_then": []
+        },
+        {
+          "name": "go vet passes",
+          "when": "go vet ./... is run after generation",
+          "then": "no vet errors are reported",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The system SHALL generate a valid CRD manifest reflecting all spec/status fields and validation rules",
+      "priority": "SHALL",
+      "rationale": "The CRD manifest is the Kubernetes-level API contract; it must accurately reflect the Go type definitions and validation markers",
+      "scenarios": [
+        {
+          "name": "make manifests succeeds",
+          "when": "make manifests is run after all types and markers are defined",
+          "then": "config/crd/bases/memcached.c5c3.io_memcacheds.yaml is regenerated",
+          "and_then": [
+            "the YAML is valid and parseable"
+          ]
+        },
+        {
+          "name": "CRD schema includes all spec fields with validation",
+          "when": "the generated CRD manifest is inspected",
+          "then": "all fields appear with correct types, minimum/maximum constraints, patterns, enums, and defaults",
+          "and_then": [
+            "nested types are fully expanded in the openAPIV3Schema"
+          ]
+        },
+        {
+          "name": "Printer columns updated in CRD",
+          "when": "the generated CRD manifest is inspected",
+          "then": "additionalPrinterColumns includes Replicas, Ready, and Age entries",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The system SHALL add a Ready printer column for kubectl output",
+      "priority": "SHALL",
+      "rationale": "Printer columns enable operators to see cluster health at a glance via kubectl get memcacheds",
+      "scenarios": [
+        {
+          "name": "Ready column kubebuilder marker defined",
+          "when": "the Memcached type markers are inspected in memcached_types.go",
+          "then": "a +kubebuilder:printcolumn marker exists for Ready with JSONPath=.status.readyReplicas and type=integer",
+          "and_then": [
+            "existing Replicas and Age columns are preserved"
+          ]
+        },
+        {
+          "name": "Ready column appears in generated CRD",
+          "when": "the generated CRD manifest is inspected",
+          "then": "additionalPrinterColumns includes a Ready entry between Replicas and Age",
+          "and_then": []
+        },
+        {
+          "name": "Columns render correctly in kubectl",
+          "when": "the CRD is installed on a cluster and kubectl get memcacheds is run",
+          "then": "output shows NAME, REPLICAS, READY, AGE as column headers",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The system SHALL update the sample CR to demonstrate the new API fields",
+      "priority": "SHALL",
+      "rationale": "The sample CR in config/samples/ serves as documentation and is used for manual testing",
+      "scenarios": [
+        {
+          "name": "Sample CR includes core fields",
+          "when": "the sample CR at config/samples/memcached_v1alpha1_memcached.yaml is inspected",
+          "then": "it includes image, resources, and memcached configuration sections with valid values",
+          "and_then": []
+        },
+        {
+          "name": "Sample CR validates against CRD",
+          "when": "the sample CR is applied to a cluster with the updated CRD installed",
+          "then": "it is accepted without validation errors",
+          "and_then": []
+        },
+        {
+          "name": "Sample CR shows optional sections",
+          "when": "the sample CR is inspected",
+          "then": "it includes highAvailability, monitoring, and security sections as commented examples or active values",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Define MemcachedConfig struct with kubebuilder validation and default markers (REQ-001)",
+      "description": "Create the MemcachedConfig struct in api/v1alpha1/memcached_types.go with fields: MaxMemoryMB (int32, min 16, max 65536, default 64), MaxConnections (int32, min 1, max 65536, default 1024), Threads (int32, min 1, max 128, default 4), MaxItemSize (string, pattern ^[0-9]+(k|m)$, default 1m), Verbosity (int32, min 0, max 2, default 0), ExtraArgs ([]string, optional). Follow the exact kubebuilder marker patterns from the existing Replicas field. Add Go doc comments for each field describing the memcached flag mapping (-m, -c, -t, -I, -v/-vv).",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Define HighAvailabilitySpec and PDBSpec structs with kubebuilder markers (REQ-002)",
+      "description": "Create HighAvailabilitySpec in api/v1alpha1/memcached_types.go with fields: AntiAffinityPreset (string, enum soft/hard, optional), TopologySpreadConstraints ([]corev1.TopologySpreadConstraint, optional), PodDisruptionBudget (*PDBSpec, optional). Create PDBSpec with fields: Enabled (bool, default false), MinAvailable (*intstr.IntOrString, optional), MaxUnavailable (*intstr.IntOrString, optional). Add required imports for corev1 and intstr packages.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Define MonitoringSpec and ServiceMonitorSpec structs with kubebuilder markers (REQ-003)",
+      "description": "Create MonitoringSpec in api/v1alpha1/memcached_types.go with fields: Enabled (bool, default false), ExporterImage (string, default prom/memcached-exporter:v0.15.4, optional), ExporterResources (corev1.ResourceRequirements, optional), ServiceMonitor (*ServiceMonitorSpec, optional). Create ServiceMonitorSpec with fields: AdditionalLabels (map[string]string, optional), Interval (string, default 30s, optional), ScrapeTimeout (string, default 10s, optional).",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Define SecuritySpec, SASLSpec, and TLSSpec structs with kubebuilder markers (REQ-004)",
+      "description": "Create SecuritySpec in api/v1alpha1/memcached_types.go with fields: PodSecurityContext (*corev1.PodSecurityContext, optional), ContainerSecurityContext (*corev1.SecurityContext, optional), SASL (*SASLSpec, optional), TLS (*TLSSpec, optional). Create SASLSpec with fields: Enabled (bool, default false), CredentialsSecretRef (corev1.LocalObjectReference, optional). Create TLSSpec with fields: Enabled (bool, default false), CertificateSecretRef (corev1.LocalObjectReference, optional).",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Expand MemcachedSpec with image, resources, and nested section fields (REQ-005)",
+      "description": "Add to the existing MemcachedSpec struct: Image (string, default memcached:1.6, optional), Resources (corev1.ResourceRequirements, optional), Memcached (MemcachedConfig, optional, json tag memcached), HighAvailability (*HighAvailabilitySpec, optional), Monitoring (*MonitoringSpec, optional), Security (*SecuritySpec, optional). Keep the existing Replicas field. Use pointer types for optional nested structs so they can be omitted entirely.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Expand MemcachedStatus with readyReplicas and observedGeneration (REQ-006)",
+      "description": "Add to the existing MemcachedStatus struct: ReadyReplicas (int32, optional), ObservedGeneration (int64, optional). Preserve the existing Conditions field with all its markers (patchMergeKey, patchStrategy, listType, listMapKey, protobuf tag). Ensure JSON tags use camelCase (readyReplicas, observedGeneration).",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Add Ready printer column to Memcached type markers (REQ-009)",
+      "description": "Add a +kubebuilder:printcolumn marker for Ready with JSONPath=.status.readyReplicas, type=integer, description=Number of ready Memcached pods. Place it between the existing Replicas and Age columns. The final column order should be: Replicas, Ready, Age.",
+      "level": 2,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Run make generate to regenerate DeepCopy methods (REQ-007)",
+      "description": "Run 'make generate' to regenerate zz_generated.deepcopy.go. Verify that DeepCopyInto methods are generated for all new structs: MemcachedConfig, HighAvailabilitySpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec. Verify 'go build ./...' succeeds after generation.",
+      "level": 3,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Run make manifests to regenerate CRD YAML (REQ-008)",
+      "description": "Run 'make manifests' to regenerate config/crd/bases/memcached.c5c3.io_memcacheds.yaml. Verify the generated CRD includes all new spec/status fields, validation constraints (minimum, maximum, pattern, enum), defaults, and printer columns. Verify the YAML is valid.",
+      "level": 3,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Update sample CR to demonstrate new API fields (REQ-010)",
+      "description": "Update config/samples/memcached_v1alpha1_memcached.yaml to include: image field, resources with requests/limits, memcached config block with maxMemoryMB/maxConnections/threads, and commented examples showing highAvailability, monitoring, and security sections. Ensure all values pass CRD validation.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write envtest tests for CRD validation of MemcachedConfig fields (REQ-001, REQ-005)",
+      "description": "Write Ginkgo tests in api/v1alpha1/memcached_types_test.go (new file with envtest suite) that validate: (1) a CR with valid memcached config is accepted, (2) maxMemoryMB below 16 is rejected, (3) maxMemoryMB above 65536 is rejected, (4) maxItemSize with invalid format is rejected, (5) verbosity outside 0-2 is rejected, (6) threads outside 1-128 is rejected, (7) defaults are applied for omitted fields, (8) custom image is accepted, (9) resource requirements are stored correctly. Use the existing envtest pattern from internal/controller/suite_test.go.",
+      "level": 4,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Write envtest tests for CRD validation of HA, Monitoring, and Security fields (REQ-002, REQ-003, REQ-004)",
+      "description": "Extend the test suite in api/v1alpha1/memcached_types_test.go with tests for: (1) valid antiAffinityPreset=soft accepted, (2) invalid antiAffinityPreset rejected, (3) PDB config stored correctly, (4) monitoring.enabled=true with default exporterImage, (5) custom ServiceMonitor labels stored, (6) security.podSecurityContext accepted, (7) SASL config with credentialsSecretRef stored, (8) TLS config with certificateSecretRef stored. Test full CR with all sections populated.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Write envtest tests for MemcachedStatus fields and printer columns (REQ-006, REQ-009)",
+      "description": "Extend the test suite in api/v1alpha1/memcached_types_test.go with tests for: (1) status subresource update with readyReplicas, (2) status subresource update with observedGeneration, (3) conditions field preserved after status update, (4) verify printer columns exist in CRD schema by reading the CRD YAML fixture. Ensure status updates use the status subresource client.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Write CRD types reference documentation (REQ-001 to REQ-006)",
+      "description": "Create docs/reference/backend/crd-types-v1alpha1.md with: (1) overview of Memcached CRD API group and version, (2) MemcachedSpec field table (name, type, default, validation, description) for all fields, (3) tables for each nested struct (MemcachedConfig, HighAvailabilitySpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec), (4) MemcachedStatus field table, (5) printer columns table, (6) complete example YAML. Follow the Diataxis reference quadrant: information-oriented, no tutorials.",
+      "level": 5,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with valid memcached config values",
+      "story": "Operator developer can define a Memcached CR with runtime configuration",
+      "expected": "CR with maxMemoryMB=256, maxConnections=2048, threads=8, maxItemSize=2m, verbosity=1 is created successfully",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should reject a CR with maxMemoryMB below minimum",
+      "story": "Invalid Memcached CR is rejected by CRD validation",
+      "expected": "CR with maxMemoryMB=10 returns a validation error from the API server",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should reject a CR with maxMemoryMB above maximum",
+      "story": "Invalid Memcached CR is rejected by CRD validation",
+      "expected": "CR with maxMemoryMB=100000 returns a validation error from the API server",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should reject a CR with invalid maxItemSize format",
+      "story": "Invalid Memcached CR is rejected by CRD validation",
+      "expected": "CR with maxItemSize=2gb returns a validation error referencing the pattern constraint",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should apply default values for omitted memcached config fields",
+      "story": "Operator developer can define a Memcached CR with runtime configuration",
+      "expected": "CR created with empty memcached block has maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, verbosity=0",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with valid antiAffinityPreset",
+      "story": "Operator developer can configure high availability settings",
+      "expected": "CR with highAvailability.antiAffinityPreset=soft is created successfully",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should reject a CR with invalid antiAffinityPreset",
+      "story": "Invalid Memcached CR is rejected by CRD validation",
+      "expected": "CR with highAvailability.antiAffinityPreset=medium returns a validation error",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with PDB configuration",
+      "story": "Operator developer can configure high availability settings",
+      "expected": "CR with highAvailability.podDisruptionBudget.enabled=true and minAvailable=2 is created successfully",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with monitoring enabled and default exporter image",
+      "story": "Operator developer can configure Prometheus monitoring",
+      "expected": "CR with monitoring.enabled=true stores default exporterImage=prom/memcached-exporter:v0.15.4",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with ServiceMonitor additional labels",
+      "story": "Operator developer can configure Prometheus monitoring",
+      "expected": "CR with monitoring.serviceMonitor.additionalLabels={release: prometheus} is created and labels are retrievable",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with security pod context and SASL config",
+      "story": "Operator developer can configure security settings",
+      "expected": "CR with security.podSecurityContext.runAsNonRoot=true and sasl.enabled=true is created successfully",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with TLS configuration",
+      "story": "Operator developer can configure security settings",
+      "expected": "CR with security.tls.enabled=true and certificateSecretRef.name=my-cert is created successfully",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should apply default image when not specified",
+      "story": "Operator developer can define a Memcached CR with runtime configuration",
+      "expected": "CR created without image field has image defaulted to memcached:1.6",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should accept a CR with all nested sections populated",
+      "story": "Operator developer can define a Memcached CR with runtime configuration",
+      "expected": "CR with memcached, highAvailability, monitoring, and security all populated is accepted",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should update status with readyReplicas via status subresource",
+      "story": "Operator developer can observe Memcached cluster status",
+      "expected": "Status update with readyReplicas=3 persists and is retrievable",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should update status with observedGeneration via status subresource",
+      "story": "Operator developer can observe Memcached cluster status",
+      "expected": "Status update with observedGeneration=5 persists and is retrievable",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should reject a CR with verbosity outside valid range",
+      "story": "Invalid Memcached CR is rejected by CRD validation",
+      "expected": "CR with memcached.verbosity=5 returns a validation error",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should reject a CR with replicas above maximum",
+      "story": "Invalid Memcached CR is rejected by CRD validation",
+      "expected": "CR with replicas=100 returns a validation error (maximum is 64)",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should preserve conditions with merge strategy during status update",
+      "story": "Operator developer can observe Memcached cluster status",
+      "expected": "Status update preserving existing conditions while adding readyReplicas works correctly",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "should reject a CR with threads outside valid range",
+      "story": "Invalid Memcached CR is rejected by CRD validation",
+      "expected": "CR with memcached.threads=0 or threads=200 returns a validation error",
+      "requirement_id": "REQ-001"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All Go structs match the README specification (lines 331-532) with correct field names, types, JSON tags, and kubebuilder markers",
+    "make generate succeeds and zz_generated.deepcopy.go contains DeepCopyInto for all new structs",
+    "make manifests succeeds and the generated CRD YAML includes all fields with correct validation constraints",
+    "go vet ./... and golangci-lint run pass without errors",
+    "All envtest tests pass: valid CRs accepted, invalid CRs rejected, defaults applied, status subresource works",
+    "Printer columns show Replicas, Ready, Age in the correct order in the generated CRD",
+    "Sample CR in config/samples/ is valid against the updated CRD schema",
+    "Reference documentation covers all structs and fields with types, defaults, and constraints",
+    "No scope creep: only types defined in the feature description are implemented (no controller logic, no webhook logic)"
+  ],
+  "implementation_notes": "All type definitions go in api/v1alpha1/memcached_types.go as a single-file change. Follow the exact kubebuilder marker patterns from the README (lines 331-532). Use pointer types (*HighAvailabilitySpec, *MonitoringSpec, *SecuritySpec) for optional nested sections so they can be omitted entirely from the YAML. Use value types for MemcachedConfig since it has defaults that should always be applied. Import corev1 as corev1 \"k8s.io/api/core/v1\" and intstr from k8s.io/apimachinery/pkg/util/intstr. After type changes: (1) make generate to regenerate DeepCopy, (2) make manifests to regenerate CRD YAML, (3) make test to verify compilation and existing tests still pass. Tests should use envtest to validate CRD schema enforcement (creating CRs with invalid values and verifying rejection). Create a new test file api/v1alpha1/memcached_types_test.go with its own Ginkgo suite (following the pattern from internal/controller/suite_test.go) since the types package is separate from the controller package.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.418698"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T21:15:57.976885"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T21:21:47.514996"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "3f9f83f4-6d49-4a3c-93b0-24a72d5f4be1",
+      "timestamp": "2026-02-18T21:21:47.515023",
+      "total_duration": 344.7174813747406,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 344.7174813747406,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
