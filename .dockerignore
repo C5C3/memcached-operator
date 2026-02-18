@@ -1,0 +1,15 @@
+.git
+bin/
+testbin/
+vendor/
+docs/
+cover.out
+*.md
+.gitignore
+.dockerignore
+.golangci.yml
+.serena/
+.planwerk/
+LICENSES/
+hack/
+config/

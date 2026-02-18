@@ -1,0 +1,121 @@
+{
+  "feature_id": "MO-0001",
+  "title": "A001: Initialize Operator SDK project structure",
+  "date": "2026-02-18",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Solid Operator SDK scaffold with correct Go code, proper Kubebuilder v4 patterns, clean compilation, passing tests, and good security posture (distroless, non-root, seccomp, dropped capabilities). However, several planned deliverables are missing: .gitignore, .dockerignore, RBAC metrics auth files, config/network-policy directory, and the build-installer Makefile target. The make test target also fails due to a Go 1.25 coverprofile incompatibility with packages lacking test files.",
+  "tests_checklist": [
+    {"item": "Tests exist and pass (2/2 Ginkgo specs)", "checked": true},
+    {"item": "envtest bootstrap with CRD loading works", "checked": true},
+    {"item": "Reconciler interface compliance tested", "checked": true},
+    {"item": "Empty reconcile for non-existent resource tested", "checked": true},
+    {"item": "make test passes end-to-end", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows Kubebuilder v4 directory layout conventions", "checked": true},
+    {"item": "RBAC markers generate correct ClusterRole", "checked": true},
+    {"item": "GroupVersion registration follows standard pattern", "checked": true},
+    {"item": "Controller struct embeds client.Client correctly", "checked": true},
+    {"item": "cmd/main.go follows controller-runtime v4 conventions", "checked": true},
+    {"item": "golangci-lint passes with 0 issues", "checked": true},
+    {"item": "go vet passes with 0 issues", "checked": true},
+    {"item": "No dead code or unnecessary imports", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "Distroless base image with nonroot tag", "checked": true},
+    {"item": "Container runs as non-root (UID 65532)", "checked": true},
+    {"item": "Pod seccompProfile RuntimeDefault", "checked": true},
+    {"item": "allowPrivilegeEscalation false", "checked": true},
+    {"item": "All capabilities dropped", "checked": true},
+    {"item": "Secure metrics with authn/authz filters", "checked": true},
+    {"item": "HTTP/2 disabled by default", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Standard Operator SDK project layout", "checked": true},
+    {"item": "API types in api/v1alpha1/", "checked": true},
+    {"item": "Controller in internal/controller/ (unexported)", "checked": true},
+    {"item": "Kustomize overlays in config/", "checked": true},
+    {"item": "Scaffold is minimal and extensible", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No over-engineered abstractions", "checked": true},
+    {"item": "Reconciler is an appropriate empty stub", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Manager startup errors cause os.Exit(1)", "checked": true},
+    {"item": "Controller setup errors cause os.Exit(1)", "checked": true},
+    {"item": "Health/readyz probe registration errors cause os.Exit(1)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "CRD validation markers on spec fields", "checked": true},
+    {"item": "Conditions use standard metav1.Condition with list merge strategy", "checked": true},
+    {"item": "Resource limits set on manager Deployment", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "FC1-1",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": ".gitignore file is missing. Plan task 1.1 requires 'Create .gitignore with Go and operator-sdk patterns'. Without it, bin/ directory (with ~100MB+ of tool binaries and envtest assets), cover.out, and other build artifacts will be tracked by git.",
+      "location": "project root",
+      "fix": "Create .gitignore with standard Go operator patterns: bin/, cover.out, testbin/, *.test, *.out, vendor/"
+    },
+    {
+      "id": "FC1-2",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": ".dockerignore file is missing. Plan task 2.4 requires 'Create .dockerignore excluding .git, bin/, testbin/, vendor/'. Without it, Docker builds will include unnecessary files in the build context, increasing build time and image layer size.",
+      "location": "project root",
+      "fix": "Create .dockerignore with: .git, bin/, testbin/, vendor/, *.md, .golangci.yml, cover.out, .planwerk/"
+    },
+    {
+      "id": "FC1-3",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "RBAC metrics auth files are missing. Plan task 3.1 requires metrics_auth_role.yaml, metrics_auth_role_binding.yaml, and metrics_reader_role.yaml in config/rbac/. These are needed for the secure metrics endpoint (authn/authz filter in cmd/main.go) to work correctly when deployed with `make deploy`.",
+      "location": "config/rbac/kustomization.yaml",
+      "fix": "Create metrics_auth_role.yaml (ClusterRole for TokenReview/SubjectAccessReview), metrics_auth_role_binding.yaml, and metrics_reader_role.yaml (ClusterRole allowing /metrics GET). Add all three to config/rbac/kustomization.yaml resources."
+    },
+    {
+      "id": "FC1-4",
+      "severity": "minor",
+      "check_id": "FC1",
+      "description": "config/network-policy/ directory is missing. Plan task 3.3 requires 'Create config/network-policy/ with allow-metrics-traffic.yaml and kustomization.yaml'. This is optional infrastructure configuration.",
+      "location": "config/",
+      "fix": "Create config/network-policy/allow-metrics-traffic.yaml (NetworkPolicy allowing ingress to metrics port) and config/network-policy/kustomization.yaml."
+    },
+    {
+      "id": "FC1-5",
+      "severity": "minor",
+      "check_id": "FC1",
+      "description": "Makefile is missing the build-installer target. Plan task 2.3 lists 'build-installer' as a required target for generating a single install manifest.",
+      "location": "Makefile",
+      "fix": "Add build-installer target that runs kustomize build config/default > dist/install.yaml to produce a single-file installer manifest."
+    },
+    {
+      "id": "V1-1",
+      "severity": "major",
+      "check_id": "V1",
+      "description": "`make test` fails with 'go: no such tool covdata' on api/v1alpha1 and cmd packages. The -coverprofile flag on packages without test files triggers Go 1.25's covdata tool which is not properly available in this environment. While tests themselves pass, the make target returns exit code 2.",
+      "location": "Makefile:50",
+      "fix": "Add -coverpkg=./internal/... to the go test command to limit coverage instrumentation to packages with test files, or add empty test files to api/v1alpha1 and cmd packages."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider setting ErrorIfCRDPathMissing to true in suite_test.go:45 to catch missing CRD files early during test bootstrap",
+    "The omitzero struct tags mentioned in plan task 1.3 for v4 convention are not present — consider adding for Kubernetes 1.32+ CRD compatibility",
+    "Consider adding a getFirstFoundEnvTestBinaryDir() helper as mentioned in plan task 4.1 for IDE compatibility with different envtest binary locations"
+  ],
+  "next_steps": [
+    "Create .gitignore with Go and operator-sdk patterns (bin/, cover.out, testbin/, *.test, vendor/)",
+    "Create .dockerignore excluding .git, bin/, testbin/, vendor/, docs/",
+    "Create config/rbac/metrics_auth_role.yaml, metrics_auth_role_binding.yaml, metrics_reader_role.yaml and add to kustomization.yaml",
+    "Fix make test target to handle -coverprofile with packages lacking test files",
+    "Create config/network-policy/ with allow-metrics-traffic.yaml and kustomization.yaml",
+    "Add build-installer target to Makefile"
+  ]
+}

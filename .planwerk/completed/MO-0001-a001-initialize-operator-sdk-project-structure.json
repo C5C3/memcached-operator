@@ -2,8 +2,8 @@
   "feature_id": "MO-0001",
   "title": "A001: Initialize Operator SDK project structure",
   "slug": "a001-initialize-operator-sdk-project-structure",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Scaffold the Go operator project using Operator SDK / Kubebuilder with Go 1.24+, controller-runtime, API group memcached.c5c3.io, and initial version v1alpha1. Set up Go module, Makefile, Dockerfile, and directory structure (api/, internal/controller/, config/).",
   "stories": [
@@ -435,6 +435,7 @@
       "description": "Create go.mod with module github.com/cobaltcore-dev/memcached-operator, Go 1.24, and controller-runtime dependency. Create PROJECT file with domain c5c3.io, layout go.kubebuilder.io/v4, repo path, and Memcached resource entry (group: memcached, version: v1alpha1, kind: Memcached, namespaced: true). Run `go mod tidy` to resolve dependencies. Create .gitignore with Go and operator-sdk patterns.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -446,6 +447,7 @@
       "description": "Create api/v1alpha1/groupversion_info.go declaring GroupVersion{Group: \"memcached.c5c3.io\", Version: \"v1alpha1\"}, SchemeBuilder, and AddToScheme. Follow standard Kubebuilder v4 pattern with package doc comment.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -456,6 +458,7 @@
       "description": "Create memcached_types.go with: MemcachedSpec (empty, with comment indicating extension in MO-0002), MemcachedStatus (Conditions []metav1.Condition), Memcached (+kubebuilder:object:root=true, +kubebuilder:subresource:status), MemcachedList. Register types in init(). Include omitzero tags per v4 convention.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -466,6 +469,7 @@
       "description": "Create MemcachedReconciler struct (embeds client.Client, has Scheme *runtime.Scheme). Add Reconcile method returning empty Result. Add SetupWithManager watching Memcached CRs. Add RBAC markers for memcacheds (get/list/watch/create/update/patch/delete), memcacheds/status (get/update/patch), and memcacheds/finalizers (update).",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -476,6 +480,7 @@
       "description": "Create cmd/main.go with: scheme registration (clientgoscheme + v1alpha1), flag parsing (metricsAddr :8443, probeAddr :8081, enableLeaderElection, secureMetrics), manager creation with Options, MemcachedReconciler setup, healthz/readyz probes, signal handler. Use controller-runtime v4 conventions: secure metrics with authn/authz, HTTP/2 disabled.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -486,6 +491,7 @@
       "description": "Create Makefile with targets: manifests (controller-gen crd rbac), generate (controller-gen object), fmt, vet, test (envtest), lint (golangci-lint), build, run, docker-build, docker-push, docker-buildx, install, uninstall, deploy, undeploy, build-installer. Include tool dependency management for CONTROLLER_GEN, ENVTEST, KUSTOMIZE, GOLANGCI_LINT with version pinning and auto-download to bin/.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -496,6 +502,7 @@
       "description": "Create Dockerfile: builder stage (golang:1.24, TARGETOS/TARGETARCH args, CGO_ENABLED=0, go mod download, go build -a -o manager cmd/main.go), runtime stage (gcr.io/distroless/static:nonroot, USER 65532:65532, ENTRYPOINT /manager). Create .dockerignore excluding .git, bin/, testbin/, vendor/.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -506,6 +513,7 @@
       "description": "Create config/crd/kustomization.yaml (resources: bases/), config/crd/patches/ dir. Create config/rbac/kustomization.yaml with resources: role.yaml, role_binding.yaml, service_account.yaml, leader_election_role.yaml, leader_election_role_binding.yaml, metrics_auth_role.yaml, metrics_auth_role_binding.yaml, metrics_reader_role.yaml. Create all RBAC YAML files with standard Kubebuilder v4 content. Create config/rbac/service_account.yaml.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -516,6 +524,7 @@
       "description": "Create config/manager/manager.yaml (Deployment for controller-manager with resource limits, security context, liveness/readiness probes, leader election args). Create config/manager/kustomization.yaml. Create config/default/kustomization.yaml referencing ../crd, ../rbac, ../manager with namespace and namePrefix. Create config/default/manager_metrics_patch.yaml for metrics endpoint config.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -526,6 +535,7 @@
       "description": "Create config/samples/memcached_v1alpha1_memcached.yaml with a minimal valid Memcached CR. Create config/samples/kustomization.yaml. Create config/prometheus/monitor.yaml (ServiceMonitor template). Create config/prometheus/kustomization.yaml. Create config/network-policy/ with allow-metrics-traffic.yaml and kustomization.yaml.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -536,6 +546,7 @@
       "description": "Create .golangci.yml with linters appropriate for a Kubernetes operator: govet, errcheck, staticcheck, gosimple, unused, ineffassign, typecheck. Exclude generated files (zz_generated.*). Configure reasonable timeouts and Go version.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -546,20 +557,8 @@
       "description": "Create suite_test.go with: Ginkgo/Gomega test runner, envtest.Environment with CRDDirectoryPaths pointing to config/crd/bases/, scheme registration for v1alpha1, k8sClient creation, BeforeSuite/AfterSuite lifecycle. Include getFirstFoundEnvTestBinaryDir() helper for IDE compatibility.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
-        "REQ-009"
-      ]
-    },
-    {
-      "id": "4.2",
-      "title": "Run make generate, make manifests, and make test to validate the full scaffold (REQ-001, REQ-003, REQ-005, REQ-009)",
-      "description": "Run `make generate` to produce zz_generated.deepcopy.go. Run `make manifests` to produce CRD YAML and RBAC YAML. Run `go vet ./...` to verify static analysis passes. Run `make test` to verify envtest suite passes. Fix any issues found. Verify go.sum is consistent with `go mod tidy`.",
-      "level": 4,
-      "estimate_minutes": 15,
-      "requirements": [
-        "REQ-001",
-        "REQ-003",
-        "REQ-005",
         "REQ-009"
       ]
     },
@@ -569,6 +568,7 @@
       "description": "Create internal/controller/memcached_controller_test.go with Ginkgo test: create a Memcached CR via test client, verify it is created successfully, verify reconciler does not error. This validates the full scaffold wiring: types → scheme → envtest → controller. Use Eventually/Consistently patterns.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-009"
@@ -580,6 +580,7 @@
       "description": "Create docs/reference/backend/project-structure.md documenting: directory layout, key files and their purposes, Makefile targets with descriptions, Go module and dependency versions, PROJECT file format. Reference the Operator SDK / Kubebuilder conventions used.",
       "level": 5,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-005"
@@ -685,6 +686,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-18T20:36:36.223126"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:45:18.966186"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T21:15:12.218748"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T21:15:12.233889"
     }
   },
   "execution_history": [
@@ -698,6 +711,62 @@
           "name": "prepare",
           "duration": 484.72394490242004,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "f38eeca3-1409-4b03-9bfe-d6733695801a",
+      "timestamp": "2026-02-18T21:13:15.302688",
+      "total_duration": 1529.377427816391,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 154.6116976737976,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (4 tasks)",
+          "duration": 141.50603866577148,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (4 tasks)",
+          "duration": 107.18037629127502,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (2 tasks)",
+          "duration": 392.9673237800598,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 5 (1 tasks)",
+          "duration": 145.18050336837769,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0001] Code Review",
+          "duration": 291.4954833984375,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0001] Improvements",
+          "duration": 224.54424381256104,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0001] Simplify",
+          "duration": 71.89176082611084,
+          "type": "simplify",
           "status": "done"
         }
       ]

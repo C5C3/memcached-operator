@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-metrics-traffic
+  labels:
+    app.kubernetes.io/name: memcached-operator
+    app.kubernetes.io/part-of: memcached-operator
+spec:
+  podSelector:
+    matchLabels:
+      control-plane: controller-manager
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 8443
