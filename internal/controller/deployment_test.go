@@ -482,7 +482,18 @@ func TestConstructDeployment_Resources(t *testing.T) {
 	}
 }
 
-func antiAffinityPresetPtr(p memcachedv1alpha1.AntiAffinityPreset) *memcachedv1alpha1.AntiAffinityPreset { return &p }
+func antiAffinityPresetPtr(p memcachedv1alpha1.AntiAffinityPreset) *memcachedv1alpha1.AntiAffinityPreset {
+	return &p
+}
+
+// zoneSpreadConstraint returns a standard zone-aware topology spread constraint used across tests.
+func zoneSpreadConstraint() corev1.TopologySpreadConstraint {
+	return corev1.TopologySpreadConstraint{
+		MaxSkew:           1,
+		TopologyKey:       "topology.kubernetes.io/zone",
+		WhenUnsatisfiable: corev1.DoNotSchedule,
+	}
+}
 
 func TestBuildAntiAffinity_Soft(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
@@ -685,6 +696,186 @@ func TestConstructDeployment_AntiAffinity(t *testing.T) {
 
 			tt.check(t, dep.Spec.Template.Spec.Affinity)
 		})
+	}
+}
+
+func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+					{
+						MaxSkew:           1,
+						TopologyKey:       "topology.kubernetes.io/zone",
+						WhenUnsatisfiable: corev1.DoNotSchedule,
+						LabelSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"app.kubernetes.io/name": "memcached",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	got := buildTopologySpreadConstraints(mc)
+
+	if len(got) != 1 {
+		t.Fatalf("expected 1 constraint, got %d", len(got))
+	}
+	if got[0].MaxSkew != 1 {
+		t.Errorf("maxSkew = %d, want 1", got[0].MaxSkew)
+	}
+	if got[0].TopologyKey != "topology.kubernetes.io/zone" {
+		t.Errorf("topologyKey = %q, want topology.kubernetes.io/zone", got[0].TopologyKey)
+	}
+	if got[0].WhenUnsatisfiable != corev1.DoNotSchedule {
+		t.Errorf("whenUnsatisfiable = %q, want DoNotSchedule", got[0].WhenUnsatisfiable)
+	}
+	if got[0].LabelSelector == nil || got[0].LabelSelector.MatchLabels["app.kubernetes.io/name"] != "memcached" {
+		t.Error("expected labelSelector to be passed through")
+	}
+}
+
+func TestBuildTopologySpreadConstraints_MultipleConstraints(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+					zoneSpreadConstraint(),
+					{
+						MaxSkew:           1,
+						TopologyKey:       "kubernetes.io/hostname",
+						WhenUnsatisfiable: corev1.ScheduleAnyway,
+					},
+				},
+			},
+		},
+	}
+
+	got := buildTopologySpreadConstraints(mc)
+
+	if len(got) != 2 {
+		t.Fatalf("expected 2 constraints, got %d", len(got))
+	}
+	if got[0].TopologyKey != "topology.kubernetes.io/zone" {
+		t.Errorf("first constraint topologyKey = %q, want topology.kubernetes.io/zone", got[0].TopologyKey)
+	}
+	if got[1].TopologyKey != "kubernetes.io/hostname" {
+		t.Errorf("second constraint topologyKey = %q, want kubernetes.io/hostname", got[1].TopologyKey)
+	}
+}
+
+func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name string
+		ha   *memcachedv1alpha1.HighAvailabilitySpec
+	}{
+		{
+			name: "nil HighAvailability",
+			ha:   nil,
+		},
+		{
+			name: "nil constraints",
+			ha:   &memcachedv1alpha1.HighAvailabilitySpec{},
+		},
+		{
+			name: "empty slice",
+			ha: &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				Spec: memcachedv1alpha1.MemcachedSpec{
+					HighAvailability: tt.ha,
+				},
+			}
+
+			got := buildTopologySpreadConstraints(mc)
+
+			if got != nil {
+				t.Errorf("expected nil, got %v", got)
+			}
+		})
+	}
+}
+
+func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tsc-test", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+	if len(tsc) != 1 {
+		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
+	}
+	if tsc[0].MaxSkew != 1 {
+		t.Errorf("maxSkew = %d, want 1", tsc[0].MaxSkew)
+	}
+	if tsc[0].TopologyKey != "topology.kubernetes.io/zone" {
+		t.Errorf("topologyKey = %q, want topology.kubernetes.io/zone", tsc[0].TopologyKey)
+	}
+}
+
+func TestConstructDeployment_TopologySpreadConstraints_NilHA(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tsc-nil-test", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	if dep.Spec.Template.Spec.TopologySpreadConstraints != nil {
+		t.Errorf("expected nil TopologySpreadConstraints, got %v", dep.Spec.Template.Spec.TopologySpreadConstraints)
+	}
+}
+
+func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "both-test", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	// Verify anti-affinity is set.
+	if dep.Spec.Template.Spec.Affinity == nil || dep.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
+		t.Fatal("expected Affinity with PodAntiAffinity to be set")
+	}
+	if len(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
+		t.Error("expected 1 preferred anti-affinity term")
+	}
+
+	// Verify topology spread constraints are set.
+	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+	if len(tsc) != 1 {
+		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
+	}
+	if tsc[0].TopologyKey != "topology.kubernetes.io/zone" {
+		t.Errorf("topologyKey = %q, want topology.kubernetes.io/zone", tsc[0].TopologyKey)
 	}
 }
 

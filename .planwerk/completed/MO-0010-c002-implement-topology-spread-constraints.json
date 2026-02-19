@@ -2,8 +2,8 @@
   "feature_id": "MO-0010",
   "title": "C002: Implement topology spread constraints",
   "slug": "c002-implement-topology-spread-constraints",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Apply user-defined topologySpreadConstraints from spec.highAvailability.topologySpreadConstraints to the Deployment pod template. Supports zone-aware scheduling (e.g. maxSkew: 1, topologyKey: topology.kubernetes.io/zone).",
   "stories": [
@@ -285,6 +285,7 @@
       "description": "Create a pure helper function `buildTopologySpreadConstraints(mc *Memcached) []corev1.TopologySpreadConstraint` in `internal/controller/deployment.go` following the same pattern as `buildAntiAffinity`. Returns the slice from `spec.highAvailability.topologySpreadConstraints` or nil when HA is nil or constraints are empty. Add table-driven unit tests in `internal/controller/deployment_test.go` covering: single constraint, multiple constraints, nil HA, nil constraints, empty constraints slice, constraint with custom labelSelector.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -297,6 +298,7 @@
       "description": "In `constructDeployment()` in `internal/controller/deployment.go`, call `buildTopologySpreadConstraints(mc)` and set the result on `dep.Spec.Template.Spec.TopologySpreadConstraints`. This goes alongside the existing `buildAntiAffinity(mc)` call. Add unit tests in `deployment_test.go` verifying constructDeployment sets TopologySpreadConstraints correctly: with constraints, without constraints, with nil HA, and combined with anti-affinity.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-007"
@@ -308,6 +310,7 @@
       "description": "Add a new Context block in `internal/controller/memcached_deployment_reconcile_test.go` titled 'topology spread constraints'. Tests: (1) CR with single zone-aware constraint creates Deployment with matching TopologySpreadConstraints, (2) CR with multiple constraints preserves all in order, (3) updating constraints triggers Deployment update, (4) removing constraints clears them from Deployment, (5) removing entire highAvailability clears constraints, (6) constraints coexist with antiAffinityPreset, (7) removing antiAffinity keeps constraints, (8) removing constraints keeps antiAffinity, (9) idempotent reconciliation with constraints does not update Deployment. Follow existing test patterns using `validMemcached`, `uniqueName`, `reconcileOnce`, `fetchDeployment`.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -322,6 +325,7 @@
       "description": "Create `docs/reference/backend/topology-spread-constraints.md` following the exact structure and style of `docs/reference/backend/pod-anti-affinity-presets.md`. Include: overview section explaining the feature, CRD field path `spec.highAvailability.topologySpreadConstraints`, supported TopologySpreadConstraint fields table, CR YAML examples (zone-aware single constraint, multi-constraint zone+hostname), generated Deployment structure YAML, runtime behavior table (add/update/remove/idempotent), implementation section describing `buildTopologySpreadConstraints` function and how it integrates with `constructDeployment`.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -454,6 +458,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T14:10:51.962597"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:11:45.597131"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:50:02.755787"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:50:02.774707"
     }
   },
   "execution_history": [
@@ -467,6 +483,50 @@
           "name": "prepare",
           "duration": 167.84610557556152,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "2fc4d5f1-ebfe-4220-855e-93adef2446b7",
+      "timestamp": "2026-02-19T14:34:01.769079",
+      "total_duration": 1213.0653722286224,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 131.7383062839508,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 229.29863476753235,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 57.00135254859924,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0010] Code Review",
+          "duration": 150.87690949440002,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0010] Improvements",
+          "duration": 366.677640914917,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0010] Simplify",
+          "duration": 277.472528219223,
+          "type": "simplify",
           "status": "done"
         }
       ]

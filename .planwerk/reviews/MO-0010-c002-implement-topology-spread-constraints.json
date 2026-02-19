@@ -1,0 +1,104 @@
+{
+  "feature_id": "MO-0010",
+  "title": "C002: Implement topology spread constraints",
+  "date": "2026-02-19",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Core implementation is correct and minimal: buildTopologySpreadConstraints is a clean passthrough function following the buildAntiAffinity pattern, wired into constructDeployment. Unit tests cover all edge cases. Documentation follows the established style. However, 3 of 9 planned integration tests are missing and one existing test has a name/body mismatch (tests the opposite scenario from what its name says).",
+  "automated_verification": {
+    "go_vet": "PASS — no errors",
+    "golangci_lint": "SKIP — toolchain version mismatch (golangci-lint built with go1.24, project targets go1.25); not a code issue",
+    "make_test": "PASS — all tests pass, 96.8% coverage in internal/controller"
+  },
+  "tests_checklist": [
+    {"item": "Unit tests exist for buildTopologySpreadConstraints (single, multiple, nil HA, nil constraints, empty slice)", "checked": true},
+    {"item": "Unit tests exist for constructDeployment with topology spread constraints (with constraints, nil HA, combined with anti-affinity)", "checked": true},
+    {"item": "Integration test: single zone-aware constraint creates matching Deployment", "checked": true},
+    {"item": "Integration test: multiple constraints preserves all in order", "checked": false},
+    {"item": "Integration test: updating constraints triggers Deployment update", "checked": true},
+    {"item": "Integration test: removing constraints (keeping HA) clears them from Deployment", "checked": false},
+    {"item": "Integration test: removing entire highAvailability clears constraints", "checked": true},
+    {"item": "Integration test: constraints coexist with antiAffinityPreset", "checked": true},
+    {"item": "Integration test: removing antiAffinity keeps constraints", "checked": false},
+    {"item": "Integration test: removing constraints keeps antiAffinity", "checked": false},
+    {"item": "Integration test: idempotent reconciliation does not update Deployment", "checked": true},
+    {"item": "Edge cases covered (nil, empty, boundary values)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing buildAntiAffinity pattern", "checked": true},
+    {"item": "Function is pure with no side effects", "checked": true},
+    {"item": "Single responsibility (one function, one purpose)", "checked": true},
+    {"item": "No code duplication", "checked": true},
+    {"item": "Clear naming (intention-revealing)", "checked": true},
+    {"item": "No magic numbers or strings", "checked": true},
+    {"item": "No dead code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input validation needed (passthrough of typed K8s API structs)", "checked": true},
+    {"item": "No SQL injection risk (not applicable)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No sensitive data in logs", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal passthrough (simplest possible)", "checked": true},
+    {"item": "No scope creep beyond requested feature", "checked": true},
+    {"item": "Follows existing file structure conventions", "checked": true},
+    {"item": "Documentation follows established reference doc pattern", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "No future-proofing or unused code", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil checks are early returns", "checked": true},
+    {"item": "Empty slice normalized to nil for idempotency", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil HA handled", "checked": true},
+    {"item": "Nil constraints handled", "checked": true},
+    {"item": "Empty constraints slice handled", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "FC1-1",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "Missing integration test: 'CR with multiple constraints preserves all in order' (plan task 2.1, test #2). The plan explicitly requires this test but it is absent from memcached_deployment_reconcile_test.go.",
+      "location": "internal/controller/memcached_deployment_reconcile_test.go",
+      "fix": "Add an integration test that creates a CR with two topology spread constraints (zone + hostname), reconciles, and verifies both constraints are present in order on the Deployment."
+    },
+    {
+      "id": "FC1-2",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "Missing integration test: 'removing antiAffinity keeps constraints' (plan task 2.1, test #7, REQ-004 scenario 'Remove antiAffinity keeps constraints'). No test verifies that removing antiAffinityPreset while keeping topologySpreadConstraints results in cleared Affinity but preserved TSC.",
+      "location": "internal/controller/memcached_deployment_reconcile_test.go",
+      "fix": "Add an integration test that starts with both antiAffinityPreset and TSC set, removes only antiAffinityPreset (set to nil), reconciles, and verifies Affinity is nil but TopologySpreadConstraints remain."
+    },
+    {
+      "id": "TE7-1",
+      "severity": "major",
+      "check_id": "TE7",
+      "description": "Test name/body mismatch: 'should keep topologySpreadConstraints when antiAffinityPreset is removed' (line 790) actually removes TopologySpreadConstraints and keeps antiAffinityPreset — the exact opposite of what the name says. The test body implements plan test #8 ('removing constraints keeps antiAffinity') but is named as test #7 ('removing antiAffinity keeps constraints').",
+      "location": "internal/controller/memcached_deployment_reconcile_test.go:790",
+      "fix": "Rename to 'should keep antiAffinityPreset when topologySpreadConstraints are removed' to match the actual test behavior. Then add a separate test for the inverse scenario (removing antiAffinity keeps constraints)."
+    },
+    {
+      "id": "FC1-3",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "Missing integration test: 'removing constraints clears them from Deployment' (plan task 2.1, test #4). The existing 'should clear topology spread constraints when removed from CR' test removes the entire highAvailability section (sets to nil), which covers test #5 but not test #4. No test verifies clearing just the topologySpreadConstraints field while keeping the HA section.",
+      "location": "internal/controller/memcached_deployment_reconcile_test.go",
+      "fix": "Add a test or modify the existing clear test to remove only topologySpreadConstraints (set to nil) while keeping highAvailability present, verifying the Deployment TSC is cleared."
+    }
+  ],
+  "suggested_improvements": [],
+  "next_steps": [
+    "Fix test name at line 790: rename 'should keep topologySpreadConstraints when antiAffinityPreset is removed' to 'should keep antiAffinityPreset when topologySpreadConstraints are removed'",
+    "Add missing integration test: multiple constraints preserves order (plan test #2)",
+    "Add missing integration test: removing antiAffinity keeps constraints (plan test #7)",
+    "Add missing integration test: removing just constraints field clears TSC (plan test #4)"
+  ]
+}

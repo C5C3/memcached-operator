@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -37,6 +38,15 @@ func fetchDeployment(mc *memcachedv1alpha1.Memcached) *appsv1.Deployment {
 	dep := &appsv1.Deployment{}
 	ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), dep)).To(Succeed())
 	return dep
+}
+
+// zoneSpreadConstraint returns a standard zone-aware topology spread constraint used across tests.
+func zoneSpreadConstraint() corev1.TopologySpreadConstraint {
+	return corev1.TopologySpreadConstraint{
+		MaxSkew:           1,
+		TopologyKey:       "topology.kubernetes.io/zone",
+		WhenUnsatisfiable: corev1.DoNotSchedule,
+	}
 }
 
 // --- Task 4.1: Deployment creation from minimal CR with defaults ---
@@ -629,6 +639,259 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 			dep2 := fetchDeployment(mc)
 			Expect(dep2.ResourceVersion).To(Equal(rv1))
+		})
+	})
+
+	// --- Task 2.1: Topology spread constraints ---
+
+	Context("topology spread constraints (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)", func() {
+		It("should create Deployment with zone-aware topology spread constraint", func() {
+			mc := validMemcached(uniqueName("dep-tsc-zone"))
+			constraint := zoneSpreadConstraint()
+			constraint.LabelSelector = &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app.kubernetes.io/name": "memcached",
+				},
+			}
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{constraint},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+			Expect(tsc).To(HaveLen(1))
+			Expect(tsc[0].MaxSkew).To(Equal(int32(1)))
+			Expect(tsc[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+			Expect(tsc[0].WhenUnsatisfiable).To(Equal(corev1.DoNotSchedule))
+			Expect(tsc[0].LabelSelector).NotTo(BeNil())
+			Expect(tsc[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/name", "memcached"))
+		})
+
+		It("should preserve multiple constraints in order", func() {
+			mc := validMemcached(uniqueName("dep-tsc-multi"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
+					zoneSpreadConstraint(),
+					{
+						MaxSkew:           2,
+						TopologyKey:       "kubernetes.io/hostname",
+						WhenUnsatisfiable: corev1.ScheduleAnyway,
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+			Expect(tsc).To(HaveLen(2))
+			Expect(tsc[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+			Expect(tsc[0].MaxSkew).To(Equal(int32(1)))
+			Expect(tsc[0].WhenUnsatisfiable).To(Equal(corev1.DoNotSchedule))
+			Expect(tsc[1].TopologyKey).To(Equal("kubernetes.io/hostname"))
+			Expect(tsc[1].MaxSkew).To(Equal(int32(2)))
+			Expect(tsc[1].WhenUnsatisfiable).To(Equal(corev1.ScheduleAnyway))
+		})
+
+		It("should update Deployment when topology spread constraints change", func() {
+			mc := validMemcached(uniqueName("dep-tsc-upd"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints[0].MaxSkew).To(Equal(int32(1)))
+
+			// Update maxSkew to 2.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability.TopologySpreadConstraints[0].MaxSkew = 2
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints[0].MaxSkew).To(Equal(int32(2)))
+		})
+
+		It("should clear topology spread constraints when removed from CR", func() {
+			mc := validMemcached(uniqueName("dep-tsc-clear"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
+
+			// Remove topology spread constraints.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability = nil
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(BeEmpty())
+		})
+
+		It("should clear only topologySpreadConstraints when field is removed from HA section", func() {
+			mc := validMemcached(uniqueName("dep-tsc-field"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        &soft,
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+
+			// Remove only topologySpreadConstraints, keep HA section with antiAffinityPreset.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability.TopologySpreadConstraints = nil
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(BeEmpty())
+			// AntiAffinity should still be present.
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+		})
+
+		It("should be idempotent with topology spread constraints", func() {
+			mc := validMemcached(uniqueName("dep-tsc-idemp"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep1 := fetchDeployment(mc)
+			rv1 := dep1.ResourceVersion
+
+			// Reconcile again without changes.
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep2 := fetchDeployment(mc)
+			Expect(dep2.ResourceVersion).To(Equal(rv1))
+		})
+
+		It("should support both antiAffinityPreset and topologySpreadConstraints", func() {
+			mc := validMemcached(uniqueName("dep-tsc-both"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        &soft,
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+
+			// Affinity from antiAffinityPreset.
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+
+			// TopologySpreadConstraints.
+			tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+			Expect(tsc).To(HaveLen(1))
+			Expect(tsc[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+		})
+
+		It("should keep topologySpreadConstraints when antiAffinityPreset is removed", func() {
+			mc := validMemcached(uniqueName("dep-tsc-keepc"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        &soft,
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
+
+			// Remove antiAffinityPreset, keep topologySpreadConstraints.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability.AntiAffinityPreset = nil
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+
+			// TopologySpreadConstraints should remain.
+			tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+			Expect(tsc).To(HaveLen(1))
+			Expect(tsc[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+		})
+
+		It("should keep antiAffinityPreset when topologySpreadConstraints are removed", func() {
+			mc := validMemcached(uniqueName("dep-tsc-keep"))
+			hard := memcachedv1alpha1.AntiAffinityPresetHard
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        &hard,
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			// Both should be set initially.
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
+
+			// Remove topologySpreadConstraints, keep antiAffinityPreset.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability.TopologySpreadConstraints = nil
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+
+			// Anti-affinity should remain (hard preset).
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+
+			// TopologySpreadConstraints should be cleared.
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(BeEmpty())
 		})
 	})
 

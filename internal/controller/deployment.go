@@ -117,6 +117,15 @@ func buildAntiAffinity(mc *memcachedv1alpha1.Memcached) *corev1.Affinity {
 	}
 }
 
+// buildTopologySpreadConstraints returns the topology spread constraints from the Memcached CR,
+// or nil if none are configured.
+func buildTopologySpreadConstraints(mc *memcachedv1alpha1.Memcached) []corev1.TopologySpreadConstraint {
+	if mc.Spec.HighAvailability == nil || len(mc.Spec.HighAvailability.TopologySpreadConstraints) == 0 {
+		return nil
+	}
+	return mc.Spec.HighAvailability.TopologySpreadConstraints
+}
+
 // constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
 // It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
 func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) {
@@ -143,6 +152,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 	maxUnavailable := intstr.FromInt32(0)
 
 	affinity := buildAntiAffinity(mc)
+	topologySpreadConstraints := buildTopologySpreadConstraints(mc)
 
 	dep.Labels = labels
 	dep.Spec = appsv1.DeploymentSpec{
@@ -162,7 +172,8 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
-				Affinity: affinity,
+				Affinity:                  affinity,
+				TopologySpreadConstraints: topologySpreadConstraints,
 				Containers: []corev1.Container{
 					{
 						Name:      "memcached",
