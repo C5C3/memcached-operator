@@ -1,0 +1,85 @@
+{
+  "feature_id": "MO-0004",
+  "title": "B001: Implement MemcachedReconciler scaffold and watch setup",
+  "date": "2026-02-19",
+  "summary": "Implements the MemcachedReconciler struct with Client, Scheme, and Recorder fields. Reconcile method fetches the Memcached CR and handles not-found gracefully. SetupWithManager configures For(Memcached) and Owns watches for Deployment, Service, PDB, and NetworkPolicy. RBAC markers cover all resource types including ServiceMonitors and events. cmd/main.go passes EventRecorder. Comprehensive test suite (struct/interface, reconcile behavior, setup integration, RBAC manifest verification) and reference documentation. Two new golangci-lint issues introduced: deprecated API usage (SA1019) and redundant type declaration (ST1023).",
+  "verdict": "NEEDS_CHANGES",
+  "tests_checklist": [
+    {"item": "Unit tests for struct fields and interface compliance exist", "checked": true},
+    {"item": "Reconcile tests cover not-found, existing CR, and deleted CR", "checked": true},
+    {"item": "SetupWithManager integration test with manager start and cache sync", "checked": true},
+    {"item": "RBAC manifest verification tests cover all resource rules", "checked": true},
+    {"item": "All tests pass (make test)", "checked": true},
+    {"item": "Error path tested for non-NotFound API failures", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows controller-runtime reconciler patterns", "checked": true},
+    {"item": "Minimal implementation without over-engineering", "checked": true},
+    {"item": "Clean imports grouped by stdlib/external/internal", "checked": true},
+    {"item": "go vet passes", "checked": true},
+    {"item": "golangci-lint passes (no new errors)", "checked": false}
+  ],
+  "security_checklist": [
+    {"item": "RBAC markers declare minimum required permissions", "checked": true},
+    {"item": "No hardcoded secrets or sensitive data", "checked": true},
+    {"item": "No sensitive data exposed in log messages", "checked": true},
+    {"item": "Owner reference filtering prevents unauthorized resource access", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible for scaffold phase", "checked": true},
+    {"item": "Watch configuration matches planned owned resource types", "checked": true},
+    {"item": "ServiceMonitor Owns intentionally deferred (CRD may not exist)", "checked": true},
+    {"item": "Recorder field enables future event emission", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code across test files", "checked": true},
+    {"item": "Reuses existing test helpers (validMemcached, uniqueName)", "checked": true},
+    {"item": "No unused code or premature abstractions", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Not-found errors handled immediately without requeue", "checked": true},
+    {"item": "Non-NotFound errors propagated for exponential backoff", "checked": true},
+    {"item": "SetupWithManager returns error on misconfiguration", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "API errors checked before accessing CR fields", "checked": true},
+    {"item": "Nil checks on fetched resources", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "V3-1",
+      "severity": "blocking",
+      "check_id": "V3",
+      "description": "SA1019: mgr.GetEventRecorderFor is deprecated. The old events API (record.EventRecorder from k8s.io/client-go/tools/record) is used. controller-runtime v0.23.1 provides GetEventRecorder returning events.EventRecorder from k8s.io/client-go/tools/events.",
+      "location": "cmd/main.go:93",
+      "fix": "Change Recorder field type from record.EventRecorder to events.EventRecorder (import k8s.io/client-go/tools/events). Change mgr.GetEventRecorderFor('memcached-controller') to mgr.GetEventRecorder('memcached-controller') in cmd/main.go. Update the import in internal/controller/memcached_controller.go accordingly."
+    },
+    {
+      "id": "V3-2",
+      "severity": "blocking",
+      "check_id": "V3",
+      "description": "ST1023: redundant type client.Client in variable declaration can be omitted since it is inferred from the right-hand side.",
+      "location": "internal/controller/memcached_reconciler_struct_test.go:37",
+      "fix": "Change 'var c client.Client = reconciler.Client' to 'c := reconciler.Client' or remove the intermediate variable and assert directly on reconciler.Client."
+    },
+    {
+      "id": "TE3-1",
+      "severity": "major",
+      "check_id": "TE3",
+      "description": "No test covers the error path when client.Get fails with a non-NotFound error (e.g., API server unavailable). The Reconcile method has a code path at line 48-49 that returns the error, but this is untested.",
+      "location": "internal/controller/memcached_reconcile_test.go",
+      "fix": "Add a test using a fake client or interceptor that returns a non-NotFound error on Get, then verify Reconcile returns that error. Alternatively, this can be deferred since envtest makes fault injection non-trivial, but document the gap."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider using the new events API (events.EventRecorder) from the start to avoid a migration later. The new API supports structured events with regarding/related objects.",
+    "The setup test (memcached_setup_test.go:21) context label mentions REQ-001 through REQ-003 but should include REQ-004 and REQ-005 since PDB and NetworkPolicy watches are also validated by the manager start."
+  ],
+  "next_steps": [
+    "Fix SA1019: migrate from record.EventRecorder to events.EventRecorder and from GetEventRecorderFor to GetEventRecorder",
+    "Fix ST1023: remove redundant type annotation in memcached_reconciler_struct_test.go:37",
+    "Run make lint to verify zero new lint errors before re-review"
+  ]
+}

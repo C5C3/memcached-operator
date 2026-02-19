@@ -2,8 +2,8 @@
   "feature_id": "MO-0004",
   "title": "B001: Implement MemcachedReconciler scaffold and watch setup",
   "slug": "b001-implement-memcachedreconciler-scaffold-and",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Create the MemcachedReconciler struct and SetupWithManager function. Configure watches for the primary Memcached CR and all owned resources (Deployment, Service, PDB, ServiceMonitor, NetworkPolicy) filtered by owner references.",
   "stories": [
@@ -370,6 +370,7 @@
       "description": "Add tests to internal/controller/memcached_controller_test.go (extend existing file). Test: (1) MemcachedReconciler with Client and Scheme satisfies reconcile.Reconciler interface (already exists - extend), (2) MemcachedReconciler has a Recorder field of type record.EventRecorder, (3) Reconciler struct can be instantiated with all fields populated. Use existing Ginkgo/Gomega patterns and the envtest suite.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-009"
@@ -381,6 +382,7 @@
       "description": "Add tests to internal/controller/memcached_controller_test.go. Test: (1) Reconcile with non-existent NamespacedName returns (ctrl.Result{}, nil) - already exists but verify behavior after implementation changes, (2) Reconcile with an existing Memcached CR returns without error, (3) Verify the reconciler fetches the CR via client.Get (create a Memcached CR, call Reconcile, verify it returns successfully). Use the existing envtest suite and helper functions from memcached_crd_validation_test.go.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -391,6 +393,7 @@
       "description": "Create internal/controller/memcached_watches_test.go. Test the full SetupWithManager watch configuration using envtest with a running controller manager. Tests: (1) SetupWithManager succeeds without error, (2) Creating a Memcached CR triggers reconciliation (verify via status update or other observable side effect after implementation), (3) Verify that owned resources (Deployment, Service, PDB, NetworkPolicy) with owner references trigger reconciliation of the parent Memcached CR when modified. Since this is the scaffold phase, focus on testing SetupWithManager returns nil and the controller builder configuration compiles correctly. Use Ginkgo/Gomega, existing envtest suite. Start a real controller manager in BeforeSuite with the reconciler registered.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -405,6 +408,7 @@
       "description": "Update internal/controller/memcached_controller.go: (1) Add Recorder field of type record.EventRecorder to MemcachedReconciler struct, (2) Update Reconcile method to fetch the Memcached CR via client.Get, return (ctrl.Result{}, nil) if not found (using apierrors.IsNotFound), return error for other failures, (3) Log the fetched CR at debug level. Import k8s.io/apimachinery/pkg/api/errors and k8s.io/client-go/tools/record.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-008",
@@ -417,6 +421,7 @@
       "description": "Update internal/controller/memcached_controller.go SetupWithManager: (1) Keep existing For(&memcachedv1alpha1.Memcached{}) primary watch, (2) Add Owns(&appsv1.Deployment{}) for Deployment drift detection, (3) Add Owns(&corev1.Service{}) for Service drift detection, (4) Add Owns(&policyv1.PodDisruptionBudget{}) for PDB drift detection, (5) Add Owns(&networkingv1.NetworkPolicy{}) for NetworkPolicy drift detection. Import appsv1 \"k8s.io/api/apps/v1\", corev1 \"k8s.io/api/core/v1\", policyv1 \"k8s.io/api/policy/v1\", networkingv1 \"k8s.io/api/networking/v1\". Keep the Named(\"memcached\") call.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -431,6 +436,7 @@
       "description": "Update internal/controller/memcached_controller.go kubebuilder RBAC markers above the Reconcile method. Add markers for: (1) apps/deployments: get, list, watch, create, update, patch, delete, (2) core/services: get, list, watch, create, update, patch, delete, (3) policy/poddisruptionbudgets: get, list, watch, create, update, patch, delete, (4) networking.k8s.io/networkpolicies: get, list, watch, create, update, patch, delete, (5) monitoring.coreos.com/servicemonitors: get, list, watch, create, update, patch, delete, (6) core/events: create, patch. Keep existing Memcached CR markers. Run `make manifests` to regenerate the RBAC role.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -441,6 +447,7 @@
       "description": "Update cmd/main.go to set the Recorder field when creating the MemcachedReconciler: Recorder: mgr.GetEventRecorderFor(\"memcached-controller\"). This ensures events emitted by the reconciler are properly attributed.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -451,6 +458,7 @@
       "description": "Create internal/controller/memcached_rbac_test.go. Parse config/rbac/role.yaml as rbacv1.ClusterRole. Test: (1) Role contains rules for memcacheds (get, list, watch, create, update, patch, delete), (2) Role contains rules for memcacheds/status (get, update, patch), (3) Role contains rules for memcacheds/finalizers (update), (4) Role contains rules for deployments, services, poddisruptionbudgets, networkpolicies, servicemonitors with full CRUD, (5) Role contains rules for events (create, patch). Use Ginkgo/Gomega. Load YAML at test time. Follow the pattern from memcached_crd_manifest_test.go (api/v1alpha1/crd_manifest_test.go pattern).",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -461,6 +469,7 @@
       "description": "Run `make manifests generate` to regenerate CRD, RBAC, and DeepCopy artifacts after code changes. Run `make test` to verify all existing and new tests pass. Run `make vet` and `make lint` to ensure code quality. Fix any issues. This task verifies the full integration of all changes.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -479,6 +488,7 @@
       "description": "Create docs/reference/backend/reconciler-scaffold-watches.md. Cover: (1) MemcachedReconciler struct fields (Client, Scheme, Recorder) and their purpose, (2) SetupWithManager watch configuration - For (primary) and Owns (owned resources), (3) Table of watched resources with watch reason (matching README table), (4) RBAC markers and generated ClusterRole permissions, (5) Reconcile method flow: fetch CR -> not found handling -> future reconciliation steps. Follow Diataxis reference style. Keep concise and developer-focused.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-007",
@@ -626,6 +636,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T07:29:26.050198"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T07:31:16.769725"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T08:22:18.003489"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T08:22:18.021123"
     }
   },
   "execution_history": [
@@ -639,6 +661,56 @@
           "name": "prepare",
           "duration": 183.51410913467407,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "bc8da738-e563-45b9-bbfe-b401e3bd56bb",
+      "timestamp": "2026-02-19T07:55:22.347627",
+      "total_duration": 1312.3861374855042,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 385.3281843662262,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (4 tasks)",
+          "duration": 132.17944526672363,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 154.03968214988708,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 92.50135064125061,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0004] Code Review",
+          "duration": 197.9702913761139,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0004] Improvements",
+          "duration": 255.95977544784546,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0004] Simplify",
+          "duration": 94.40740823745728,
+          "type": "simplify",
           "status": "done"
         }
       ]
