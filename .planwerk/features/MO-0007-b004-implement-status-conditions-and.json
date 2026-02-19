@@ -1,0 +1,592 @@
+{
+  "feature_id": "MO-0007",
+  "title": "B004: Implement status conditions and ObservedGeneration",
+  "slug": "b004-implement-status-conditions-and",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Update the Memcached CR status with standard conditions (Available, Progressing, Degraded), readyReplicas count, and observedGeneration. Follow Kubernetes API conventions for condition types and transitions.",
+  "stories": [
+    {
+      "title": "Operator sets ObservedGeneration after each reconciliation",
+      "role": "cluster operator",
+      "want": "the Memcached CR status.observedGeneration to reflect the most recently processed spec generation",
+      "so_that": "I can determine whether the controller has acted on the latest spec changes",
+      "criteria": [
+        "status.observedGeneration equals metadata.generation after a successful reconciliation",
+        "status.observedGeneration is updated on every reconcile, even when spec has not changed",
+        "status.observedGeneration increments after a spec change triggers a new reconciliation",
+        "A stale observedGeneration (< generation) indicates the controller has not yet processed the latest spec"
+      ]
+    },
+    {
+      "title": "Operator reports readyReplicas from the managed Deployment",
+      "role": "cluster operator",
+      "want": "the Memcached CR status.readyReplicas to reflect the actual number of ready pods",
+      "so_that": "I can monitor the health of my Memcached cluster at the CR level without inspecting the Deployment",
+      "criteria": [
+        "status.readyReplicas equals the Deployment's status.readyReplicas after reconciliation",
+        "status.readyReplicas is 0 when the Deployment has no ready pods",
+        "status.readyReplicas is 0 when the Deployment does not yet exist (first reconciliation, before Deployment status is populated)",
+        "The Ready printer column (kubectl get memcached) displays the readyReplicas value"
+      ]
+    },
+    {
+      "title": "Operator sets Available condition based on Deployment availability",
+      "role": "cluster operator",
+      "want": "the Available condition to be True when the Deployment has minimum availability",
+      "so_that": "I can programmatically wait for my Memcached instance to be ready",
+      "criteria": [
+        "Available=True with reason DeploymentAvailable when Deployment has availableReplicas >= 1",
+        "Available=False with reason DeploymentUnavailable when Deployment has availableReplicas == 0",
+        "Available=False with reason DeploymentUnavailable when the Deployment does not exist yet",
+        "lastTransitionTime only changes when the condition status value changes"
+      ]
+    },
+    {
+      "title": "Operator sets Progressing condition based on rollout state",
+      "role": "cluster operator",
+      "want": "the Progressing condition to indicate whether a rollout or scale operation is in progress",
+      "so_that": "I can monitor ongoing changes and distinguish between stable and transitioning states",
+      "criteria": [
+        "Progressing=True with reason DeploymentProgressing when updatedReplicas < desired replicas or readyReplicas < updatedReplicas",
+        "Progressing=False with reason DeploymentComplete when the Deployment rollout is complete (updatedReplicas == desired == readyReplicas)",
+        "Progressing=True when the Deployment has just been created (zero replicas ready)",
+        "lastTransitionTime only changes when the condition status value changes"
+      ]
+    },
+    {
+      "title": "Operator sets Degraded condition when replicas are unhealthy",
+      "role": "cluster operator",
+      "want": "the Degraded condition to be True when fewer replicas than desired are ready",
+      "so_that": "I can set up alerts for degraded Memcached instances",
+      "criteria": [
+        "Degraded=True with reason InsufficientReplicas when readyReplicas < desired replicas",
+        "Degraded=False with reason AllReplicasReady when readyReplicas == desired replicas",
+        "Degraded=True when readyReplicas is 0 and desired > 0",
+        "Degraded=False when desired replicas is 0 (scaled to zero intentionally)"
+      ]
+    },
+    {
+      "title": "Operator updates all three conditions atomically on each reconciliation",
+      "role": "cluster operator",
+      "want": "all three conditions (Available, Progressing, Degraded) to be present and consistent after every reconciliation",
+      "so_that": "I can rely on a complete status picture without partial condition sets",
+      "criteria": [
+        "All three conditions are set on every successful reconciliation",
+        "Conditions use meta.SetStatusCondition for correct lastTransitionTime handling",
+        "Each condition includes observedGeneration matching the CR's metadata.generation",
+        "Status update is performed via the status subresource (r.Status().Update)"
+      ]
+    },
+    {
+      "title": "Operator does not fail reconciliation on status update errors",
+      "role": "cluster operator",
+      "want": "resource reconciliation (Deployment, Service) to succeed even if the status update fails",
+      "so_that": "transient API server issues for status writes do not prevent convergence of owned resources",
+      "criteria": [
+        "If status update returns a conflict error, the reconciler returns the error so it is requeued",
+        "If status update returns a transient error, the reconciler returns the error so it is requeued",
+        "Deployment and Service reconciliation are not affected by status update failures",
+        "Status update errors are logged with structured fields (name, namespace, error)"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The reconciler SHALL set status.observedGeneration to metadata.generation on every successful reconciliation",
+      "priority": "SHALL",
+      "rationale": "Allows clients to detect whether the controller has processed the latest spec version, per Kubernetes API conventions",
+      "scenarios": [
+        {
+          "name": "ObservedGeneration set on first reconciliation",
+          "when": "a new Memcached CR is created and reconciled for the first time",
+          "then": "status.observedGeneration equals metadata.generation (typically 1)",
+          "and_then": [
+            "the status subresource is updated via r.Status().Update()"
+          ]
+        },
+        {
+          "name": "ObservedGeneration updated after spec change",
+          "when": "the Memcached CR spec is updated (generation increments) and reconciliation completes",
+          "then": "status.observedGeneration equals the new metadata.generation",
+          "and_then": [
+            "the previous observedGeneration value is replaced"
+          ]
+        },
+        {
+          "name": "ObservedGeneration unchanged on status-only update",
+          "when": "the CR status is updated but spec is not changed",
+          "then": "metadata.generation does not increment",
+          "and_then": [
+            "status.observedGeneration remains consistent with metadata.generation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The reconciler SHALL set status.readyReplicas to the Deployment's status.readyReplicas value",
+      "priority": "SHALL",
+      "rationale": "Surfaces the actual ready pod count at the CR level for monitoring and the Ready printer column",
+      "scenarios": [
+        {
+          "name": "ReadyReplicas mirrors Deployment status",
+          "when": "the managed Deployment has status.readyReplicas = N",
+          "then": "the Memcached CR status.readyReplicas is set to N",
+          "and_then": [
+            "the Ready printer column displays N"
+          ]
+        },
+        {
+          "name": "ReadyReplicas is 0 when Deployment has no ready pods",
+          "when": "the managed Deployment exists but has status.readyReplicas = 0",
+          "then": "the Memcached CR status.readyReplicas is set to 0",
+          "and_then": []
+        },
+        {
+          "name": "ReadyReplicas is 0 when Deployment is freshly created",
+          "when": "the Deployment has just been created via CreateOrUpdate and has no status yet",
+          "then": "the Memcached CR status.readyReplicas is set to 0",
+          "and_then": [
+            "the Deployment's zero-value readyReplicas is used"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The reconciler SHALL set an Available condition reflecting whether the Deployment has minimum availability",
+      "priority": "SHALL",
+      "rationale": "Standard Kubernetes condition indicating the resource is serving traffic, per API conventions",
+      "scenarios": [
+        {
+          "name": "Available=True when Deployment is available",
+          "when": "the managed Deployment has status.availableReplicas >= 1",
+          "then": "Available condition is set to True with reason DeploymentAvailable and message 'Deployment has minimum availability'",
+          "and_then": [
+            "condition.observedGeneration equals metadata.generation"
+          ]
+        },
+        {
+          "name": "Available=False when no replicas are available",
+          "when": "the managed Deployment has status.availableReplicas == 0",
+          "then": "Available condition is set to False with reason DeploymentUnavailable and message 'Deployment does not have minimum availability'",
+          "and_then": []
+        },
+        {
+          "name": "Available=True when scaled to zero",
+          "when": "spec.replicas is 0 and Deployment has 0 replicas",
+          "then": "Available condition is set to True with reason DeploymentAvailable and message 'Deployment has minimum availability (scaled to zero)'",
+          "and_then": [
+            "a zero-replica deployment is intentionally available"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The reconciler SHALL set a Progressing condition reflecting whether a rollout or scale operation is in progress",
+      "priority": "SHALL",
+      "rationale": "Indicates to operators and tooling that the resource is transitioning to a new desired state",
+      "scenarios": [
+        {
+          "name": "Progressing=False when rollout is complete",
+          "when": "the Deployment has updatedReplicas == desired replicas AND readyReplicas == desired replicas",
+          "then": "Progressing condition is set to False with reason DeploymentComplete and message 'Deployment has completed'",
+          "and_then": []
+        },
+        {
+          "name": "Progressing=True during rollout",
+          "when": "the Deployment has updatedReplicas < desired replicas",
+          "then": "Progressing condition is set to True with reason DeploymentProgressing and message 'Deployment is progressing'",
+          "and_then": []
+        },
+        {
+          "name": "Progressing=True when new pods are not ready",
+          "when": "the Deployment has updatedReplicas == desired but readyReplicas < desired",
+          "then": "Progressing condition is set to True with reason DeploymentProgressing and message 'Deployment is progressing'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The reconciler SHALL set a Degraded condition reflecting whether fewer replicas than desired are ready",
+      "priority": "SHALL",
+      "rationale": "Enables alerting on unhealthy clusters where the desired replica count is not met",
+      "scenarios": [
+        {
+          "name": "Degraded=False when all replicas ready",
+          "when": "readyReplicas equals desired replicas",
+          "then": "Degraded condition is set to False with reason AllReplicasReady and message 'All replicas are ready'",
+          "and_then": []
+        },
+        {
+          "name": "Degraded=True when insufficient replicas",
+          "when": "readyReplicas < desired replicas and desired > 0",
+          "then": "Degraded condition is set to True with reason InsufficientReplicas and message indicating ready vs desired count",
+          "and_then": []
+        },
+        {
+          "name": "Degraded=False when scaled to zero",
+          "when": "desired replicas is 0",
+          "then": "Degraded condition is set to False with reason AllReplicasReady and message 'All replicas are ready'",
+          "and_then": [
+            "scaling to zero is intentional and not degraded"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The reconciler SHALL use apimachinery meta.SetStatusCondition for all condition updates",
+      "priority": "SHALL",
+      "rationale": "SetStatusCondition handles lastTransitionTime correctly: only updating it when the status value changes, per Kubernetes conventions",
+      "scenarios": [
+        {
+          "name": "lastTransitionTime unchanged on same status",
+          "when": "a condition is updated with the same Status value as before",
+          "then": "lastTransitionTime is not changed",
+          "and_then": [
+            "only Reason, Message, and ObservedGeneration may change"
+          ]
+        },
+        {
+          "name": "lastTransitionTime updated on status change",
+          "when": "a condition transitions from True to False (or vice versa)",
+          "then": "lastTransitionTime is set to the current time",
+          "and_then": []
+        },
+        {
+          "name": "New condition gets current timestamp",
+          "when": "a condition type is set for the first time",
+          "then": "lastTransitionTime is set to the current time",
+          "and_then": [
+            "the condition is appended to the conditions list"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The reconciler SHALL update status via the status subresource after all resource reconciliation is complete",
+      "priority": "SHALL",
+      "rationale": "Status updates via the subresource do not modify spec or metadata, and should occur after Deployment/Service reconciliation",
+      "scenarios": [
+        {
+          "name": "Status update after successful reconciliation",
+          "when": "Deployment and Service reconciliation both succeed",
+          "then": "the reconciler calls r.Status().Update(ctx, memcached) with all status fields set",
+          "and_then": [
+            "the status subresource is used, not a full resource update"
+          ]
+        },
+        {
+          "name": "Status update re-fetches before writing",
+          "when": "the reconciler is about to update status",
+          "then": "the reconciler re-fetches the Memcached CR to get the latest resourceVersion",
+          "and_then": [
+            "this avoids conflict errors from stale resourceVersion"
+          ]
+        },
+        {
+          "name": "Status update error is returned for requeue",
+          "when": "r.Status().Update() returns an error",
+          "then": "the error is returned from Reconcile so the request is requeued",
+          "and_then": [
+            "the error is wrapped with context for debugging"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The reconciler SHALL re-fetch the Deployment after CreateOrUpdate to read its current status for condition calculation",
+      "priority": "SHALL",
+      "rationale": "The Deployment returned by CreateOrUpdate may not have up-to-date status fields; a fresh Get is needed",
+      "scenarios": [
+        {
+          "name": "Deployment status read after reconciliation",
+          "when": "reconcileDeployment completes successfully",
+          "then": "the reconciler performs a Get on the Deployment to read its current status fields (readyReplicas, availableReplicas, updatedReplicas)",
+          "and_then": [
+            "these values are used for condition calculation"
+          ]
+        },
+        {
+          "name": "Deployment not found on re-fetch",
+          "when": "the Deployment is deleted between CreateOrUpdate and the status read",
+          "then": "the reconciler treats this as 0 ready/available/updated replicas",
+          "and_then": [
+            "conditions reflect the unavailable state"
+          ]
+        },
+        {
+          "name": "Fresh Deployment has zero-value status",
+          "when": "the Deployment was just created and has no status yet",
+          "then": "readyReplicas, availableReplicas, and updatedReplicas are all 0",
+          "and_then": [
+            "conditions correctly reflect the initial progressing state"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create status.go with condition constants and computeConditions helper (REQ-003, REQ-004, REQ-005, REQ-006)",
+      "description": "Create `internal/controller/status.go` with: (1) condition type constants (ConditionAvailable, ConditionProgressing, ConditionDegraded), (2) reason constants (DeploymentAvailable, DeploymentUnavailable, DeploymentProgressing, DeploymentComplete, AllReplicasReady, InsufficientReplicas), (3) a pure function `computeConditions(generation int64, desiredReplicas int32, dep *appsv1.Deployment) []metav1.Condition` that uses `apimachinery/pkg/api/meta.SetStatusCondition` to build the three conditions based on Deployment status fields. Handle the scaled-to-zero case (Available=True, Degraded=False). No tests yet — tested in 1.2.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add unit tests for computeConditions covering all condition scenarios (REQ-003, REQ-004, REQ-005)",
+      "description": "Create `internal/controller/status_test.go` (not _test package, to test internal function) with table-driven tests for `computeConditions`. Test cases: (1) all replicas ready — Available=True, Progressing=False, Degraded=False, (2) zero ready with desired > 0 — Available=False, Progressing=True, Degraded=True, (3) partial ready — Available=True, Progressing=True, Degraded=True, (4) scaled to zero — Available=True, Progressing=False, Degraded=False, (5) updatedReplicas < desired — Progressing=True, (6) nil Deployment (not yet created) — Available=False, Progressing=True, Degraded=False. Verify each condition's Type, Status, Reason, Message, and ObservedGeneration.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add reconcileStatus method to MemcachedReconciler (REQ-001, REQ-002, REQ-007, REQ-008)",
+      "description": "Add a `reconcileStatus` method to `MemcachedReconciler` in `internal/controller/memcached_controller.go`. This method: (1) re-fetches the Deployment via `r.Get()` to read current status, (2) re-fetches the Memcached CR to get latest resourceVersion, (3) calls `computeConditions()` with the CR generation, desired replicas, and Deployment, (4) sets `status.observedGeneration = metadata.generation`, (5) sets `status.readyReplicas` from the Deployment's status, (6) applies conditions via `meta.SetStatusCondition` on the existing conditions slice, (7) calls `r.Status().Update()`. Add necessary imports (apimachinery meta). Return wrapped error on failure.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Integrate reconcileStatus into the Reconcile loop (REQ-007)",
+      "description": "Modify the `Reconcile` method in `internal/controller/memcached_controller.go` to call `r.reconcileStatus(ctx, memcached)` after `reconcileDeployment` and `reconcileService` succeed. Return the error from `reconcileStatus` so the request is requeued on failure. The method signature takes `(ctx, *Memcached)` and the original Memcached object is passed (reconcileStatus will re-fetch both CR and Deployment internally).",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add integration tests for status after initial reconciliation (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "description": "Create `internal/controller/memcached_status_reconcile_test.go` with envtest integration tests. Test initial reconciliation of a minimal CR: (1) observedGeneration equals metadata.generation, (2) readyReplicas is 0 (envtest does not run pods), (3) Available=False (no available replicas in envtest), (4) Progressing=True (desired > ready), (5) Degraded=True (ready < desired). Use `reconcileOnce()` helper and verify status via `k8sClient.Get()`. Test with default 1 replica and with explicit 3 replicas.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add integration tests for status after spec changes and zero-replica scaling (REQ-001, REQ-003, REQ-005)",
+      "description": "Add tests to `memcached_status_reconcile_test.go`: (1) After spec.replicas change, reconcile and verify observedGeneration tracks the new generation, (2) Scale to 0 replicas, reconcile, and verify Available=True, Progressing=False, Degraded=False, (3) Verify all three conditions are always present after reconciliation, (4) Verify each condition has observedGeneration matching metadata.generation.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Add integration test for status update error propagation (REQ-007)",
+      "description": "Add test to `memcached_status_reconcile_test.go` using a fake client with interceptor that fails on Status().Update(). Verify: (1) Deployment and Service were created (reconciliation proceeded), (2) Reconcile returns an error (for requeue), (3) The error message contains context about status update failure.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for status conditions and observedGeneration (REQ-001 through REQ-008)",
+      "description": "Create `docs/reference/backend/status-conditions-observedgeneration.md`. Document: (1) Overview of the status reconciliation step, (2) Table of condition types with their meanings, True/False reasons, and messages, (3) observedGeneration semantics and how to check for spec staleness, (4) readyReplicas field description, (5) Source files (status.go, memcached_controller.go), (6) Condition transition rules and lastTransitionTime behavior, (7) Scaled-to-zero behavior. Follow the pattern established in `docs/reference/backend/deployment-reconciliation.md`.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions/all_replicas_ready",
+      "story": "Operator sets Available condition based on Deployment availability",
+      "expected": "Available=True/DeploymentAvailable, Progressing=False/DeploymentComplete, Degraded=False/AllReplicasReady when readyReplicas == availableReplicas == desiredReplicas",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions/no_ready_replicas",
+      "story": "Operator sets Degraded condition when replicas are unhealthy",
+      "expected": "Available=False/DeploymentUnavailable, Progressing=True/DeploymentProgressing, Degraded=True/InsufficientReplicas when readyReplicas=0, desired>0",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions/partial_replicas_ready",
+      "story": "Operator sets Progressing condition based on rollout state",
+      "expected": "Available=True, Progressing=True/DeploymentProgressing, Degraded=True/InsufficientReplicas when some but not all replicas are ready",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions/scaled_to_zero",
+      "story": "Operator sets Degraded condition when replicas are unhealthy",
+      "expected": "Available=True/DeploymentAvailable, Progressing=False/DeploymentComplete, Degraded=False/AllReplicasReady when desired=0",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions/nil_deployment",
+      "story": "Operator sets Available condition based on Deployment availability",
+      "expected": "Available=False/DeploymentUnavailable, Progressing=True/DeploymentProgressing, Degraded=False when Deployment is nil (not yet created)",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions/updatedReplicas_less_than_desired",
+      "story": "Operator sets Progressing condition based on rollout state",
+      "expected": "Progressing=True/DeploymentProgressing when updatedReplicas < desired even if readyReplicas == updatedReplicas",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions/observedGeneration_set_on_all_conditions",
+      "story": "Operator updates all three conditions atomically on each reconciliation",
+      "expected": "All three conditions have ObservedGeneration equal to the passed generation value",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/initial reconciliation sets observedGeneration",
+      "story": "Operator sets ObservedGeneration after each reconciliation",
+      "expected": "After first reconcile, status.observedGeneration equals metadata.generation",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/initial reconciliation sets readyReplicas to 0",
+      "story": "Operator reports readyReplicas from the managed Deployment",
+      "expected": "After reconcile in envtest (no pods), status.readyReplicas is 0",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/initial reconciliation sets conditions",
+      "story": "Operator updates all three conditions atomically on each reconciliation",
+      "expected": "All three conditions present: Available=False, Progressing=True, Degraded=True (envtest, no pods ready)",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/observedGeneration tracks spec changes",
+      "story": "Operator sets ObservedGeneration after each reconciliation",
+      "expected": "After spec update and re-reconcile, observedGeneration equals the incremented generation",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/scaled to zero sets correct conditions",
+      "story": "Operator sets Degraded condition when replicas are unhealthy",
+      "expected": "With replicas=0: Available=True, Progressing=False, Degraded=False",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/conditions include observedGeneration",
+      "story": "Operator updates all three conditions atomically on each reconciliation",
+      "expected": "Each condition's observedGeneration field equals the CR's metadata.generation",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/status update error propagation",
+      "story": "Operator does not fail reconciliation on status update errors",
+      "expected": "When Status().Update fails, Reconcile returns an error for requeue",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Status Reconciliation/multiple replicas initial state",
+      "story": "Operator reports readyReplicas from the managed Deployment",
+      "expected": "With spec.replicas=3, after reconcile readyReplicas is 0 (envtest), Degraded=True",
+      "requirement_id": "REQ-002"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All three conditions (Available, Progressing, Degraded) are set on every reconciliation with correct Type, Status, Reason, Message, and ObservedGeneration",
+    "status.observedGeneration equals metadata.generation after every successful reconciliation",
+    "status.readyReplicas is sourced from the Deployment's status.readyReplicas field",
+    "meta.SetStatusCondition is used for all condition updates (correct lastTransitionTime handling)",
+    "Status is updated via the status subresource (r.Status().Update), not a full resource update",
+    "computeConditions is a pure function with no side effects, tested via table-driven unit tests",
+    "Scaled-to-zero case is handled correctly: Available=True, Progressing=False, Degraded=False",
+    "Status update errors are returned from Reconcile for requeue, with wrapped error messages",
+    "All tests pass: go test ./internal/controller/... with no failures",
+    "Code passes go vet and golangci-lint with no errors"
+  ],
+  "implementation_notes": "Architecture: Add a new `status.go` file for condition logic, keeping it separate from the controller. The `computeConditions` function is pure (takes generation, desired replicas, and Deployment pointer; returns conditions slice) for easy unit testing. The `reconcileStatus` method on `MemcachedReconciler` orchestrates: re-fetch Deployment, re-fetch CR, compute conditions, set status fields, call Status().Update(). \n\nCondition mapping from Deployment status: Available maps to Deployment's availableReplicas (>= 1 means available). Progressing maps to whether updatedReplicas == desired AND readyReplicas == desired (both must be true for complete). Degraded maps to readyReplicas < desired (with exception for zero-scale). \n\nKey pattern: Use `apimachinery/pkg/api/meta.SetStatusCondition` which handles lastTransitionTime transitions correctly. The Memcached CR must be re-fetched before status update to avoid resourceVersion conflicts. \n\nScaled-to-zero edge case: When desired replicas is 0, the cluster is intentionally empty. Available=True (no requirement for availability), Progressing=False (nothing to progress), Degraded=False (desired state is met).\n\nNil Deployment edge case: If the Deployment somehow doesn't exist when we re-fetch (race condition), treat as all-zeros: Available=False, Progressing=True, Degraded=False (can't be degraded if we don't know desired state yet since we pass 0 for desired in that path).\n\nFiles to create: internal/controller/status.go, internal/controller/status_test.go, internal/controller/memcached_status_reconcile_test.go, docs/reference/backend/status-conditions-observedgeneration.md. Files to modify: internal/controller/memcached_controller.go (add reconcileStatus call and method).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.421119"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T10:27:01.242713"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T10:31:21.841934"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "c9f0131d-981b-4fe4-9960-596e07df6843",
+      "timestamp": "2026-02-19T10:31:21.841962",
+      "total_duration": 257.14988374710083,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 257.14988374710083,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
