@@ -1,0 +1,510 @@
+{
+  "feature_id": "MO-0009",
+  "title": "C001: Implement pod anti-affinity presets",
+  "slug": "c001-implement-pod-anti-affinity-presets",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Implement soft (preferredDuringSchedulingIgnoredDuringExecution) and hard (requiredDuringSchedulingIgnoredDuringExecution) pod anti-affinity presets based on spec.highAvailability.antiAffinityPreset. Spread Memcached pods across nodes to avoid single points of failure.",
+  "stories": [
+    {
+      "title": "Operator applies soft pod anti-affinity when antiAffinityPreset is 'soft'",
+      "role": "cluster operator",
+      "want": "Memcached pods to be preferentially spread across different nodes when I set antiAffinityPreset to 'soft'",
+      "so_that": "the cluster avoids single points of failure on a best-effort basis without blocking scheduling when nodes are scarce",
+      "criteria": [
+        "Deployment pod template includes podAntiAffinity with preferredDuringSchedulingIgnoredDuringExecution",
+        "The anti-affinity term uses topologyKey 'kubernetes.io/hostname'",
+        "The label selector matches the instance-specific labels (app.kubernetes.io/name + app.kubernetes.io/instance)",
+        "The preferred term weight is 100"
+      ]
+    },
+    {
+      "title": "Operator applies hard pod anti-affinity when antiAffinityPreset is 'hard'",
+      "role": "cluster operator",
+      "want": "Memcached pods to be strictly spread across different nodes when I set antiAffinityPreset to 'hard'",
+      "so_that": "no two Memcached pods from the same instance can co-locate on the same node, ensuring maximum fault isolation",
+      "criteria": [
+        "Deployment pod template includes podAntiAffinity with requiredDuringSchedulingIgnoredDuringExecution",
+        "The anti-affinity term uses topologyKey 'kubernetes.io/hostname'",
+        "The label selector matches the instance-specific labels (app.kubernetes.io/name + app.kubernetes.io/instance)",
+        "Scheduling fails if there are fewer nodes than replicas (expected Kubernetes behavior for hard anti-affinity)"
+      ]
+    },
+    {
+      "title": "Operator sets no anti-affinity when highAvailability is nil",
+      "role": "cluster operator",
+      "want": "the Deployment pod template to have no affinity rules when I don't configure highAvailability",
+      "so_that": "pods can be freely scheduled by the default scheduler without operator-imposed constraints",
+      "criteria": [
+        "Deployment pod template spec.affinity is nil when spec.highAvailability is nil",
+        "Deployment pod template spec.affinity is nil when spec.highAvailability is set but antiAffinityPreset is nil",
+        "Existing deployments without HA settings continue to work unchanged after this feature is added"
+      ]
+    },
+    {
+      "title": "Operator updates anti-affinity when CR spec changes",
+      "role": "cluster operator",
+      "want": "the anti-affinity preset to be updated on the Deployment when I change the CR spec from 'soft' to 'hard' or vice versa",
+      "so_that": "I can adjust scheduling constraints without recreating the Memcached resource",
+      "criteria": [
+        "Changing antiAffinityPreset from 'soft' to 'hard' updates the Deployment's affinity on next reconcile",
+        "Changing antiAffinityPreset from 'hard' to 'soft' updates the Deployment's affinity on next reconcile",
+        "Removing highAvailability section clears the affinity from the Deployment",
+        "Reconciliation remains idempotent - reconciling twice with same spec produces no update"
+      ]
+    },
+    {
+      "title": "Operator documents anti-affinity presets in reference documentation",
+      "role": "developer",
+      "want": "reference documentation explaining how the anti-affinity presets work, including YAML examples",
+      "so_that": "I can understand what Kubernetes resources are generated and how to configure the feature",
+      "criteria": [
+        "Reference doc explains soft vs hard anti-affinity behavior",
+        "Reference doc shows the generated Kubernetes affinity structure for each preset",
+        "Reference doc includes YAML examples for both soft and hard presets",
+        "Reference doc is placed in docs/reference/backend/ following existing conventions"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The reconciler SHALL set preferredDuringSchedulingIgnoredDuringExecution pod anti-affinity on the Deployment pod template when spec.highAvailability.antiAffinityPreset is 'soft'",
+      "priority": "SHALL",
+      "rationale": "Soft anti-affinity spreads pods across nodes on a best-effort basis, which is the default HA behavior and suitable for most environments",
+      "scenarios": [
+        {
+          "name": "Soft anti-affinity applied to Deployment",
+          "when": "spec.highAvailability.antiAffinityPreset is 'soft'",
+          "then": "the Deployment pod template spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution contains one WeightedPodAffinityTerm",
+          "and_then": [
+            "the term has weight 100",
+            "the term's podAffinityTerm.topologyKey is 'kubernetes.io/hostname'",
+            "the term's podAffinityTerm.labelSelector.matchLabels contains app.kubernetes.io/name='memcached' and app.kubernetes.io/instance=<cr-name>"
+          ]
+        },
+        {
+          "name": "Soft anti-affinity does not set requiredDuringScheduling",
+          "when": "spec.highAvailability.antiAffinityPreset is 'soft'",
+          "then": "the Deployment pod template spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution is nil/empty",
+          "and_then": []
+        },
+        {
+          "name": "Soft anti-affinity is default when HA section is present but preset is not specified",
+          "when": "spec.highAvailability is set but antiAffinityPreset is nil",
+          "then": "no anti-affinity rules are set (the CRD default only applies at admission time via kubebuilder default marker, the reconciler does not inject defaults for nil pointers)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The reconciler SHALL set requiredDuringSchedulingIgnoredDuringExecution pod anti-affinity on the Deployment pod template when spec.highAvailability.antiAffinityPreset is 'hard'",
+      "priority": "SHALL",
+      "rationale": "Hard anti-affinity guarantees pod distribution across nodes, critical for production HA where node failure should not take down multiple cache instances",
+      "scenarios": [
+        {
+          "name": "Hard anti-affinity applied to Deployment",
+          "when": "spec.highAvailability.antiAffinityPreset is 'hard'",
+          "then": "the Deployment pod template spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution contains one PodAffinityTerm",
+          "and_then": [
+            "the term's topologyKey is 'kubernetes.io/hostname'",
+            "the term's labelSelector.matchLabels contains app.kubernetes.io/name='memcached' and app.kubernetes.io/instance=<cr-name>"
+          ]
+        },
+        {
+          "name": "Hard anti-affinity does not set preferredDuringScheduling",
+          "when": "spec.highAvailability.antiAffinityPreset is 'hard'",
+          "then": "the Deployment pod template spec.affinity.podAntiAffinity.preferredDuringSchedulingIgnoredDuringExecution is nil/empty",
+          "and_then": []
+        },
+        {
+          "name": "Hard anti-affinity uses instance-scoped label selector",
+          "when": "two different Memcached CRs both use 'hard' anti-affinity",
+          "then": "each Deployment's anti-affinity selector only matches pods from its own instance (via app.kubernetes.io/instance label)",
+          "and_then": [
+            "pods from different Memcached instances are not affected by each other's anti-affinity rules"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The reconciler SHALL set no affinity rules on the Deployment pod template when spec.highAvailability is nil or when spec.highAvailability.antiAffinityPreset is nil",
+      "priority": "SHALL",
+      "rationale": "When HA is not configured, the operator should not impose scheduling constraints, allowing the default scheduler behavior",
+      "scenarios": [
+        {
+          "name": "No affinity when highAvailability is nil",
+          "when": "spec.highAvailability is nil",
+          "then": "dep.Spec.Template.Spec.Affinity is nil",
+          "and_then": []
+        },
+        {
+          "name": "No affinity when antiAffinityPreset is nil",
+          "when": "spec.highAvailability is set with other fields but antiAffinityPreset is nil",
+          "then": "dep.Spec.Template.Spec.Affinity is nil",
+          "and_then": []
+        },
+        {
+          "name": "Affinity cleared when HA section removed from CR",
+          "when": "a CR previously had antiAffinityPreset set, and the HA section is removed",
+          "then": "the next reconciliation sets dep.Spec.Template.Spec.Affinity to nil",
+          "and_then": [
+            "the Deployment is updated to remove the affinity"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The anti-affinity label selector SHALL use instance-specific labels to scope anti-affinity to pods of the same Memcached instance",
+      "priority": "SHALL",
+      "rationale": "Using instance-scoped labels ensures that multiple independent Memcached instances in the same namespace do not interfere with each other's scheduling",
+      "scenarios": [
+        {
+          "name": "Label selector uses app.kubernetes.io/name and app.kubernetes.io/instance",
+          "when": "antiAffinityPreset is set to 'soft' or 'hard'",
+          "then": "the anti-affinity labelSelector.matchLabels contains exactly app.kubernetes.io/name='memcached' and app.kubernetes.io/instance=<cr-name>",
+          "and_then": []
+        },
+        {
+          "name": "Different CR names produce different label selectors",
+          "when": "constructDeployment is called for CR 'cache-a' and 'cache-b'",
+          "then": "the anti-affinity label selectors reference 'cache-a' and 'cache-b' respectively in the app.kubernetes.io/instance label",
+          "and_then": []
+        },
+        {
+          "name": "Labels in anti-affinity match pod template labels",
+          "when": "antiAffinityPreset is set",
+          "then": "the label keys used in the anti-affinity selector are a subset of the labels applied to the pod template",
+          "and_then": [
+            "the anti-affinity rules can actually match the pods they target"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The anti-affinity rules SHALL use topology key 'kubernetes.io/hostname' to spread pods across nodes",
+      "priority": "SHALL",
+      "rationale": "Node-level spreading is the standard anti-affinity topology for avoiding single points of failure; zone-level spreading is handled separately by topologySpreadConstraints",
+      "scenarios": [
+        {
+          "name": "Soft anti-affinity uses hostname topology key",
+          "when": "antiAffinityPreset is 'soft'",
+          "then": "the WeightedPodAffinityTerm's podAffinityTerm.topologyKey is 'kubernetes.io/hostname'",
+          "and_then": []
+        },
+        {
+          "name": "Hard anti-affinity uses hostname topology key",
+          "when": "antiAffinityPreset is 'hard'",
+          "then": "the PodAffinityTerm's topologyKey is 'kubernetes.io/hostname'",
+          "and_then": []
+        },
+        {
+          "name": "No other topology keys are used",
+          "when": "antiAffinityPreset is set to any valid value",
+          "then": "only 'kubernetes.io/hostname' is used as the topology key",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The reconciler SHALL update the Deployment's anti-affinity rules when the CR spec.highAvailability.antiAffinityPreset is changed",
+      "priority": "SHALL",
+      "rationale": "Drift detection ensures the Deployment always reflects the desired state, even when the anti-affinity preset is changed or removed",
+      "scenarios": [
+        {
+          "name": "Soft to hard transition updates Deployment",
+          "when": "antiAffinityPreset is changed from 'soft' to 'hard' and reconciliation runs",
+          "then": "the Deployment's affinity changes from preferredDuring to requiredDuring",
+          "and_then": []
+        },
+        {
+          "name": "Hard to soft transition updates Deployment",
+          "when": "antiAffinityPreset is changed from 'hard' to 'soft' and reconciliation runs",
+          "then": "the Deployment's affinity changes from requiredDuring to preferredDuring",
+          "and_then": []
+        },
+        {
+          "name": "Removing HA section clears affinity",
+          "when": "spec.highAvailability is set to nil and reconciliation runs",
+          "then": "the Deployment's affinity is set to nil",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The constructDeployment function SHALL remain idempotent when anti-affinity is configured",
+      "priority": "SHALL",
+      "rationale": "Idempotency is a core property of the reconciliation loop; anti-affinity must not cause spurious updates",
+      "scenarios": [
+        {
+          "name": "Second reconcile with same soft preset produces no update",
+          "when": "antiAffinityPreset is 'soft' and reconciliation runs twice without spec changes",
+          "then": "the Deployment's ResourceVersion does not change on the second reconcile",
+          "and_then": []
+        },
+        {
+          "name": "Second reconcile with same hard preset produces no update",
+          "when": "antiAffinityPreset is 'hard' and reconciliation runs twice without spec changes",
+          "then": "the Deployment's ResourceVersion does not change on the second reconcile",
+          "and_then": []
+        },
+        {
+          "name": "Second reconcile with no HA produces no update",
+          "when": "spec.highAvailability is nil and reconciliation runs twice without spec changes",
+          "then": "the Deployment's ResourceVersion does not change on the second reconcile",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The feature SHALL include reference documentation covering anti-affinity preset behavior, generated Kubernetes structures, and YAML examples",
+      "priority": "SHALL",
+      "rationale": "Operators need to understand what Kubernetes resources are generated for each preset value to make informed HA configuration decisions",
+      "scenarios": [
+        {
+          "name": "Reference doc covers soft preset",
+          "when": "a user reads the anti-affinity reference doc",
+          "then": "they find an explanation of soft anti-affinity behavior with the generated Kubernetes affinity YAML structure",
+          "and_then": []
+        },
+        {
+          "name": "Reference doc covers hard preset",
+          "when": "a user reads the anti-affinity reference doc",
+          "then": "they find an explanation of hard anti-affinity behavior with the generated Kubernetes affinity YAML structure",
+          "and_then": []
+        },
+        {
+          "name": "Reference doc covers no-HA case",
+          "when": "a user reads the anti-affinity reference doc",
+          "then": "they find that omitting highAvailability results in no affinity rules on the pod template",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add buildAntiAffinity helper function with unit tests in deployment.go/deployment_test.go (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "description": "Create a new helper function `buildAntiAffinity(mc *Memcached) *corev1.Affinity` in `internal/controller/deployment.go` that: (1) returns nil when mc.Spec.HighAvailability is nil or mc.Spec.HighAvailability.AntiAffinityPreset is nil, (2) returns an Affinity with PreferredDuringSchedulingIgnoredDuringExecution (weight 100, topologyKey kubernetes.io/hostname, labelSelector matching app.kubernetes.io/name=memcached + app.kubernetes.io/instance=<cr-name>) for 'soft', (3) returns an Affinity with RequiredDuringSchedulingIgnoredDuringExecution (same topology key and label selector) for 'hard'. Write table-driven unit tests in `deployment_test.go` covering: nil HA, nil preset, soft preset, hard preset, different CR names producing different selectors.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Wire buildAntiAffinity into constructDeployment and add unit tests (REQ-001, REQ-002, REQ-003)",
+      "description": "In `internal/controller/deployment.go`, update `constructDeployment` to call `buildAntiAffinity(mc)` and assign the result to `dep.Spec.Template.Spec.Affinity`. Add unit tests in `deployment_test.go`: TestConstructDeployment_AntiAffinitySoft (verifies preferred anti-affinity on pod template), TestConstructDeployment_AntiAffinityHard (verifies required anti-affinity on pod template), TestConstructDeployment_NoAntiAffinityWhenHANil (verifies affinity is nil).",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add integration tests for soft anti-affinity preset in deployment reconciliation (REQ-001, REQ-006, REQ-007)",
+      "description": "In `internal/controller/memcached_deployment_reconcile_test.go`, add a new Ginkgo Context 'pod anti-affinity presets (REQ-001, REQ-006, REQ-007)' with tests: (1) 'should set preferredDuringScheduling anti-affinity when preset is soft' - create CR with soft preset, reconcile, verify Deployment affinity structure, (2) 'should be idempotent with soft anti-affinity' - reconcile twice, verify ResourceVersion unchanged.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add integration tests for hard anti-affinity preset and drift detection (REQ-002, REQ-006, REQ-007)",
+      "description": "In `internal/controller/memcached_deployment_reconcile_test.go`, add within the anti-affinity Context: (1) 'should set requiredDuringScheduling anti-affinity when preset is hard' - create CR with hard preset, reconcile, verify Deployment affinity structure, (2) 'should update Deployment affinity when antiAffinityPreset changes from soft to hard' - create with soft, reconcile, update to hard, reconcile, verify switch, (3) 'should clear affinity when highAvailability is removed' - create with soft, reconcile, remove HA, reconcile, verify nil affinity.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Add integration test for no anti-affinity when HA is nil (REQ-003)",
+      "description": "In `internal/controller/memcached_deployment_reconcile_test.go`, add within the anti-affinity Context: (1) 'should have no affinity when highAvailability is nil' - create minimal CR (no HA section), reconcile, verify dep.Spec.Template.Spec.Affinity is nil. This confirms backward compatibility with existing CRs.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write reference documentation for pod anti-affinity presets (REQ-008)",
+      "description": "Create `docs/reference/backend/pod-anti-affinity-presets.md` following the existing reference doc pattern (see deployment-reconciliation.md). Include: overview section explaining the feature, table mapping antiAffinityPreset values to Kubernetes affinity types, the buildAntiAffinity function behavior, label selector details, topology key usage, generated YAML examples for soft and hard presets, example CR configurations, and a note about the nil/unset case.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildAntiAffinity_Soft",
+      "story": "Operator applies soft pod anti-affinity when antiAffinityPreset is 'soft'",
+      "expected": "Should return Affinity with preferredDuringSchedulingIgnoredDuringExecution containing weight=100, topologyKey=kubernetes.io/hostname, and instance-scoped labels",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildAntiAffinity_Hard",
+      "story": "Operator applies hard pod anti-affinity when antiAffinityPreset is 'hard'",
+      "expected": "Should return Affinity with requiredDuringSchedulingIgnoredDuringExecution containing topologyKey=kubernetes.io/hostname and instance-scoped labels",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildAntiAffinity_NilHA",
+      "story": "Operator sets no anti-affinity when highAvailability is nil",
+      "expected": "Should return nil Affinity when mc.Spec.HighAvailability is nil",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildAntiAffinity_NilPreset",
+      "story": "Operator sets no anti-affinity when highAvailability is nil",
+      "expected": "Should return nil Affinity when mc.Spec.HighAvailability.AntiAffinityPreset is nil",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildAntiAffinity_InstanceScopedLabels",
+      "story": "Operator applies soft pod anti-affinity when antiAffinityPreset is 'soft'",
+      "expected": "Should use the CR name in the app.kubernetes.io/instance label in the anti-affinity selector; different CR names produce different selectors",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_AntiAffinitySoft",
+      "story": "Operator applies soft pod anti-affinity when antiAffinityPreset is 'soft'",
+      "expected": "constructDeployment should set dep.Spec.Template.Spec.Affinity with preferredDuringScheduling when HA preset is soft",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_AntiAffinityHard",
+      "story": "Operator applies hard pod anti-affinity when antiAffinityPreset is 'hard'",
+      "expected": "constructDeployment should set dep.Spec.Template.Spec.Affinity with requiredDuringScheduling when HA preset is hard",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_NoAntiAffinityWhenHANil",
+      "story": "Operator sets no anti-affinity when highAvailability is nil",
+      "expected": "constructDeployment should leave dep.Spec.Template.Spec.Affinity nil when spec.highAvailability is nil",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should set preferredDuringScheduling anti-affinity when preset is soft",
+      "story": "Operator applies soft pod anti-affinity when antiAffinityPreset is 'soft'",
+      "expected": "Integration test: creating a CR with soft preset and reconciling should produce a Deployment with the correct preferred anti-affinity structure",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should set requiredDuringScheduling anti-affinity when preset is hard",
+      "story": "Operator applies hard pod anti-affinity when antiAffinityPreset is 'hard'",
+      "expected": "Integration test: creating a CR with hard preset and reconciling should produce a Deployment with the correct required anti-affinity structure",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should have no affinity when highAvailability is nil",
+      "story": "Operator sets no anti-affinity when highAvailability is nil",
+      "expected": "Integration test: creating a minimal CR without HA section and reconciling should produce a Deployment with nil affinity",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should update Deployment affinity when antiAffinityPreset changes from soft to hard",
+      "story": "Operator updates anti-affinity when CR spec changes",
+      "expected": "Integration test: updating the CR from soft to hard anti-affinity should update the Deployment's affinity structure",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should clear affinity when highAvailability is removed",
+      "story": "Operator updates anti-affinity when CR spec changes",
+      "expected": "Integration test: removing the HA section from a CR should clear the Deployment's affinity to nil",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should be idempotent with soft anti-affinity",
+      "story": "Operator updates anti-affinity when CR spec changes",
+      "expected": "Integration test: reconciling twice with the same soft preset should not change the Deployment's ResourceVersion",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All unit tests pass: TestBuildAntiAffinity_* and TestConstructDeployment_AntiAffinity* in deployment_test.go",
+    "All integration tests pass: anti-affinity related tests in memcached_deployment_reconcile_test.go",
+    "Soft preset generates preferredDuringSchedulingIgnoredDuringExecution with weight=100 and topologyKey=kubernetes.io/hostname",
+    "Hard preset generates requiredDuringSchedulingIgnoredDuringExecution with topologyKey=kubernetes.io/hostname",
+    "Anti-affinity label selector uses instance-scoped labels (app.kubernetes.io/name + app.kubernetes.io/instance)",
+    "No affinity rules are set when highAvailability is nil or antiAffinityPreset is nil (backward compatibility)",
+    "Reconciliation is idempotent: reconciling twice with same spec produces no Deployment update",
+    "Drift detection works: changing anti-affinity preset updates the Deployment",
+    "Code passes golangci-lint and go vet without errors",
+    "Reference documentation in docs/reference/backend/pod-anti-affinity-presets.md follows existing patterns"
+  ],
+  "implementation_notes": "This feature adds pod anti-affinity support to the existing Deployment construction logic in internal/controller/deployment.go.\n\n**Architecture**: A new pure function `buildAntiAffinity(mc *Memcached) *corev1.Affinity` is added alongside the existing `buildMemcachedArgs` and `labelsForMemcached` helpers. This follows the established pattern of builder functions that translate CRD spec into Kubernetes API objects. The function is called from `constructDeployment` which already handles the full Deployment spec construction.\n\n**Key design decisions**:\n1. **Instance-scoped selectors**: The anti-affinity labelSelector uses both `app.kubernetes.io/name=memcached` and `app.kubernetes.io/instance=<cr-name>` to scope anti-affinity to pods of the same Memcached instance. This prevents different Memcached CRs in the same namespace from interfering with each other.\n2. **Topology key**: Uses `kubernetes.io/hostname` for node-level spreading. Zone-level spreading is handled separately by S010 (topologySpreadConstraints).\n3. **Weight 100 for soft**: Uses the maximum preferred weight (100) since this is the only preferred anti-affinity term.\n4. **Nil-safe**: Returns nil when HA is not configured, which means the PodSpec.Affinity field stays nil/unset (not an empty struct). This is important for idempotency with existing Deployments that have no affinity.\n5. **No CRD type changes needed**: The `AntiAffinityPreset` type and `HighAvailabilitySpec` struct already exist in `api/v1alpha1/memcached_types.go` (lines 10-78). Only the reconciliation logic needs to be implemented.\n\n**Pitfalls to avoid**:\n- Do not set an empty `Affinity{}` struct when HA is nil - this would cause spurious updates on existing Deployments.\n- Do not use `app.kubernetes.io/managed-by` in the anti-affinity selector - it's not needed for instance scoping and adds unnecessary constraint.\n- Ensure the label keys in the selector exactly match labels on the pod template (which are set by `labelsForMemcached`).\n\n**Files to modify**:\n- `internal/controller/deployment.go`: Add `buildAntiAffinity` function, update `constructDeployment` to call it\n- `internal/controller/deployment_test.go`: Add unit tests for `buildAntiAffinity` and `constructDeployment` with anti-affinity\n- `internal/controller/memcached_deployment_reconcile_test.go`: Add integration tests for anti-affinity reconciliation\n- `docs/reference/backend/pod-anti-affinity-presets.md`: New reference doc\n\n**Files NOT to modify**: api/v1alpha1/memcached_types.go (types already exist), memcached_controller.go (no changes needed - constructDeployment is already called from reconcileDeployment).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.422012"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T12:36:26.563173"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T12:40:38.381025"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "2b59a0cd-009b-4c42-b434-4ddbd7233e50",
+      "timestamp": "2026-02-19T12:40:38.381051",
+      "total_duration": 248.07737016677856,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 248.07737016677856,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
