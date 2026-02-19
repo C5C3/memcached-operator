@@ -1,0 +1,647 @@
+{
+  "feature_id": "MO-0004",
+  "title": "B001: Implement MemcachedReconciler scaffold and watch setup",
+  "slug": "b001-implement-memcachedreconciler-scaffold-and",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Create the MemcachedReconciler struct and SetupWithManager function. Configure watches for the primary Memcached CR and all owned resources (Deployment, Service, PDB, ServiceMonitor, NetworkPolicy) filtered by owner references.",
+  "stories": [
+    {
+      "title": "Operator developer configures MemcachedReconciler to watch the primary Memcached CR",
+      "role": "operator developer",
+      "want": "the MemcachedReconciler to be registered with the controller manager and watch Memcached custom resources as the primary resource",
+      "so_that": "any create, update, or delete of a Memcached CR triggers a reconciliation cycle",
+      "criteria": [
+        "SetupWithManager registers the controller with For(&Memcached{}) as the primary watched resource",
+        "Creating a Memcached CR triggers the Reconcile method",
+        "Updating a Memcached CR triggers the Reconcile method with the correct NamespacedName",
+        "Deleting a Memcached CR triggers the Reconcile method"
+      ]
+    },
+    {
+      "title": "Operator developer configures watches for owned Deployment resources",
+      "role": "operator developer",
+      "want": "the MemcachedReconciler to watch Deployment resources that are owned by a Memcached CR",
+      "so_that": "external modifications to managed Deployments (drift) are detected and trigger reconciliation of the owning Memcached CR",
+      "criteria": [
+        "SetupWithManager includes Owns(&appsv1.Deployment{}) in the controller builder",
+        "Creating a Deployment with an owner reference to a Memcached CR triggers reconciliation of that Memcached CR",
+        "Modifying an owned Deployment triggers reconciliation of the owning Memcached CR",
+        "Deployments without a Memcached owner reference do NOT trigger reconciliation"
+      ]
+    },
+    {
+      "title": "Operator developer configures watches for owned Service resources",
+      "role": "operator developer",
+      "want": "the MemcachedReconciler to watch Service resources owned by a Memcached CR",
+      "so_that": "drift in managed headless Services is detected and triggers reconciliation",
+      "criteria": [
+        "SetupWithManager includes Owns(&corev1.Service{}) in the controller builder",
+        "Modifying an owned Service triggers reconciliation of the owning Memcached CR",
+        "Services without a Memcached owner reference do NOT trigger reconciliation"
+      ]
+    },
+    {
+      "title": "Operator developer configures watches for owned PDB resources",
+      "role": "operator developer",
+      "want": "the MemcachedReconciler to watch PodDisruptionBudget resources owned by a Memcached CR",
+      "so_that": "drift in managed PDBs is detected and triggers reconciliation",
+      "criteria": [
+        "SetupWithManager includes Owns(&policyv1.PodDisruptionBudget{}) in the controller builder",
+        "Modifying an owned PDB triggers reconciliation of the owning Memcached CR",
+        "PDBs without a Memcached owner reference do NOT trigger reconciliation"
+      ]
+    },
+    {
+      "title": "Operator developer configures watches for owned NetworkPolicy resources",
+      "role": "operator developer",
+      "want": "the MemcachedReconciler to watch NetworkPolicy resources owned by a Memcached CR",
+      "so_that": "drift in managed NetworkPolicies is detected and triggers reconciliation",
+      "criteria": [
+        "SetupWithManager includes Owns(&networkingv1.NetworkPolicy{}) in the controller builder",
+        "Modifying an owned NetworkPolicy triggers reconciliation of the owning Memcached CR",
+        "NetworkPolicies without a Memcached owner reference do NOT trigger reconciliation"
+      ]
+    },
+    {
+      "title": "Reconciler handles non-existent Memcached CR gracefully",
+      "role": "operator developer",
+      "want": "the Reconcile method to return without error when the Memcached CR has been deleted (not found)",
+      "so_that": "deleted resources do not cause reconciliation errors or requeues",
+      "criteria": [
+        "When Reconcile is called with a NamespacedName for a deleted/non-existent Memcached CR, it returns (ctrl.Result{}, nil)",
+        "No error is logged for a not-found resource",
+        "The controller does not requeue the request"
+      ]
+    },
+    {
+      "title": "Reconciler fetches the Memcached CR successfully",
+      "role": "operator developer",
+      "want": "the Reconcile method to fetch the Memcached CR from the API server and proceed with reconciliation",
+      "so_that": "the reconciler always operates on the latest state of the CR",
+      "criteria": [
+        "Reconcile fetches the Memcached CR using client.Get with the request NamespacedName",
+        "If the fetch succeeds, reconciliation continues (currently returns empty result)",
+        "If the fetch fails with a non-NotFound error, the error is returned to trigger a requeue"
+      ]
+    },
+    {
+      "title": "RBAC markers declare permissions for all watched resource types",
+      "role": "operator developer",
+      "want": "the controller to have kubebuilder RBAC markers declaring the minimum permissions for all resource types it watches and manages",
+      "so_that": "the generated ClusterRole includes all necessary permissions and the operator can manage these resources at runtime",
+      "criteria": [
+        "RBAC marker for Memcached CRs: get, list, watch, create, update, patch, delete",
+        "RBAC marker for Memcached status: get, update, patch",
+        "RBAC marker for Memcached finalizers: update",
+        "RBAC marker for Deployments (apps): get, list, watch, create, update, patch, delete",
+        "RBAC marker for Services (core): get, list, watch, create, update, patch, delete",
+        "RBAC marker for PodDisruptionBudgets (policy): get, list, watch, create, update, patch, delete",
+        "RBAC marker for NetworkPolicies (networking.k8s.io): get, list, watch, create, update, patch, delete",
+        "RBAC marker for ServiceMonitors (monitoring.coreos.com): get, list, watch, create, update, patch, delete"
+      ]
+    },
+    {
+      "title": "Reference documentation for MemcachedReconciler scaffold and watch setup",
+      "role": "operator developer",
+      "want": "documentation explaining the reconciler structure, watch configuration, and RBAC setup",
+      "so_that": "new contributors understand how the controller watches resources and why each watch is needed",
+      "criteria": [
+        "Document explains the MemcachedReconciler struct fields (Client, Scheme)",
+        "Document explains SetupWithManager watch configuration (For, Owns) and which resources are watched",
+        "Document explains the RBAC markers and how they map to the generated ClusterRole",
+        "Document is placed in docs/reference/backend/"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The MemcachedReconciler SHALL watch the Memcached CR as the primary resource via For(&Memcached{}) in SetupWithManager",
+      "priority": "SHALL",
+      "rationale": "The primary watch is the fundamental trigger for reconciliation; without it, no Memcached CR changes would be processed",
+      "scenarios": [
+        {
+          "name": "Primary resource watch is configured",
+          "when": "SetupWithManager is called",
+          "then": "the controller builder includes For(&memcachedv1alpha1.Memcached{})",
+          "and_then": [
+            "the controller is named 'memcached'"
+          ]
+        },
+        {
+          "name": "Memcached CR creation triggers reconciliation",
+          "when": "a Memcached CR is created in the cluster",
+          "then": "the Reconcile method is invoked with the CR's NamespacedName",
+          "and_then": []
+        },
+        {
+          "name": "SetupWithManager succeeds without error",
+          "when": "SetupWithManager is called with a valid manager",
+          "then": "it returns nil error",
+          "and_then": [
+            "the controller is registered with the manager"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The MemcachedReconciler SHALL watch owned Deployment resources via Owns(&appsv1.Deployment{}) to detect drift",
+      "priority": "SHALL",
+      "rationale": "Deployments are the primary managed resource; drift detection ensures the reconciler corrects external modifications",
+      "scenarios": [
+        {
+          "name": "Deployment watch is configured",
+          "when": "SetupWithManager is called",
+          "then": "the controller builder includes Owns(&appsv1.Deployment{})",
+          "and_then": []
+        },
+        {
+          "name": "Owned Deployment modification triggers reconciliation",
+          "when": "a Deployment owned by a Memcached CR is modified externally",
+          "then": "the Reconcile method is invoked for the owning Memcached CR",
+          "and_then": []
+        },
+        {
+          "name": "Unowned Deployment does not trigger reconciliation",
+          "when": "a Deployment without a Memcached owner reference is created or modified",
+          "then": "the Reconcile method is NOT invoked for any Memcached CR",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The MemcachedReconciler SHALL watch owned Service resources via Owns(&corev1.Service{}) to detect drift",
+      "priority": "SHALL",
+      "rationale": "The headless Service is critical for Memcached pod discovery; drift must be corrected",
+      "scenarios": [
+        {
+          "name": "Service watch is configured",
+          "when": "SetupWithManager is called",
+          "then": "the controller builder includes Owns(&corev1.Service{})",
+          "and_then": []
+        },
+        {
+          "name": "Owned Service modification triggers reconciliation",
+          "when": "a Service owned by a Memcached CR is modified",
+          "then": "the Reconcile method is invoked for the owning Memcached CR",
+          "and_then": []
+        },
+        {
+          "name": "Unowned Service does not trigger reconciliation",
+          "when": "a Service without a Memcached owner reference is created or modified",
+          "then": "the Reconcile method is NOT invoked",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The MemcachedReconciler SHALL watch owned PodDisruptionBudget resources via Owns(&policyv1.PodDisruptionBudget{}) to detect drift",
+      "priority": "SHALL",
+      "rationale": "PDBs protect HA during disruptions; drift detection ensures they remain correctly configured",
+      "scenarios": [
+        {
+          "name": "PDB watch is configured",
+          "when": "SetupWithManager is called",
+          "then": "the controller builder includes Owns(&policyv1.PodDisruptionBudget{})",
+          "and_then": []
+        },
+        {
+          "name": "Owned PDB modification triggers reconciliation",
+          "when": "a PDB owned by a Memcached CR is modified",
+          "then": "the Reconcile method is invoked for the owning Memcached CR",
+          "and_then": []
+        },
+        {
+          "name": "Unowned PDB does not trigger reconciliation",
+          "when": "a PDB without a Memcached owner reference is created or modified",
+          "then": "the Reconcile method is NOT invoked",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The MemcachedReconciler SHALL watch owned NetworkPolicy resources via Owns(&networkingv1.NetworkPolicy{}) to detect drift",
+      "priority": "SHALL",
+      "rationale": "NetworkPolicies enforce security boundaries; drift must be corrected to maintain network isolation",
+      "scenarios": [
+        {
+          "name": "NetworkPolicy watch is configured",
+          "when": "SetupWithManager is called",
+          "then": "the controller builder includes Owns(&networkingv1.NetworkPolicy{})",
+          "and_then": []
+        },
+        {
+          "name": "Owned NetworkPolicy modification triggers reconciliation",
+          "when": "a NetworkPolicy owned by a Memcached CR is modified",
+          "then": "the Reconcile method is invoked for the owning Memcached CR",
+          "and_then": []
+        },
+        {
+          "name": "Unowned NetworkPolicy does not trigger reconciliation",
+          "when": "a NetworkPolicy without a Memcached owner reference is created or modified",
+          "then": "the Reconcile method is NOT invoked",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The Reconcile method SHALL fetch the Memcached CR and return without error when it is not found (deleted)",
+      "priority": "SHALL",
+      "rationale": "A deleted CR should not cause reconciliation errors; the controller should silently ignore not-found resources since owner references handle cleanup",
+      "scenarios": [
+        {
+          "name": "Non-existent CR returns empty result",
+          "when": "Reconcile is called with a NamespacedName for a CR that does not exist",
+          "then": "it returns (ctrl.Result{}, nil)",
+          "and_then": [
+            "no error is logged"
+          ]
+        },
+        {
+          "name": "Existing CR is fetched successfully",
+          "when": "Reconcile is called with a NamespacedName for an existing CR",
+          "then": "the CR is fetched via client.Get",
+          "and_then": [
+            "reconciliation continues without error"
+          ]
+        },
+        {
+          "name": "API server error is propagated",
+          "when": "client.Get returns an error other than NotFound",
+          "then": "the error is returned from Reconcile to trigger a requeue",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The MemcachedReconciler SHALL declare RBAC markers for all resource types it watches and manages, following the least-privilege principle",
+      "priority": "SHALL",
+      "rationale": "Without correct RBAC markers, the generated ClusterRole will be incomplete and the operator will fail at runtime with permission errors",
+      "scenarios": [
+        {
+          "name": "RBAC markers cover Memcached CR operations",
+          "when": "the generated RBAC manifests are inspected",
+          "then": "the ClusterRole includes get, list, watch, create, update, patch, delete for memcacheds",
+          "and_then": [
+            "status and finalizers sub-resources have appropriate permissions"
+          ]
+        },
+        {
+          "name": "RBAC markers cover all owned resource types",
+          "when": "the generated RBAC manifests are inspected",
+          "then": "the ClusterRole includes CRUD permissions for Deployments, Services, PDBs, NetworkPolicies, and ServiceMonitors",
+          "and_then": []
+        },
+        {
+          "name": "RBAC markers include events permission",
+          "when": "the generated RBAC manifests are inspected",
+          "then": "the ClusterRole includes create and patch for events",
+          "and_then": [
+            "the reconciler can emit events on Memcached CRs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The MemcachedReconciler struct SHALL embed client.Client and hold a *runtime.Scheme for interaction with the Kubernetes API",
+      "priority": "SHALL",
+      "rationale": "The client is required for all API operations; the scheme is required for setting owner references and type resolution",
+      "scenarios": [
+        {
+          "name": "Reconciler has Client field",
+          "when": "a MemcachedReconciler is instantiated",
+          "then": "it embeds client.Client which provides Get, List, Create, Update, Patch, Delete methods",
+          "and_then": []
+        },
+        {
+          "name": "Reconciler has Scheme field",
+          "when": "a MemcachedReconciler is instantiated",
+          "then": "it has a Scheme *runtime.Scheme field used for setting owner references",
+          "and_then": []
+        },
+        {
+          "name": "Reconciler satisfies the Reconciler interface",
+          "when": "a MemcachedReconciler is assigned to reconcile.Reconciler",
+          "then": "the assignment compiles successfully",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The MemcachedReconciler SHOULD include a Recorder field for emitting Kubernetes events on the Memcached CR",
+      "priority": "SHOULD",
+      "rationale": "Events provide observability for operators and users to understand what the reconciler is doing",
+      "scenarios": [
+        {
+          "name": "Recorder field is present",
+          "when": "the MemcachedReconciler struct is inspected",
+          "then": "it contains a Recorder field of type record.EventRecorder",
+          "and_then": []
+        },
+        {
+          "name": "Recorder is initialized in main.go",
+          "when": "the operator starts and creates the reconciler",
+          "then": "the Recorder is set to mgr.GetEventRecorderFor(\"memcached-controller\")",
+          "and_then": []
+        },
+        {
+          "name": "Events RBAC marker is present",
+          "when": "RBAC markers are inspected",
+          "then": "there is a marker granting create and patch on events",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Write unit tests for MemcachedReconciler struct fields and interface compliance (REQ-008, REQ-009)",
+      "description": "Add tests to internal/controller/memcached_controller_test.go (extend existing file). Test: (1) MemcachedReconciler with Client and Scheme satisfies reconcile.Reconciler interface (already exists - extend), (2) MemcachedReconciler has a Recorder field of type record.EventRecorder, (3) Reconciler struct can be instantiated with all fields populated. Use existing Ginkgo/Gomega patterns and the envtest suite.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Write unit tests for Reconcile method: not-found CR returns empty result, existing CR is fetched (REQ-006)",
+      "description": "Add tests to internal/controller/memcached_controller_test.go. Test: (1) Reconcile with non-existent NamespacedName returns (ctrl.Result{}, nil) - already exists but verify behavior after implementation changes, (2) Reconcile with an existing Memcached CR returns without error, (3) Verify the reconciler fetches the CR via client.Get (create a Memcached CR, call Reconcile, verify it returns successfully). Use the existing envtest suite and helper functions from memcached_crd_validation_test.go.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Write integration tests for SetupWithManager watch configuration (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "description": "Create internal/controller/memcached_watches_test.go. Test the full SetupWithManager watch configuration using envtest with a running controller manager. Tests: (1) SetupWithManager succeeds without error, (2) Creating a Memcached CR triggers reconciliation (verify via status update or other observable side effect after implementation), (3) Verify that owned resources (Deployment, Service, PDB, NetworkPolicy) with owner references trigger reconciliation of the parent Memcached CR when modified. Since this is the scaffold phase, focus on testing SetupWithManager returns nil and the controller builder configuration compiles correctly. Use Ginkgo/Gomega, existing envtest suite. Start a real controller manager in BeforeSuite with the reconciler registered.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Implement MemcachedReconciler struct with Recorder field and updated Reconcile method (REQ-006, REQ-008, REQ-009)",
+      "description": "Update internal/controller/memcached_controller.go: (1) Add Recorder field of type record.EventRecorder to MemcachedReconciler struct, (2) Update Reconcile method to fetch the Memcached CR via client.Get, return (ctrl.Result{}, nil) if not found (using apierrors.IsNotFound), return error for other failures, (3) Log the fetched CR at debug level. Import k8s.io/apimachinery/pkg/api/errors and k8s.io/client-go/tools/record.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006",
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Implement SetupWithManager with Owns watches for all owned resource types (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "description": "Update internal/controller/memcached_controller.go SetupWithManager: (1) Keep existing For(&memcachedv1alpha1.Memcached{}) primary watch, (2) Add Owns(&appsv1.Deployment{}) for Deployment drift detection, (3) Add Owns(&corev1.Service{}) for Service drift detection, (4) Add Owns(&policyv1.PodDisruptionBudget{}) for PDB drift detection, (5) Add Owns(&networkingv1.NetworkPolicy{}) for NetworkPolicy drift detection. Import appsv1 \"k8s.io/api/apps/v1\", corev1 \"k8s.io/api/core/v1\", policyv1 \"k8s.io/api/policy/v1\", networkingv1 \"k8s.io/api/networking/v1\". Keep the Named(\"memcached\") call.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Add RBAC markers for all watched and managed resource types (REQ-007)",
+      "description": "Update internal/controller/memcached_controller.go kubebuilder RBAC markers above the Reconcile method. Add markers for: (1) apps/deployments: get, list, watch, create, update, patch, delete, (2) core/services: get, list, watch, create, update, patch, delete, (3) policy/poddisruptionbudgets: get, list, watch, create, update, patch, delete, (4) networking.k8s.io/networkpolicies: get, list, watch, create, update, patch, delete, (5) monitoring.coreos.com/servicemonitors: get, list, watch, create, update, patch, delete, (6) core/events: create, patch. Keep existing Memcached CR markers. Run `make manifests` to regenerate the RBAC role.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Update cmd/main.go to pass EventRecorder to MemcachedReconciler (REQ-009)",
+      "description": "Update cmd/main.go to set the Recorder field when creating the MemcachedReconciler: Recorder: mgr.GetEventRecorderFor(\"memcached-controller\"). This ensures events emitted by the reconciler are properly attributed.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write RBAC manifest verification tests (REQ-007)",
+      "description": "Create internal/controller/memcached_rbac_test.go. Parse config/rbac/role.yaml as rbacv1.ClusterRole. Test: (1) Role contains rules for memcacheds (get, list, watch, create, update, patch, delete), (2) Role contains rules for memcacheds/status (get, update, patch), (3) Role contains rules for memcacheds/finalizers (update), (4) Role contains rules for deployments, services, poddisruptionbudgets, networkpolicies, servicemonitors with full CRUD, (5) Role contains rules for events (create, patch). Use Ginkgo/Gomega. Load YAML at test time. Follow the pattern from memcached_crd_manifest_test.go (api/v1alpha1/crd_manifest_test.go pattern).",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Regenerate manifests and verify all tests pass (REQ-001 through REQ-009)",
+      "description": "Run `make manifests generate` to regenerate CRD, RBAC, and DeepCopy artifacts after code changes. Run `make test` to verify all existing and new tests pass. Run `make vet` and `make lint` to ensure code quality. Fix any issues. This task verifies the full integration of all changes.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for MemcachedReconciler scaffold and watch setup",
+      "description": "Create docs/reference/backend/reconciler-scaffold-watches.md. Cover: (1) MemcachedReconciler struct fields (Client, Scheme, Recorder) and their purpose, (2) SetupWithManager watch configuration - For (primary) and Owns (owned resources), (3) Table of watched resources with watch reason (matching README table), (4) RBAC markers and generated ClusterRole permissions, (5) Reconcile method flow: fetch CR -> not found handling -> future reconciliation steps. Follow Diataxis reference style. Keep concise and developer-focused.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "MemcachedReconciler should implement the Reconciler interface",
+      "story": "Operator developer configures MemcachedReconciler to watch the primary Memcached CR",
+      "expected": "MemcachedReconciler with Client, Scheme, and Recorder satisfies reconcile.Reconciler interface",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "MemcachedReconciler should have a Recorder field",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "MemcachedReconciler struct includes Recorder of type record.EventRecorder",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "Reconcile should return empty result for non-existent resource",
+      "story": "Reconciler handles non-existent Memcached CR gracefully",
+      "expected": "Reconcile with non-existent NamespacedName returns (ctrl.Result{}, nil)",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "Reconcile should fetch existing Memcached CR without error",
+      "story": "Reconciler fetches the Memcached CR successfully",
+      "expected": "Reconcile with an existing Memcached CR NamespacedName returns without error",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_watches_test.go",
+      "test_function": "SetupWithManager should succeed without error",
+      "story": "Operator developer configures MemcachedReconciler to watch the primary Memcached CR",
+      "expected": "SetupWithManager returns nil when called with a valid manager",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_watches_test.go",
+      "test_function": "SetupWithManager should configure watches for owned Deployments",
+      "story": "Operator developer configures watches for owned Deployment resources",
+      "expected": "Controller builder includes Owns for Deployment, verified by successful setup and owned Deployment triggering reconciliation",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_watches_test.go",
+      "test_function": "SetupWithManager should configure watches for owned Services",
+      "story": "Operator developer configures watches for owned Service resources",
+      "expected": "Controller builder includes Owns for Service, verified by successful setup",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_watches_test.go",
+      "test_function": "SetupWithManager should configure watches for owned PDBs",
+      "story": "Operator developer configures watches for owned PDB resources",
+      "expected": "Controller builder includes Owns for PodDisruptionBudget, verified by successful setup",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_watches_test.go",
+      "test_function": "SetupWithManager should configure watches for owned NetworkPolicies",
+      "story": "Operator developer configures watches for owned NetworkPolicy resources",
+      "expected": "Controller builder includes Owns for NetworkPolicy, verified by successful setup",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC role should include Memcached CR permissions",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "Generated role.yaml includes memcacheds with get, list, watch, create, update, patch, delete",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC role should include Deployment permissions",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "Generated role.yaml includes deployments with get, list, watch, create, update, patch, delete",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC role should include Service permissions",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "Generated role.yaml includes services with get, list, watch, create, update, patch, delete",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC role should include PDB permissions",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "Generated role.yaml includes poddisruptionbudgets with get, list, watch, create, update, patch, delete",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC role should include NetworkPolicy permissions",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "Generated role.yaml includes networkpolicies with get, list, watch, create, update, patch, delete",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC role should include ServiceMonitor permissions",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "Generated role.yaml includes servicemonitors with get, list, watch, create, update, patch, delete",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC role should include events permissions",
+      "story": "RBAC markers declare permissions for all watched resource types",
+      "expected": "Generated role.yaml includes events with create, patch",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "SetupWithManager includes For(&Memcached{}) and Owns for all 4 owned resource types (Deployment, Service, PDB, NetworkPolicy)",
+    "Reconcile method fetches the Memcached CR and returns (ctrl.Result{}, nil) for not-found, propagates other errors",
+    "MemcachedReconciler struct has Client (embedded), Scheme, and Recorder fields",
+    "RBAC markers cover all resource types: memcacheds (+ status/finalizers), deployments, services, poddisruptionbudgets, networkpolicies, servicemonitors, events",
+    "cmd/main.go passes EventRecorder to the reconciler via mgr.GetEventRecorderFor",
+    "All tests pass: unit tests for struct/interface, envtest tests for Reconcile behavior, RBAC manifest verification tests",
+    "Generated RBAC manifest (config/rbac/role.yaml) includes all expected rules after `make manifests`",
+    "Code passes `go vet`, `golangci-lint run`, and `make test` without errors",
+    "Reference documentation covers reconciler struct, watch configuration, and RBAC setup"
+  ],
+  "implementation_notes": "This feature scaffolds the MemcachedReconciler with watch configuration for all owned resources. The existing reconciler in internal/controller/memcached_controller.go already has a basic structure with Client/Scheme fields, For(&Memcached{}) watch, and a stub Reconcile method. This feature extends it with:\n\n1. **Recorder field**: Add record.EventRecorder to enable Kubernetes event emission. Initialize in cmd/main.go via mgr.GetEventRecorderFor.\n\n2. **Reconcile method**: Implement CR fetch with not-found handling using apierrors.IsNotFound. This is the scaffold - actual reconciliation logic (Deployment, Service, etc.) comes in subsequent features (MO-0005, MO-0006, etc.).\n\n3. **Watch configuration**: Add Owns() calls for Deployment, Service, PDB, and NetworkPolicy. Note: ServiceMonitor is intentionally NOT added as an Owns() watch here because ServiceMonitor CRD may not be installed and its reconciliation is conditional on monitoring.enabled. The ServiceMonitor watch will be added in MO-0014 with appropriate handling.\n\n4. **RBAC markers**: Add markers for all resource types the operator will eventually manage. It's correct to add them now even though reconciliation logic comes later, because the RBAC manifests need to be complete for the operator to start.\n\nKey architectural decisions:\n- Use Owns() not Watches() for owned resources - controller-runtime's Owns automatically filters by owner references and maps to the owner's NamespacedName\n- ServiceMonitor Owns() is deferred to MO-0014 to avoid issues when the CRD is not installed\n- The Recorder field uses record.EventRecorder interface for testability\n- RBAC markers are comprehensive now to avoid needing to regenerate in every subsequent feature\n\nKey files:\n- internal/controller/memcached_controller.go - main implementation\n- internal/controller/memcached_controller_test.go - extend existing tests\n- internal/controller/memcached_watches_test.go - new test file for watch configuration\n- internal/controller/memcached_rbac_test.go - new test file for RBAC verification\n- cmd/main.go - add Recorder initialization\n- config/rbac/role.yaml - generated by `make manifests`\n\nPotential pitfalls:\n- envtest does not run a real controller manager by default; testing watch behavior requires starting the manager in tests\n- ServiceMonitor CRD is not available in envtest unless explicitly registered - do NOT add ServiceMonitor Owns() in this feature\n- The existing memcached_controller_test.go uses `scheme.Scheme` from k8s.io/client-go/kubernetes/scheme which may not include all types needed for the new watches - verify compatibility",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.419595"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T07:26:18.829427"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T07:29:26.050198"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "086d0d64-ef76-468b-b30f-e7ee8d49d270",
+      "timestamp": "2026-02-19T07:29:26.050224",
+      "total_duration": 183.51410913467407,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 183.51410913467407,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
