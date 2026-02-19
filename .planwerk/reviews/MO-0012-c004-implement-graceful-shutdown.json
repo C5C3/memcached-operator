@@ -1,0 +1,60 @@
+{
+  "feature_id": "MO-0012",
+  "title": "C004: Implement graceful shutdown",
+  "date": "2026-02-19",
+  "summary": "Implements graceful shutdown for Memcached pods via a GracefulShutdownSpec on the CRD, a pure buildGracefulShutdown helper that returns preStop lifecycle hook and terminationGracePeriodSeconds, integration into constructDeployment, comprehensive unit/integration/CRD-validation tests, and reference documentation following existing patterns.",
+  "verdict": "APPROVED",
+  "tests_checklist": [
+    {"item": "Tests exist and pass (181/181 specs)", "checked": true},
+    {"item": "Edge cases covered (nil HA, disabled, boundary values)", "checked": true},
+    {"item": "Error cases covered (CRD validation rejects out-of-range values)", "checked": true},
+    {"item": "Idempotency verified (resourceVersion unchanged on double reconcile)", "checked": true},
+    {"item": "Coexistence tested (graceful shutdown + anti-affinity + topology spread)", "checked": true},
+    {"item": "Update path tested (change preStopDelaySeconds and terminationGracePeriodSeconds)", "checked": true},
+    {"item": "Disable path tested (lifecycle and terminationGracePeriodSeconds removed)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing buildAntiAffinity/buildTopologySpreadConstraints pattern", "checked": true},
+    {"item": "buildGracefulShutdown is a pure function with no side effects", "checked": true},
+    {"item": "Functions are small and single-responsibility (buildGracefulShutdown ~15 lines)", "checked": true},
+    {"item": "No code duplication", "checked": true},
+    {"item": "Clear naming conventions followed", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "GracefulShutdownSpec follows PDBSpec pattern (Enabled bool, optional config, pointer with omitempty,omitzero)", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "All user inputs validated via kubebuilder markers (Minimum/Maximum)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No injection vectors (sleep command uses fmt.Sprintf with int32)", "checked": true},
+    {"item": "No sensitive data in logs or errors", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal and follows existing patterns", "checked": true},
+    {"item": "No unnecessary abstractions or over-engineering", "checked": true},
+    {"item": "CRD field placement under spec.highAvailability is correct", "checked": true},
+    {"item": "Generated manifests (deepcopy, CRD YAML) are in sync", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unused exports or dead code", "checked": true},
+    {"item": "No speculative features beyond the plan", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil guards return early (nil, nil) before accessing fields", "checked": true},
+    {"item": "CRD validation rejects invalid values at API boundary", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All pointer fields guarded against nil dereference", "checked": true},
+    {"item": "kubebuilder Minimum/Maximum markers enforce valid ranges", "checked": true},
+    {"item": "Server-side defaults applied via kubebuilder:default markers", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "D1 (minor): Consider adding a dedicated integration test for 'enable with custom values from creation' (preStopDelaySeconds=15, terminationGracePeriodSeconds=45) as specified in plan task 1.3 item (2). Currently covered indirectly by the update test.",
+    "D2 (minor): Consider adding Go-level defaults in buildGracefulShutdown for PreStopDelaySeconds==0 and TerminationGracePeriodSeconds==0 to match the buildMemcachedArgs pattern. Not blocking since kubebuilder:default and kubebuilder:validation:Minimum=1 prevent zero values through the CRD path.",
+    "D3 (minor): golangci-lint could not run due to pre-existing Go version mismatch (golangci-lint built with go1.24, project targets go1.25). Not a code issue."
+  ],
+  "next_steps": []
+}

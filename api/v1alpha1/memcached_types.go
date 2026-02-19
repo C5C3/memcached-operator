@@ -75,6 +75,33 @@ type HighAvailabilitySpec struct {
 	// PodDisruptionBudget configures the PDB for Memcached pods.
 	// +optional
 	PodDisruptionBudget *PDBSpec `json:"podDisruptionBudget,omitempty,omitzero"`
+
+	// GracefulShutdown configures preStop lifecycle hooks and terminationGracePeriodSeconds
+	// to allow in-flight connections to drain before pod termination.
+	// +optional
+	GracefulShutdown *GracefulShutdownSpec `json:"gracefulShutdown,omitempty,omitzero"`
+}
+
+// GracefulShutdownSpec defines the graceful shutdown configuration for Memcached pods.
+type GracefulShutdownSpec struct {
+	// Enabled controls whether graceful shutdown is configured.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// PreStopDelaySeconds is the number of seconds the preStop hook sleeps to allow connection draining.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=300
+	// +kubebuilder:default=10
+	// +optional
+	PreStopDelaySeconds int32 `json:"preStopDelaySeconds,omitempty"`
+
+	// TerminationGracePeriodSeconds is the duration in seconds the pod needs to terminate gracefully.
+	// Must exceed PreStopDelaySeconds to allow the hook to complete before SIGKILL.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=600
+	// +kubebuilder:default=30
+	// +optional
+	TerminationGracePeriodSeconds int64 `json:"terminationGracePeriodSeconds,omitempty"`
 }
 
 // PDBSpec defines the PodDisruptionBudget configuration.

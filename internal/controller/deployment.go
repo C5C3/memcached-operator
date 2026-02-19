@@ -126,6 +126,37 @@ func buildTopologySpreadConstraints(mc *memcachedv1alpha1.Memcached) []corev1.To
 	return mc.Spec.HighAvailability.TopologySpreadConstraints
 }
 
+// buildGracefulShutdown returns the Lifecycle hook and terminationGracePeriodSeconds for graceful
+// shutdown, or (nil, nil) if graceful shutdown is not enabled.
+func buildGracefulShutdown(mc *memcachedv1alpha1.Memcached) (*corev1.Lifecycle, *int64) {
+	if mc.Spec.HighAvailability == nil || mc.Spec.HighAvailability.GracefulShutdown == nil ||
+		!mc.Spec.HighAvailability.GracefulShutdown.Enabled {
+		return nil, nil
+	}
+
+	gs := mc.Spec.HighAvailability.GracefulShutdown
+
+	preStopDelaySeconds := gs.PreStopDelaySeconds
+	if preStopDelaySeconds == 0 {
+		preStopDelaySeconds = 10
+	}
+
+	terminationGracePeriod := gs.TerminationGracePeriodSeconds
+	if terminationGracePeriod == 0 {
+		terminationGracePeriod = 30
+	}
+
+	lifecycle := &corev1.Lifecycle{
+		PreStop: &corev1.LifecycleHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{"sleep", fmt.Sprintf("%d", preStopDelaySeconds)},
+			},
+		},
+	}
+
+	return lifecycle, &terminationGracePeriod
+}
+
 // constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
 // It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
 func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) {
@@ -153,6 +184,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 
 	affinity := buildAntiAffinity(mc)
 	topologySpreadConstraints := buildTopologySpreadConstraints(mc)
+	lifecycle, terminationGracePeriodSeconds := buildGracefulShutdown(mc)
 
 	dep.Labels = labels
 	dep.Spec = appsv1.DeploymentSpec{
@@ -172,14 +204,16 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
-				Affinity:                  affinity,
-				TopologySpreadConstraints: topologySpreadConstraints,
+				Affinity:                      affinity,
+				TopologySpreadConstraints:     topologySpreadConstraints,
+				TerminationGracePeriodSeconds: terminationGracePeriodSeconds,
 				Containers: []corev1.Container{
 					{
 						Name:      "memcached",
 						Image:     image,
 						Args:      args,
 						Resources: resources,
+						Lifecycle: lifecycle,
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "memcached",

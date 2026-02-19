@@ -929,4 +929,184 @@ var _ = Describe("Deployment Reconciliation", func() {
 			Expect(args).To(HaveLen(8)) // -m 64 -c 1024 -t 4 -I 1m
 		})
 	})
+
+	// --- Task 1.1: Graceful shutdown ---
+
+	Context("graceful shutdown (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)", func() {
+		It("should create Deployment with preStop hook and terminationGracePeriodSeconds when graceful shutdown is enabled", func() {
+			mc := validMemcached(uniqueName("dep-gs-on"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			container := dep.Spec.Template.Spec.Containers[0]
+			Expect(container.Lifecycle).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop.Exec).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+
+			Expect(dep.Spec.Template.Spec.TerminationGracePeriodSeconds).NotTo(BeNil())
+			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
+		})
+
+		It("should create Deployment with custom graceful shutdown values from creation", func() {
+			mc := validMemcached(uniqueName("dep-gs-cust"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           15,
+					TerminationGracePeriodSeconds: 45,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			container := dep.Spec.Template.Spec.Containers[0]
+			Expect(container.Lifecycle).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop.Exec).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "15"}))
+
+			Expect(dep.Spec.Template.Spec.TerminationGracePeriodSeconds).NotTo(BeNil())
+			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(45)))
+		})
+
+		It("should update Deployment when preStopDelaySeconds changes", func() {
+			mc := validMemcached(uniqueName("dep-gs-upd"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+
+			// Update preStopDelaySeconds to 20.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability.GracefulShutdown.PreStopDelaySeconds = 20
+			mc.Spec.HighAvailability.GracefulShutdown.TerminationGracePeriodSeconds = 45
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "20"}))
+			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(45)))
+		})
+
+		It("should remove preStop hook when graceful shutdown is disabled", func() {
+			mc := validMemcached(uniqueName("dep-gs-rm"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 60,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
+			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(60)))
+
+			// Disable graceful shutdown.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability.GracefulShutdown.Enabled = false
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle).To(BeNil())
+			// When graceful shutdown is disabled, terminationGracePeriodSeconds is set to nil
+			// by the controller, but the Kubernetes API server applies its default of 30.
+			// Verify the controller is not setting a custom value.
+			Expect(dep.Spec.Template.Spec.TerminationGracePeriodSeconds).NotTo(BeNil())
+			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
+		})
+
+		It("should be idempotent with graceful shutdown enabled", func() {
+			mc := validMemcached(uniqueName("dep-gs-idemp"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep1 := fetchDeployment(mc)
+			rv1 := dep1.ResourceVersion
+
+			// Reconcile again without changes.
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep2 := fetchDeployment(mc)
+			Expect(dep2.ResourceVersion).To(Equal(rv1))
+		})
+
+		It("should support graceful shutdown alongside anti-affinity and topology spread", func() {
+			mc := validMemcached(uniqueName("dep-gs-all"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        &soft,
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+
+			// Anti-affinity.
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+
+			// Topology spread.
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
+			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+
+			// Graceful shutdown.
+			container := dep.Spec.Template.Spec.Containers[0]
+			Expect(container.Lifecycle).NotTo(BeNil())
+			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
+		})
+	})
 })

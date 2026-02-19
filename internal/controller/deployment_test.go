@@ -907,3 +907,264 @@ func TestConstructDeployment_RollingUpdateStrategy(t *testing.T) {
 		t.Errorf("maxUnavailable = %v, want %v", *strategy.RollingUpdate.MaxUnavailable, wantMaxUnavailable)
 	}
 }
+
+func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-default", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			},
+		},
+	}
+
+	lifecycle, terminationGracePeriod := buildGracefulShutdown(mc)
+
+	if lifecycle == nil {
+		t.Fatal("expected non-nil Lifecycle")
+	}
+	if lifecycle.PreStop == nil {
+		t.Fatal("expected non-nil PreStop")
+	}
+	if lifecycle.PreStop.Exec == nil {
+		t.Fatal("expected Exec handler on PreStop")
+	}
+	expectedCmd := []string{"sleep", "10"}
+	if len(lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
+		t.Fatalf("expected command %v, got %v", expectedCmd, lifecycle.PreStop.Exec.Command)
+	}
+	for i, cmd := range expectedCmd {
+		if lifecycle.PreStop.Exec.Command[i] != cmd {
+			t.Errorf("command[%d] = %q, want %q", i, lifecycle.PreStop.Exec.Command[i], cmd)
+		}
+	}
+
+	if terminationGracePeriod == nil {
+		t.Fatal("expected non-nil terminationGracePeriodSeconds")
+	}
+	if *terminationGracePeriod != 30 {
+		t.Errorf("terminationGracePeriodSeconds = %d, want 30", *terminationGracePeriod)
+	}
+}
+
+func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-custom", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           15,
+					TerminationGracePeriodSeconds: 45,
+				},
+			},
+		},
+	}
+
+	lifecycle, terminationGracePeriod := buildGracefulShutdown(mc)
+
+	if lifecycle == nil {
+		t.Fatal("expected non-nil Lifecycle")
+	}
+	expectedCmd := []string{"sleep", "15"}
+	for i, cmd := range expectedCmd {
+		if lifecycle.PreStop.Exec.Command[i] != cmd {
+			t.Errorf("command[%d] = %q, want %q", i, lifecycle.PreStop.Exec.Command[i], cmd)
+		}
+	}
+
+	if terminationGracePeriod == nil {
+		t.Fatal("expected non-nil terminationGracePeriodSeconds")
+	}
+	if *terminationGracePeriod != 45 {
+		t.Errorf("terminationGracePeriodSeconds = %d, want 45", *terminationGracePeriod)
+	}
+}
+
+func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-zeros", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           0,
+					TerminationGracePeriodSeconds: 0,
+				},
+			},
+		},
+	}
+
+	lifecycle, terminationGracePeriod := buildGracefulShutdown(mc)
+
+	if lifecycle == nil {
+		t.Fatal("expected non-nil Lifecycle")
+	}
+	expectedCmd := []string{"sleep", "10"}
+	if len(lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
+		t.Fatalf("expected command %v, got %v", expectedCmd, lifecycle.PreStop.Exec.Command)
+	}
+	for i, cmd := range expectedCmd {
+		if lifecycle.PreStop.Exec.Command[i] != cmd {
+			t.Errorf("command[%d] = %q, want %q", i, lifecycle.PreStop.Exec.Command[i], cmd)
+		}
+	}
+
+	if terminationGracePeriod == nil {
+		t.Fatal("expected non-nil terminationGracePeriodSeconds")
+	}
+	if *terminationGracePeriod != 30 {
+		t.Errorf("terminationGracePeriodSeconds = %d, want 30", *terminationGracePeriod)
+	}
+}
+
+func TestBuildGracefulShutdown_Disabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-disabled", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled: false,
+				},
+			},
+		},
+	}
+
+	lifecycle, terminationGracePeriod := buildGracefulShutdown(mc)
+
+	if lifecycle != nil {
+		t.Errorf("expected nil Lifecycle, got %+v", lifecycle)
+	}
+	if terminationGracePeriod != nil {
+		t.Errorf("expected nil terminationGracePeriodSeconds, got %v", terminationGracePeriod)
+	}
+}
+
+func TestBuildGracefulShutdown_NilHA(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-nilha", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+
+	lifecycle, terminationGracePeriod := buildGracefulShutdown(mc)
+
+	if lifecycle != nil {
+		t.Errorf("expected nil Lifecycle, got %+v", lifecycle)
+	}
+	if terminationGracePeriod != nil {
+		t.Errorf("expected nil terminationGracePeriodSeconds, got %v", terminationGracePeriod)
+	}
+}
+
+func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-on", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+	if container.Lifecycle == nil {
+		t.Fatal("expected Lifecycle on container")
+	}
+	if container.Lifecycle.PreStop == nil {
+		t.Fatal("expected PreStop on Lifecycle")
+	}
+	expectedCmd := []string{"sleep", "10"}
+	if len(container.Lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
+		t.Fatalf("expected command %v, got %v", expectedCmd, container.Lifecycle.PreStop.Exec.Command)
+	}
+	for i, cmd := range expectedCmd {
+		if container.Lifecycle.PreStop.Exec.Command[i] != cmd {
+			t.Errorf("command[%d] = %q, want %q", i, container.Lifecycle.PreStop.Exec.Command[i], cmd)
+		}
+	}
+
+	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if tgps == nil {
+		t.Fatal("expected TerminationGracePeriodSeconds on pod spec")
+	}
+	if *tgps != 30 {
+		t.Errorf("TerminationGracePeriodSeconds = %d, want 30", *tgps)
+	}
+}
+
+func TestConstructDeployment_GracefulShutdownDisabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-off", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+	if container.Lifecycle != nil {
+		t.Errorf("expected nil Lifecycle, got %+v", container.Lifecycle)
+	}
+	if dep.Spec.Template.Spec.TerminationGracePeriodSeconds != nil {
+		t.Errorf("expected nil TerminationGracePeriodSeconds, got %v", dep.Spec.Template.Spec.TerminationGracePeriodSeconds)
+	}
+}
+
+func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-all", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	// Verify anti-affinity.
+	if dep.Spec.Template.Spec.Affinity == nil || dep.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
+		t.Fatal("expected Affinity with PodAntiAffinity")
+	}
+	if len(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
+		t.Error("expected 1 preferred anti-affinity term")
+	}
+
+	// Verify topology spread constraints.
+	if len(dep.Spec.Template.Spec.TopologySpreadConstraints) != 1 {
+		t.Fatalf("expected 1 topology spread constraint, got %d", len(dep.Spec.Template.Spec.TopologySpreadConstraints))
+	}
+
+	// Verify graceful shutdown.
+	container := dep.Spec.Template.Spec.Containers[0]
+	if container.Lifecycle == nil || container.Lifecycle.PreStop == nil {
+		t.Fatal("expected Lifecycle with PreStop")
+	}
+	expectedCmd := []string{"sleep", "10"}
+	for i, cmd := range expectedCmd {
+		if container.Lifecycle.PreStop.Exec.Command[i] != cmd {
+			t.Errorf("command[%d] = %q, want %q", i, container.Lifecycle.PreStop.Exec.Command[i], cmd)
+		}
+	}
+	if dep.Spec.Template.Spec.TerminationGracePeriodSeconds == nil || *dep.Spec.Template.Spec.TerminationGracePeriodSeconds != 30 {
+		t.Errorf("expected TerminationGracePeriodSeconds=30, got %v", dep.Spec.Template.Spec.TerminationGracePeriodSeconds)
+	}
+}

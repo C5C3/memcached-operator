@@ -64,6 +64,33 @@ spec:
                     - soft
                     - hard
                     type: string
+                  gracefulShutdown:
+                    description: |-
+                      GracefulShutdown configures preStop lifecycle hooks and terminationGracePeriodSeconds
+                      to allow in-flight connections to drain before pod termination.
+                    properties:
+                      enabled:
+                        description: Enabled controls whether graceful shutdown is
+                          configured.
+                        type: boolean
+                      preStopDelaySeconds:
+                        default: 10
+                        description: PreStopDelaySeconds is the number of seconds
+                          the preStop hook sleeps to allow connection draining.
+                        format: int32
+                        maximum: 300
+                        minimum: 1
+                        type: integer
+                      terminationGracePeriodSeconds:
+                        default: 30
+                        description: |-
+                          TerminationGracePeriodSeconds is the duration in seconds the pod needs to terminate gracefully.
+                          Must exceed PreStopDelaySeconds to allow the hook to complete before SIGKILL.
+                        format: int64
+                        maximum: 600
+                        minimum: 1
+                        type: integer
+                    type: object
                   podDisruptionBudget:
                     description: PodDisruptionBudget configures the PDB for Memcached
                       pods.

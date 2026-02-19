@@ -2,8 +2,8 @@
   "feature_id": "MO-0012",
   "title": "C004: Implement graceful shutdown",
   "slug": "c004-implement-graceful-shutdown",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Configure a preStop lifecycle hook and appropriate terminationGracePeriodSeconds so Memcached processes can drain connections before pod termination, preventing cache stampedes during rolling updates.",
   "stories": [
@@ -298,6 +298,7 @@
       "description": "Add GracefulShutdownSpec struct to api/v1alpha1/memcached_types.go with fields: Enabled (bool), PreStopDelaySeconds (int32, kubebuilder min=1, max=300, default=10), TerminationGracePeriodSeconds (int64, kubebuilder min=1, max=600, default=30). Add a GracefulShutdown *GracefulShutdownSpec field to HighAvailabilitySpec. Run `make manifests generate` to regenerate CRD YAML and deep copy. Verify the generated CRD includes the new fields with validation.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-007"
@@ -309,6 +310,7 @@
       "description": "In internal/controller/deployment.go, add a pure helper function buildGracefulShutdown(mc *Memcached) (*corev1.Lifecycle, *int64) that returns the lifecycle hook and terminationGracePeriodSeconds (or nil, nil if not enabled). Apply defaults for preStopDelaySeconds (10) and terminationGracePeriodSeconds (30) when those fields are zero. Integrate into constructDeployment: set container.Lifecycle and podSpec.TerminationGracePeriodSeconds. In deployment_test.go, add table-driven unit tests for buildGracefulShutdown (nil HA, nil gracefulShutdown, disabled, enabled with defaults, enabled with custom values) and tests for constructDeployment verifying lifecycle hook and terminationGracePeriodSeconds are set correctly.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -321,6 +323,7 @@
       "description": "In internal/controller/memcached_deployment_reconcile_test.go, add a new Ginkgo Context 'graceful shutdown' with integration tests using envtest: (1) Enable graceful shutdown with defaults, verify Deployment has preStop hook [sleep, 10] and terminationGracePeriodSeconds=30. (2) Enable with custom values (preStopDelaySeconds=15, terminationGracePeriodSeconds=45), verify both. (3) Update preStopDelaySeconds from 10 to 20, verify Deployment updates. (4) Disable graceful shutdown, verify preStop hook and terminationGracePeriodSeconds are removed. (5) Enable graceful shutdown alongside anti-affinity and topology spread, verify all coexist. (6) Idempotency: reconcile twice with same config, verify resourceVersion unchanged.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006"
@@ -332,6 +335,7 @@
       "description": "Create docs/reference/backend/graceful-shutdown.md following the pattern of pdb-reconciliation.md. Include: Overview section explaining preStop hook and terminationGracePeriodSeconds purpose, CRD Field Path section with the GracefulShutdownSpec field table (field, type, required, default, description), Construction section explaining buildGracefulShutdown helper and default values, Reconciliation Method section showing the integration in constructDeployment, CR Examples section (enabled with defaults, custom values, disabled, combined with other HA features), Runtime Behavior table (enable, update preStopDelaySeconds, update terminationGracePeriodSeconds, disable, delete CR, idempotent reconcile).",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -476,6 +480,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T16:22:17.172749"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T16:29:45.332721"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T17:51:10.425331"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T17:51:10.443219"
     }
   },
   "execution_history": [
@@ -489,6 +505,56 @@
           "name": "prepare",
           "duration": 184.80215620994568,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "f3a7df13-c104-45c8-9def-47997e8164ea",
+      "timestamp": "2026-02-19T16:48:09.413114",
+      "total_duration": 984.2762110233307,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (1 tasks)",
+          "duration": 382.3511199951172,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 55.7120156288147,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 78.3512122631073,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 44.41256618499756,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0012] Code Review",
+          "duration": 171.00845336914062,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0012] Improvements",
+          "duration": 118.32170224189758,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0012] Simplify",
+          "duration": 134.11914134025574,
+          "type": "simplify",
           "status": "done"
         }
       ]

@@ -377,6 +377,84 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 		})
 	})
 
+	Context("spec.highAvailability.gracefulShutdown", func() {
+		It("should accept gracefulShutdown with valid preStopDelaySeconds", func() {
+			// Minimum: 1
+			mc := validMemcached(uniqueName("gs-min"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           1,
+					TerminationGracePeriodSeconds: 30,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			// Maximum: 300
+			mc2 := validMemcached(uniqueName("gs-max"))
+			mc2.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           300,
+					TerminationGracePeriodSeconds: 600,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc2)).To(Succeed())
+		})
+
+		It("should reject gracefulShutdown with invalid preStopDelaySeconds", func() {
+			// preStopDelaySeconds=0 should be rejected (below minimum of 1).
+			// With omitempty on int32, 0 is treated as omitted and server applies default=10.
+			// So we test 301 which exceeds max.
+			mc := validMemcached(uniqueName("gs-over"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           301,
+					TerminationGracePeriodSeconds: 600,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
+		})
+
+		It("should accept gracefulShutdown with valid terminationGracePeriodSeconds", func() {
+			// Minimum: 1
+			mc := validMemcached(uniqueName("gs-tgps-min"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           1,
+					TerminationGracePeriodSeconds: 1,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			// Maximum: 600
+			mc2 := validMemcached(uniqueName("gs-tgps-max"))
+			mc2.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           300,
+					TerminationGracePeriodSeconds: 600,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc2)).To(Succeed())
+		})
+
+		It("should reject gracefulShutdown with invalid terminationGracePeriodSeconds", func() {
+			// terminationGracePeriodSeconds=601 exceeds max of 600.
+			mc := validMemcached(uniqueName("gs-tgps-over"))
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 601,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
+		})
+	})
+
 	Context("spec.highAvailability with all sub-fields", func() {
 		It("should accept a fully populated HA spec", func() {
 			mc := validMemcached(uniqueName("ha-full"))
@@ -393,6 +471,11 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+				},
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
