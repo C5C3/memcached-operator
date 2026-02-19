@@ -1,0 +1,574 @@
+{
+  "feature_id": "MO-0011",
+  "title": "C003: Implement PodDisruptionBudget reconciliation",
+  "slug": "c003-implement-poddisruptionbudget-reconciliation",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Create and reconcile a PodDisruptionBudget when spec.highAvailability.podDisruptionBudget.enabled is true. Support minAvailable configuration (default: 1). Set owner references for cleanup.",
+  "stories": [
+    {
+      "title": "Operator creates PDB when PDB is enabled in CR spec",
+      "role": "cluster operator",
+      "want": "the operator to automatically create a PodDisruptionBudget when I enable it in the Memcached CR",
+      "so_that": "my Memcached pods are protected from voluntary disruptions (node drains, upgrades) and minimum availability is guaranteed",
+      "criteria": [
+        "When spec.highAvailability.podDisruptionBudget.enabled is true, a PDB is created with the same name and namespace as the CR",
+        "The PDB selector matchLabels uses the standard labels (app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator)",
+        "The PDB has a controller owner reference pointing to the Memcached CR with controller=true and blockOwnerDeletion=true",
+        "The PDB spec.minAvailable defaults to 1 when no minAvailable is specified",
+        "When spec.highAvailability.podDisruptionBudget.minAvailable is set to a custom integer (e.g. 2), the PDB uses that value",
+        "When spec.highAvailability.podDisruptionBudget.minAvailable is set to a percentage (e.g. '50%'), the PDB uses that value"
+      ]
+    },
+    {
+      "title": "Operator supports maxUnavailable as alternative to minAvailable",
+      "role": "cluster operator",
+      "want": "to configure maxUnavailable instead of minAvailable on the PDB",
+      "so_that": "I can express disruption budgets in the way that best fits my deployment strategy",
+      "criteria": [
+        "When spec.highAvailability.podDisruptionBudget.maxUnavailable is set and minAvailable is not, the PDB uses maxUnavailable",
+        "maxUnavailable supports both integer values and percentage strings",
+        "When both minAvailable and maxUnavailable are set, only minAvailable is used (Kubernetes PDB API constraint: only one can be set)",
+        "When neither minAvailable nor maxUnavailable is set, minAvailable defaults to 1"
+      ]
+    },
+    {
+      "title": "Operator does not create PDB when PDB is disabled or not configured",
+      "role": "cluster operator",
+      "want": "no PDB to be created when I have not enabled it",
+      "so_that": "unnecessary resources are not created in my cluster",
+      "criteria": [
+        "When spec.highAvailability is nil, no PDB is created",
+        "When spec.highAvailability.podDisruptionBudget is nil, no PDB is created",
+        "When spec.highAvailability.podDisruptionBudget.enabled is false, no PDB is created",
+        "No error occurs during reconciliation when PDB is not configured"
+      ]
+    },
+    {
+      "title": "Operator updates PDB when CR spec changes",
+      "role": "cluster operator",
+      "want": "the PDB to be updated automatically when I change the PDB configuration in the CR",
+      "so_that": "I can adjust disruption budgets without manual intervention",
+      "criteria": [
+        "When minAvailable changes from 1 to 2, the PDB is updated on next reconcile",
+        "When switching from minAvailable to maxUnavailable, the PDB is updated correctly",
+        "Reconciling twice with the same spec does not update the PDB (idempotent)",
+        "When PDB is disabled after being enabled, the PDB is deleted via garbage collection (owner reference)"
+      ]
+    },
+    {
+      "title": "Operator cleans up PDB when CR is deleted",
+      "role": "cluster operator",
+      "want": "the PDB to be automatically deleted when the Memcached CR is deleted",
+      "so_that": "no orphaned resources remain in the cluster",
+      "criteria": [
+        "The PDB owner reference has controller=true and blockOwnerDeletion=true",
+        "Deleting the Memcached CR triggers garbage collection of the owned PDB",
+        "The controller watches PDB resources for drift detection (already configured in SetupWithManager)"
+      ]
+    },
+    {
+      "title": "Developer has reference documentation for PDB reconciliation",
+      "role": "developer",
+      "want": "reference documentation explaining PDB reconciliation behavior",
+      "so_that": "I understand the implementation details, field mapping, and runtime behavior",
+      "criteria": [
+        "Reference doc exists at docs/reference/backend/pdb-reconciliation.md",
+        "Doc covers: CRD field path, PDB construction logic, selector labels, default values, runtime behavior table",
+        "Doc includes CR example YAML and generated PDB YAML",
+        "Doc follows the existing pattern from topology-spread-constraints.md and pod-anti-affinity-presets.md"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL create a PodDisruptionBudget when spec.highAvailability.podDisruptionBudget.enabled is true",
+      "priority": "SHALL",
+      "rationale": "Core feature: PDB creation is the primary deliverable of this feature",
+      "scenarios": [
+        {
+          "name": "PDB created when enabled with default minAvailable",
+          "when": "a Memcached CR has spec.highAvailability.podDisruptionBudget.enabled=true and no minAvailable set",
+          "then": "a PDB is created with minAvailable=1 in the same namespace with the same name as the CR",
+          "and_then": [
+            "PDB selector uses standard labels (app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator)"
+          ]
+        },
+        {
+          "name": "PDB created with custom minAvailable integer",
+          "when": "a Memcached CR has PDB enabled with minAvailable=2",
+          "then": "a PDB is created with spec.minAvailable=2",
+          "and_then": []
+        },
+        {
+          "name": "PDB created with minAvailable percentage",
+          "when": "a Memcached CR has PDB enabled with minAvailable='50%'",
+          "then": "a PDB is created with spec.minAvailable='50%'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL support maxUnavailable as an alternative to minAvailable on the PDB",
+      "priority": "SHALL",
+      "rationale": "Kubernetes PDB supports either minAvailable or maxUnavailable; both modes should be supported",
+      "scenarios": [
+        {
+          "name": "PDB with maxUnavailable integer",
+          "when": "a Memcached CR has PDB enabled with maxUnavailable=1 and no minAvailable",
+          "then": "a PDB is created with spec.maxUnavailable=1 and no minAvailable field",
+          "and_then": []
+        },
+        {
+          "name": "PDB with maxUnavailable percentage",
+          "when": "a Memcached CR has PDB enabled with maxUnavailable='25%'",
+          "then": "a PDB is created with spec.maxUnavailable='25%'",
+          "and_then": []
+        },
+        {
+          "name": "minAvailable takes precedence when both are set",
+          "when": "a Memcached CR has PDB enabled with both minAvailable=1 and maxUnavailable=1",
+          "then": "a PDB is created with minAvailable=1 and no maxUnavailable",
+          "and_then": [
+            "maxUnavailable is ignored when minAvailable is present"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL NOT create a PDB when PDB is not enabled",
+      "priority": "SHALL",
+      "rationale": "Avoid creating unnecessary cluster resources when the feature is not requested",
+      "scenarios": [
+        {
+          "name": "No PDB when highAvailability is nil",
+          "when": "a Memcached CR has spec.highAvailability=nil",
+          "then": "no PDB is created and reconciliation succeeds without error",
+          "and_then": []
+        },
+        {
+          "name": "No PDB when podDisruptionBudget is nil",
+          "when": "a Memcached CR has spec.highAvailability set but podDisruptionBudget=nil",
+          "then": "no PDB is created and reconciliation succeeds without error",
+          "and_then": []
+        },
+        {
+          "name": "No PDB when enabled is false",
+          "when": "a Memcached CR has spec.highAvailability.podDisruptionBudget.enabled=false",
+          "then": "no PDB is created and reconciliation succeeds without error",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL set a controller owner reference on the PDB pointing to the Memcached CR",
+      "priority": "SHALL",
+      "rationale": "Owner references enable automatic garbage collection when the CR is deleted and allow drift detection",
+      "scenarios": [
+        {
+          "name": "Owner reference set on PDB creation",
+          "when": "a PDB is created for a Memcached CR",
+          "then": "the PDB has exactly one owner reference with apiVersion=memcached.c5c3.io/v1alpha1, kind=Memcached, name=<cr-name>, uid=<cr-uid>, controller=true, blockOwnerDeletion=true",
+          "and_then": []
+        },
+        {
+          "name": "Owner reference preserved after PDB update",
+          "when": "a PDB is updated due to CR spec change",
+          "then": "the owner reference remains unchanged with the same fields",
+          "and_then": []
+        },
+        {
+          "name": "PDB garbage collected on CR deletion",
+          "when": "the Memcached CR is deleted",
+          "then": "the PDB is automatically deleted by Kubernetes garbage collector",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The PDB SHALL use standard Memcached labels as its selector",
+      "priority": "SHALL",
+      "rationale": "The PDB selector must match the pod labels to protect the correct pods",
+      "scenarios": [
+        {
+          "name": "PDB selector matches Deployment pod labels",
+          "when": "a PDB is created for a Memcached CR named 'my-cache'",
+          "then": "the PDB spec.selector.matchLabels contains app.kubernetes.io/name=memcached, app.kubernetes.io/instance=my-cache, app.kubernetes.io/managed-by=memcached-operator",
+          "and_then": [
+            "these labels match the Deployment pod template labels exactly"
+          ]
+        },
+        {
+          "name": "PDB labels reflect the CR instance name",
+          "when": "two Memcached CRs exist with names 'cache-alpha' and 'cache-beta'",
+          "then": "each PDB's selector uses the correct app.kubernetes.io/instance label matching its CR name",
+          "and_then": []
+        },
+        {
+          "name": "PDB metadata labels set",
+          "when": "a PDB is created",
+          "then": "the PDB metadata.labels contains the same standard labels",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL update the PDB when the CR PDB spec changes",
+      "priority": "SHALL",
+      "rationale": "Drift detection and correction are core reconciler responsibilities",
+      "scenarios": [
+        {
+          "name": "minAvailable updated",
+          "when": "a CR's PDB minAvailable changes from 1 to 2",
+          "then": "the PDB is updated with minAvailable=2 on the next reconcile",
+          "and_then": []
+        },
+        {
+          "name": "Switch from minAvailable to maxUnavailable",
+          "when": "a CR's PDB is changed from minAvailable=1 to maxUnavailable=1",
+          "then": "the PDB is updated with maxUnavailable=1 and minAvailable is cleared",
+          "and_then": []
+        },
+        {
+          "name": "Idempotent reconciliation",
+          "when": "the PDB already matches the desired state",
+          "then": "the PDB resource version does not change (no unnecessary update)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The PDB reconciliation SHALL use the existing reconcileResource pattern with conflict retries",
+      "priority": "SHALL",
+      "rationale": "Consistency with existing reconciliation patterns ensures maintainability and correct conflict handling",
+      "scenarios": [
+        {
+          "name": "Uses reconcileResource for create/update",
+          "when": "a PDB needs to be created or updated",
+          "then": "the reconcileResource helper is used which provides controllerutil.CreateOrUpdate, owner reference setting, conflict retries, and event emission",
+          "and_then": []
+        },
+        {
+          "name": "PDB reconciliation called from Reconcile method",
+          "when": "the main Reconcile method runs",
+          "then": "reconcilePDB is called after reconcileService, following the established reconciliation order",
+          "and_then": []
+        },
+        {
+          "name": "Error propagation",
+          "when": "PDB reconciliation fails (API server error)",
+          "then": "the error is propagated to the caller and triggers a requeue",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The operator SHALL default minAvailable to 1 when PDB is enabled without specifying minAvailable or maxUnavailable",
+      "priority": "SHALL",
+      "rationale": "Sensible default ensures PDB provides protection even with minimal configuration",
+      "scenarios": [
+        {
+          "name": "Default minAvailable when neither is set",
+          "when": "PDB is enabled with neither minAvailable nor maxUnavailable specified",
+          "then": "the PDB is created with minAvailable=1",
+          "and_then": []
+        },
+        {
+          "name": "Explicit minAvailable overrides default",
+          "when": "PDB is enabled with minAvailable=3",
+          "then": "the PDB is created with minAvailable=3, not the default",
+          "and_then": []
+        },
+        {
+          "name": "maxUnavailable prevents default minAvailable",
+          "when": "PDB is enabled with maxUnavailable=1 but no minAvailable",
+          "then": "the PDB is created with maxUnavailable=1 and no minAvailable",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "Reference documentation SHALL be created for PDB reconciliation",
+      "priority": "SHALL",
+      "rationale": "Documentation is required for all new reconciliation features per project conventions",
+      "scenarios": [
+        {
+          "name": "Reference doc covers CRD fields",
+          "when": "a developer reads docs/reference/backend/pdb-reconciliation.md",
+          "then": "the doc describes spec.highAvailability.podDisruptionBudget field path with all sub-fields (enabled, minAvailable, maxUnavailable)",
+          "and_then": []
+        },
+        {
+          "name": "Reference doc includes examples",
+          "when": "a developer reads the reference doc",
+          "then": "the doc includes CR YAML examples and corresponding generated PDB YAML",
+          "and_then": []
+        },
+        {
+          "name": "Reference doc covers runtime behavior",
+          "when": "a developer reads the reference doc",
+          "then": "the doc includes a runtime behavior table showing add/modify/remove/disable scenarios",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Implement constructPDB builder function and unit tests (REQ-001, REQ-002, REQ-005, REQ-008)",
+      "description": "Create internal/controller/pdb.go with a pure `constructPDB` function that builds a PodDisruptionBudget from a Memcached CR. Follow the exact pattern of constructDeployment and constructService: pure function, mutates PDB in-place, sets labels, selector, and either minAvailable or maxUnavailable. Default minAvailable to 1 when neither is set. When both minAvailable and maxUnavailable are provided, use only minAvailable. Create internal/controller/pdb_test.go with table-driven unit tests covering: minimal PDB (enabled + default minAvailable=1), custom minAvailable integer, minAvailable percentage, maxUnavailable integer, maxUnavailable percentage, both set (minAvailable wins), labels match labelsForMemcached, selector uses standard labels.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-005",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Implement pdbEnabled helper and skip-logic unit tests (REQ-003)",
+      "description": "Add a `pdbEnabled` helper function in internal/controller/pdb.go that returns true only when spec.highAvailability != nil && spec.highAvailability.podDisruptionBudget != nil && spec.highAvailability.podDisruptionBudget.enabled == true. Add unit tests in pdb_test.go for: nil HighAvailability, nil PodDisruptionBudget, enabled=false, enabled=true.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add reconcilePDB method to MemcachedReconciler and wire into Reconcile (REQ-004, REQ-007)",
+      "description": "Add a `reconcilePDB` method to MemcachedReconciler in internal/controller/memcached_controller.go. When pdbEnabled returns true, create a policyv1.PodDisruptionBudget with the CR's name/namespace and call r.reconcileResource with constructPDB as the mutate function. When pdbEnabled returns false, return nil (no-op). Add the reconcilePDB call to the Reconcile method after reconcileService and before reconcileStatus. This follows the exact pattern of reconcileDeployment and reconcileService.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add envtest integration tests for PDB creation with defaults (REQ-001, REQ-004, REQ-005, REQ-008)",
+      "description": "Create internal/controller/memcached_pdb_reconcile_test.go (package controller_test) with Ginkgo integration tests following the pattern in memcached_deployment_reconcile_test.go. Add a fetchPDB helper. Test Context 'PDB creation with defaults': CR with PDB enabled (no minAvailable) creates PDB with minAvailable=1, correct selector labels, correct owner reference (apiVersion, kind, name, uid, controller=true, blockOwnerDeletion=true), standard metadata labels.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add envtest integration tests for PDB with custom minAvailable and maxUnavailable (REQ-001, REQ-002)",
+      "description": "In memcached_pdb_reconcile_test.go, add test contexts for: PDB with custom minAvailable integer (e.g. 2), PDB with minAvailable percentage (e.g. '50%'), PDB with maxUnavailable integer, PDB with maxUnavailable percentage, PDB with both minAvailable and maxUnavailable (verify minAvailable wins). Follow the pattern of existing envtest tests.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Add envtest integration tests for PDB skip, update, and idempotency (REQ-003, REQ-006)",
+      "description": "In memcached_pdb_reconcile_test.go, add test contexts for: no PDB when highAvailability is nil, no PDB when podDisruptionBudget is nil, no PDB when enabled=false, PDB update when minAvailable changes, idempotent reconciliation (resource version unchanged on second reconcile with same spec), PDB removed when spec.highAvailability.podDisruptionBudget.enabled changed to false (via disabling then reconcile - note: with owner references, disabling won't auto-delete but the reconciler should stop managing it; however per the pattern, when disabled the reconciler simply skips PDB reconciliation and the existing PDB remains until CR deletion).",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for PDB reconciliation (REQ-009)",
+      "description": "Create docs/reference/backend/pdb-reconciliation.md following the exact pattern of topology-spread-constraints.md. Include: Overview section, CRD Field Path section (spec.highAvailability.podDisruptionBudget), Field table (enabled, minAvailable, maxUnavailable with types and defaults), PDB Construction section explaining constructPDB logic, CR Example YAML and Generated PDB YAML, maxUnavailable section with example, Default Behavior section, Runtime Behavior table (add/modify/remove/disable scenarios), Implementation section describing constructPDB and pdbEnabled functions.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-009"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_DefaultMinAvailable",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "When PDB enabled with no minAvailable/maxUnavailable, constructPDB sets minAvailable=1",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_CustomMinAvailableInt",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "When PDB enabled with minAvailable=2, constructPDB sets minAvailable=2",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_MinAvailablePercentage",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "When PDB enabled with minAvailable='50%', constructPDB sets minAvailable='50%'",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_MaxUnavailableInt",
+      "story": "Operator supports maxUnavailable as alternative to minAvailable",
+      "expected": "When PDB has maxUnavailable=1 and no minAvailable, constructPDB sets maxUnavailable=1 with no minAvailable",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_MaxUnavailablePercentage",
+      "story": "Operator supports maxUnavailable as alternative to minAvailable",
+      "expected": "When PDB has maxUnavailable='25%', constructPDB sets maxUnavailable='25%'",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_MinAvailableTakesPrecedence",
+      "story": "Operator supports maxUnavailable as alternative to minAvailable",
+      "expected": "When both minAvailable and maxUnavailable are set, constructPDB uses minAvailable only",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestPDBEnabled_ReturnsFalse",
+      "story": "Operator does not create PDB when PDB is disabled or not configured",
+      "expected": "pdbEnabled returns false for nil HA, nil PDB, enabled=false",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestPDBEnabled_ReturnsTrue",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "pdbEnabled returns true when enabled=true",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_Labels",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "PDB metadata.labels and spec.selector.matchLabels use standard Memcached labels",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_InstanceScopedSelector",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "PDB selector uses the correct app.kubernetes.io/instance label matching the CR name",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "PDB creation with defaults - should create PDB with minAvailable=1",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "Reconciling a CR with PDB enabled creates a PDB with minAvailable=1 and standard labels",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "PDB creation with defaults - should set owner reference",
+      "story": "Operator cleans up PDB when CR is deleted",
+      "expected": "PDB has owner reference with controller=true, blockOwnerDeletion=true, correct apiVersion/kind/name/uid",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "PDB with custom minAvailable",
+      "story": "Operator creates PDB when PDB is enabled in CR spec",
+      "expected": "Reconciling with minAvailable=2 creates PDB with minAvailable=2",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "PDB with maxUnavailable",
+      "story": "Operator supports maxUnavailable as alternative to minAvailable",
+      "expected": "Reconciling with maxUnavailable=1 creates PDB with maxUnavailable=1 and no minAvailable",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "No PDB when not enabled",
+      "story": "Operator does not create PDB when PDB is disabled or not configured",
+      "expected": "Reconciling a CR without PDB enabled does not create a PDB resource",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "PDB update when minAvailable changes",
+      "story": "Operator updates PDB when CR spec changes",
+      "expected": "Changing minAvailable from 1 to 2 and reconciling updates the PDB",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "Idempotent PDB reconciliation",
+      "story": "Operator updates PDB when CR spec changes",
+      "expected": "Reconciling twice with same spec does not change PDB resource version",
+      "requirement_id": "REQ-006"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "constructPDB is a pure function with no side effects, following the constructDeployment/constructService pattern",
+    "PDB selector matchLabels exactly match the Deployment pod template labels (labelsForMemcached output)",
+    "Default minAvailable=1 when neither minAvailable nor maxUnavailable is specified",
+    "minAvailable and maxUnavailable are mutually exclusive in the generated PDB (only one is set)",
+    "reconcilePDB uses the existing reconcileResource helper for idempotent create/update with conflict retries and owner references",
+    "All unit tests pass (go test ./internal/controller/ -run TestConstructPDB -v and go test ./internal/controller/ -run TestPDBEnabled -v)",
+    "All envtest integration tests pass (go test ./internal/controller/ -run 'PDB Reconciliation' -v)",
+    "go vet ./... passes with no errors",
+    "golangci-lint run passes with no errors",
+    "Reference doc follows the topology-spread-constraints.md structure with CRD fields, examples, runtime behavior, and implementation details",
+    "No changes to files outside the scope: only new pdb.go, pdb_test.go, memcached_pdb_reconcile_test.go, memcached_controller.go (3 lines), and docs/reference/backend/pdb-reconciliation.md"
+  ],
+  "implementation_notes": "Architecture: Follow the exact pattern established by Deployment and Service reconciliation. Create a pure `constructPDB` builder function in a new `pdb.go` file. Add a `pdbEnabled` guard function. Add `reconcilePDB` method to MemcachedReconciler. Wire it into the Reconcile method after reconcileService. No changes to SetupWithManager (already watches PDBs) or RBAC (already has policy/poddisruptionbudgets permissions). The constructPDB function handles mutual exclusivity: when minAvailable is set, use it; when only maxUnavailable is set, use it; when neither is set, default minAvailable to 1. The PDB uses labelsForMemcached for both metadata.labels and spec.selector.matchLabels, consistent with Deployment and Service patterns.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.422888"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:50:11.073400"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:54:29.353827"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "010bc21e-cff3-446a-8bf9-2e0518e5f6e5",
+      "timestamp": "2026-02-19T14:54:29.353853",
+      "total_duration": 254.4880073070526,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 254.4880073070526,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
