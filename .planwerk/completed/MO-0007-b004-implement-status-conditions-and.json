@@ -2,8 +2,8 @@
   "feature_id": "MO-0007",
   "title": "B004: Implement status conditions and ObservedGeneration",
   "slug": "b004-implement-status-conditions-and",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Update the Memcached CR status with standard conditions (Available, Progressing, Degraded), readyReplicas count, and observedGeneration. Follow Kubernetes API conventions for condition types and transitions.",
   "stories": [
@@ -341,6 +341,7 @@
       "description": "Create `internal/controller/status.go` with: (1) condition type constants (ConditionAvailable, ConditionProgressing, ConditionDegraded), (2) reason constants (DeploymentAvailable, DeploymentUnavailable, DeploymentProgressing, DeploymentComplete, AllReplicasReady, InsufficientReplicas), (3) a pure function `computeConditions(generation int64, desiredReplicas int32, dep *appsv1.Deployment) []metav1.Condition` that uses `apimachinery/pkg/api/meta.SetStatusCondition` to build the three conditions based on Deployment status fields. Handle the scaled-to-zero case (Available=True, Degraded=False). No tests yet — tested in 1.2.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004",
@@ -354,6 +355,7 @@
       "description": "Create `internal/controller/status_test.go` (not _test package, to test internal function) with table-driven tests for `computeConditions`. Test cases: (1) all replicas ready — Available=True, Progressing=False, Degraded=False, (2) zero ready with desired > 0 — Available=False, Progressing=True, Degraded=True, (3) partial ready — Available=True, Progressing=True, Degraded=True, (4) scaled to zero — Available=True, Progressing=False, Degraded=False, (5) updatedReplicas < desired — Progressing=True, (6) nil Deployment (not yet created) — Available=False, Progressing=True, Degraded=False. Verify each condition's Type, Status, Reason, Message, and ObservedGeneration.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004",
@@ -366,6 +368,7 @@
       "description": "Add a `reconcileStatus` method to `MemcachedReconciler` in `internal/controller/memcached_controller.go`. This method: (1) re-fetches the Deployment via `r.Get()` to read current status, (2) re-fetches the Memcached CR to get latest resourceVersion, (3) calls `computeConditions()` with the CR generation, desired replicas, and Deployment, (4) sets `status.observedGeneration = metadata.generation`, (5) sets `status.readyReplicas` from the Deployment's status, (6) applies conditions via `meta.SetStatusCondition` on the existing conditions slice, (7) calls `r.Status().Update()`. Add necessary imports (apimachinery meta). Return wrapped error on failure.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -379,6 +382,7 @@
       "description": "Modify the `Reconcile` method in `internal/controller/memcached_controller.go` to call `r.reconcileStatus(ctx, memcached)` after `reconcileDeployment` and `reconcileService` succeed. Return the error from `reconcileStatus` so the request is requeued on failure. The method signature takes `(ctx, *Memcached)` and the original Memcached object is passed (reconcileStatus will re-fetch both CR and Deployment internally).",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -389,6 +393,7 @@
       "description": "Create `internal/controller/memcached_status_reconcile_test.go` with envtest integration tests. Test initial reconciliation of a minimal CR: (1) observedGeneration equals metadata.generation, (2) readyReplicas is 0 (envtest does not run pods), (3) Available=False (no available replicas in envtest), (4) Progressing=True (desired > ready), (5) Degraded=True (ready < desired). Use `reconcileOnce()` helper and verify status via `k8sClient.Get()`. Test with default 1 replica and with explicit 3 replicas.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -403,6 +408,7 @@
       "description": "Add tests to `memcached_status_reconcile_test.go`: (1) After spec.replicas change, reconcile and verify observedGeneration tracks the new generation, (2) Scale to 0 replicas, reconcile, and verify Available=True, Progressing=False, Degraded=False, (3) Verify all three conditions are always present after reconciliation, (4) Verify each condition has observedGeneration matching metadata.generation.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-003",
@@ -415,6 +421,7 @@
       "description": "Add test to `memcached_status_reconcile_test.go` using a fake client with interceptor that fails on Status().Update(). Verify: (1) Deployment and Service were created (reconciliation proceeded), (2) Reconcile returns an error (for requeue), (3) The error message contains context about status update failure.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -425,6 +432,7 @@
       "description": "Create `docs/reference/backend/status-conditions-observedgeneration.md`. Document: (1) Overview of the status reconciliation step, (2) Table of condition types with their meanings, True/False reasons, and messages, (3) observedGeneration semantics and how to check for spec staleness, (4) readyReplicas field description, (5) Source files (status.go, memcached_controller.go), (6) Condition transition rules and lastTransitionTime behavior, (7) Scaled-to-zero behavior. Follow the pattern established in `docs/reference/backend/deployment-reconciliation.md`.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -571,6 +579,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T10:31:21.841934"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T10:34:38.918140"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T11:51:51.447429"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T11:51:51.463996"
     }
   },
   "execution_history": [
@@ -584,6 +604,56 @@
           "name": "prepare",
           "duration": 257.14988374710083,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "904c83a0-990f-4aed-bdfa-b2751c47ee30",
+      "timestamp": "2026-02-19T10:55:50.263358",
+      "total_duration": 1129.4389626979828,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 270.48659324645996,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 40.40630578994751,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 190.015043258667,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 109.49008536338806,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0007] Code Review",
+          "duration": 166.64872312545776,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0007] Improvements",
+          "duration": 183.9518220424652,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0007] Simplify",
+          "duration": 168.4403898715973,
+          "type": "simplify",
           "status": "done"
         }
       ]

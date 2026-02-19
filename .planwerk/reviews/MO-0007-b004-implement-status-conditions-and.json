@@ -1,0 +1,113 @@
+{
+  "feature_id": "MO-0007",
+  "title": "B004: Implement status conditions and ObservedGeneration",
+  "date": "2026-02-19",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Status conditions (Available, Progressing, Degraded), readyReplicas, and observedGeneration are implemented with clean architecture: a pure computeConditions function, proper meta.SetStatusCondition usage, status subresource updates, and comprehensive test coverage (10 unit + integration tests, 135 total pass). One major issue: per-condition ObservedGeneration is not set despite being required by REQ-006 and documented as working.",
+  "tests_checklist": [
+    {"item": "All tests pass (135/135, 0 failures)", "checked": true},
+    {"item": "Unit tests cover all condition scenarios (fully available, zero replicas, partial, nil deployment, rolling update, scaling)", "checked": true},
+    {"item": "Integration tests cover initial reconciliation, spec changes, zero-scale, error propagation", "checked": true},
+    {"item": "Edge cases covered (nil deployment, scaled-to-zero, nil replicas default)", "checked": true},
+    {"item": "Error propagation test verifies Deployment/Service creation before status failure", "checked": false},
+    {"item": "Per-condition ObservedGeneration verified in tests", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "computeConditions is a pure function with no side effects", "checked": true},
+    {"item": "reconcileStatus is a clean orchestrator (fetch, compute, set, update)", "checked": true},
+    {"item": "Functions are small and focused (Single Responsibility)", "checked": true},
+    {"item": "Named constants for condition types and reasons", "checked": true},
+    {"item": "Error wrapping with context (fmt.Errorf with %w)", "checked": true},
+    {"item": "No dead code or unused exports", "checked": true},
+    {"item": "Follows existing reconcile* method pattern", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input handled (internal controller logic only)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No sensitive data in logs (only readyReplicas and observedGeneration logged)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Condition logic separated into status.go (clean separation)", "checked": true},
+    {"item": "Status updated via status subresource (r.Status().Update)", "checked": true},
+    {"item": "Status reconciliation ordered after resource reconciliation", "checked": true},
+    {"item": "meta.SetStatusCondition used for correct lastTransitionTime handling", "checked": true},
+    {"item": "Deployment re-fetched for current status (REQ-008)", "checked": true},
+    {"item": "Minimal controller change (4 lines added)", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "Reuses existing test helpers (validMemcached, uniqueName, reconcileOnce, int32Ptr)", "checked": true},
+    {"item": "No over-engineering or unused abstractions", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Deployment fetch errors returned immediately (except NotFound)", "checked": true},
+    {"item": "Status update errors wrapped and returned for requeue", "checked": true},
+    {"item": "NotFound handled gracefully (dep = nil path)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil Deployment handled (dep == nil path)", "checked": true},
+    {"item": "Nil spec.Replicas defaults to 1", "checked": true},
+    {"item": "Status update conflicts handled via error return/requeue", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [
+    {
+      "severity": "INFO",
+      "description": "computeConditions signature changed from plan (generation, desiredReplicas, dep) to (mc, dep). This is a positive deviation — the function derives desiredReplicas internally including nil-handling.",
+      "location": "internal/controller/status.go:42",
+      "fix": "No fix needed — this is an improvement over the plan."
+    }
+  ],
+  "issues_found": [
+    {
+      "id": "FC4-1",
+      "severity": "major",
+      "check_id": "FC4",
+      "description": "Per-condition ObservedGeneration not set. computeConditions builds conditions without setting the ObservedGeneration field (int64 zero value). REQ-006 criteria states 'Each condition includes observedGeneration matching the CR's metadata.generation'. The docs at docs/reference/backend/status-conditions-observedgeneration.md:64-65 incorrectly claim this is set.",
+      "location": "internal/controller/status.go:61-124",
+      "fix": "Add ObservedGeneration: mc.Generation to each metav1.Condition struct in computeConditions. Update unit tests to verify condition.ObservedGeneration. Add integration test assertion for per-condition ObservedGeneration."
+    },
+    {
+      "id": "DA3-1",
+      "severity": "major",
+      "check_id": "DA3",
+      "description": "Documentation claims per-condition ObservedGeneration is set by meta.SetStatusCondition, but the code doesn't pass it in the condition structs. Line 64-65: 'Each condition includes ObservedGeneration matching the CR's metadata.generation at the time of computation (set by meta.SetStatusCondition).'",
+      "location": "docs/reference/backend/status-conditions-observedgeneration.md:64-65",
+      "fix": "Fix the code (FC4-1) rather than the docs. Once ObservedGeneration is set in computeConditions, the docs will be accurate."
+    },
+    {
+      "id": "TE2-1",
+      "severity": "minor",
+      "check_id": "TE2",
+      "description": "Error propagation integration test (task 3.3) does not verify that Deployment and Service were created before the status update failure, as specified in the task description.",
+      "location": "internal/controller/memcached_status_reconcile_test.go:188-217",
+      "fix": "Add assertions after Reconcile returns error: verify Deployment and Service exist via fakeClient.Get(). This confirms resource reconciliation succeeded despite status failure."
+    },
+    {
+      "id": "DA1-1",
+      "severity": "minor",
+      "check_id": "DA1",
+      "description": "Condition reason constants differ from plan specification. Plan specifies DeploymentAvailable/DeploymentUnavailable/DeploymentProgressing/DeploymentComplete/AllReplicasReady/InsufficientReplicas. Implementation uses Available/Unavailable/Progressing/ProgressingComplete/Degraded/NotDegraded. Both are valid K8s reason strings.",
+      "location": "internal/controller/status.go:31-38",
+      "fix": "Acceptable deviation — implementation reasons are shorter and equally descriptive. No change needed unless plan alignment is strictly required."
+    },
+    {
+      "id": "C1-1",
+      "severity": "minor",
+      "check_id": "C1",
+      "description": "Progressing condition does not include readyReplicas < desiredReplicas as a signal (REQ-004 scenario 3: 'Progressing=True when new pods are not ready'). Implementation only checks updatedReplicas < desired and totalReplicas != desired. When all pods are at the new spec but not yet ready, Progressing=False. This is actually more aligned with K8s Deployment semantics where Progressing tracks rollout, not readiness.",
+      "location": "internal/controller/status.go:80",
+      "fix": "No change recommended — the implementation follows K8s conventions more closely than the plan. The Degraded condition correctly captures the readiness gap."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider adding ObservedGeneration to computeConditions unit test assertions once the field is set",
+    "The error propagation test could be strengthened by verifying Deployment/Service existence after status failure"
+  ],
+  "next_steps": [
+    "Fix FC4-1: Add ObservedGeneration: mc.Generation to all condition structs in computeConditions",
+    "Fix DA3-1: Will be resolved automatically by FC4-1",
+    "Add unit test assertions verifying condition.ObservedGeneration matches expected generation",
+    "Add integration test assertion checking per-condition ObservedGeneration equals mc.Generation"
+  ]
+}
