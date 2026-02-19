@@ -1,0 +1,86 @@
+{
+  "feature_id": "MO-0014",
+  "title": "D002: Implement ServiceMonitor reconciliation",
+  "date": "2026-02-19",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "ServiceMonitor reconciliation is correctly implemented following the established PDB pattern. The core logic (constructServiceMonitor, serviceMonitorEnabled, reconcileServiceMonitor) is clean, minimal, and idempotent. The reconcileResource helper is reused properly, Owns() watch is registered, RBAC annotation is present, and the reference documentation is thorough. However, two test cases explicitly required by the plan and listed in test_specifications are missing from the implementation.",
+  "tests_checklist": [
+    {"item": "Unit tests exist and pass (11/11)", "checked": true},
+    {"item": "Integration tests exist and compile (envtest binaries unavailable for runtime verification)", "checked": true},
+    {"item": "Creation with defaults tested", "checked": true},
+    {"item": "Custom interval and scrapeTimeout tested", "checked": true},
+    {"item": "AdditionalLabels merge tested", "checked": true},
+    {"item": "AdditionalLabels override standard labels tested (REQ-003 scenario 3)", "checked": false},
+    {"item": "Skip logic (3 cases) tested", "checked": true},
+    {"item": "Idempotency tested (resourceVersion unchanged)", "checked": true},
+    {"item": "Drift correction tested (endpoint + labels)", "checked": true},
+    {"item": "Spec update tested (interval + additionalLabels)", "checked": true},
+    {"item": "Coexistence with PDB, sidecar, anti-affinity, graceful shutdown tested", "checked": true},
+    {"item": "Toggling monitoring off and back on tested (task 3.4 item 2)", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing PDB reconciliation pattern exactly", "checked": true},
+    {"item": "Functions are small and single-responsibility", "checked": true},
+    {"item": "No code duplication", "checked": true},
+    {"item": "Clear naming (constructServiceMonitor, serviceMonitorEnabled, reconcileServiceMonitor)", "checked": true},
+    {"item": "No magic strings (defaults are clear and documented)", "checked": true},
+    {"item": "No dead code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "RBAC annotation for servicemonitors present", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No injection risks", "checked": true},
+    {"item": "Owner reference properly set for garbage collection", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible (follows PDB pattern)", "checked": true},
+    {"item": "Uses reconcileResource helper (not manual Create/Update)", "checked": true},
+    {"item": "SetupWithManager includes Owns(&monitoringv1.ServiceMonitor{})", "checked": true},
+    {"item": "Reconciliation order correct (after PDB, before status)", "checked": true},
+    {"item": "Label merge strategy correct (additionalLabels first, standard overlay)", "checked": true},
+    {"item": "Selector uses labelsForMemcached() consistent with Service/Deployment", "checked": true},
+    {"item": "NamespaceSelector restricts to CR namespace", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "No future-proofing", "checked": true},
+    {"item": "No scope creep (no runtime CRD check, no explicit deletion)", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Guard function returns early when disabled", "checked": true},
+    {"item": "Errors propagated correctly from reconcileResource", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil checks for Monitoring, ServiceMonitor pointers", "checked": true},
+    {"item": "Empty string defaults for Interval and ScrapeTimeout", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "TE2-1",
+      "severity": "major",
+      "check_id": "TE2",
+      "file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "description": "Missing test: 'should not allow additionalLabels to override standard labels'. Task 3.1 item 4 and test_specifications explicitly require a test where additionalLabels contains app.kubernetes.io/name=override and the test verifies the standard value wins. This test exists in neither the unit test file nor the integration test file. The unit test TestConstructServiceMonitor_AdditionalLabels only tests non-conflicting labels (release, team) — it does not test the actual conflict scenario.",
+      "fix": "Add an integration test in the 'ServiceMonitor with additional labels' context (or a new context) that creates a CR with additionalLabels: {app.kubernetes.io/name: override} and asserts sm.Labels[\"app.kubernetes.io/name\"] == \"memcached\". Also add a corresponding unit test in servicemonitor_test.go."
+    },
+    {
+      "id": "FC1-1",
+      "severity": "major",
+      "check_id": "FC1",
+      "file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "description": "Missing test: 'should handle toggling monitoring off and back on'. Task 3.4 item 2 and test_specifications explicitly require a test for the toggle cycle: create CR with serviceMonitor, reconcile, verify ServiceMonitor exists, disable monitoring, reconcile, verify ServiceMonitor no longer created on subsequent reconciles, re-enable monitoring, reconcile, verify ServiceMonitor is created again. This test is not present.",
+      "fix": "Add an It block in the 'coexistence' context (or a new context) that exercises the full toggle cycle: enable monitoring → reconcile → verify SM exists → disable monitoring → reconcile → verify SM skip → re-enable → reconcile → verify SM exists again."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider adding a unit test case in TestConstructServiceMonitor_AdditionalLabels for the conflict scenario (additionalLabels with same key as standard label) to complement the integration test"
+  ],
+  "next_steps": [
+    "Add missing integration test: 'should not allow additionalLabels to override standard labels' with app.kubernetes.io/name=override in additionalLabels",
+    "Add missing integration test: 'should handle toggling monitoring off and back on' with full enable→disable→re-enable cycle",
+    "Re-request review after both tests are added"
+  ]
+}

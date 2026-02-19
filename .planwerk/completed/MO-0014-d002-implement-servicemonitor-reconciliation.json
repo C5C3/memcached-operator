@@ -2,8 +2,8 @@
   "feature_id": "MO-0014",
   "title": "D002: Implement ServiceMonitor reconciliation",
   "slug": "d002-implement-servicemonitor-reconciliation",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Create and reconcile a Prometheus ServiceMonitor resource when monitoring is enabled. Configure scrape interval, scrapeTimeout, and additionalLabels from spec.monitoring.serviceMonitor. Set owner references for cleanup.",
   "stories": [
@@ -342,6 +342,7 @@
       "description": "Run `go get github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1` to add the dependency. In `internal/controller/suite_test.go`, import `monitoringv1 \"github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1\"` and add `monitoringv1.AddToScheme(scheme.Scheme)` after the existing `memcachedv1alpha1.AddToScheme` call. Also add the ServiceMonitor CRD path to the envtest CRDDirectoryPaths (the CRD YAML can be sourced from the prometheus-operator module or a local config/crd path). Verify that `go build ./...` and `go vet ./...` pass.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -352,6 +353,7 @@
       "description": "Create `internal/controller/servicemonitor.go` following the pattern of `pdb.go`. Implement: (1) `serviceMonitorEnabled(mc *Memcached) bool` returning true only when mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled && mc.Spec.Monitoring.ServiceMonitor != nil. (2) `constructServiceMonitor(mc *Memcached, sm *monitoringv1.ServiceMonitor)` that sets: metadata.labels to standard labels merged with additionalLabels (standard labels take precedence), spec.selector.matchLabels to labelsForMemcached(mc.Name), spec.endpoints to a single Endpoint{Port: 'metrics', Interval: monitoringv1.Duration(sm.Interval), ScrapeTimeout: monitoringv1.Duration(sm.ScrapeTimeout)}. Import monitoringv1 from the prometheus-operator module. Verify `go build ./...` passes.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -365,6 +367,7 @@
       "description": "In `internal/controller/memcached_controller.go`: (1) Import `monitoringv1 \"github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1\"`. (2) Add `reconcileServiceMonitor(ctx, mc)` method following the exact pattern of `reconcilePDB`: guard with serviceMonitorEnabled, create monitoringv1.ServiceMonitor with ObjectMeta{Name: mc.Name, Namespace: mc.Namespace}, call r.reconcileResource with constructServiceMonitor mutate function and resourceKind 'ServiceMonitor'. (3) Call reconcileServiceMonitor in the Reconcile method between reconcilePDB and reconcileStatus. (4) Add `.Owns(&monitoringv1.ServiceMonitor{})` to SetupWithManager. Verify `go build ./...` passes.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-007",
@@ -377,6 +380,7 @@
       "description": "Create `internal/controller/memcached_servicemonitor_reconcile_test.go`. Add a `fetchServiceMonitor(mc)` helper (following fetchPDB/fetchDeployment pattern). Write tests in a Describe('ServiceMonitor Reconciliation') block: (1) Context 'ServiceMonitor creation': It 'should create ServiceMonitor with default interval and scrapeTimeout' - create CR with monitoring.enabled=true and serviceMonitor={}, reconcile, verify ServiceMonitor exists with endpoint port='metrics', interval='30s', scrapeTimeout='10s', standard labels, correct selector matchLabels, and owner reference. (2) It 'should apply custom interval and scrapeTimeout' - set interval='15s', scrapeTimeout='5s', verify. (3) It 'should merge additionalLabels with standard labels' - set additionalLabels={release: prometheus}, verify both standard and additional labels present. (4) It 'should not allow additionalLabels to override standard labels' - set additionalLabels with app.kubernetes.io/name=override, verify standard value wins.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -389,6 +393,7 @@
       "description": "In `memcached_servicemonitor_reconcile_test.go`, add Context 'skip logic': (1) It 'should not create ServiceMonitor when monitoring is nil' - create CR without monitoring section, reconcile, verify no ServiceMonitor exists (Get returns NotFound). (2) It 'should not create ServiceMonitor when monitoring.enabled is false' - create CR with monitoring.enabled=false, reconcile, verify no ServiceMonitor. (3) It 'should not create ServiceMonitor when serviceMonitor is nil' - create CR with monitoring.enabled=true but no serviceMonitor sub-section, reconcile, verify no ServiceMonitor.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -399,6 +404,7 @@
       "description": "In `memcached_servicemonitor_reconcile_test.go`, add Context 'idempotency': (1) It 'should be idempotent with serviceMonitor configured' - create CR with serviceMonitor, reconcile twice, verify ServiceMonitor resourceVersion unchanged after second reconcile. (2) It 'should converge after drift (manual endpoint change)' - create CR, reconcile, patch the ServiceMonitor to change interval, reconcile again, verify interval restored to CR spec value. (3) It 'should update ServiceMonitor when CR spec changes' - create CR with interval='30s', reconcile, update CR to interval='15s', reconcile, verify ServiceMonitor endpoint interval is '15s'.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -409,6 +415,7 @@
       "description": "In `memcached_servicemonitor_reconcile_test.go`, add Context 'coexistence': (1) It 'should coexist with exporter sidecar, PDB, and anti-affinity' - create CR with monitoring.enabled=true, serviceMonitor configured, PDB enabled, anti-affinity soft, reconcile, verify all resources exist: Deployment with 2 containers, Service with 2 ports, PDB, ServiceMonitor. (2) It 'should handle toggling monitoring off and back on' - create CR with serviceMonitor, reconcile, verify ServiceMonitor exists, disable monitoring, reconcile, verify ServiceMonitor no longer created on subsequent reconciles (existing may persist via owner ref GC), re-enable monitoring with serviceMonitor, reconcile, verify ServiceMonitor is created again.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-004"
@@ -420,6 +427,7 @@
       "description": "Create `docs/reference/backend/servicemonitor-reconciliation.md` following the exact structure of `docs/reference/backend/pdb-reconciliation.md`. Include: (1) Title and overview. (2) Source file references (internal/controller/servicemonitor.go, memcached_controller.go). (3) CRD Field Path (spec.monitoring.serviceMonitor) with ServiceMonitorSpec struct definition and field table. (4) ServiceMonitor Construction section: labels (standard + additionalLabels merge with standard precedence), selector (matchLabels from labelsForMemcached), endpoint (port, interval, scrapeTimeout), default values. (5) Reconciliation Method showing reconcileServiceMonitor code. (6) Skip Logic section listing the three skip conditions. (7) Owner Reference table. (8) CR Examples: minimal (defaults), custom interval+timeout, additionalLabels, monitoring disabled. (9) Runtime Behavior table: enable/disable/update/delete/idempotency/drift scenarios. (10) Implementation section describing constructServiceMonitor and serviceMonitorEnabled.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -544,6 +552,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T18:41:04.961513"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T18:46:18.174279"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T20:43:13.817206"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T20:43:13.833122"
     }
   },
   "execution_history": [
@@ -557,6 +577,56 @@
           "name": "prepare",
           "duration": 339.76532554626465,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "33d73d2c-eb50-495a-b6ad-85fa7ffe388c",
+      "timestamp": "2026-02-19T19:12:38.706425",
+      "total_duration": 1446.1074242591858,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 429.19167137145996,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 97.61586332321167,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (4 tasks)",
+          "duration": 299.1197953224182,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 95.18940687179565,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0014] Code Review",
+          "duration": 213.96895837783813,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0014] Improvements",
+          "duration": 204.18194103240967,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0014] Simplify",
+          "duration": 106.83978796005249,
+          "type": "simplify",
           "status": "done"
         }
       ]

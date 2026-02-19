@@ -16,6 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 )
 
@@ -61,6 +63,10 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if err := r.reconcilePDB(ctx, memcached); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileServiceMonitor(ctx, memcached); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -126,6 +132,27 @@ func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1a
 	return err
 }
 
+// reconcileServiceMonitor ensures the ServiceMonitor for the Memcached CR matches the desired state.
+// It skips reconciliation when monitoring is not enabled in the CR spec.
+func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+	if !serviceMonitorEnabled(mc) {
+		return nil
+	}
+
+	sm := &monitoringv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mc.Name,
+			Namespace: mc.Namespace,
+		},
+	}
+
+	_, err := r.reconcileResource(ctx, mc, sm, func() error {
+		constructServiceMonitor(mc, sm)
+		return nil
+	}, "ServiceMonitor")
+	return err
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
@@ -134,6 +161,7 @@ func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.Service{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&networkingv1.NetworkPolicy{}).
+		Owns(&monitoringv1.ServiceMonitor{}).
 		Named("memcached").
 		Complete(r)
 }
