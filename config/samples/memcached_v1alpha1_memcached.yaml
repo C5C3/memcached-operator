@@ -7,3 +7,28 @@ metadata:
   name: memcached-sample
 spec:
   replicas: 3
+  image: "memcached:1.6"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "128Mi"
+    limits:
+      cpu: "500m"
+      memory: "256Mi"
+  memcached:
+    maxMemoryMB: 128
+    maxConnections: 2048
+    threads: 4
+    maxItemSize: "2m"
+  highAvailability:
+    antiAffinityPreset: "soft"
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
+  monitoring:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      scrapeInterval: "30s"
+  security:
+    enableNetworkPolicy: true

@@ -2,8 +2,8 @@
   "feature_id": "MO-0002",
   "title": "A002: Implement Memcached CRD types for v1alpha1 API",
   "slug": "a002-implement-memcached-crd-types-for-v1alpha1",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Define the Memcached custom resource types: MemcachedSpec (replicas, image, resources, memcached config block with maxMemoryMB/maxConnections/threads/maxItemSize/verbosity/extraArgs), MemcachedStatus (conditions, readyReplicas, observedGeneration). Include nested structs for highAvailability, monitoring, and security sections.",
   "stories": [
@@ -402,6 +402,7 @@
       "description": "Create the MemcachedConfig struct in api/v1alpha1/memcached_types.go with fields: MaxMemoryMB (int32, min 16, max 65536, default 64), MaxConnections (int32, min 1, max 65536, default 1024), Threads (int32, min 1, max 128, default 4), MaxItemSize (string, pattern ^[0-9]+(k|m)$, default 1m), Verbosity (int32, min 0, max 2, default 0), ExtraArgs ([]string, optional). Follow the exact kubebuilder marker patterns from the existing Replicas field. Add Go doc comments for each field describing the memcached flag mapping (-m, -c, -t, -I, -v/-vv).",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -412,6 +413,7 @@
       "description": "Create HighAvailabilitySpec in api/v1alpha1/memcached_types.go with fields: AntiAffinityPreset (string, enum soft/hard, optional), TopologySpreadConstraints ([]corev1.TopologySpreadConstraint, optional), PodDisruptionBudget (*PDBSpec, optional). Create PDBSpec with fields: Enabled (bool, default false), MinAvailable (*intstr.IntOrString, optional), MaxUnavailable (*intstr.IntOrString, optional). Add required imports for corev1 and intstr packages.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -422,6 +424,7 @@
       "description": "Create MonitoringSpec in api/v1alpha1/memcached_types.go with fields: Enabled (bool, default false), ExporterImage (string, default prom/memcached-exporter:v0.15.4, optional), ExporterResources (corev1.ResourceRequirements, optional), ServiceMonitor (*ServiceMonitorSpec, optional). Create ServiceMonitorSpec with fields: AdditionalLabels (map[string]string, optional), Interval (string, default 30s, optional), ScrapeTimeout (string, default 10s, optional).",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -432,6 +435,7 @@
       "description": "Create SecuritySpec in api/v1alpha1/memcached_types.go with fields: PodSecurityContext (*corev1.PodSecurityContext, optional), ContainerSecurityContext (*corev1.SecurityContext, optional), SASL (*SASLSpec, optional), TLS (*TLSSpec, optional). Create SASLSpec with fields: Enabled (bool, default false), CredentialsSecretRef (corev1.LocalObjectReference, optional). Create TLSSpec with fields: Enabled (bool, default false), CertificateSecretRef (corev1.LocalObjectReference, optional).",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -442,6 +446,7 @@
       "description": "Add to the existing MemcachedSpec struct: Image (string, default memcached:1.6, optional), Resources (corev1.ResourceRequirements, optional), Memcached (MemcachedConfig, optional, json tag memcached), HighAvailability (*HighAvailabilitySpec, optional), Monitoring (*MonitoringSpec, optional), Security (*SecuritySpec, optional). Keep the existing Replicas field. Use pointer types for optional nested structs so they can be omitted entirely.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -452,6 +457,7 @@
       "description": "Add to the existing MemcachedStatus struct: ReadyReplicas (int32, optional), ObservedGeneration (int64, optional). Preserve the existing Conditions field with all its markers (patchMergeKey, patchStrategy, listType, listMapKey, protobuf tag). Ensure JSON tags use camelCase (readyReplicas, observedGeneration).",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -462,6 +468,7 @@
       "description": "Add a +kubebuilder:printcolumn marker for Ready with JSONPath=.status.readyReplicas, type=integer, description=Number of ready Memcached pods. Place it between the existing Replicas and Age columns. The final column order should be: Replicas, Ready, Age.",
       "level": 2,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -472,6 +479,7 @@
       "description": "Run 'make generate' to regenerate zz_generated.deepcopy.go. Verify that DeepCopyInto methods are generated for all new structs: MemcachedConfig, HighAvailabilitySpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec. Verify 'go build ./...' succeeds after generation.",
       "level": 3,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -482,6 +490,7 @@
       "description": "Run 'make manifests' to regenerate config/crd/bases/memcached.c5c3.io_memcacheds.yaml. Verify the generated CRD includes all new spec/status fields, validation constraints (minimum, maximum, pattern, enum), defaults, and printer columns. Verify the YAML is valid.",
       "level": 3,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -492,6 +501,7 @@
       "description": "Update config/samples/memcached_v1alpha1_memcached.yaml to include: image field, resources with requests/limits, memcached config block with maxMemoryMB/maxConnections/threads, and commented examples showing highAvailability, monitoring, and security sections. Ensure all values pass CRD validation.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -502,6 +512,7 @@
       "description": "Write Ginkgo tests in api/v1alpha1/memcached_types_test.go (new file with envtest suite) that validate: (1) a CR with valid memcached config is accepted, (2) maxMemoryMB below 16 is rejected, (3) maxMemoryMB above 65536 is rejected, (4) maxItemSize with invalid format is rejected, (5) verbosity outside 0-2 is rejected, (6) threads outside 1-128 is rejected, (7) defaults are applied for omitted fields, (8) custom image is accepted, (9) resource requirements are stored correctly. Use the existing envtest pattern from internal/controller/suite_test.go.",
       "level": 4,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-005"
@@ -513,6 +524,7 @@
       "description": "Extend the test suite in api/v1alpha1/memcached_types_test.go with tests for: (1) valid antiAffinityPreset=soft accepted, (2) invalid antiAffinityPreset rejected, (3) PDB config stored correctly, (4) monitoring.enabled=true with default exporterImage, (5) custom ServiceMonitor labels stored, (6) security.podSecurityContext accepted, (7) SASL config with credentialsSecretRef stored, (8) TLS config with certificateSecretRef stored. Test full CR with all sections populated.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -525,6 +537,7 @@
       "description": "Extend the test suite in api/v1alpha1/memcached_types_test.go with tests for: (1) status subresource update with readyReplicas, (2) status subresource update with observedGeneration, (3) conditions field preserved after status update, (4) verify printer columns exist in CRD schema by reading the CRD YAML fixture. Ensure status updates use the status subresource client.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-009"
@@ -536,6 +549,7 @@
       "description": "Create docs/reference/backend/crd-types-v1alpha1.md with: (1) overview of Memcached CRD API group and version, (2) MemcachedSpec field table (name, type, default, validation, description) for all fields, (3) tables for each nested struct (MemcachedConfig, HighAvailabilitySpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec), (4) MemcachedStatus field table, (5) printer columns table, (6) complete example YAML. Follow the Diataxis reference quadrant: information-oriented, no tutorials.",
       "level": 5,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -714,6 +728,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-18T21:21:47.514996"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T21:23:22.680358"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T06:41:35.865853"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T06:41:35.883947"
     }
   },
   "execution_history": [
@@ -727,6 +753,62 @@
           "name": "prepare",
           "duration": 344.7174813747406,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "e8287f29-12c1-44f9-8d88-5593f1baf086",
+      "timestamp": "2026-02-18T21:55:30.759733",
+      "total_duration": 1773.5710382461548,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (4 tasks)",
+          "duration": 226.25864934921265,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 56.78024220466614,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 65.72033262252808,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (3 tasks)",
+          "duration": 206.19520115852356,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 5 (1 tasks)",
+          "duration": 381.8032157421112,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0002] Code Review",
+          "duration": 256.91732716560364,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0002] Improvements",
+          "duration": 487.22940325737,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0002] Simplify",
+          "duration": 92.66666674613953,
+          "type": "simplify",
           "status": "done"
         }
       ]
