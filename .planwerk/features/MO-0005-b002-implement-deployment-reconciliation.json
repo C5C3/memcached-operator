@@ -1,0 +1,691 @@
+{
+  "feature_id": "MO-0005",
+  "title": "B002: Implement deployment reconciliation",
+  "slug": "b002-implement-deployment-reconciliation",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Reconcile a Deployment for the Memcached pods. Map CRD spec fields to container args (-m, -c, -t, -I, -v/-vv, extraArgs), set resource requests/limits, configure the memcached:1.6 container image (or user-specified), expose port 11211. Set owner references for garbage collection. Detect drift and update.",
+  "stories": [
+    {
+      "title": "Operator creates Deployment for Memcached pods",
+      "role": "platform operator",
+      "want": "the Memcached operator to automatically create a Deployment when I create a Memcached CR",
+      "so_that": "Memcached pods are scheduled and running without manual Deployment management",
+      "criteria": [
+        "Creating a Memcached CR triggers creation of an apps/v1 Deployment in the same namespace with the same name",
+        "Deployment pod template contains a single container named 'memcached' with image from spec.image (default memcached:1.6)",
+        "Deployment replicas matches spec.replicas (default 1)",
+        "Deployment selector matchLabels include app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator",
+        "Deployment uses RollingUpdate strategy with maxSurge=1 and maxUnavailable=0"
+      ]
+    },
+    {
+      "title": "Operator maps CRD config to container args",
+      "role": "platform operator",
+      "want": "to configure Memcached runtime parameters (memory, connections, threads, item size, verbosity) via the CRD spec",
+      "so_that": "the operator translates them into correct memcached CLI flags on the container",
+      "criteria": [
+        "spec.memcached.maxMemoryMB maps to -m flag (e.g., maxMemoryMB=128 produces args [\"-m\", \"128\"])",
+        "spec.memcached.maxConnections maps to -c flag",
+        "spec.memcached.threads maps to -t flag",
+        "spec.memcached.maxItemSize maps to -I flag (e.g., \"2m\" produces [\"-I\", \"2m\"])",
+        "spec.memcached.verbosity=1 produces [\"-v\"], verbosity=2 produces [\"-vv\"], verbosity=0 produces no flag",
+        "spec.memcached.extraArgs are appended after all standard flags"
+      ]
+    },
+    {
+      "title": "Operator detects drift and reconciles Deployment",
+      "role": "platform operator",
+      "want": "the operator to detect when the Deployment diverges from the desired state and update it",
+      "so_that": "the actual state always converges to match the CRD spec after any spec change",
+      "criteria": [
+        "Changing spec.replicas on the CR causes the Deployment replicas to be updated on next reconciliation",
+        "Changing spec.memcached.maxMemoryMB causes container args to be updated",
+        "Changing spec.image causes the container image to be updated",
+        "Changing spec.resources causes container resource requests/limits to be updated",
+        "External manual edits to the Deployment are reverted on next reconciliation"
+      ]
+    },
+    {
+      "title": "Operator sets owner references for garbage collection",
+      "role": "cluster administrator",
+      "want": "the Deployment to have an owner reference pointing to the Memcached CR",
+      "so_that": "deleting the Memcached CR automatically cleans up the Deployment via Kubernetes garbage collection",
+      "criteria": [
+        "Deployment metadata.ownerReferences contains exactly one entry referencing the Memcached CR",
+        "Owner reference has controller=true and blockOwnerDeletion=true",
+        "Owner reference apiVersion is memcached.c5c3.io/v1alpha1 and kind is Memcached",
+        "Deleting the Memcached CR triggers automatic deletion of the owned Deployment"
+      ]
+    },
+    {
+      "title": "Operator applies defaults for minimal Memcached CR",
+      "role": "platform operator",
+      "want": "sensible defaults applied when I create a minimal Memcached CR with empty spec",
+      "so_that": "the Deployment works out of the box without requiring me to specify every field",
+      "criteria": [
+        "Empty spec produces Deployment with 1 replica, image memcached:1.6",
+        "Default container args are [\"-m\", \"64\", \"-c\", \"1024\", \"-t\", \"4\", \"-I\", \"1m\"] when spec.memcached is nil",
+        "No resource requests/limits set when spec.resources is nil",
+        "No verbosity flag when spec.memcached.verbosity is 0 (default)"
+      ]
+    },
+    {
+      "title": "Operator configures custom image and resources",
+      "role": "platform operator",
+      "want": "to specify a custom container image and resource requests/limits in the CRD spec",
+      "so_that": "the Deployment uses my preferred image version and resource allocation",
+      "criteria": [
+        "spec.image='memcached:1.6.29' produces a container with that exact image",
+        "spec.resources.requests.cpu='100m' and spec.resources.requests.memory='128Mi' are set on the container",
+        "spec.resources.limits.cpu='500m' and spec.resources.limits.memory='256Mi' are set on the container",
+        "Updating spec.resources on the CR causes Deployment container resources to be updated"
+      ]
+    },
+    {
+      "title": "Operator exposes memcached port and configures probes",
+      "role": "platform operator",
+      "want": "the Deployment to expose port 11211 with health probes",
+      "so_that": "Memcached clients can connect and Kubernetes can monitor pod health for readiness",
+      "criteria": [
+        "Container has port named 'memcached' with containerPort 11211 and protocol TCP",
+        "Container has a readinessProbe using tcpSocket on port 'memcached' with initialDelaySeconds=5 and periodSeconds=5",
+        "Container has a livenessProbe using tcpSocket on port 'memcached' with initialDelaySeconds=10 and periodSeconds=10"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The controller SHALL build memcached container args from MemcachedConfig fields, mapping maxMemoryMB to -m, maxConnections to -c, threads to -t, maxItemSize to -I, verbosity to -v/-vv, and appending extraArgs",
+      "priority": "SHALL",
+      "rationale": "Core feature: translates declarative CRD config into memcached process flags",
+      "scenarios": [
+        {
+          "name": "Default config produces standard args",
+          "when": "MemcachedConfig has default values (maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=\"1m\", verbosity=0)",
+          "then": "args are [\"-m\", \"64\", \"-c\", \"1024\", \"-t\", \"4\", \"-I\", \"1m\"]",
+          "and_then": [
+            "no verbosity flag is included",
+            "no extra args appended"
+          ]
+        },
+        {
+          "name": "Verbosity level 1 adds -v flag",
+          "when": "MemcachedConfig has verbosity=1",
+          "then": "args include \"-v\" after the standard flags",
+          "and_then": [
+            "flag appears exactly once"
+          ]
+        },
+        {
+          "name": "Verbosity level 2 adds -vv flag",
+          "when": "MemcachedConfig has verbosity=2",
+          "then": "args include \"-vv\" after the standard flags",
+          "and_then": [
+            "flag appears exactly once, not \"-v\" \"-v\""
+          ]
+        },
+        {
+          "name": "ExtraArgs appended at the end",
+          "when": "MemcachedConfig has extraArgs=[\"-o\", \"modern\"]",
+          "then": "args end with [\"-o\", \"modern\"] after all standard and verbosity flags",
+          "and_then": []
+        },
+        {
+          "name": "Nil MemcachedConfig uses defaults",
+          "when": "spec.memcached is nil",
+          "then": "args use default values: [\"-m\", \"64\", \"-c\", \"1024\", \"-t\", \"4\", \"-I\", \"1m\"]",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The controller SHALL create a Deployment with spec.replicas pods using spec.image (default memcached:1.6) as the container image",
+      "priority": "SHALL",
+      "rationale": "The Deployment is the primary managed resource; replicas and image are the most fundamental configuration",
+      "scenarios": [
+        {
+          "name": "Minimal CR uses defaults",
+          "when": "a Memcached CR is created with empty spec",
+          "then": "a Deployment is created with 1 replica and image memcached:1.6",
+          "and_then": []
+        },
+        {
+          "name": "Custom replicas and image",
+          "when": "a Memcached CR is created with spec.replicas=3 and spec.image='memcached:1.6.29'",
+          "then": "a Deployment is created with 3 replicas and image memcached:1.6.29",
+          "and_then": []
+        },
+        {
+          "name": "Zero replicas allowed",
+          "when": "a Memcached CR has spec.replicas=0",
+          "then": "a Deployment is created with 0 replicas (scale-to-zero)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The controller SHALL set container resource requests and limits from spec.resources when provided",
+      "priority": "SHALL",
+      "rationale": "Resource management is essential for production deployments and cluster resource planning",
+      "scenarios": [
+        {
+          "name": "Resources set from spec",
+          "when": "spec.resources has requests.cpu=100m, requests.memory=128Mi, limits.cpu=500m, limits.memory=256Mi",
+          "then": "the memcached container has matching resource requests and limits",
+          "and_then": []
+        },
+        {
+          "name": "No resources when spec.resources is nil",
+          "when": "spec.resources is nil",
+          "then": "the memcached container has no resource requests or limits set",
+          "and_then": []
+        },
+        {
+          "name": "Partial resources (requests only)",
+          "when": "spec.resources has only requests (no limits)",
+          "then": "the memcached container has resource requests but no limits",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The controller SHALL expose container port 11211/TCP named 'memcached' on the Deployment pod template",
+      "priority": "SHALL",
+      "rationale": "Port 11211 is the standard memcached port; naming it enables reference in probes and services",
+      "scenarios": [
+        {
+          "name": "Port exposed on every Deployment",
+          "when": "any Memcached CR is reconciled",
+          "then": "the memcached container has a port with name='memcached', containerPort=11211, protocol=TCP",
+          "and_then": []
+        },
+        {
+          "name": "Port is always present regardless of spec",
+          "when": "a Memcached CR with empty spec is reconciled",
+          "then": "the memcached container still exposes port 11211",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The controller SHALL set a controller owner reference on the Deployment pointing to the Memcached CR",
+      "priority": "SHALL",
+      "rationale": "Owner references enable Kubernetes garbage collection to clean up Deployments when the CR is deleted",
+      "scenarios": [
+        {
+          "name": "Owner reference set on creation",
+          "when": "a Deployment is created for a Memcached CR",
+          "then": "the Deployment has an ownerReference with apiVersion=memcached.c5c3.io/v1alpha1, kind=Memcached, name=<cr-name>, controller=true, blockOwnerDeletion=true",
+          "and_then": []
+        },
+        {
+          "name": "Owner reference preserved on update",
+          "when": "a Deployment is updated due to CR spec change",
+          "then": "the ownerReference remains unchanged and valid",
+          "and_then": []
+        },
+        {
+          "name": "CR deletion cascades to Deployment",
+          "when": "a Memcached CR with an owned Deployment is deleted",
+          "then": "the Deployment is automatically deleted by Kubernetes garbage collector",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The controller SHALL use controllerutil.CreateOrUpdate to create the Deployment if it does not exist or update it if it differs from desired state",
+      "priority": "SHALL",
+      "rationale": "Idempotent create-or-update ensures convergence regardless of current state",
+      "scenarios": [
+        {
+          "name": "Deployment created when absent",
+          "when": "reconciliation runs and no Deployment exists for the Memcached CR",
+          "then": "a new Deployment is created with the desired spec",
+          "and_then": [
+            "the operation is logged as 'created'"
+          ]
+        },
+        {
+          "name": "Deployment updated when spec differs",
+          "when": "reconciliation runs and the existing Deployment spec differs from desired (e.g., replicas changed)",
+          "then": "the Deployment is updated to match the desired spec",
+          "and_then": [
+            "the operation is logged as 'updated'"
+          ]
+        },
+        {
+          "name": "No update when spec matches",
+          "when": "reconciliation runs and the existing Deployment already matches the desired spec",
+          "then": "no update is performed",
+          "and_then": [
+            "the operation is logged as 'unchanged'"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The controller SHALL apply standard Kubernetes recommended labels on the Deployment and pod template",
+      "priority": "SHALL",
+      "rationale": "Standard labels enable consistent resource identification, selection, and tooling integration",
+      "scenarios": [
+        {
+          "name": "Labels set on Deployment metadata",
+          "when": "a Deployment is created for Memcached CR named 'my-cache'",
+          "then": "Deployment labels include app.kubernetes.io/name=memcached, app.kubernetes.io/instance=my-cache, app.kubernetes.io/managed-by=memcached-operator",
+          "and_then": []
+        },
+        {
+          "name": "Labels set on pod template",
+          "when": "a Deployment is created",
+          "then": "the pod template labels match the Deployment selector matchLabels",
+          "and_then": [
+            "selector matchLabels include the same app.kubernetes.io labels"
+          ]
+        },
+        {
+          "name": "Labels consistent across reconciliations",
+          "when": "a Deployment is updated",
+          "then": "labels remain consistent and unchanged between reconciliations",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The controller SHALL configure liveness and readiness probes on the memcached container using TCP socket checks on port 11211",
+      "priority": "SHALL",
+      "rationale": "Probes enable Kubernetes to detect unhealthy pods and track readiness for status reporting",
+      "scenarios": [
+        {
+          "name": "Readiness probe configured",
+          "when": "a Deployment is created",
+          "then": "the memcached container has a readinessProbe with tcpSocket.port='memcached', initialDelaySeconds=5, periodSeconds=5",
+          "and_then": []
+        },
+        {
+          "name": "Liveness probe configured",
+          "when": "a Deployment is created",
+          "then": "the memcached container has a livenessProbe with tcpSocket.port='memcached', initialDelaySeconds=10, periodSeconds=10",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The controller SHALL use RollingUpdate strategy with maxSurge=1 and maxUnavailable=0 on the Deployment",
+      "priority": "SHALL",
+      "rationale": "Zero-downtime rolling updates prevent cache loss during pod replacement",
+      "scenarios": [
+        {
+          "name": "Rolling update strategy set",
+          "when": "a Deployment is created",
+          "then": "the Deployment strategy is RollingUpdate with maxSurge=1 and maxUnavailable=0",
+          "and_then": []
+        },
+        {
+          "name": "Strategy preserved on update",
+          "when": "a Deployment is updated due to CR spec change",
+          "then": "the RollingUpdate strategy remains unchanged",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The controller SHALL return an error from Reconcile if Deployment reconciliation fails, causing automatic requeue",
+      "priority": "SHALL",
+      "rationale": "Returning errors triggers controller-runtime's exponential backoff requeue for transient failures",
+      "scenarios": [
+        {
+          "name": "API error propagated",
+          "when": "the Kubernetes API returns an error during Deployment create/update",
+          "then": "the Reconcile method returns the error",
+          "and_then": [
+            "controller-runtime requeues the request with backoff"
+          ]
+        },
+        {
+          "name": "Owner reference error propagated",
+          "when": "SetControllerReference fails (e.g., cross-namespace ownership)",
+          "then": "the Reconcile method returns the error",
+          "and_then": []
+        },
+        {
+          "name": "Successful reconciliation returns no error",
+          "when": "Deployment is successfully created or updated",
+          "then": "the Reconcile method returns nil error",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Implement buildMemcachedArgs function with unit tests (REQ-001)",
+      "description": "Create internal/controller/deployment.go with a buildMemcachedArgs(*MemcachedConfig) []string function. When config is nil, use defaults (maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=\"1m\"). Map: maxMemoryMB→\"-m\", maxConnections→\"-c\", threads→\"-t\", maxItemSize→\"-I\". Verbosity: 0=no flag, 1=\"-v\", 2=\"-vv\". Append extraArgs at end. Create internal/controller/deployment_test.go (standard testing.T, not Ginkgo) with table-driven tests covering: default config, custom values, all verbosity levels, extraArgs, nil config, combined verbosity+extraArgs.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Implement labelsForMemcached helper with unit tests (REQ-007)",
+      "description": "Add labelsForMemcached(name string) map[string]string to internal/controller/deployment.go. Returns: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<name>, app.kubernetes.io/managed-by=memcached-operator. Add unit tests in internal/controller/deployment_test.go verifying all three labels are present and correct for various CR names.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Implement constructDeployment function with unit tests (REQ-002, REQ-003, REQ-004, REQ-008, REQ-009)",
+      "description": "Add constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) to internal/controller/deployment.go. This pure function mutates dep to match desired state: set replicas from mc.Spec.Replicas (default 1), labels from labelsForMemcached, selector matchLabels, RollingUpdate strategy (maxSurge=1, maxUnavailable=0), pod template labels. Build memcached container: name='memcached', image from mc.Spec.Image (default 'memcached:1.6'), args from buildMemcachedArgs, port 11211/TCP named 'memcached', resources from mc.Spec.Resources (nil-safe), readinessProbe (tcpSocket port 'memcached', initialDelaySeconds=5, periodSeconds=5), livenessProbe (tcpSocket port 'memcached', initialDelaySeconds=10, periodSeconds=10). Add unit tests: minimal spec (verify defaults), full custom spec, nil resources, zero replicas, custom image.",
+      "level": 2,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Implement reconcileDeployment method on MemcachedReconciler (REQ-005, REQ-006, REQ-010)",
+      "description": "Add reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) error method to MemcachedReconciler in internal/controller/memcached_controller.go. Create empty Deployment with ObjectMeta (Name=mc.Name, Namespace=mc.Namespace). Use controllerutil.CreateOrUpdate with mutate function that calls constructDeployment and controllerutil.SetControllerReference. Log operation result (created/updated/unchanged). Return wrapped error on failure. Add import for 'sigs.k8s.io/controller-runtime/pkg/controller/controllerutil' and 'fmt'.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-006",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Wire reconcileDeployment into Reconcile and update existing tests (REQ-006)",
+      "description": "Modify the Reconcile method in internal/controller/memcached_controller.go: after fetching the Memcached CR successfully, call r.reconcileDeployment(ctx, memcached). If it returns an error, return ctrl.Result{}, err. Update internal/controller/memcached_reconcile_test.go: the 'when the Memcached CR exists' test now creates a Deployment, so verify Reconcile still returns empty result and no error. The 'when client.Get returns a non-NotFound error' test should still pass unchanged.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Integration test: Deployment creation from minimal CR with defaults (REQ-002, REQ-004, REQ-005, REQ-007, REQ-008, REQ-009)",
+      "description": "Create internal/controller/memcached_deployment_reconcile_test.go using Ginkgo/Gomega with envtest (uses k8sClient, ctx from suite_test.go). Test: create a minimal Memcached CR (empty spec), run Reconcile, then fetch the Deployment and verify: replicas=1, image=memcached:1.6, container args=[\"-m\",\"64\",\"-c\",\"1024\",\"-t\",\"4\",\"-I\",\"1m\"], port 11211/TCP named 'memcached', readiness/liveness probes, RollingUpdate strategy (maxSurge=1, maxUnavailable=0), standard labels on Deployment and pod template, owner reference pointing to the CR. Use uniqueName helper for test isolation.",
+      "level": 4,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002",
+        "REQ-004",
+        "REQ-005",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Integration test: Deployment creation with full custom spec (REQ-001, REQ-002, REQ-003)",
+      "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: create a Memcached CR with spec.replicas=3, spec.image='memcached:1.6.29', spec.resources (cpu/memory requests and limits), spec.memcached (maxMemoryMB=256, maxConnections=2048, threads=8, maxItemSize='2m', verbosity=2, extraArgs=[\"-o\", \"modern\"]). Run Reconcile, fetch Deployment, verify all fields match: 3 replicas, custom image, args [\"-m\",\"256\",\"-c\",\"2048\",\"-t\",\"8\",\"-I\",\"2m\",\"-vv\",\"-o\",\"modern\"], resource requests/limits set correctly.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Integration test: Deployment update on CR spec change - drift detection (REQ-006)",
+      "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: 1) Create Memcached CR with replicas=1, reconcile, verify Deployment has 1 replica. 2) Update CR spec.replicas=3 via k8sClient.Update, reconcile again, verify Deployment now has 3 replicas. 3) Test image change: update spec.image, reconcile, verify container image changed. 4) Test idempotency: reconcile twice without changes, verify Deployment unchanged (no resourceVersion bump).",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "4.4",
+      "title": "Integration test: owner reference and error handling edge cases (REQ-005, REQ-010)",
+      "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: 1) Verify owner reference: create CR, reconcile, fetch Deployment, check ownerReferences has exactly one entry with correct apiVersion, kind, name, controller=true, blockOwnerDeletion=true. 2) Test zero replicas: create CR with replicas=0, reconcile, verify Deployment has 0 replicas. 3) Test error propagation: use interceptor.NewClient to simulate API failure on Create, verify Reconcile returns the error.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "4.5",
+      "title": "Integration test: extraArgs, verbosity, and nil memcached config edge cases (REQ-001)",
+      "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: 1) CR with nil spec.memcached: reconcile, verify container args use defaults. 2) CR with verbosity=1: verify args include \"-v\" but not \"-vv\". 3) CR with extraArgs=[\"--extended\", \"ext_item_size=2M\"]: verify args end with the extra args. 4) CR with empty extraArgs ([]): verify no extra args appended.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Reference documentation for Deployment reconciliation (REQ-001 through REQ-010)",
+      "description": "Create docs/reference/backend/deployment-reconciliation.md documenting: 1) Overview of what reconcileDeployment does. 2) Container args mapping table (CRD field → flag → default). 3) Standard labels applied to Deployment and pod template. 4) Deployment spec details (strategy, probes, ports). 5) Owner reference behavior and garbage collection. 6) How drift detection works via CreateOrUpdate. 7) Error handling behavior. Cross-reference memcached-crd-types.md for field definitions and reconciler-scaffold-watches.md for watch configuration.",
+      "level": 5,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_DefaultConfig",
+      "story": "Operator maps CRD config to container args",
+      "expected": "Default MemcachedConfig produces args [\"-m\", \"64\", \"-c\", \"1024\", \"-t\", \"4\", \"-I\", \"1m\"]",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_VerbosityLevels",
+      "story": "Operator maps CRD config to container args",
+      "expected": "Verbosity 0 = no flag, 1 = -v, 2 = -vv",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_ExtraArgs",
+      "story": "Operator maps CRD config to container args",
+      "expected": "ExtraArgs are appended after all standard flags",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_NilConfig",
+      "story": "Operator applies defaults for minimal Memcached CR",
+      "expected": "Nil MemcachedConfig uses defaults: [\"-m\", \"64\", \"-c\", \"1024\", \"-t\", \"4\", \"-I\", \"1m\"]",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestLabelsForMemcached",
+      "story": "Operator creates Deployment for Memcached pods",
+      "expected": "Returns map with app.kubernetes.io/name=memcached, instance=<name>, managed-by=memcached-operator",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_MinimalSpec",
+      "story": "Operator applies defaults for minimal Memcached CR",
+      "expected": "Deployment has 1 replica, memcached:1.6 image, default args, port 11211, probes, RollingUpdate strategy",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_CustomSpec",
+      "story": "Operator configures custom image and resources",
+      "expected": "Deployment uses custom image, replicas, resources from spec",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_ContainerPort",
+      "story": "Operator exposes memcached port and configures probes",
+      "expected": "Container has port named 'memcached' with containerPort=11211, protocol=TCP",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_Probes",
+      "story": "Operator exposes memcached port and configures probes",
+      "expected": "Container has liveness (initialDelay=10, period=10) and readiness (initialDelay=5, period=5) tcpSocket probes on port 'memcached'",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_Resources",
+      "story": "Operator configures custom image and resources",
+      "expected": "Container resources match spec.resources; nil spec.resources results in empty resources",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_RollingUpdateStrategy",
+      "story": "Operator creates Deployment for Memcached pods",
+      "expected": "Deployment strategy is RollingUpdate with maxSurge=1, maxUnavailable=0",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment creation from minimal CR",
+      "story": "Operator creates Deployment for Memcached pods",
+      "expected": "Reconciling a minimal CR creates a Deployment with correct defaults, labels, owner reference",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment creation with full custom spec",
+      "story": "Operator configures custom image and resources",
+      "expected": "Reconciling a CR with all fields set creates a Deployment matching every spec field",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment update on CR spec change",
+      "story": "Operator detects drift and reconciles Deployment",
+      "expected": "Changing CR spec and re-reconciling updates the Deployment to match",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment has owner reference",
+      "story": "Operator sets owner references for garbage collection",
+      "expected": "Deployment ownerReferences contains the Memcached CR with controller=true",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Reconcile returns error on API failure",
+      "story": "Operator detects drift and reconciles Deployment",
+      "expected": "When Deployment creation/update fails, Reconcile returns the error for requeue",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment labels match standard conventions",
+      "story": "Operator creates Deployment for Memcached pods",
+      "expected": "Deployment and pod template labels include app.kubernetes.io/name, instance, managed-by",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment with zero replicas",
+      "story": "Operator applies defaults for minimal Memcached CR",
+      "expected": "CR with replicas=0 creates a Deployment with 0 replicas",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment with extraArgs and verbosity",
+      "story": "Operator maps CRD config to container args",
+      "expected": "CR with extraArgs and verbosity=2 creates container with correct combined args",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Second reconciliation is idempotent",
+      "story": "Operator detects drift and reconciles Deployment",
+      "expected": "Running Reconcile twice with no spec changes does not modify the Deployment",
+      "requirement_id": "REQ-006"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 10 SHALL requirements (REQ-001 through REQ-010) have passing tests that verify each WHEN/THEN scenario",
+    "buildMemcachedArgs correctly maps all MemcachedConfig fields to CLI flags with nil-safety for default values",
+    "constructDeployment produces a complete Deployment spec matching README.md lines 778-880 (excluding security contexts, anti-affinity, exporter sidecar - those are separate stories)",
+    "controllerutil.CreateOrUpdate is used for idempotent create/update, and controllerutil.SetControllerReference sets the owner reference correctly",
+    "Existing tests in memcached_reconcile_test.go, memcached_controller_test.go, memcached_setup_test.go still pass without modification (or with minimal adaptation)",
+    "All new code passes golangci-lint and go vet without errors",
+    "Integration tests use envtest infrastructure from suite_test.go and follow existing patterns (uniqueName, validMemcached helpers)",
+    "Reference documentation accurately describes the implementation and cross-references existing docs"
+  ],
+  "implementation_notes": "File structure: Add internal/controller/deployment.go for pure builder functions (buildMemcachedArgs, labelsForMemcached, constructDeployment) and internal/controller/deployment_test.go for their unit tests (standard testing.T with table-driven tests). Add reconcileDeployment method to MemcachedReconciler in memcached_controller.go. Integration tests go in internal/controller/memcached_deployment_reconcile_test.go using Ginkgo/Gomega + envtest. Follow the exact pattern from README.md lines 598-626 for reconcileDeployment. Follow README.md lines 1016-1039 for buildMemcachedArgs. The Deployment name matches the Memcached CR name (mc.Name). Namespace matches the CR namespace. Use pointer dereferencing with defaults for spec.Replicas (default 1) and spec.Image (default 'memcached:1.6'). When spec.Memcached is nil, use default MemcachedConfig values for args. When spec.Resources is nil, leave container resources empty (no requests/limits). Do NOT implement security contexts, anti-affinity, topology spread, graceful shutdown, or exporter sidecar - those are S009, S010, S012, S013, S016 respectively. The constructDeployment function should be designed so later stories can extend it (e.g., S009 adds affinity, S013 adds sidecar container).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.420033"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T08:22:26.977172"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T08:28:29.431639"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "c1fc4d35-2f66-4c3f-bac8-2d5233f85eb3",
+      "timestamp": "2026-02-19T08:28:29.431669",
+      "total_duration": 358.65471839904785,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 358.65471839904785,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
