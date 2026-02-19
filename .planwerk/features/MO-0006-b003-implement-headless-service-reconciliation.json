@@ -1,0 +1,552 @@
+{
+  "feature_id": "MO-0006",
+  "title": "B003: Implement headless service reconciliation",
+  "slug": "b003-implement-headless-service-reconciliation",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Create and reconcile a headless Service (clusterIP: None) on port 11211 for direct pod discovery. This is critical for Keystone's pymemcache backend which connects to individual pod addresses (e.g. memcached-0.memcached:11211).",
+  "stories": [
+    {
+      "title": "Operator creates headless Service for pod discovery",
+      "role": "platform engineer",
+      "want": "the operator to automatically create a headless Service (clusterIP: None) when I create a Memcached CR",
+      "so_that": "Keystone instances can discover individual Memcached pod IPs via DNS for consistent hashing with pymemcache",
+      "criteria": [
+        "A Service with clusterIP: None is created in the same namespace as the Memcached CR",
+        "The Service name matches the Memcached CR name",
+        "The Service exposes port 11211/TCP named 'memcached' targeting the 'memcached' container port",
+        "The Service selector matches the standard labels (app.kubernetes.io/name, instance, managed-by)"
+      ]
+    },
+    {
+      "title": "Operator sets correct labels and owner references on the Service",
+      "role": "platform engineer",
+      "want": "the headless Service to have standard Kubernetes labels and an owner reference to my Memcached CR",
+      "so_that": "the Service is discoverable by label selectors and garbage-collected when the CR is deleted",
+      "criteria": [
+        "Service has labels app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator",
+        "Service has exactly one owner reference pointing to the Memcached CR with controller=true and blockOwnerDeletion=true",
+        "Owner reference is preserved across reconciliation cycles"
+      ]
+    },
+    {
+      "title": "Operator applies custom annotations from spec.service.annotations",
+      "role": "platform engineer",
+      "want": "to add custom annotations to the headless Service via my Memcached CR spec",
+      "so_that": "I can integrate with external tools (e.g. prometheus.io/scrape annotations, load balancer configs)",
+      "criteria": [
+        "When spec.service.annotations is set, those annotations appear on the Service metadata",
+        "When spec.service.annotations is nil or empty, no custom annotations are added",
+        "Annotations are updated when the CR spec changes"
+      ]
+    },
+    {
+      "title": "Operator corrects drift on the headless Service",
+      "role": "platform engineer",
+      "want": "the operator to detect and correct manual changes to the headless Service",
+      "so_that": "the Service always reflects the desired state from my Memcached CR",
+      "criteria": [
+        "If someone manually edits the Service spec, the next reconciliation restores it to the desired state",
+        "Reconciliation is idempotent: reconciling an already-correct Service produces no update (same resourceVersion)",
+        "Annotation changes in the CR spec are propagated to the Service on next reconciliation"
+      ]
+    },
+    {
+      "title": "Operator handles Service reconciliation errors gracefully",
+      "role": "platform engineer",
+      "want": "the operator to propagate errors from Service reconciliation without crashing",
+      "so_that": "transient API server failures are retried via the controller-runtime work queue",
+      "criteria": [
+        "API server errors during Service create/update are returned from Reconcile(), triggering a requeue",
+        "The error message wraps the original error with context (e.g. 'reconciling Service: <original error>')",
+        "Reconcile does not panic on any Service-related failure"
+      ]
+    },
+    {
+      "title": "Reference documentation for headless Service reconciliation",
+      "role": "developer",
+      "want": "comprehensive reference documentation for the Service reconciliation logic",
+      "so_that": "I can understand the Service builder, reconciliation flow, and manifest structure without reading source code",
+      "criteria": [
+        "Documentation covers constructService() builder function behavior",
+        "Documentation includes the reconcileService() method and CreateOrUpdate pattern",
+        "Documentation shows example Service manifests for minimal and annotated configurations"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL add a ServiceSpec type and a Service field to MemcachedSpec for optional headless Service annotations",
+      "priority": "SHALL",
+      "rationale": "The CRD must expose a spec.service.annotations field so users can attach custom annotations to the headless Service (e.g. for Prometheus scrape config)",
+      "scenarios": [
+        {
+          "name": "ServiceSpec type defined with annotations field",
+          "when": "the CRD types are compiled",
+          "then": "ServiceSpec struct exists with an Annotations map[string]string field tagged json:\"annotations,omitempty\"",
+          "and_then": [
+            "MemcachedSpec has a Service *ServiceSpec field tagged json:\"service,omitempty,omitzero\""
+          ]
+        },
+        {
+          "name": "DeepCopy generated for ServiceSpec",
+          "when": "make generate is run",
+          "then": "zz_generated.deepcopy.go includes DeepCopyInto for ServiceSpec",
+          "and_then": [
+            "make manifests regenerates the CRD YAML with the new field"
+          ]
+        },
+        {
+          "name": "CRD accepts service.annotations in CR YAML",
+          "when": "a Memcached CR with spec.service.annotations is applied",
+          "then": "the API server accepts it without validation errors",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL create a headless Service (clusterIP: None) with port 11211/TCP named 'memcached'",
+      "priority": "SHALL",
+      "rationale": "Keystone's pymemcache backend requires direct pod discovery via a headless Service to connect to individual Memcached pod addresses",
+      "scenarios": [
+        {
+          "name": "Service created with clusterIP None",
+          "when": "a Memcached CR is created and reconciled",
+          "then": "a Service is created with spec.clusterIP set to 'None'",
+          "and_then": [
+            "the Service type is ClusterIP (default)"
+          ]
+        },
+        {
+          "name": "Service exposes memcached port",
+          "when": "a Memcached CR is reconciled",
+          "then": "the Service has exactly one port: name='memcached', port=11211, targetPort='memcached', protocol=TCP",
+          "and_then": []
+        },
+        {
+          "name": "Service name matches CR name",
+          "when": "a Memcached CR named 'my-cache' in namespace 'production' is reconciled",
+          "then": "a Service named 'my-cache' is created in namespace 'production'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL set standard Kubernetes labels on the Service matching the Deployment labels",
+      "priority": "SHALL",
+      "rationale": "Consistent labels enable label-based discovery and ensure the Service selector matches the pods created by the Deployment",
+      "scenarios": [
+        {
+          "name": "Service metadata labels match standard labels",
+          "when": "a Memcached CR named 'my-cache' is reconciled",
+          "then": "the Service has labels: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=my-cache, app.kubernetes.io/managed-by=memcached-operator",
+          "and_then": []
+        },
+        {
+          "name": "Service selector matches pod labels",
+          "when": "a Memcached CR is reconciled",
+          "then": "the Service spec.selector matches the same labels as the Deployment pod template labels",
+          "and_then": [
+            "DNS resolution for the headless Service returns individual pod IPs"
+          ]
+        },
+        {
+          "name": "Labels are consistent across resources",
+          "when": "a Memcached CR is reconciled producing both Deployment and Service",
+          "then": "the Service labels, Service selector, Deployment labels, and Deployment pod template labels all use labelsForMemcached()",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL set a controller owner reference on the Service pointing to the Memcached CR",
+      "priority": "SHALL",
+      "rationale": "Owner references enable Kubernetes garbage collection to automatically delete the Service when the Memcached CR is deleted",
+      "scenarios": [
+        {
+          "name": "Owner reference set on creation",
+          "when": "a Service is created during reconciliation",
+          "then": "the Service has exactly one owner reference with apiVersion=memcached.c5c3.io/v1alpha1, kind=Memcached, name=<cr-name>, uid=<cr-uid>",
+          "and_then": [
+            "controller=true",
+            "blockOwnerDeletion=true"
+          ]
+        },
+        {
+          "name": "Owner reference preserved on update",
+          "when": "the CR spec changes and reconciliation updates the Service",
+          "then": "the owner reference remains intact with the same fields",
+          "and_then": []
+        },
+        {
+          "name": "Service deleted when CR is deleted",
+          "when": "the Memcached CR is deleted",
+          "then": "Kubernetes garbage collector deletes the owned Service",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The operator SHALL apply custom annotations from spec.service.annotations to the Service metadata",
+      "priority": "SHALL",
+      "rationale": "Users need to add annotations for integration with external tools like Prometheus, external-dns, or cloud provider load balancers",
+      "scenarios": [
+        {
+          "name": "Custom annotations applied to Service",
+          "when": "a Memcached CR has spec.service.annotations with {prometheus.io/scrape: 'true'}",
+          "then": "the Service metadata.annotations includes prometheus.io/scrape: 'true'",
+          "and_then": []
+        },
+        {
+          "name": "No annotations when spec.service is nil",
+          "when": "a Memcached CR has no spec.service field",
+          "then": "the Service has no custom annotations (annotations may be nil or empty)",
+          "and_then": []
+        },
+        {
+          "name": "Annotations updated on CR change",
+          "when": "the CR spec.service.annotations is changed from {a: '1'} to {b: '2'}",
+          "then": "the Service annotations are updated to reflect the new values",
+          "and_then": [
+            "old annotations from the previous spec are removed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL use CreateOrUpdate for idempotent Service reconciliation",
+      "priority": "SHALL",
+      "rationale": "CreateOrUpdate ensures the Service is created if missing and updated if it drifts from the desired state, following the established Deployment reconciliation pattern",
+      "scenarios": [
+        {
+          "name": "Service created when not present",
+          "when": "reconciliation runs and no Service exists for the CR",
+          "then": "CreateOrUpdate creates the Service with the desired spec",
+          "and_then": []
+        },
+        {
+          "name": "Service updated when drifted",
+          "when": "the existing Service spec differs from the desired state",
+          "then": "CreateOrUpdate updates the Service to match the desired state",
+          "and_then": []
+        },
+        {
+          "name": "No update when Service matches desired state",
+          "when": "the existing Service already matches the desired state",
+          "then": "CreateOrUpdate performs no update (resourceVersion unchanged)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator SHALL call reconcileService from the main Reconcile method after reconcileDeployment",
+      "priority": "SHALL",
+      "rationale": "The Service must be reconciled as part of the main reconciliation loop to ensure it stays in sync with the Memcached CR",
+      "scenarios": [
+        {
+          "name": "reconcileService called in Reconcile",
+          "when": "Reconcile() is invoked for a Memcached CR",
+          "then": "reconcileService() is called after reconcileDeployment()",
+          "and_then": [
+            "if reconcileService returns an error, Reconcile returns that error"
+          ]
+        },
+        {
+          "name": "Error from reconcileService propagated",
+          "when": "reconcileService() returns an error (e.g. API server failure)",
+          "then": "Reconcile() returns ctrl.Result{} and the error, triggering a requeue",
+          "and_then": []
+        },
+        {
+          "name": "reconcileService not called for deleted CR",
+          "when": "Reconcile() is invoked but the Memcached CR is not found",
+          "then": "reconcileService() is not called; Reconcile returns nil",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The operator SHALL log Service reconciliation results",
+      "priority": "SHALL",
+      "rationale": "Logging reconciliation results enables operators to monitor and debug Service lifecycle events",
+      "scenarios": [
+        {
+          "name": "Log on Service create",
+          "when": "a Service is created during reconciliation",
+          "then": "an info log is emitted with the Service name and operation=OperationResultCreated",
+          "and_then": []
+        },
+        {
+          "name": "Log on Service update",
+          "when": "a Service is updated during reconciliation",
+          "then": "an info log is emitted with the Service name and operation=OperationResultUpdated",
+          "and_then": []
+        },
+        {
+          "name": "Log on no-op",
+          "when": "a Service reconciliation results in no change",
+          "then": "an info log is emitted with the Service name and operation=OperationResultNone",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add ServiceSpec type and Service field to MemcachedSpec in CRD types (REQ-001)",
+      "description": "Add ServiceSpec struct with Annotations map[string]string field to api/v1alpha1/memcached_types.go. Add Service *ServiceSpec field to MemcachedSpec. Include kubebuilder markers (+optional, json tags with omitempty,omitzero). Run make generate to regenerate DeepCopy methods and make manifests to regenerate CRD YAML. Write unit test in api/v1alpha1/memcached_types_test.go verifying the new field is accepted by the API server.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Implement constructService() builder function with unit tests (REQ-002, REQ-003, REQ-005)",
+      "description": "Create internal/controller/service.go with constructService(mc *Memcached, svc *corev1.Service) function. The function mutates the Service in-place (same pattern as constructDeployment): sets Labels from labelsForMemcached(), sets spec.ClusterIP='None', sets spec.Selector from labelsForMemcached(), adds port 11211/TCP named 'memcached' targeting 'memcached', and applies custom annotations from mc.Spec.Service.Annotations if present. Write table-driven unit tests in internal/controller/service_test.go covering: minimal spec (no annotations), spec with custom annotations, nil spec.service, labels correctness, port configuration, clusterIP=None, selector matching labels.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Implement reconcileService() method and integrate into Reconcile() (REQ-004, REQ-006, REQ-007, REQ-008)",
+      "description": "Add reconcileService(ctx, mc) method to MemcachedReconciler in internal/controller/memcached_controller.go following the exact pattern of reconcileDeployment: create Service ObjectMeta with Name/Namespace, call controllerutil.CreateOrUpdate with constructService mutate function and SetControllerReference, log result, return wrapped error. Add the reconcileService call in Reconcile() after reconcileDeployment(). Add corev1 import if not already present.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Integration tests: Service creation from minimal CR with defaults (REQ-002, REQ-003, REQ-004, REQ-006)",
+      "description": "Create internal/controller/memcached_service_reconcile_test.go with Ginkgo Describe/Context/It tests using envtest. Add fetchService() helper similar to fetchDeployment(). Test Context 'minimal CR with defaults': create validMemcached, reconcileOnce, verify Service exists with clusterIP=None, port 11211/TCP named 'memcached', standard labels on metadata and selector, owner reference with controller=true and blockOwnerDeletion=true, no custom annotations.",
+      "level": 4,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Integration tests: Service with custom annotations and annotation updates (REQ-005, REQ-006)",
+      "description": "Add test Context 'custom annotations' in memcached_service_reconcile_test.go: create CR with spec.service.annotations set, reconcile, verify annotations appear on Service. Add test Context 'annotation update': create CR with annotations, reconcile, update CR annotations, reconcile again, verify Service annotations match new values.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "4.3",
+      "title": "Integration tests: Service drift detection, idempotency, and error handling (REQ-006, REQ-007)",
+      "description": "Add test Contexts in memcached_service_reconcile_test.go: 'idempotency' - reconcile twice without changes, verify resourceVersion unchanged. 'error handling' - use fake client with interceptor to simulate API errors, verify error is propagated from Reconcile(). Follow the exact error-handling test pattern from memcached_deployment_reconcile_test.go.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Reference documentation for headless Service reconciliation (REQ-001 through REQ-008)",
+      "description": "Create docs/reference/backend/headless-service-reconciliation.md following the structure of deployment-reconciliation.md. Cover: constructService() behavior and field mapping, reconcileService() method and CreateOrUpdate pattern, Service spec (clusterIP=None, port 11211, labels, selector), custom annotations from spec.service.annotations, owner references and garbage collection, example Service manifests for minimal and annotated configurations.",
+      "level": 5,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "test_service_annotations_field_accepted",
+      "story": "Operator applies custom annotations from spec.service.annotations",
+      "expected": "A Memcached CR with spec.service.annotations should be accepted by the API server",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "test_nil_service_spec_accepted",
+      "story": "Operator creates headless Service for pod discovery",
+      "expected": "A Memcached CR with no spec.service field should be accepted by the API server",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_MinimalSpec",
+      "story": "Operator creates headless Service for pod discovery",
+      "expected": "constructService with minimal CR sets clusterIP=None, port 11211, correct labels and selector",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_ClusterIPNone",
+      "story": "Operator creates headless Service for pod discovery",
+      "expected": "constructService always sets spec.ClusterIP to 'None'",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_PortConfig",
+      "story": "Operator creates headless Service for pod discovery",
+      "expected": "Service has exactly one port: name=memcached, port=11211, targetPort=memcached, protocol=TCP",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_Labels",
+      "story": "Operator sets correct labels and owner references on the Service",
+      "expected": "Service labels and selector use labelsForMemcached() with the CR name",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_CustomAnnotations",
+      "story": "Operator applies custom annotations from spec.service.annotations",
+      "expected": "Custom annotations from spec.service.annotations appear on Service metadata",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_NilServiceSpec",
+      "story": "Operator creates headless Service for pod discovery",
+      "expected": "constructService with nil spec.service produces Service with no custom annotations",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should create a headless Service with clusterIP None",
+      "story": "Operator creates headless Service for pod discovery",
+      "expected": "After reconciling a minimal CR, a Service exists with clusterIP=None and port 11211",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should set owner reference pointing to the Memcached CR",
+      "story": "Operator sets correct labels and owner references on the Service",
+      "expected": "Service has exactly one owner reference with controller=true pointing to the CR",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should apply custom annotations from spec.service.annotations",
+      "story": "Operator applies custom annotations from spec.service.annotations",
+      "expected": "Service metadata.annotations includes the values from spec.service.annotations",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should update annotations when CR spec changes",
+      "story": "Operator applies custom annotations from spec.service.annotations",
+      "expected": "After updating CR annotations and reconciling, Service annotations reflect the new values",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should be idempotent when reconciling without changes",
+      "story": "Operator corrects drift on the headless Service",
+      "expected": "Reconciling twice without changes leaves the Service resourceVersion unchanged",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should propagate API errors from Service create/update",
+      "story": "Operator handles Service reconciliation errors gracefully",
+      "expected": "When the API server returns an error during Service operations, Reconcile returns that error",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should set standard labels on Service metadata",
+      "story": "Operator sets correct labels and owner references on the Service",
+      "expected": "Service has app.kubernetes.io/name=memcached, instance=<cr-name>, managed-by=memcached-operator",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "should set matching labels on Service selector",
+      "story": "Operator sets correct labels and owner references on the Service",
+      "expected": "Service spec.selector matches the standard labelsForMemcached() labels",
+      "requirement_id": "REQ-003"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "Service is headless (clusterIP: None) with port 11211/TCP named 'memcached' targeting 'memcached'",
+    "Service labels and selector use labelsForMemcached() consistently with Deployment labels",
+    "Owner reference set with controller=true and blockOwnerDeletion=true",
+    "Custom annotations from spec.service.annotations are applied; nil/empty spec.service produces no annotations",
+    "CreateOrUpdate pattern matches reconcileDeployment exactly: construct + SetControllerReference in mutate func",
+    "All unit tests pass: constructService with minimal spec, custom annotations, nil service spec, labels, port, clusterIP",
+    "All integration tests pass: Service creation, annotations, idempotency, error propagation",
+    "make generate and make manifests succeed with new ServiceSpec type",
+    "golangci-lint passes with no new warnings",
+    "go vet passes with no errors",
+    "Reference documentation created in docs/reference/backend/ following deployment-reconciliation.md structure"
+  ],
+  "implementation_notes": "Architecture: Follow the exact pattern established by Deployment reconciliation (MO-0005). The headless Service is always created — it is not opt-in. The only configurable aspect is spec.service.annotations for custom annotations.\n\nKey decisions:\n1. constructService() is a pure function that mutates a *corev1.Service in-place, called from within controllerutil.CreateOrUpdate's mutate function.\n2. The Service always has clusterIP=None (headless) and port 11211/TCP. The metrics port (9150) is NOT included in this feature — it will be added in Phase 4 (S014: ServiceMonitor Reconciliation) when monitoring is enabled.\n3. Labels and selector reuse labelsForMemcached() from deployment.go (already exported within the package).\n4. Annotations are set from spec.service.annotations if non-nil; this replaces the entire annotations map each reconciliation (no merge with existing annotations).\n5. The Service watch is already configured in SetupWithManager via Owns(&corev1.Service{}) — no changes needed there.\n6. RBAC for services is already declared via kubebuilder markers — no changes needed.\n\nFiles to create:\n- internal/controller/service.go: constructService() builder function\n- internal/controller/service_test.go: unit tests for constructService()\n- internal/controller/memcached_service_reconcile_test.go: Ginkgo integration tests\n- docs/reference/backend/headless-service-reconciliation.md: reference documentation\n\nFiles to modify:\n- api/v1alpha1/memcached_types.go: add ServiceSpec type and Service field to MemcachedSpec\n- api/v1alpha1/memcached_types_test.go: add test for service annotations field\n- internal/controller/memcached_controller.go: add reconcileService() method and call from Reconcile()\n\nFiles auto-generated:\n- api/v1alpha1/zz_generated.deepcopy.go: via make generate\n- config/crd/bases/memcached.c5c3.io_memcacheds.yaml: via make manifests\n\nRisks:\n- ClusterIP field is immutable after Service creation. The constructService() function must set it in the mutate function, and CreateOrUpdate handles this correctly because it only applies to the initial creation.\n- Ensure annotations map is properly nil-safe in constructService() to avoid nil pointer dereference.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.420467"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T09:35:33.189547"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T09:40:18.388330"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "ba300077-61ae-44b8-9c53-154d4d8ee441",
+      "timestamp": "2026-02-19T09:40:18.388357",
+      "total_duration": 281.51474595069885,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 281.51474595069885,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
