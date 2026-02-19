@@ -1,0 +1,530 @@
+{
+  "feature_id": "MO-0017",
+  "title": "E002: Implement optional SASL authentication",
+  "slug": "e002-implement-optional-sasl-authentication",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Support optional SASL authentication for Memcached. When enabled in the CRD spec, configure Memcached with -Y flag and mount credentials from a referenced Secret. Clients must provide SASL credentials to connect.",
+  "stories": [
+    {
+      "title": "Operator enables SASL authentication on Memcached pods when configured",
+      "role": "cluster operator",
+      "want": "to enable SASL authentication on my Memcached deployment by setting spec.security.sasl.enabled=true and referencing a credentials Secret",
+      "so_that": "only authenticated clients can access the Memcached cluster, protecting cached data from unauthorized access",
+      "criteria": [
+        "When spec.security.sasl.enabled=true and credentialsSecretRef.name is set, the Memcached container args include '-Y /etc/memcached/sasl/password-file'",
+        "The referenced Secret is mounted as a read-only volume at /etc/memcached/sasl/ in the memcached container",
+        "The volume mount uses the 'password-file' key from the Secret projected to 'password-file' filename",
+        "The Deployment is updated idempotently on each reconcile when SASL config changes"
+      ]
+    },
+    {
+      "title": "Operator does not add SASL configuration when disabled",
+      "role": "cluster operator",
+      "want": "my Memcached deployment to have no SASL-related args, volumes, or volume mounts when SASL is not enabled",
+      "so_that": "there is no unnecessary overhead or configuration for clusters that do not need authentication",
+      "criteria": [
+        "When spec.security.sasl is nil, no -Y flag is present in memcached container args",
+        "When spec.security.sasl.enabled=false, no -Y flag is present in memcached container args",
+        "No SASL volume or volume mount exists on the pod when SASL is disabled",
+        "Existing Memcached instances without SASL continue to work unchanged"
+      ]
+    },
+    {
+      "title": "Operator adds RBAC permissions to read Secrets for SASL credentials",
+      "role": "cluster operator",
+      "want": "the operator to have the necessary RBAC permissions to read Secrets referenced by SASL configuration",
+      "so_that": "the operator can validate and mount credential Secrets without permission errors",
+      "criteria": [
+        "The operator ClusterRole includes get;list;watch permissions for core/v1 Secrets",
+        "RBAC marker comment is added to the controller for code generation",
+        "The generated role.yaml includes the Secrets permission entry"
+      ]
+    },
+    {
+      "title": "SASL configuration works alongside existing security features",
+      "role": "cluster operator",
+      "want": "SASL authentication to coexist with pod security contexts, container security contexts, and monitoring sidecar",
+      "so_that": "I can use multiple security features simultaneously without conflicts",
+      "criteria": [
+        "SASL volume mount is present when both SASL and pod/container security contexts are configured",
+        "SASL -Y flag appears in args alongside other memcached config flags (-m, -c, -t, -I)",
+        "When monitoring is enabled, the exporter sidecar does NOT receive the SASL volume mount (only the memcached container does)",
+        "When graceful shutdown is enabled, the lifecycle hook coexists with SASL volume mounts on the container"
+      ]
+    },
+    {
+      "title": "Operator sample CR demonstrates SASL authentication usage",
+      "role": "developer",
+      "want": "an updated sample CR showing how to configure SASL authentication",
+      "so_that": "I can quickly understand how to enable SASL by looking at the example",
+      "criteria": [
+        "The sample CR at config/samples/ includes a commented-out SASL configuration block",
+        "The SASL block shows spec.security.sasl.enabled=true and credentialsSecretRef.name referencing a Secret name"
+      ]
+    },
+    {
+      "title": "Reference documentation covers SASL authentication",
+      "role": "developer",
+      "want": "the deployment reconciliation and CRD types docs to document SASL support",
+      "so_that": "I can understand how SASL is implemented and how to configure it",
+      "criteria": [
+        "The deployment-reconciliation.md doc describes the -Y flag, volume mount path, and Secret key requirements",
+        "The memcached-crd-types.md doc already describes SASLSpec fields (no change needed since types already exist)"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL add the '-Y /etc/memcached/sasl/password-file' argument to the Memcached container when spec.security.sasl.enabled is true",
+      "priority": "SHALL",
+      "rationale": "The memcached -Y flag enables SASL authentication and specifies the path to the password file",
+      "scenarios": [
+        {
+          "name": "SASL enabled adds -Y flag",
+          "when": "spec.security.sasl.enabled=true and credentialsSecretRef.name='my-sasl-secret'",
+          "then": "the memcached container args include '-Y' and '/etc/memcached/sasl/password-file' after the standard config flags",
+          "and_then": [
+            "the -Y flag appears after -m, -c, -t, -I flags but before any extraArgs"
+          ]
+        },
+        {
+          "name": "SASL disabled omits -Y flag",
+          "when": "spec.security.sasl.enabled=false",
+          "then": "the memcached container args do NOT contain '-Y'",
+          "and_then": [
+            "the args are identical to a deployment without any SASL configuration"
+          ]
+        },
+        {
+          "name": "Nil SASL spec omits -Y flag",
+          "when": "spec.security.sasl is nil (not specified)",
+          "then": "the memcached container args do NOT contain '-Y'",
+          "and_then": [
+            "the args are identical to a deployment without any security spec"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL mount the referenced SASL credentials Secret as a read-only volume on the Memcached container at /etc/memcached/sasl/",
+      "priority": "SHALL",
+      "rationale": "The memcached process reads the SASL password file from the filesystem; the Secret must be projected into the container",
+      "scenarios": [
+        {
+          "name": "Secret mounted as volume when SASL enabled",
+          "when": "spec.security.sasl.enabled=true and credentialsSecretRef.name='my-sasl-secret'",
+          "then": "a Volume named 'sasl-credentials' is added to the pod spec with secret source referencing 'my-sasl-secret'",
+          "and_then": [
+            "the volume projects the 'password-file' key to the 'password-file' path",
+            "the VolumeMount is read-only at /etc/memcached/sasl/"
+          ]
+        },
+        {
+          "name": "No volume when SASL disabled",
+          "when": "spec.security.sasl.enabled=false or spec.security.sasl is nil",
+          "then": "no 'sasl-credentials' volume exists on the pod",
+          "and_then": [
+            "no volume mount at /etc/memcached/sasl/ exists on any container"
+          ]
+        },
+        {
+          "name": "Volume mount only on memcached container",
+          "when": "SASL is enabled and monitoring sidecar is also enabled",
+          "then": "the VolumeMount for sasl-credentials is present ONLY on the memcached container",
+          "and_then": [
+            "the exporter sidecar container does NOT have the sasl-credentials volume mount"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL have RBAC permissions to read Secrets in the watched namespace",
+      "priority": "SHALL",
+      "rationale": "The operator needs to read Secrets to validate and mount SASL credentials; without RBAC permissions, the reconciler cannot function",
+      "scenarios": [
+        {
+          "name": "RBAC marker generates Secret permissions",
+          "when": "the controller source contains the kubebuilder:rbac marker for Secrets",
+          "then": "running 'make manifests' generates a ClusterRole with get;list;watch permissions for core/v1 secrets",
+          "and_then": [
+            "the role.yaml file includes the secrets resource entry"
+          ]
+        },
+        {
+          "name": "Operator can read Secrets at runtime",
+          "when": "the operator reconciles a Memcached CR with SASL enabled",
+          "then": "the controller does not fail with RBAC forbidden errors when the Deployment references a Secret",
+          "and_then": []
+        },
+        {
+          "name": "Minimal permissions applied",
+          "when": "the RBAC marker is defined",
+          "then": "only get;list;watch verbs are granted for Secrets (not create/update/delete)",
+          "and_then": [
+            "the operator follows the principle of least privilege"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL preserve existing deployment behavior when SASL is not configured",
+      "priority": "SHALL",
+      "rationale": "Backward compatibility is critical; existing deployments without SASL must not be affected",
+      "scenarios": [
+        {
+          "name": "Minimal spec produces unchanged deployment",
+          "when": "a Memcached CR has no security spec configured",
+          "then": "the constructed Deployment has no volumes, no volume mounts, and standard args (-m, -c, -t, -I)",
+          "and_then": [
+            "the deployment is identical to the pre-SASL implementation"
+          ]
+        },
+        {
+          "name": "Security spec with only pod security context",
+          "when": "a Memcached CR has spec.security with podSecurityContext but no SASL",
+          "then": "the Deployment has pod security context applied but no SASL volumes or args",
+          "and_then": [
+            "pod security context works the same as before SASL feature"
+          ]
+        },
+        {
+          "name": "Full HA + monitoring + security contexts without SASL",
+          "when": "a Memcached CR has all features enabled except SASL",
+          "then": "the Deployment has anti-affinity, exporter sidecar, security contexts, but no SASL volumes or -Y flag",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The operator SHALL support SASL alongside all other optional features (monitoring, HA, security contexts)",
+      "priority": "SHALL",
+      "rationale": "Users need to combine multiple features; SASL must not conflict with existing optional features",
+      "scenarios": [
+        {
+          "name": "SASL with monitoring sidecar",
+          "when": "both SASL and monitoring are enabled",
+          "then": "the Deployment has 2 containers (memcached with SASL volume mount, exporter without) and the pod has the sasl-credentials volume",
+          "and_then": [
+            "memcached container has both the -Y flag and standard args",
+            "exporter sidecar has no volume mounts"
+          ]
+        },
+        {
+          "name": "SASL with graceful shutdown",
+          "when": "both SASL and graceful shutdown are enabled",
+          "then": "the memcached container has both the Lifecycle preStop hook AND the SASL volume mount",
+          "and_then": [
+            "terminationGracePeriodSeconds is set on the pod"
+          ]
+        },
+        {
+          "name": "SASL with security contexts",
+          "when": "both SASL and pod/container security contexts are configured",
+          "then": "the Deployment has pod security context, container security context, AND the SASL volume/mount",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL construct the SASL volume with the correct Secret key projection",
+      "priority": "SHALL",
+      "rationale": "Memcached expects a specific file at a specific path; incorrect projection would cause startup failures",
+      "scenarios": [
+        {
+          "name": "Secret projected with password-file key",
+          "when": "the SASL credentials Secret contains a 'password-file' key",
+          "then": "the volume projects 'password-file' key to 'password-file' path in the mount directory",
+          "and_then": [
+            "the memcached process can read /etc/memcached/sasl/password-file"
+          ]
+        },
+        {
+          "name": "Volume is read-only",
+          "when": "the SASL volume mount is created",
+          "then": "the VolumeMount has ReadOnly=true",
+          "and_then": [
+            "the memcached process cannot write to the credentials directory"
+          ]
+        },
+        {
+          "name": "Volume and mount naming conventions",
+          "when": "the SASL volume is created",
+          "then": "the Volume is named 'sasl-credentials' and the VolumeMount references the same name",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The buildMemcachedArgs function SHOULD accept an optional SASLSpec parameter to add the -Y flag",
+      "priority": "SHOULD",
+      "rationale": "The SASL flag needs to be added to the memcached args; the function needs access to the SASL configuration",
+      "scenarios": [
+        {
+          "name": "Function signature includes SASL awareness",
+          "when": "buildMemcachedArgs is called with an enabled SASLSpec",
+          "then": "it returns args that include the -Y flag and password file path",
+          "and_then": [
+            "the -Y flag and path are appended after standard config flags and verbosity, but before extraArgs"
+          ]
+        },
+        {
+          "name": "Function maintains backward compatibility with nil SASL",
+          "when": "buildMemcachedArgs is called with nil SASLSpec",
+          "then": "it returns the same args as before (no -Y flag)",
+          "and_then": [
+            "existing tests still pass after updating to new signature"
+          ]
+        },
+        {
+          "name": "SASL args appear before extraArgs",
+          "when": "buildMemcachedArgs is called with both SASL enabled and extraArgs set",
+          "then": "the -Y flag and path appear before extraArgs in the args list",
+          "and_then": [
+            "extraArgs remain the last arguments"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The sample CR SHOULD include a commented SASL configuration example",
+      "priority": "SHOULD",
+      "rationale": "The sample CR is the first reference for users; showing SASL configuration helps adoption",
+      "scenarios": [
+        {
+          "name": "Sample shows SASL configuration",
+          "when": "a user reads config/samples/memcached_v1alpha1_memcached.yaml",
+          "then": "they see a commented-out SASL block under spec.security showing enabled=true and credentialsSecretRef",
+          "and_then": [
+            "the comment explains that a Secret with 'password-file' key is required"
+          ]
+        },
+        {
+          "name": "Sample does not break existing deployment",
+          "when": "the sample CR is applied without uncommenting SASL",
+          "then": "it deploys successfully without SASL (same as before)",
+          "and_then": []
+        },
+        {
+          "name": "Sample includes example Secret reference",
+          "when": "a user reads the SASL block in the sample",
+          "then": "the credentialsSecretRef.name references a clearly named Secret (e.g. 'memcached-sasl-credentials')",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add buildSASLVolume and buildSASLVolumeMount helper functions with unit tests (REQ-002, REQ-006)",
+      "description": "Create two new helper functions in internal/controller/deployment.go following the established pattern of buildExporterContainer, buildPodSecurityContext, etc.:\n\n1. `buildSASLVolume(mc *Memcached) *corev1.Volume` - Returns a Volume named 'sasl-credentials' with SecretVolumeSource referencing mc.Spec.Security.SASL.CredentialsSecretRef.Name, projecting the 'password-file' key. Returns nil when SASL is not enabled.\n\n2. `buildSASLVolumeMount(mc *Memcached) *corev1.VolumeMount` - Returns a VolumeMount with Name='sasl-credentials', MountPath='/etc/memcached/sasl/', ReadOnly=true. Returns nil when SASL is not enabled.\n\nBoth functions check: mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled → return nil.\n\nAdd table-driven unit tests in internal/controller/deployment_test.go following the TestBuildPodSecurityContext_*/TestBuildExporterContainer_* patterns:\n- TestBuildSASLVolume_Enabled: verify volume name, secret name, items key/path\n- TestBuildSASLVolume_ReturnsNil: nil security, nil SASL, enabled=false\n- TestBuildSASLVolumeMount_Enabled: verify mount path, name, readOnly\n- TestBuildSASLVolumeMount_ReturnsNil: nil security, nil SASL, enabled=false",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Update buildMemcachedArgs to accept SASLSpec and add -Y flag with unit tests (REQ-001, REQ-007)",
+      "description": "Modify the buildMemcachedArgs function in internal/controller/deployment.go:\n\n1. Change the signature from `buildMemcachedArgs(config *MemcachedConfig) []string` to `buildMemcachedArgs(config *MemcachedConfig, sasl *SASLSpec) []string`.\n\n2. After the verbosity switch (line 65) and before the extraArgs append (line 68), add:\n```go\nif sasl != nil && sasl.Enabled {\n    args = append(args, \"-Y\", \"/etc/memcached/sasl/password-file\")\n}\n```\n\n3. Update the single call site in constructDeployment (line 224) to extract the SASL spec and pass it:\n```go\nvar sasl *SASLSpec\nif mc.Spec.Security != nil {\n    sasl = mc.Spec.Security.SASL\n}\nargs := buildMemcachedArgs(mc.Spec.Memcached, sasl)\n```\n\n4. Update ALL existing TestBuildMemcachedArgs test cases to pass `nil` as the second argument (SASL spec).\n\n5. Add new test cases:\n- 'SASL enabled adds -Y flag': config=default, sasl=enabled → args include '-Y', '/etc/memcached/sasl/password-file'\n- 'SASL disabled omits -Y flag': config=default, sasl=enabled=false → no -Y flag\n- 'nil SASL omits -Y flag': config=default, sasl=nil → no -Y flag\n- 'SASL with verbosity and extraArgs': verify ordering: standard → verbosity → -Y → extraArgs",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Integrate SASL volume, mount, and args into constructDeployment with unit tests (REQ-002, REQ-004, REQ-005)",
+      "description": "Update constructDeployment in internal/controller/deployment.go to use the new SASL helpers:\n\n1. After buildContainerSecurityContext (line 238), call:\n```go\nsaslVolume := buildSASLVolume(mc)\nsaslVolumeMount := buildSASLVolumeMount(mc)\n```\n\n2. Add the volume mount to the memcachedContainer (after SecurityContext, before Ports):\n```go\nvar volumeMounts []corev1.VolumeMount\nif saslVolumeMount != nil {\n    volumeMounts = append(volumeMounts, *saslVolumeMount)\n}\n```\nSet `memcachedContainer.VolumeMounts = volumeMounts`.\n\n3. Add volumes to the PodSpec (after SecurityContext, before Containers):\n```go\nvar volumes []corev1.Volume\nif saslVolume != nil {\n    volumes = append(volumes, *saslVolume)\n}\n```\nSet `Volumes: volumes` on the PodSpec.\n\n4. Add/update unit tests in deployment_test.go:\n- TestConstructDeployment_SASLEnabled: verify pod has 1 volume ('sasl-credentials'), memcached container has 1 volume mount at /etc/memcached/sasl/, readOnly=true, and args include -Y\n- TestConstructDeployment_SASLDisabled: verify pod has no volumes, memcached container has no volume mounts, no -Y in args\n- TestConstructDeployment_SASLWithMonitoring: SASL + monitoring enabled → memcached container has volume mount, exporter does NOT\n- TestConstructDeployment_SASLWithGracefulShutdown: SASL + graceful shutdown → container has both lifecycle and volume mount\n- TestConstructDeployment_SASLWithSecurityContexts: SASL + both security contexts → all coexist\n- TestConstructDeployment_MinimalSpec still passes (backward compat, no volumes, no mounts)",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add RBAC marker for Secret read permissions and regenerate manifests (REQ-003)",
+      "description": "Add a kubebuilder RBAC marker to internal/controller/memcached_controller.go:\n\n1. Add the following marker comment before the Reconcile function (after the existing RBAC markers around line 41):\n```go\n// +kubebuilder:rbac:groups=\"\",resources=secrets,verbs=get;list;watch\n```\n\n2. Run `make manifests` to regenerate config/rbac/role.yaml.\n\n3. Verify the generated role.yaml now includes:\n```yaml\n- apiGroups:\n  - \"\"\n  resources:\n  - secrets\n  verbs:\n  - get\n  - list\n  - watch\n```\n\nThe Secrets permission is needed because the operator mounts a Secret as a volume in the Deployment; the kubelet will need to read the Secret, and the operator may need to validate Secret existence in future.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Update sample CR with commented SASL configuration (REQ-008)",
+      "description": "Update config/samples/memcached_v1alpha1_memcached.yaml to add a commented-out SASL example under the existing spec.security section.\n\nAfter the existing containerSecurityContext block (around line 44), add:\n```yaml\n    # SASL authentication (optional).\n    # Requires a Secret with a 'password-file' key containing the SASL password file.\n    # sasl:\n    #   enabled: true\n    #   credentialsSecretRef:\n    #     name: memcached-sasl-credentials\n```\n\nThis provides a clear example for users without activating SASL by default.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Update deployment-reconciliation.md with SASL authentication section (REQ-001, REQ-002, REQ-006)",
+      "description": "Add a new 'SASL Authentication' section to docs/reference/backend/deployment-reconciliation.md after the existing Security Contexts section.\n\nThe section should document:\n1. Overview: When spec.security.sasl.enabled=true, memcached is configured with SASL authentication\n2. CLI Flag: The -Y flag and the password file path (/etc/memcached/sasl/password-file)\n3. Volume: The 'sasl-credentials' volume sourced from the referenced Secret with 'password-file' key projection\n4. Volume Mount: Read-only mount at /etc/memcached/sasl/ on the memcached container only (not the exporter sidecar)\n5. Secret Requirements: The Secret must contain a 'password-file' key with the SASL password file content\n6. Example: Show a minimal Memcached CR snippet with SASL enabled and the corresponding Deployment volume/mount structure\n\nFollow the existing documentation style and heading levels in the file.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-006"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildSASLVolume_Enabled",
+      "story": "Operator enables SASL authentication on Memcached pods when configured",
+      "expected": "Should return a Volume named 'sasl-credentials' with SecretVolumeSource referencing the Secret name and projecting 'password-file' key",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildSASLVolume_ReturnsNil",
+      "story": "Operator does not add SASL configuration when disabled",
+      "expected": "Should return nil when security is nil, SASL is nil, or SASL.enabled=false",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildSASLVolumeMount_Enabled",
+      "story": "Operator enables SASL authentication on Memcached pods when configured",
+      "expected": "Should return a VolumeMount named 'sasl-credentials' at /etc/memcached/sasl/ with ReadOnly=true",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildSASLVolumeMount_ReturnsNil",
+      "story": "Operator does not add SASL configuration when disabled",
+      "expected": "Should return nil when security is nil, SASL is nil, or SASL.enabled=false",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs with SASL enabled",
+      "story": "Operator enables SASL authentication on Memcached pods when configured",
+      "expected": "Should include '-Y' and '/etc/memcached/sasl/password-file' in args when SASL is enabled",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs with SASL disabled/nil",
+      "story": "Operator does not add SASL configuration when disabled",
+      "expected": "Should NOT include '-Y' in args when SASL is disabled or nil",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs SASL with verbosity and extraArgs ordering",
+      "story": "Operator enables SASL authentication on Memcached pods when configured",
+      "expected": "Args should be ordered: standard flags → verbosity → -Y → extraArgs",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_SASLEnabled",
+      "story": "Operator enables SASL authentication on Memcached pods when configured",
+      "expected": "Deployment should have sasl-credentials volume, memcached container has volume mount and -Y flag",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_SASLDisabled",
+      "story": "Operator does not add SASL configuration when disabled",
+      "expected": "Deployment should have no sasl-credentials volume, no volume mounts, no -Y flag",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_SASLWithMonitoring",
+      "story": "SASL configuration works alongside existing security features",
+      "expected": "Memcached container has SASL volume mount; exporter sidecar does NOT have it",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_SASLWithGracefulShutdown",
+      "story": "SASL configuration works alongside existing security features",
+      "expected": "Memcached container has both Lifecycle preStop hook AND SASL volume mount",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_SASLWithSecurityContexts",
+      "story": "SASL configuration works alongside existing security features",
+      "expected": "Deployment has pod security context, container security context, AND SASL volume/mount",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_MinimalSpec (existing - backward compat)",
+      "story": "Operator does not add SASL configuration when disabled",
+      "expected": "Existing test continues to pass: no volumes, no volume mounts with minimal spec",
+      "requirement_id": "REQ-004"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All existing tests pass without modification (except TestBuildMemcachedArgs which needs the new nil SASL parameter added to each existing case)",
+    "When SASL is enabled: memcached container args include '-Y /etc/memcached/sasl/password-file', pod has 'sasl-credentials' volume, memcached container has read-only volume mount at /etc/memcached/sasl/",
+    "When SASL is disabled/nil: no -Y flag, no volumes, no volume mounts — deployment is identical to pre-SASL behavior",
+    "SASL volume mount is NOT present on the exporter sidecar container when monitoring is enabled",
+    "RBAC role.yaml includes get;list;watch permissions for core/v1 secrets (no create/update/delete)",
+    "All new helper functions (buildSASLVolume, buildSASLVolumeMount) follow the established pattern: check nil → return nil, otherwise return constructed object",
+    "Code passes go vet and golangci-lint without errors",
+    "Reference documentation in docs/reference/backend/deployment-reconciliation.md covers SASL flag, volume, mount path, and Secret requirements"
+  ],
+  "implementation_notes": "## Architecture\n\nSASL authentication in memcached is enabled via the `-Y <authfile>` command-line flag. The authfile contains username:password pairs. The operator mounts a Kubernetes Secret containing this file into the pod.\n\n## Design Decisions\n\n1. **Helper function pattern**: Follow the established `buildExporterContainer`, `buildPodSecurityContext` pattern — each returns a typed object or nil. New functions: `buildSASLVolume` (returns `*corev1.Volume` or nil) and `buildSASLVolumeMount` (returns `*corev1.VolumeMount` or nil).\n\n2. **Args function change**: `buildMemcachedArgs` gains a `sasl *SASLSpec` parameter. The -Y flag is appended after verbosity flags but before extraArgs, maintaining the convention that extraArgs are always last.\n\n3. **Volume mount scoping**: The SASL volume mount is added ONLY to the memcached container, NOT the exporter sidecar. This is different from SecurityContext which is applied to both containers.\n\n4. **Volume naming**: Use 'sasl-credentials' as the volume name, following Kubernetes naming conventions.\n\n5. **Mount path**: `/etc/memcached/sasl/` — a standard path convention for credential files.\n\n6. **Secret key**: The Secret must contain a 'password-file' key. The volume uses Items to project only this key.\n\n7. **Read-only mount**: The volume mount is read-only for security.\n\n## Key Files\n\n- `api/v1alpha1/memcached_types.go:181-191` — SASLSpec type (already defined, no changes needed)\n- `internal/controller/deployment.go:26-73` — buildMemcachedArgs (modify signature, add -Y)\n- `internal/controller/deployment.go:209-306` — constructDeployment (add volumes/mounts)\n- `internal/controller/deployment_test.go` — all new tests\n- `internal/controller/memcached_controller.go:33-41` — RBAC markers (add secrets)\n- `config/rbac/role.yaml` — regenerated with make manifests\n- `config/samples/memcached_v1alpha1_memcached.yaml` — sample update\n- `docs/reference/backend/deployment-reconciliation.md` — documentation\n\n## Risks & Mitigations\n\n1. **Breaking existing tests**: The `buildMemcachedArgs` signature change requires updating all 9 existing test cases to pass `nil` as the second argument. Mitigation: Task 1.2 handles this explicitly.\n\n2. **Missing Secret at runtime**: If the referenced Secret doesn't exist, the kubelet will fail to start the pod. This is standard Kubernetes behavior (not an operator concern). Future enhancement could add Secret existence validation in the reconciler.\n\n3. **CRD types already exist**: The SASLSpec type is already defined in memcached_types.go with CRD validation tests. No type changes are needed — only deployment construction logic.\n\n## Patterns to Follow\n\n- `buildExporterContainer` (deployment.go:162-189): Check enabled → extract config → return object or nil\n- `buildPodSecurityContext` (deployment.go:191-198): Check nil chain → return object or nil\n- `TestBuildExporterContainer_ReturnsNil` (deployment_test.go:1202-1223): Table-driven nil cases\n- `TestConstructDeployment_SecurityContexts` (deployment_test.go:1454-1501): Integration test verifying feature on deployment",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.425552"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T22:14:21.521753"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T22:19:55.558401"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "e44dea41-f3ca-432e-ad59-c7b80e5e7236",
+      "timestamp": "2026-02-19T22:19:55.558427",
+      "total_duration": 330.3717939853668,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 330.3717939853668,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
