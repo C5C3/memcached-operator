@@ -482,6 +482,212 @@ func TestConstructDeployment_Resources(t *testing.T) {
 	}
 }
 
+func antiAffinityPresetPtr(p memcachedv1alpha1.AntiAffinityPreset) *memcachedv1alpha1.AntiAffinityPreset { return &p }
+
+func TestBuildAntiAffinity_Soft(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+			},
+		},
+	}
+
+	affinity := buildAntiAffinity(mc)
+
+	if affinity == nil {
+		t.Fatal("expected non-nil Affinity for soft preset")
+	}
+	if affinity.PodAntiAffinity == nil {
+		t.Fatal("expected non-nil PodAntiAffinity")
+	}
+	preferred := affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution
+	if len(preferred) != 1 {
+		t.Fatalf("expected 1 preferred term, got %d", len(preferred))
+	}
+	term := preferred[0]
+	if term.Weight != 100 {
+		t.Errorf("expected weight 100, got %d", term.Weight)
+	}
+	if term.PodAffinityTerm.TopologyKey != "kubernetes.io/hostname" {
+		t.Errorf("expected topologyKey kubernetes.io/hostname, got %q", term.PodAffinityTerm.TopologyKey)
+	}
+	matchLabels := term.PodAffinityTerm.LabelSelector.MatchLabels
+	if matchLabels["app.kubernetes.io/name"] != "memcached" {
+		t.Errorf("expected label app.kubernetes.io/name=memcached, got %q", matchLabels["app.kubernetes.io/name"])
+	}
+	if matchLabels["app.kubernetes.io/instance"] != "my-cache" {
+		t.Errorf("expected label app.kubernetes.io/instance=my-cache, got %q", matchLabels["app.kubernetes.io/instance"])
+	}
+	// Should NOT have required terms.
+	if len(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 0 {
+		t.Error("expected no required anti-affinity terms for soft preset")
+	}
+}
+
+func TestBuildAntiAffinity_Hard(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetHard),
+			},
+		},
+	}
+
+	affinity := buildAntiAffinity(mc)
+
+	if affinity == nil {
+		t.Fatal("expected non-nil Affinity for hard preset")
+	}
+	if affinity.PodAntiAffinity == nil {
+		t.Fatal("expected non-nil PodAntiAffinity")
+	}
+	required := affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+	if len(required) != 1 {
+		t.Fatalf("expected 1 required term, got %d", len(required))
+	}
+	term := required[0]
+	if term.TopologyKey != "kubernetes.io/hostname" {
+		t.Errorf("expected topologyKey kubernetes.io/hostname, got %q", term.TopologyKey)
+	}
+	matchLabels := term.LabelSelector.MatchLabels
+	if matchLabels["app.kubernetes.io/name"] != "memcached" {
+		t.Errorf("expected label app.kubernetes.io/name=memcached, got %q", matchLabels["app.kubernetes.io/name"])
+	}
+	if matchLabels["app.kubernetes.io/instance"] != "my-cache" {
+		t.Errorf("expected label app.kubernetes.io/instance=my-cache, got %q", matchLabels["app.kubernetes.io/instance"])
+	}
+	// Should NOT have preferred terms.
+	if len(affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 0 {
+		t.Error("expected no preferred anti-affinity terms for hard preset")
+	}
+}
+
+func TestBuildAntiAffinity_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name string
+		ha   *memcachedv1alpha1.HighAvailabilitySpec
+	}{
+		{name: "nil HighAvailability", ha: nil},
+		{name: "nil AntiAffinityPreset", ha: &memcachedv1alpha1.HighAvailabilitySpec{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				Spec:       memcachedv1alpha1.MemcachedSpec{HighAvailability: tt.ha},
+			}
+
+			if affinity := buildAntiAffinity(mc); affinity != nil {
+				t.Errorf("expected nil Affinity, got %+v", affinity)
+			}
+		})
+	}
+}
+
+func TestBuildAntiAffinity_InstanceScopedLabels(t *testing.T) {
+	tests := []struct {
+		name     string
+		crName   string
+		wantInst string
+	}{
+		{name: "first instance", crName: "cache-alpha", wantInst: "cache-alpha"},
+		{name: "second instance", crName: "cache-beta", wantInst: "cache-beta"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: tt.crName, Namespace: "default"},
+				Spec: memcachedv1alpha1.MemcachedSpec{
+					HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+						AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+					},
+				},
+			}
+
+			affinity := buildAntiAffinity(mc)
+
+			if affinity == nil {
+				t.Fatal("expected non-nil Affinity")
+			}
+			preferred := affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution
+			matchLabels := preferred[0].PodAffinityTerm.LabelSelector.MatchLabels
+			if matchLabels["app.kubernetes.io/instance"] != tt.wantInst {
+				t.Errorf("expected instance label %q, got %q", tt.wantInst, matchLabels["app.kubernetes.io/instance"])
+			}
+		})
+	}
+}
+
+func TestConstructDeployment_AntiAffinity(t *testing.T) {
+	tests := []struct {
+		name  string
+		ha    *memcachedv1alpha1.HighAvailabilitySpec
+		check func(t *testing.T, affinity *corev1.Affinity)
+	}{
+		{
+			name: "soft preset sets preferred anti-affinity",
+			ha: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+			},
+			check: func(t *testing.T, affinity *corev1.Affinity) {
+				t.Helper()
+				if affinity == nil || affinity.PodAntiAffinity == nil {
+					t.Fatal("expected non-nil PodAntiAffinity")
+				}
+				if len(affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
+					t.Fatalf("expected 1 preferred term, got %d",
+						len(affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+				}
+			},
+		},
+		{
+			name: "hard preset sets required anti-affinity",
+			ha: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetHard),
+			},
+			check: func(t *testing.T, affinity *corev1.Affinity) {
+				t.Helper()
+				if affinity == nil || affinity.PodAntiAffinity == nil {
+					t.Fatal("expected non-nil PodAntiAffinity")
+				}
+				if len(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution) != 1 {
+					t.Fatalf("expected 1 required term, got %d",
+						len(affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution))
+				}
+			},
+		},
+		{
+			name: "nil HA produces nil affinity",
+			ha:   nil,
+			check: func(t *testing.T, affinity *corev1.Affinity) {
+				t.Helper()
+				if affinity != nil {
+					t.Errorf("expected nil Affinity, got %+v", affinity)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "aa-test", Namespace: "default"},
+				Spec:       memcachedv1alpha1.MemcachedSpec{HighAvailability: tt.ha},
+			}
+			dep := &appsv1.Deployment{}
+
+			constructDeployment(mc, dep)
+
+			tt.check(t, dep.Spec.Template.Spec.Affinity)
+		})
+	}
+}
+
 func TestConstructDeployment_RollingUpdateStrategy(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "strategy-test", Namespace: "default"},

@@ -1,0 +1,71 @@
+{
+  "feature_id": "MO-0009",
+  "title": "C001: Implement pod anti-affinity presets",
+  "date": "2026-02-19",
+  "verdict": "APPROVED",
+  "summary": "Implements soft and hard pod anti-affinity presets via a pure buildAntiAffinity helper function in deployment.go. The function is wired into constructDeployment, setting PodSpec.Affinity on the Deployment pod template. Soft preset uses preferredDuringSchedulingIgnoredDuringExecution (weight 100), hard uses requiredDuringSchedulingIgnoredDuringExecution. Both use topologyKey kubernetes.io/hostname with instance-scoped label selectors. Returns nil when HA is unconfigured, preserving backward compatibility. All 8 requirements (REQ-001 through REQ-008) are fully implemented with unit tests, integration tests, and reference documentation.",
+  "tests_checklist": [
+    {"item": "All unit tests pass (153/153 specs, 0 failures)", "checked": true},
+    {"item": "go vet passes without errors", "checked": true},
+    {"item": "TestBuildAntiAffinity_Soft verifies full preferred structure", "checked": true},
+    {"item": "TestBuildAntiAffinity_Hard verifies full required structure", "checked": true},
+    {"item": "TestBuildAntiAffinity_NilHA verifies nil return for nil HA", "checked": true},
+    {"item": "TestBuildAntiAffinity_NilPreset verifies nil return for nil preset", "checked": true},
+    {"item": "TestBuildAntiAffinity_InstanceScopedLabels verifies different CR names produce different selectors", "checked": true},
+    {"item": "TestConstructDeployment_AntiAffinitySoft verifies wiring into deployment", "checked": true},
+    {"item": "TestConstructDeployment_AntiAffinityHard verifies wiring into deployment", "checked": true},
+    {"item": "TestConstructDeployment_NoAntiAffinityWhenHANil verifies nil affinity wiring", "checked": true},
+    {"item": "Integration test: soft preset produces correct preferred anti-affinity", "checked": true},
+    {"item": "Integration test: hard preset produces correct required anti-affinity", "checked": true},
+    {"item": "Integration test: nil HA produces nil affinity", "checked": true},
+    {"item": "Integration test: soft-to-hard transition updates deployment (drift detection)", "checked": true},
+    {"item": "Integration test: removing HA clears affinity", "checked": true},
+    {"item": "Integration test: idempotency - reconcile twice produces no ResourceVersion change", "checked": true},
+    {"item": "Edge cases covered: nil HA, nil preset, different CR names, preset transitions, HA removal", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "buildAntiAffinity follows existing builder pattern (buildMemcachedArgs, labelsForMemcached)", "checked": true},
+    {"item": "Function is pure with no side effects", "checked": true},
+    {"item": "Clean switch statement with explicit cases and default nil return", "checked": true},
+    {"item": "No code duplication - labelSelector built once and shared between cases", "checked": true},
+    {"item": "Function size reasonable (~45 lines including all cases)", "checked": true},
+    {"item": "Clear naming and intention-revealing code", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "Integration into constructDeployment is minimal (2 lines added)", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No external input beyond CRD spec (validated by Kubernetes admission)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No injection risks - all values come from typed CRD fields", "checked": true},
+    {"item": "No sensitive data exposure", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution follows simplest possible approach - pure builder function", "checked": true},
+    {"item": "No over-engineering - handles exactly soft, hard, and nil cases", "checked": true},
+    {"item": "Anti-affinity selector labels are strict subset of pod template labels (correct)", "checked": true},
+    {"item": "Nil return (not empty struct) preserves idempotency with existing deployments", "checked": true},
+    {"item": "Instance-scoped selectors prevent cross-CR interference", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unused code or future-proofing", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "antiAffinityPresetPtr helper in tests avoids repetition", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil checks at function entry before dereferencing pointers", "checked": true},
+    {"item": "Default switch case returns nil (safe handling of unknown values)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil HA pointer checked before accessing AntiAffinityPreset", "checked": true},
+    {"item": "Nil AntiAffinityPreset checked before dereferencing", "checked": true},
+    {"item": "CRD validation handled by Kubernetes admission (kubebuilder markers)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "D2 (minor): The golangci-lint version mismatch (Go 1.24 vs targeted 1.25) should be resolved in the CI toolchain, though this is outside the scope of this feature."
+  ],
+  "next_steps": []
+}

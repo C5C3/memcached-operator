@@ -2,8 +2,8 @@
   "feature_id": "MO-0009",
   "title": "C001: Implement pod anti-affinity presets",
   "slug": "c001-implement-pod-anti-affinity-presets",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Implement soft (preferredDuringSchedulingIgnoredDuringExecution) and hard (requiredDuringSchedulingIgnoredDuringExecution) pod anti-affinity presets based on spec.highAvailability.antiAffinityPreset. Spread Memcached pods across nodes to avoid single points of failure.",
   "stories": [
@@ -297,6 +297,7 @@
       "description": "Create a new helper function `buildAntiAffinity(mc *Memcached) *corev1.Affinity` in `internal/controller/deployment.go` that: (1) returns nil when mc.Spec.HighAvailability is nil or mc.Spec.HighAvailability.AntiAffinityPreset is nil, (2) returns an Affinity with PreferredDuringSchedulingIgnoredDuringExecution (weight 100, topologyKey kubernetes.io/hostname, labelSelector matching app.kubernetes.io/name=memcached + app.kubernetes.io/instance=<cr-name>) for 'soft', (3) returns an Affinity with RequiredDuringSchedulingIgnoredDuringExecution (same topology key and label selector) for 'hard'. Write table-driven unit tests in `deployment_test.go` covering: nil HA, nil preset, soft preset, hard preset, different CR names producing different selectors.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -311,6 +312,7 @@
       "description": "In `internal/controller/deployment.go`, update `constructDeployment` to call `buildAntiAffinity(mc)` and assign the result to `dep.Spec.Template.Spec.Affinity`. Add unit tests in `deployment_test.go`: TestConstructDeployment_AntiAffinitySoft (verifies preferred anti-affinity on pod template), TestConstructDeployment_AntiAffinityHard (verifies required anti-affinity on pod template), TestConstructDeployment_NoAntiAffinityWhenHANil (verifies affinity is nil).",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -323,6 +325,7 @@
       "description": "In `internal/controller/memcached_deployment_reconcile_test.go`, add a new Ginkgo Context 'pod anti-affinity presets (REQ-001, REQ-006, REQ-007)' with tests: (1) 'should set preferredDuringScheduling anti-affinity when preset is soft' - create CR with soft preset, reconcile, verify Deployment affinity structure, (2) 'should be idempotent with soft anti-affinity' - reconcile twice, verify ResourceVersion unchanged.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-006",
@@ -335,6 +338,7 @@
       "description": "In `internal/controller/memcached_deployment_reconcile_test.go`, add within the anti-affinity Context: (1) 'should set requiredDuringScheduling anti-affinity when preset is hard' - create CR with hard preset, reconcile, verify Deployment affinity structure, (2) 'should update Deployment affinity when antiAffinityPreset changes from soft to hard' - create with soft, reconcile, update to hard, reconcile, verify switch, (3) 'should clear affinity when highAvailability is removed' - create with soft, reconcile, remove HA, reconcile, verify nil affinity.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-006",
@@ -347,6 +351,7 @@
       "description": "In `internal/controller/memcached_deployment_reconcile_test.go`, add within the anti-affinity Context: (1) 'should have no affinity when highAvailability is nil' - create minimal CR (no HA section), reconcile, verify dep.Spec.Template.Spec.Affinity is nil. This confirms backward compatibility with existing CRs.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -357,6 +362,7 @@
       "description": "Create `docs/reference/backend/pod-anti-affinity-presets.md` following the existing reference doc pattern (see deployment-reconciliation.md). Include: overview section explaining the feature, table mapping antiAffinityPreset values to Kubernetes affinity types, the buildAntiAffinity function behavior, label selector details, topology key usage, generated YAML examples for soft and hard presets, example CR configurations, and a note about the nil/unset case.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -489,6 +495,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T12:40:38.381025"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T13:05:56.248845"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:07:47.055367"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:07:47.072966"
     }
   },
   "execution_history": [
@@ -502,6 +520,56 @@
           "name": "prepare",
           "duration": 248.07737016677856,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "d00f4e2b-5c2d-466d-ac9d-baa11243b819",
+      "timestamp": "2026-02-19T13:19:58.893698",
+      "total_duration": 725.8070709705353,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (1 tasks)",
+          "duration": 298.18259048461914,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 54.18361759185791,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 74.81406307220459,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 33.01423692703247,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0009] Code Review",
+          "duration": 96.88704371452332,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0009] Improvements",
+          "duration": 21.24562430381775,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0009] Simplify",
+          "duration": 147.4798948764801,
+          "type": "simplify",
           "status": "done"
         }
       ]

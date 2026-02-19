@@ -496,6 +496,142 @@ var _ = Describe("Deployment Reconciliation", func() {
 		})
 	})
 
+	// --- Task 1.1: Pod anti-affinity presets ---
+
+	Context("pod anti-affinity presets (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)", func() {
+		It("should set preferredDuringScheduling anti-affinity when preset is soft", func() {
+			mc := validMemcached(uniqueName("dep-aa-soft"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: &soft,
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+
+			preferred := dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution
+			Expect(preferred).To(HaveLen(1))
+			Expect(preferred[0].Weight).To(Equal(int32(100)))
+			Expect(preferred[0].PodAffinityTerm.TopologyKey).To(Equal("kubernetes.io/hostname"))
+			Expect(preferred[0].PodAffinityTerm.LabelSelector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/name", "memcached"))
+			Expect(preferred[0].PodAffinityTerm.LabelSelector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/instance", mc.Name))
+		})
+
+		It("should set requiredDuringScheduling anti-affinity when preset is hard", func() {
+			mc := validMemcached(uniqueName("dep-aa-hard"))
+			hard := memcachedv1alpha1.AntiAffinityPresetHard
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: &hard,
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+
+			required := dep.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution
+			Expect(required).To(HaveLen(1))
+			Expect(required[0].TopologyKey).To(Equal("kubernetes.io/hostname"))
+			Expect(required[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/name", "memcached"))
+			Expect(required[0].LabelSelector.MatchLabels).To(HaveKeyWithValue("app.kubernetes.io/instance", mc.Name))
+		})
+
+		It("should have no affinity when highAvailability is nil", func() {
+			mc := validMemcached(uniqueName("dep-aa-nil"))
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity).To(BeNil())
+		})
+
+		It("should update Deployment affinity when antiAffinityPreset changes from soft to hard", func() {
+			mc := validMemcached(uniqueName("dep-aa-change"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: &soft,
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+
+			// Update to hard.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			hard := memcachedv1alpha1.AntiAffinityPresetHard
+			mc.Spec.HighAvailability.AntiAffinityPreset = &hard
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(BeEmpty())
+		})
+
+		It("should clear affinity when highAvailability is removed", func() {
+			mc := validMemcached(uniqueName("dep-aa-clear"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: &soft,
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep := fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
+
+			// Remove HA.
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			mc.Spec.HighAvailability = nil
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep = fetchDeployment(mc)
+			Expect(dep.Spec.Template.Spec.Affinity).To(BeNil())
+		})
+
+		It("should be idempotent with soft anti-affinity", func() {
+			mc := validMemcached(uniqueName("dep-aa-idemp"))
+			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset: &soft,
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep1 := fetchDeployment(mc)
+			rv1 := dep1.ResourceVersion
+
+			// Reconcile again without changes.
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			dep2 := fetchDeployment(mc)
+			Expect(dep2.ResourceVersion).To(Equal(rv1))
+		})
+	})
+
 	Context("extraArgs edge cases (REQ-001)", func() {
 		It("should append extraArgs after standard flags", func() {
 			mc := validMemcached(uniqueName("dep-extra"))

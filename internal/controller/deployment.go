@@ -72,6 +72,51 @@ func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig) []string {
 	return args
 }
 
+// buildAntiAffinity returns a PodAntiAffinity-based Affinity for the given Memcached CR,
+// or nil if no anti-affinity is configured.
+func buildAntiAffinity(mc *memcachedv1alpha1.Memcached) *corev1.Affinity {
+	if mc.Spec.HighAvailability == nil || mc.Spec.HighAvailability.AntiAffinityPreset == nil {
+		return nil
+	}
+
+	labelSelector := &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app.kubernetes.io/name":     "memcached",
+			"app.kubernetes.io/instance": mc.Name,
+		},
+	}
+
+	switch *mc.Spec.HighAvailability.AntiAffinityPreset {
+	case memcachedv1alpha1.AntiAffinityPresetSoft:
+		return &corev1.Affinity{
+			PodAntiAffinity: &corev1.PodAntiAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+					{
+						Weight: 100,
+						PodAffinityTerm: corev1.PodAffinityTerm{
+							TopologyKey:   "kubernetes.io/hostname",
+							LabelSelector: labelSelector,
+						},
+					},
+				},
+			},
+		}
+	case memcachedv1alpha1.AntiAffinityPresetHard:
+		return &corev1.Affinity{
+			PodAntiAffinity: &corev1.PodAntiAffinity{
+				RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+					{
+						TopologyKey:   "kubernetes.io/hostname",
+						LabelSelector: labelSelector,
+					},
+				},
+			},
+		}
+	default:
+		return nil
+	}
+}
+
 // constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
 // It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
 func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) {
@@ -97,6 +142,8 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 	maxSurge := intstr.FromInt32(1)
 	maxUnavailable := intstr.FromInt32(0)
 
+	affinity := buildAntiAffinity(mc)
+
 	dep.Labels = labels
 	dep.Spec = appsv1.DeploymentSpec{
 		Replicas: &replicas,
@@ -115,6 +162,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
+				Affinity: affinity,
 				Containers: []corev1.Container{
 					{
 						Name:      "memcached",
