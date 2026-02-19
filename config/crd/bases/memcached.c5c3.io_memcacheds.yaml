@@ -955,6 +955,16 @@ spec:
                         type: boolean
                     type: object
                 type: object
+              service:
+                description: Service contains configuration for the headless Service.
+                properties:
+                  annotations:
+                    additionalProperties:
+                      type: string
+                    description: Annotations are custom annotations added to the Service
+                      metadata.
+                    type: object
+                type: object
             type: object
           status:
             description: MemcachedStatus defines the observed state of Memcached.

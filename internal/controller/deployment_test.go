@@ -5,12 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 )
 
 func TestLabelsForMemcached(t *testing.T) {
@@ -218,8 +219,8 @@ func TestConstructDeployment_MinimalSpec(t *testing.T) {
 	if containers[0].Image != "memcached:1.6" {
 		t.Errorf("expected image memcached:1.6, got %q", containers[0].Image)
 	}
-	if containers[0].Name != "memcached" {
-		t.Errorf("expected container name 'memcached', got %q", containers[0].Name)
+	if containers[0].Name != testPortName {
+		t.Errorf("expected container name %q, got %q", testPortName, containers[0].Name)
 	}
 
 	// Default args.
@@ -238,7 +239,7 @@ func TestConstructDeployment_MinimalSpec(t *testing.T) {
 		t.Fatalf("expected 1 port, got %d", len(containers[0].Ports))
 	}
 	port := containers[0].Ports[0]
-	if port.Name != "memcached" || port.ContainerPort != 11211 || port.Protocol != corev1.ProtocolTCP {
+	if port.Name != testPortName || port.ContainerPort != 11211 || port.Protocol != corev1.ProtocolTCP {
 		t.Errorf("unexpected port: %+v", port)
 	}
 
@@ -355,8 +356,8 @@ func TestConstructDeployment_ContainerPort(t *testing.T) {
 		t.Fatalf("expected 1 port, got %d", len(ports))
 	}
 
-	if ports[0].Name != "memcached" {
-		t.Errorf("expected port name 'memcached', got %q", ports[0].Name)
+	if ports[0].Name != testPortName {
+		t.Errorf("expected port name %q, got %q", testPortName, ports[0].Name)
 	}
 	if ports[0].ContainerPort != 11211 {
 		t.Errorf("expected containerPort 11211, got %d", ports[0].ContainerPort)
@@ -382,11 +383,11 @@ func TestConstructDeployment_Probes(t *testing.T) {
 	if lp == nil {
 		t.Fatal("expected liveness probe")
 	}
-	if lp.ProbeHandler.TCPSocket == nil {
+	if lp.TCPSocket == nil {
 		t.Fatal("expected tcpSocket liveness probe")
 	}
-	if lp.TCPSocket.Port != intstr.FromString("memcached") {
-		t.Errorf("liveness probe port = %v, want 'memcached'", lp.TCPSocket.Port)
+	if lp.TCPSocket.Port != intstr.FromString(testPortName) {
+		t.Errorf("liveness probe port = %v, want %q", lp.TCPSocket.Port, testPortName)
 	}
 	if lp.InitialDelaySeconds != 10 {
 		t.Errorf("liveness initialDelaySeconds = %d, want 10", lp.InitialDelaySeconds)
@@ -400,11 +401,11 @@ func TestConstructDeployment_Probes(t *testing.T) {
 	if rp == nil {
 		t.Fatal("expected readiness probe")
 	}
-	if rp.ProbeHandler.TCPSocket == nil {
+	if rp.TCPSocket == nil {
 		t.Fatal("expected tcpSocket readiness probe")
 	}
-	if rp.TCPSocket.Port != intstr.FromString("memcached") {
-		t.Errorf("readiness probe port = %v, want 'memcached'", rp.TCPSocket.Port)
+	if rp.TCPSocket.Port != intstr.FromString(testPortName) {
+		t.Errorf("readiness probe port = %v, want %q", rp.TCPSocket.Port, testPortName)
 	}
 	if rp.InitialDelaySeconds != 5 {
 		t.Errorf("readiness initialDelaySeconds = %d, want 5", rp.InitialDelaySeconds)

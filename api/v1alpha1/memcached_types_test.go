@@ -462,7 +462,7 @@ func TestMonitoringSpec_DeepCopy(t *testing.T) {
 	if clone == m {
 		t.Error("DeepCopy returned same pointer")
 	}
-	m.ServiceMonitor.AdditionalLabels["k"] = "changed"
+	m.ServiceMonitor.AdditionalLabels["k"] = testMutatedValue
 	if clone.ServiceMonitor.AdditionalLabels["k"] != "v" {
 		t.Error("DeepCopy is not independent: AdditionalLabels was mutated")
 	}
@@ -502,5 +502,71 @@ func TestSecuritySpec_DeepCopy(t *testing.T) {
 	*s.ContainerSecurityContext.RunAsUser = 2000
 	if *clone.ContainerSecurityContext.RunAsUser != 1000 {
 		t.Error("DeepCopy is not independent: ContainerSecurityContext.RunAsUser was mutated")
+	}
+}
+
+// --- REQ-001: ServiceSpec ---
+
+func TestServiceSpec_ZeroValue(t *testing.T) {
+	s := ServiceSpec{}
+	if s.Annotations != nil {
+		t.Error("expected Annotations to be nil for zero value")
+	}
+}
+
+func TestServiceSpec_AllFieldsSet(t *testing.T) {
+	s := ServiceSpec{
+		Annotations: map[string]string{
+			"prometheus.io/scrape": "true",
+			"prometheus.io/port":   "9150",
+		},
+	}
+	if len(s.Annotations) != 2 {
+		t.Errorf("expected 2 annotations, got %d", len(s.Annotations))
+	}
+	if s.Annotations["prometheus.io/scrape"] != "true" {
+		t.Errorf("unexpected annotation value: %s", s.Annotations["prometheus.io/scrape"])
+	}
+	if s.Annotations["prometheus.io/port"] != "9150" {
+		t.Errorf("unexpected annotation value: %s", s.Annotations["prometheus.io/port"])
+	}
+}
+
+func TestServiceSpec_DeepCopy(t *testing.T) {
+	s := &ServiceSpec{
+		Annotations: map[string]string{"key": "value"},
+	}
+	clone := s.DeepCopy()
+	if clone == s {
+		t.Error("DeepCopy returned same pointer")
+	}
+	s.Annotations["key"] = testMutatedValue
+	if clone.Annotations["key"] != "value" {
+		t.Error("DeepCopy is not independent: Annotations was mutated")
+	}
+}
+
+func TestMemcachedSpec_WithServiceSpec(t *testing.T) {
+	replicas := int32(1)
+	spec := MemcachedSpec{
+		Replicas: &replicas,
+		Service: &ServiceSpec{
+			Annotations: map[string]string{
+				"prometheus.io/scrape": "true",
+			},
+		},
+	}
+	if spec.Service == nil {
+		t.Fatal("expected Service to be set")
+	}
+	if spec.Service.Annotations["prometheus.io/scrape"] != "true" {
+		t.Errorf("unexpected annotation: %s", spec.Service.Annotations["prometheus.io/scrape"])
+	}
+}
+
+func TestMemcachedSpec_NilServiceSpec(t *testing.T) {
+	spec := MemcachedSpec{}
+	if spec.Service != nil {
+		t.Error("expected Service to be nil for empty spec")
 	}
 }

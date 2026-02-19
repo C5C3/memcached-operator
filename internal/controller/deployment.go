@@ -4,11 +4,12 @@ package controller
 import (
 	"fmt"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 )
 
 // labelsForMemcached returns the standard Kubernetes recommended labels for a Memcached resource.

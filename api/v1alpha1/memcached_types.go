@@ -175,6 +175,13 @@ type TLSSpec struct {
 	CertificateSecretRef corev1.LocalObjectReference `json:"certificateSecretRef,omitempty"`
 }
 
+// ServiceSpec defines configuration for the headless Service.
+type ServiceSpec struct {
+	// Annotations are custom annotations added to the Service metadata.
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty,omitzero"`
+}
+
 // MemcachedSpec defines the desired state of Memcached.
 type MemcachedSpec struct {
 	// Replicas is the number of Memcached pods.
@@ -208,6 +215,10 @@ type MemcachedSpec struct {
 	// Security contains security settings.
 	// +optional
 	Security *SecuritySpec `json:"security,omitempty,omitzero"`
+
+	// Service contains configuration for the headless Service.
+	// +optional
+	Service *ServiceSpec `json:"service,omitempty,omitzero"`
 }
 
 // MemcachedStatus defines the observed state of Memcached.

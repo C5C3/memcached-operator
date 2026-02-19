@@ -2,8 +2,8 @@
   "feature_id": "MO-0006",
   "title": "B003: Implement headless service reconciliation",
   "slug": "b003-implement-headless-service-reconciliation",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Create and reconcile a headless Service (clusterIP: None) on port 11211 for direct pod discovery. This is critical for Keystone's pymemcache backend which connects to individual pod addresses (e.g. memcached-0.memcached:11211).",
   "stories": [
@@ -307,6 +307,7 @@
       "description": "Add ServiceSpec struct with Annotations map[string]string field to api/v1alpha1/memcached_types.go. Add Service *ServiceSpec field to MemcachedSpec. Include kubebuilder markers (+optional, json tags with omitempty,omitzero). Run make generate to regenerate DeepCopy methods and make manifests to regenerate CRD YAML. Write unit test in api/v1alpha1/memcached_types_test.go verifying the new field is accepted by the API server.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -317,6 +318,7 @@
       "description": "Create internal/controller/service.go with constructService(mc *Memcached, svc *corev1.Service) function. The function mutates the Service in-place (same pattern as constructDeployment): sets Labels from labelsForMemcached(), sets spec.ClusterIP='None', sets spec.Selector from labelsForMemcached(), adds port 11211/TCP named 'memcached' targeting 'memcached', and applies custom annotations from mc.Spec.Service.Annotations if present. Write table-driven unit tests in internal/controller/service_test.go covering: minimal spec (no annotations), spec with custom annotations, nil spec.service, labels correctness, port configuration, clusterIP=None, selector matching labels.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -329,6 +331,7 @@
       "description": "Add reconcileService(ctx, mc) method to MemcachedReconciler in internal/controller/memcached_controller.go following the exact pattern of reconcileDeployment: create Service ObjectMeta with Name/Namespace, call controllerutil.CreateOrUpdate with constructService mutate function and SetControllerReference, log result, return wrapped error. Add the reconcileService call in Reconcile() after reconcileDeployment(). Add corev1 import if not already present.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-006",
@@ -342,6 +345,7 @@
       "description": "Create internal/controller/memcached_service_reconcile_test.go with Ginkgo Describe/Context/It tests using envtest. Add fetchService() helper similar to fetchDeployment(). Test Context 'minimal CR with defaults': create validMemcached, reconcileOnce, verify Service exists with clusterIP=None, port 11211/TCP named 'memcached', standard labels on metadata and selector, owner reference with controller=true and blockOwnerDeletion=true, no custom annotations.",
       "level": 4,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -355,6 +359,7 @@
       "description": "Add test Context 'custom annotations' in memcached_service_reconcile_test.go: create CR with spec.service.annotations set, reconcile, verify annotations appear on Service. Add test Context 'annotation update': create CR with annotations, reconcile, update CR annotations, reconcile again, verify Service annotations match new values.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006"
@@ -366,6 +371,7 @@
       "description": "Add test Contexts in memcached_service_reconcile_test.go: 'idempotency' - reconcile twice without changes, verify resourceVersion unchanged. 'error handling' - use fake client with interceptor to simulate API errors, verify error is propagated from Reconcile(). Follow the exact error-handling test pattern from memcached_deployment_reconcile_test.go.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007"
@@ -377,6 +383,7 @@
       "description": "Create docs/reference/backend/headless-service-reconciliation.md following the structure of deployment-reconciliation.md. Cover: constructService() behavior and field mapping, reconcileService() method and CreateOrUpdate pattern, Service spec (clusterIP=None, port 11211, labels, selector), custom annotations from spec.service.annotations, owner references and garbage collection, example Service manifests for minimal and annotated configurations.",
       "level": 5,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -531,6 +538,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T09:40:18.388330"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T10:04:28.089539"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T10:26:53.285347"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T10:26:53.303350"
     }
   },
   "execution_history": [
@@ -544,6 +563,62 @@
           "name": "prepare",
           "duration": 281.51474595069885,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "d7e05a96-439f-44e2-a5f3-8d506d69d13f",
+      "timestamp": "2026-02-19T10:25:48.402366",
+      "total_duration": 1163.8911142349243,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (1 tasks)",
+          "duration": 196.02723383903503,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 107.44878363609314,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 156.57108807563782,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (3 tasks)",
+          "duration": 95.02796697616577,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 5 (1 tasks)",
+          "duration": 140.80007576942444,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0006] Code Review",
+          "duration": 129.55602717399597,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0006] Improvements",
+          "duration": 226.45245170593262,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0006] Simplify",
+          "duration": 112.00748705863953,
+          "type": "simplify",
           "status": "done"
         }
       ]

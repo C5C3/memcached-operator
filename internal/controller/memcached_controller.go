@@ -58,6 +58,10 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileService(ctx, memcached); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -82,6 +86,30 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
 	}
 
 	logger.Info("Deployment reconciled", "name", dep.Name, "operation", result)
+	return nil
+}
+
+// reconcileService ensures the headless Service for the Memcached CR matches the desired state.
+// It uses CreateOrUpdate for idempotent create/update and sets a controller owner reference.
+func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+	logger := log.FromContext(ctx)
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mc.Name,
+			Namespace: mc.Namespace,
+		},
+	}
+
+	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+		constructService(mc, svc)
+		return controllerutil.SetControllerReference(mc, svc, r.Scheme)
+	})
+	if err != nil {
+		return fmt.Errorf("reconciling Service: %w", err)
+	}
+
+	logger.Info("Service reconciled", "name", svc.Name, "operation", result)
 	return nil
 }
 

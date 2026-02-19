@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 )
+
+const testMutatedValue = "changed"
 
 func TestMemcachedDeepCopy_Independence(t *testing.T) {
 	replicas := int32(3)
@@ -52,7 +53,7 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 	}
 
 	// Mutate Labels in original.
-	original.Labels["app"] = "changed"
+	original.Labels["app"] = testMutatedValue
 	if clone.Labels["app"] != "memcached" {
 		t.Error("clone Labels were affected by mutating original Labels")
 	}
@@ -112,9 +113,6 @@ func TestMemcachedDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	}
 
 	obj := original.DeepCopyObject()
-
-	// Verify it satisfies runtime.Object.
-	var _ runtime.Object = obj
 
 	mc, ok := obj.(*Memcached)
 	if !ok {
@@ -188,7 +186,7 @@ func TestMemcachedListDeepCopy_Independence(t *testing.T) {
 	}
 
 	// Mutate existing item's Labels in original.
-	original.Items[0].Labels["index"] = "changed"
+	original.Items[0].Labels["index"] = testMutatedValue
 	if clone.Items[0].Labels["index"] != "0" {
 		t.Error("clone Items[0].Labels was affected by mutating original")
 	}
@@ -208,9 +206,6 @@ func TestMemcachedListDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	}
 
 	obj := original.DeepCopyObject()
-
-	// Verify it satisfies runtime.Object.
-	var _ runtime.Object = obj
 
 	ml, ok := obj.(*MemcachedList)
 	if !ok {
