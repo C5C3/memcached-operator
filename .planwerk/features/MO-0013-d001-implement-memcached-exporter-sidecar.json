@@ -1,0 +1,526 @@
+{
+  "feature_id": "MO-0013",
+  "title": "D001: Implement Memcached exporter sidecar injection",
+  "slug": "d001-implement-memcached-exporter-sidecar",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "When spec.monitoring.enabled is true, inject a prom/memcached-exporter:v0.15.4 sidecar container into the Deployment pod template. Expose metrics port 9150. Apply exporter-specific resource requests/limits from spec.monitoring.exporterResources.",
+  "stories": [
+    {
+      "title": "Operator injects exporter sidecar when monitoring is enabled",
+      "role": "cluster operator",
+      "want": "the operator to automatically inject a prom/memcached-exporter sidecar container when I set spec.monitoring.enabled=true",
+      "so_that": "Prometheus can scrape Memcached metrics without manual sidecar configuration",
+      "criteria": [
+        "Deployment pod template contains exactly 2 containers when monitoring.enabled=true: 'memcached' and 'exporter'",
+        "Exporter container image defaults to 'prom/memcached-exporter:v0.15.4' when spec.monitoring.exporterImage is nil",
+        "Exporter container exposes port 9150/TCP named 'metrics'",
+        "Exporter container connects to memcached on localhost:11211 (default --memcached.address)"
+      ]
+    },
+    {
+      "title": "Operator applies custom exporter image from spec",
+      "role": "cluster operator",
+      "want": "to override the default exporter image via spec.monitoring.exporterImage",
+      "so_that": "I can use a custom or pinned exporter image for my organization",
+      "criteria": [
+        "Exporter container uses the image from spec.monitoring.exporterImage when provided",
+        "Updating spec.monitoring.exporterImage triggers a Deployment update with the new image",
+        "Deployment is idempotent when reconciled again without changes"
+      ]
+    },
+    {
+      "title": "Operator applies exporter resource requests/limits",
+      "role": "cluster operator",
+      "want": "to configure resource requests and limits for the exporter sidecar via spec.monitoring.exporterResources",
+      "so_that": "the exporter does not consume unbounded resources in production",
+      "criteria": [
+        "Exporter container has no resource requests/limits when spec.monitoring.exporterResources is nil",
+        "Exporter container has resource requests/limits matching spec.monitoring.exporterResources when provided",
+        "Updating exporterResources triggers a Deployment update"
+      ]
+    },
+    {
+      "title": "Operator exposes metrics port on Service when monitoring is enabled",
+      "role": "cluster operator",
+      "want": "the headless Service to include a 'metrics' port (9150) when monitoring is enabled",
+      "so_that": "Prometheus ServiceMonitor can discover and scrape the metrics endpoint via the Service",
+      "criteria": [
+        "Service has 2 ports when monitoring.enabled=true: 'memcached' (11211) and 'metrics' (9150)",
+        "Service has only 1 port ('memcached' 11211) when monitoring is disabled or nil",
+        "Enabling monitoring updates the Service to add the metrics port",
+        "Disabling monitoring updates the Service to remove the metrics port"
+      ]
+    },
+    {
+      "title": "Operator removes exporter sidecar when monitoring is disabled",
+      "role": "cluster operator",
+      "want": "the exporter sidecar to be removed when I disable monitoring or remove the monitoring section",
+      "so_that": "resources are not wasted on unused exporter containers",
+      "criteria": [
+        "Deployment pod template contains only 1 container ('memcached') when monitoring.enabled=false",
+        "Deployment pod template contains only 1 container when spec.monitoring is nil",
+        "Toggling monitoring.enabled from true to false removes the exporter container and metrics port",
+        "Toggling monitoring.enabled from false to true adds the exporter container and metrics port"
+      ]
+    },
+    {
+      "title": "Operator maintains idempotency with exporter sidecar",
+      "role": "system",
+      "want": "repeated reconciliation with unchanged monitoring spec to produce no Deployment updates",
+      "so_that": "unnecessary pod restarts are avoided and the operator is level-triggered",
+      "criteria": [
+        "Deployment resourceVersion does not change on second reconcile with monitoring enabled and unchanged spec",
+        "Service resourceVersion does not change on second reconcile with monitoring enabled and unchanged spec",
+        "Deployment correctly converges after drift (manual container removal)"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL inject a memcached-exporter sidecar container into the Deployment pod template when spec.monitoring.enabled is true",
+      "priority": "SHALL",
+      "rationale": "Core feature: enables Prometheus-compatible metrics collection from Memcached pods",
+      "scenarios": [
+        {
+          "name": "Sidecar injected when monitoring enabled",
+          "when": "a Memcached CR is created with spec.monitoring.enabled=true",
+          "then": "the reconciled Deployment has 2 containers: 'memcached' and 'exporter'",
+          "and_then": [
+            "the exporter container image is 'prom/memcached-exporter:v0.15.4' (default)"
+          ]
+        },
+        {
+          "name": "No sidecar when monitoring disabled",
+          "when": "a Memcached CR is created with spec.monitoring.enabled=false",
+          "then": "the reconciled Deployment has exactly 1 container: 'memcached'",
+          "and_then": [
+            "no container named 'exporter' exists in the pod template"
+          ]
+        },
+        {
+          "name": "No sidecar when monitoring nil",
+          "when": "a Memcached CR is created with spec.monitoring=nil",
+          "then": "the reconciled Deployment has exactly 1 container: 'memcached'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The exporter sidecar container SHALL expose port 9150/TCP named 'metrics'",
+      "priority": "SHALL",
+      "rationale": "Port 9150 is the standard memcached-exporter metrics port used by Prometheus scrape configs",
+      "scenarios": [
+        {
+          "name": "Metrics port exposed",
+          "when": "monitoring is enabled and the Deployment is reconciled",
+          "then": "the exporter container has a port named 'metrics' with containerPort=9150, protocol=TCP",
+          "and_then": []
+        },
+        {
+          "name": "Metrics port is distinct from memcached port",
+          "when": "monitoring is enabled",
+          "then": "the memcached container has port 11211 and the exporter container has port 9150",
+          "and_then": [
+            "there are no port conflicts between containers"
+          ]
+        },
+        {
+          "name": "Exporter connects to localhost memcached",
+          "when": "monitoring is enabled and no custom exporter args are specified",
+          "then": "the exporter uses its default --memcached.address=localhost:11211 to connect to the co-located memcached container",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The exporter sidecar SHALL use the image from spec.monitoring.exporterImage with a default of 'prom/memcached-exporter:v0.15.4'",
+      "priority": "SHALL",
+      "rationale": "Allows operators to pin or override the exporter image while providing a sensible default",
+      "scenarios": [
+        {
+          "name": "Default exporter image used",
+          "when": "spec.monitoring.exporterImage is nil and monitoring is enabled",
+          "then": "the exporter container image is 'prom/memcached-exporter:v0.15.4'",
+          "and_then": []
+        },
+        {
+          "name": "Custom exporter image used",
+          "when": "spec.monitoring.exporterImage is set to 'my-registry/memcached-exporter:v1.0'",
+          "then": "the exporter container image is 'my-registry/memcached-exporter:v1.0'",
+          "and_then": []
+        },
+        {
+          "name": "Image update triggers Deployment update",
+          "when": "spec.monitoring.exporterImage is changed from default to a custom value",
+          "then": "the Deployment is updated with the new exporter image",
+          "and_then": [
+            "a rolling update is triggered"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The exporter sidecar SHALL apply resource requests/limits from spec.monitoring.exporterResources",
+      "priority": "SHALL",
+      "rationale": "Production clusters need resource governance for all containers to prevent unbounded resource consumption",
+      "scenarios": [
+        {
+          "name": "No resources when exporterResources is nil",
+          "when": "spec.monitoring.exporterResources is nil and monitoring is enabled",
+          "then": "the exporter container has empty resource requirements",
+          "and_then": []
+        },
+        {
+          "name": "Custom resources applied",
+          "when": "spec.monitoring.exporterResources specifies cpu/memory requests and limits",
+          "then": "the exporter container has exactly those resource requirements",
+          "and_then": []
+        },
+        {
+          "name": "Resource update triggers Deployment update",
+          "when": "spec.monitoring.exporterResources is changed from nil to specific values",
+          "then": "the Deployment is updated with the new exporter resources",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The headless Service SHALL include a 'metrics' port (9150/TCP) when monitoring is enabled",
+      "priority": "SHALL",
+      "rationale": "ServiceMonitor resources rely on the Service port to discover metrics endpoints for scraping",
+      "scenarios": [
+        {
+          "name": "Metrics port added to Service",
+          "when": "monitoring is enabled and the Service is reconciled",
+          "then": "the Service has 2 ports: 'memcached' (11211) and 'metrics' (9150)",
+          "and_then": [
+            "metrics port targetPort references the named port 'metrics'"
+          ]
+        },
+        {
+          "name": "No metrics port when monitoring disabled",
+          "when": "monitoring is disabled or nil",
+          "then": "the Service has only 1 port: 'memcached' (11211)",
+          "and_then": []
+        },
+        {
+          "name": "Metrics port removed when monitoring toggled off",
+          "when": "monitoring is toggled from enabled to disabled",
+          "then": "the Service is updated to have only the 'memcached' port",
+          "and_then": [
+            "the metrics port is no longer present"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL toggle the exporter sidecar and metrics port when spec.monitoring.enabled changes",
+      "priority": "SHALL",
+      "rationale": "Operators must be able to dynamically enable/disable monitoring without recreating the CR",
+      "scenarios": [
+        {
+          "name": "Enable monitoring on existing CR",
+          "when": "spec.monitoring is added with enabled=true to a CR that previously had no monitoring",
+          "then": "the Deployment is updated to include the exporter sidecar and the Service gains the metrics port",
+          "and_then": []
+        },
+        {
+          "name": "Disable monitoring on existing CR",
+          "when": "spec.monitoring.enabled is changed from true to false",
+          "then": "the Deployment is updated to remove the exporter sidecar and the Service loses the metrics port",
+          "and_then": []
+        },
+        {
+          "name": "Remove monitoring section entirely",
+          "when": "spec.monitoring is set to nil on a CR that had monitoring enabled",
+          "then": "the Deployment reverts to 1 container and the Service reverts to 1 port",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator SHALL maintain idempotent reconciliation when monitoring is enabled",
+      "priority": "SHALL",
+      "rationale": "Level-triggered reconciliation must not cause unnecessary Deployment updates and pod restarts",
+      "scenarios": [
+        {
+          "name": "No-op on second reconcile with monitoring enabled",
+          "when": "a Deployment with exporter sidecar exists and reconciliation runs without spec changes",
+          "then": "the Deployment resourceVersion does not change",
+          "and_then": [
+            "the Service resourceVersion does not change"
+          ]
+        },
+        {
+          "name": "Drift correction restores exporter sidecar",
+          "when": "the exporter container is manually removed from the Deployment",
+          "then": "the next reconcile restores the exporter container",
+          "and_then": []
+        },
+        {
+          "name": "Deterministic container ordering",
+          "when": "constructDeployment is called multiple times with the same monitoring-enabled spec",
+          "then": "the containers are always in the same order: ['memcached', 'exporter']",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The exporter sidecar SHOULD coexist correctly with all other Deployment features (anti-affinity, topology spread, graceful shutdown)",
+      "priority": "SHOULD",
+      "rationale": "Monitoring should not break or interfere with HA and lifecycle features",
+      "scenarios": [
+        {
+          "name": "Monitoring with graceful shutdown",
+          "when": "monitoring is enabled and graceful shutdown is enabled",
+          "then": "the memcached container has Lifecycle preStop hook and the exporter container exists alongside",
+          "and_then": [
+            "the exporter container does not have a Lifecycle hook"
+          ]
+        },
+        {
+          "name": "Monitoring with anti-affinity and topology spread",
+          "when": "monitoring, anti-affinity, and topology spread are all enabled",
+          "then": "all three features are correctly applied to the Deployment",
+          "and_then": []
+        },
+        {
+          "name": "Monitoring with custom resources on both containers",
+          "when": "spec.resources and spec.monitoring.exporterResources are both set",
+          "then": "memcached container has spec.resources and exporter container has spec.monitoring.exporterResources",
+          "and_then": [
+            "the two resource specs are independent"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add buildExporterContainer helper and conditionally inject sidecar in constructDeployment (REQ-001, REQ-002, REQ-003, REQ-004)",
+      "description": "In `internal/controller/deployment.go`: Create a `buildExporterContainer(mc *Memcached) *corev1.Container` function that returns an exporter container when `mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled`. The container has: name='exporter', image from `mc.Spec.Monitoring.ExporterImage` (default 'prom/memcached-exporter:v0.15.4'), port 9150/TCP named 'metrics', resources from `mc.Spec.Monitoring.ExporterResources`. In `constructDeployment`, call `buildExporterContainer` and append the result to the containers slice if non-nil. The memcached container must always be first. Add unit tests in `internal/controller/deployment_test.go`: TestBuildExporterContainer_Enabled, TestBuildExporterContainer_Disabled, TestBuildExporterContainer_NilMonitoring, TestBuildExporterContainer_DefaultImage, TestBuildExporterContainer_CustomImage, TestBuildExporterContainer_WithResources, TestBuildExporterContainer_NilResources, TestConstructDeployment_MonitoringEnabled (verifies 2 containers), TestConstructDeployment_MonitoringDisabled (verifies 1 container).",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add metrics port to constructService when monitoring is enabled (REQ-005)",
+      "description": "In `internal/controller/service.go`: Modify `constructService` to accept monitoring state. After setting the memcached port, check `mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled`. If true, append a second ServicePort: name='metrics', port=9150, targetPort=intstr.FromString('metrics'), protocol=TCP. Add unit tests in `internal/controller/service_test.go`: TestConstructService_MonitoringEnabled (2 ports), TestConstructService_MonitoringDisabled (1 port), TestConstructService_MonitoringNil (1 port), TestConstructService_MonitoringEnabledPortDetails (verify name, port, targetPort, protocol).",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Integration tests for exporter sidecar injection via envtest (REQ-001, REQ-002, REQ-003, REQ-004, REQ-006, REQ-007)",
+      "description": "In a new file `internal/controller/memcached_monitoring_reconcile_test.go` (Ginkgo/Gomega, package controller_test): Add envtest integration tests using the existing `reconcileOnce`, `fetchDeployment`, `fetchService`, `validMemcached`, `uniqueName` helpers. Test contexts: (1) 'monitoring enabled with defaults' - create CR with monitoring.enabled=true, verify 2 containers, exporter image default, port 9150, Service has 2 ports; (2) 'monitoring enabled with custom image and resources' - verify custom image and resources on exporter container; (3) 'monitoring disabled' - verify 1 container, 1 port; (4) 'toggle monitoring on then off' - create without monitoring, enable it, verify sidecar added, disable it, verify sidecar removed; (5) 'toggle monitoring off then on' - create with monitoring, disable it, verify sidecar removed, re-enable, verify sidecar added; (6) 'idempotency with monitoring enabled' - verify resourceVersion unchanged on second reconcile; (7) 'monitoring with graceful shutdown and anti-affinity' - verify all features coexist (REQ-008).",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Reference documentation for exporter sidecar injection",
+      "description": "Create `docs/reference/backend/exporter-sidecar-injection.md` documenting: overview, the `buildExporterContainer` function, container spec (name, image, port, resources), Service port addition, CRD fields (monitoring.enabled, exporterImage, exporterResources), deployment manifest examples (monitoring enabled with defaults, monitoring enabled with custom resources, monitoring disabled). Follow the existing pattern in `docs/reference/backend/deployment-reconciliation.md` for structure and formatting.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_Enabled",
+      "story": "Operator injects exporter sidecar when monitoring is enabled",
+      "expected": "Returns a Container with name='exporter', default image, port 9150/TCP",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_Disabled",
+      "story": "Operator removes exporter sidecar when monitoring is disabled",
+      "expected": "Returns nil when monitoring.enabled=false",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_NilMonitoring",
+      "story": "Operator removes exporter sidecar when monitoring is disabled",
+      "expected": "Returns nil when spec.monitoring is nil",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_DefaultImage",
+      "story": "Operator injects exporter sidecar when monitoring is enabled",
+      "expected": "Uses 'prom/memcached-exporter:v0.15.4' when exporterImage is nil",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_CustomImage",
+      "story": "Operator applies custom exporter image from spec",
+      "expected": "Uses the custom image when exporterImage is set",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_WithResources",
+      "story": "Operator applies exporter resource requests/limits",
+      "expected": "Exporter container has the specified resource requests and limits",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_NilResources",
+      "story": "Operator applies exporter resource requests/limits",
+      "expected": "Exporter container has empty resources when exporterResources is nil",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildExporterContainer_MetricsPort",
+      "story": "Operator injects exporter sidecar when monitoring is enabled",
+      "expected": "Exporter container has exactly 1 port: name='metrics', containerPort=9150, protocol=TCP",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_MonitoringEnabled",
+      "story": "Operator injects exporter sidecar when monitoring is enabled",
+      "expected": "Deployment has 2 containers when monitoring.enabled=true",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_MonitoringDisabled",
+      "story": "Operator removes exporter sidecar when monitoring is disabled",
+      "expected": "Deployment has 1 container when monitoring.enabled=false",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_MonitoringEnabled",
+      "story": "Operator exposes metrics port on Service when monitoring is enabled",
+      "expected": "Service has 2 ports: 'memcached' (11211) and 'metrics' (9150)",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_MonitoringDisabled",
+      "story": "Operator exposes metrics port on Service when monitoring is enabled",
+      "expected": "Service has 1 port: 'memcached' (11211) when monitoring disabled",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_MonitoringNil",
+      "story": "Operator exposes metrics port on Service when monitoring is enabled",
+      "expected": "Service has 1 port: 'memcached' (11211) when monitoring nil",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_monitoring_reconcile_test.go",
+      "test_function": "should create Deployment with exporter sidecar and Service with metrics port",
+      "story": "Operator injects exporter sidecar when monitoring is enabled",
+      "expected": "Full integration: Deployment has 2 containers and Service has 2 ports after reconciliation",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_monitoring_reconcile_test.go",
+      "test_function": "should add exporter sidecar when monitoring is enabled on existing CR",
+      "story": "Operator removes exporter sidecar when monitoring is disabled",
+      "expected": "Toggling monitoring.enabled adds/removes the exporter container and metrics port",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_monitoring_reconcile_test.go",
+      "test_function": "should be idempotent with monitoring enabled",
+      "story": "Operator maintains idempotency with exporter sidecar",
+      "expected": "ResourceVersion unchanged on second reconcile with monitoring enabled",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_monitoring_reconcile_test.go",
+      "test_function": "should coexist with graceful shutdown and anti-affinity",
+      "story": "Operator maintains idempotency with exporter sidecar",
+      "expected": "All features (monitoring, graceful shutdown, anti-affinity) work together",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All SHALL requirements (REQ-001 to REQ-007) have corresponding passing unit and integration tests",
+    "constructDeployment produces deterministic output — idempotency verified by resourceVersion checks in envtest",
+    "buildExporterContainer follows the same pattern as buildAntiAffinity/buildGracefulShutdown (nil-safe, returns nil when disabled)",
+    "No breaking changes to existing tests — all pre-existing deployment_test.go and service_test.go tests still pass",
+    "Exporter container does not have probes (memcached-exporter doesn't need them; only memcached container has probes)",
+    "Service metrics port uses targetPort=intstr.FromString('metrics') matching the container port name",
+    "Code passes golangci-lint and go vet without errors",
+    "Container ordering is deterministic: memcached always first, exporter always second"
+  ],
+  "implementation_notes": "Architecture: Add a `buildExporterContainer(mc *Memcached) *corev1.Container` helper in `deployment.go` following the same nil-guard pattern as `buildAntiAffinity` and `buildGracefulShutdown`. The function returns `nil` when monitoring is not enabled, and a fully-configured `*corev1.Container` when it is. In `constructDeployment`, build the containers slice starting with the memcached container, then conditionally append the exporter. This ensures deterministic ordering (important for idempotency with CreateOrUpdate). For the Service, add a conditional second port in `constructService` — check `mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled` before appending the metrics port. The default exporter image is 'prom/memcached-exporter:v0.15.4' (matching the CRD kubebuilder:default annotation on MonitoringSpec.ExporterImage). The exporter connects to memcached via localhost:11211 (default --memcached.address flag), no explicit args needed. No Lifecycle hooks on the exporter container. No probes on the exporter container (the exporter is a lightweight HTTP server; the memcached container's probes cover the primary process). The existing RBAC markers already include ServiceMonitor permissions. No changes to memcached_types.go are needed — MonitoringSpec already defines all required fields.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.423776"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T17:51:47.213050"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T17:55:46.366802"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "805bca7b-6899-4f47-b5cc-bb59094ae88e",
+      "timestamp": "2026-02-19T17:55:46.366846",
+      "total_duration": 235.21380233764648,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 235.21380233764648,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
