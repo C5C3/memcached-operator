@@ -157,6 +157,37 @@ func buildGracefulShutdown(mc *memcachedv1alpha1.Memcached) (*corev1.Lifecycle, 
 	return lifecycle, &terminationGracePeriod
 }
 
+// buildExporterContainer returns a memcached-exporter sidecar container when monitoring is enabled,
+// or nil if monitoring is disabled or not configured.
+func buildExporterContainer(mc *memcachedv1alpha1.Memcached) *corev1.Container {
+	if mc.Spec.Monitoring == nil || !mc.Spec.Monitoring.Enabled {
+		return nil
+	}
+
+	image := "prom/memcached-exporter:v0.15.4"
+	if mc.Spec.Monitoring.ExporterImage != nil {
+		image = *mc.Spec.Monitoring.ExporterImage
+	}
+
+	var resources corev1.ResourceRequirements
+	if mc.Spec.Monitoring.ExporterResources != nil {
+		resources = *mc.Spec.Monitoring.ExporterResources
+	}
+
+	return &corev1.Container{
+		Name:      "exporter",
+		Image:     image,
+		Resources: resources,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "metrics",
+				ContainerPort: 9150,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+	}
+}
+
 // constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
 // It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
 func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) {
@@ -186,6 +217,44 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 	topologySpreadConstraints := buildTopologySpreadConstraints(mc)
 	lifecycle, terminationGracePeriodSeconds := buildGracefulShutdown(mc)
 
+	memcachedContainer := corev1.Container{
+		Name:      "memcached",
+		Image:     image,
+		Args:      args,
+		Resources: resources,
+		Lifecycle: lifecycle,
+		Ports: []corev1.ContainerPort{
+			{
+				Name:          "memcached",
+				ContainerPort: 11211,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromString("memcached"),
+				},
+			},
+			InitialDelaySeconds: 10,
+			PeriodSeconds:       10,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromString("memcached"),
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       5,
+		},
+	}
+
+	containers := []corev1.Container{memcachedContainer}
+	if exporterContainer := buildExporterContainer(mc); exporterContainer != nil {
+		containers = append(containers, *exporterContainer)
+	}
+
 	dep.Labels = labels
 	dep.Spec = appsv1.DeploymentSpec{
 		Replicas: &replicas,
@@ -207,40 +276,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 				Affinity:                      affinity,
 				TopologySpreadConstraints:     topologySpreadConstraints,
 				TerminationGracePeriodSeconds: terminationGracePeriodSeconds,
-				Containers: []corev1.Container{
-					{
-						Name:      "memcached",
-						Image:     image,
-						Args:      args,
-						Resources: resources,
-						Lifecycle: lifecycle,
-						Ports: []corev1.ContainerPort{
-							{
-								Name:          "memcached",
-								ContainerPort: 11211,
-								Protocol:      corev1.ProtocolTCP,
-							},
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								TCPSocket: &corev1.TCPSocketAction{
-									Port: intstr.FromString("memcached"),
-								},
-							},
-							InitialDelaySeconds: 10,
-							PeriodSeconds:       10,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								TCPSocket: &corev1.TCPSocketAction{
-									Port: intstr.FromString("memcached"),
-								},
-							},
-							InitialDelaySeconds: 5,
-							PeriodSeconds:       5,
-						},
-					},
-				},
+				Containers:                    containers,
 			},
 		},
 	}

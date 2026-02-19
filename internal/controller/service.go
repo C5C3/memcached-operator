@@ -24,7 +24,7 @@ func constructService(mc *memcachedv1alpha1.Memcached, svc *corev1.Service) {
 
 	svc.Spec.ClusterIP = corev1.ClusterIPNone
 	svc.Spec.Selector = labels
-	svc.Spec.Ports = []corev1.ServicePort{
+	ports := []corev1.ServicePort{
 		{
 			Name:       "memcached",
 			Port:       11211,
@@ -32,4 +32,15 @@ func constructService(mc *memcachedv1alpha1.Memcached, svc *corev1.Service) {
 			Protocol:   corev1.ProtocolTCP,
 		},
 	}
+
+	if mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled {
+		ports = append(ports, corev1.ServicePort{
+			Name:       "metrics",
+			Port:       9150,
+			TargetPort: intstr.FromString("metrics"),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
+
+	svc.Spec.Ports = ports
 }

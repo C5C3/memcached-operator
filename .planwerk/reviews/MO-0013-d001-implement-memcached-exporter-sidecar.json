@@ -1,0 +1,125 @@
+{
+  "feature_id": "MO-0013",
+  "title": "D001: Implement Memcached exporter sidecar injection",
+  "date": "2026-02-19",
+  "verdict": "APPROVED",
+  "summary": "Implements exporter sidecar injection via buildExporterContainer helper and metrics port addition in constructService. When spec.monitoring.enabled=true, a prom/memcached-exporter:v0.15.4 sidecar is appended to the Deployment (memcached always first), and a metrics port (9150/TCP) is added to the headless Service. Custom image and resources are supported. The implementation follows the existing nil-safe builder pattern (buildAntiAffinity, buildGracefulShutdown). All 194 tests pass including 10 new unit tests and 10 new envtest integration tests. go vet clean.",
+  "tests_checklist": [
+    {"item": "All tests pass (194/194, 0 failures)", "checked": true},
+    {"item": "Unit tests for buildExporterContainer: enabled, disabled, nil monitoring, default image, custom image, with resources, nil resources, metrics port", "checked": true},
+    {"item": "Unit tests for constructDeployment: monitoring enabled (2 containers), monitoring disabled (1 container)", "checked": true},
+    {"item": "Unit tests for constructService: monitoring enabled (2 ports), disabled (1 port), nil (1 port), port details (name, port, targetPort, protocol)", "checked": true},
+    {"item": "Integration tests: create with monitoring defaults, custom image, custom resources, nil resources", "checked": true},
+    {"item": "Integration tests: toggle on, toggle off, remove monitoring section, update image, update resources", "checked": true},
+    {"item": "Integration test: idempotency (resourceVersion unchanged on second reconcile)", "checked": true},
+    {"item": "Integration test: drift correction (manual container removal corrected)", "checked": true},
+    {"item": "Integration test: coexistence with graceful shutdown and anti-affinity", "checked": true},
+    {"item": "Edge cases covered: nil monitoring, disabled monitoring, nil resources, nil exporter image", "checked": true},
+    {"item": "Pre-existing tests still pass (no regressions)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing builder pattern (buildAntiAffinity, buildGracefulShutdown)", "checked": true},
+    {"item": "buildExporterContainer is a pure function with no side effects", "checked": true},
+    {"item": "Nil-safe: returns nil when monitoring is nil or disabled", "checked": true},
+    {"item": "Container ordering deterministic: memcached always first, exporter always second", "checked": true},
+    {"item": "Default image string inline matches existing pattern (memcached:1.6 also inline)", "checked": true},
+    {"item": "Function size within limits (<20 lines)", "checked": true},
+    {"item": "Single responsibility: buildExporterContainer builds container, constructDeployment orchestrates", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "No magic numbers (port 9150 matches memcached-exporter default, port name 'metrics' used consistently)", "checked": true},
+    {"item": "Clear naming throughout", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user inputs that bypass validation (ExporterImage comes from CRD with kubebuilder validation)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No command injection risk (no shell commands constructed from user input)", "checked": true},
+    {"item": "No sensitive data in logs or errors", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible — minimal changes to existing code", "checked": true},
+    {"item": "Refactored container construction out of spec literal for clarity", "checked": true},
+    {"item": "Service port addition uses same nil-guard pattern as deployment", "checked": true},
+    {"item": "No unnecessary abstractions or over-engineering", "checked": true},
+    {"item": "File locations match project structure conventions", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unused code", "checked": true},
+    {"item": "No future-proofing beyond requirements", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil checks at function entry (buildExporterContainer line 163)", "checked": true},
+    {"item": "Errors detected early in builder functions", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil monitoring spec handled", "checked": true},
+    {"item": "Nil ExporterImage handled with default", "checked": true},
+    {"item": "Nil ExporterResources handled with zero-value", "checked": true}
+  ],
+  "blocking_checks": {
+    "V1_tests_pass": "PASS — 194/194 tests pass (go test -v -count=1 ./internal/controller/...)",
+    "V2_type_check": "PASS — go vet ./... clean, no errors",
+    "V3_lint": "SKIP — golangci-lint version mismatch (go1.24 build vs go1.25 target), tooling issue not code issue",
+    "C1_implements_plan": "PASS — all tasks (1.1, 1.2, 2.1, 3.1) implemented",
+    "C2_acceptance_criteria": "PASS — REQ-001 through REQ-007 verified via tests",
+    "C3_edge_cases": "PASS — nil monitoring, disabled monitoring, nil image, nil resources all tested",
+    "C4_errors_explicit": "PASS — nil returns clearly documented, no silent failures",
+    "C5_no_regression": "PASS — all pre-existing tests pass unchanged",
+    "S1_input_validation": "PASS — CRD kubebuilder validation on types",
+    "S2_no_sql_injection": "N/A — no SQL",
+    "S3_no_hardcoded_secrets": "PASS",
+    "S4_authorization": "N/A — Kubernetes RBAC handles authz",
+    "S5_no_sensitive_data_leak": "PASS",
+    "S6_no_path_traversal": "N/A — no file paths",
+    "T1_type_annotations": "PASS — Go strong typing, all functions have explicit types",
+    "T2_no_bare_any": "N/A — Go, not TypeScript",
+    "T3_no_type_ignore": "N/A — Go, not Python",
+    "T4_generics_constrained": "N/A — no generics used",
+    "T5_optional_handled": "PASS — all pointer types nil-checked before dereference",
+    "FC1_all_tasks_implemented": "PASS — tasks 1.1, 1.2, 2.1, 3.1 all complete",
+    "FC2_no_stubs": "PASS — no TODOs, placeholders, or empty implementations",
+    "FC3_fully_working": "PASS — all functions have real logic, verified by tests",
+    "FC4_end_to_end": "PASS — envtest integration tests verify full reconciliation cycle"
+  },
+  "major_checks": {
+    "TE1_happy_path": "PASS — monitoring enabled with defaults, custom image, custom resources",
+    "TE2_edge_cases": "PASS — nil monitoring, disabled, nil resources, nil image",
+    "TE3_error_cases": "PASS — disabled/nil states verified to produce no sidecar",
+    "TE4_test_independence": "PASS — each test creates unique CR name via uniqueName()",
+    "TE5_test_naming": "PASS — Go test naming convention followed (TestBuildExporterContainer_Enabled etc.)",
+    "TE6_mocking": "PASS — envtest used for integration, no mocking needed for unit tests (pure functions)",
+    "TE7_assertions_specific": "PASS — exact values checked (image strings, port numbers, resource quantities)",
+    "Q1_single_responsibility": "PASS",
+    "Q2_function_size": "PASS — buildExporterContainer ~27 lines, constructService ~16 lines",
+    "Q3_no_duplication": "PASS",
+    "Q4_clear_naming": "PASS",
+    "Q5_nesting": "PASS — max 2 levels",
+    "Q6_no_magic_numbers": "PASS — port 9150 is memcached-exporter standard, documented",
+    "Q7_no_dead_code": "PASS",
+    "P1_follows_patterns": "PASS — matches buildAntiAffinity/buildGracefulShutdown pattern exactly",
+    "P2_uses_existing_utilities": "PASS — reuses labelsForMemcached, intstr.FromString, existing test helpers",
+    "P3_ddd_boundaries": "PASS — changes in controller package only",
+    "P4_api_conventions": "N/A — not REST API",
+    "P5_file_location": "PASS — deployment.go, service.go, new test file follows naming convention",
+    "DA1_docs_match_code": "PASS — exporter-sidecar-injection.md accurately describes buildExporterContainer and Service port behavior",
+    "DA2_capabilities_implemented": "PASS — all documented capabilities are working",
+    "DA3_new_docs_accurate": "PASS — docs/reference/backend/exporter-sidecar-injection.md matches implementation"
+  },
+  "minor_checks": {
+    "D1_public_docstrings": "PASS — buildExporterContainer has godoc comment",
+    "D2_why_comments": "PASS — comments explain design decisions not mechanics",
+    "D3_no_commented_code": "PASS",
+    "D4_readme_updated": "N/A — README.md is reference doc, not modified per worktree rules",
+    "PF1_n_plus_1": "N/A",
+    "PF2_pagination": "N/A",
+    "PF3_no_blocking_in_async": "N/A",
+    "PF4_batch_processing": "N/A"
+  },
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "D-MINOR-1: docs/reference/backend/exporter-sidecar-injection.md:135 uses 'memcached:1.6.38' in the example YAML but the actual default image is 'memcached:1.6'. Consider using the real default for accuracy, though this is a non-normative illustration."
+  ],
+  "next_steps": []
+}

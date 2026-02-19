@@ -194,3 +194,100 @@ func TestConstructService_NilServiceSpec(t *testing.T) {
 		t.Fatalf("expected 1 port, got %d", len(svc.Spec.Ports))
 	}
 }
+
+func TestConstructService_MonitoringEnabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-enabled", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+	svc := &corev1.Service{}
+
+	constructService(mc, svc)
+
+	if len(svc.Spec.Ports) != 2 {
+		t.Fatalf("expected 2 ports, got %d", len(svc.Spec.Ports))
+	}
+
+	if svc.Spec.Ports[0].Name != testPortName {
+		t.Errorf("first port name = %q, want %q", svc.Spec.Ports[0].Name, testPortName)
+	}
+	if svc.Spec.Ports[0].Port != 11211 {
+		t.Errorf("first port = %d, want 11211", svc.Spec.Ports[0].Port)
+	}
+
+	if svc.Spec.Ports[1].Name != "metrics" {
+		t.Errorf("second port name = %q, want %q", svc.Spec.Ports[1].Name, "metrics")
+	}
+	if svc.Spec.Ports[1].Port != 9150 {
+		t.Errorf("second port = %d, want 9150", svc.Spec.Ports[1].Port)
+	}
+}
+
+func TestConstructService_MonitoringOff(t *testing.T) {
+	tests := []struct {
+		name       string
+		monitoring *memcachedv1alpha1.MonitoringSpec
+	}{
+		{name: "monitoring disabled", monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: false}},
+		{name: "nil monitoring", monitoring: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: "default"},
+				Spec:       memcachedv1alpha1.MemcachedSpec{Monitoring: tt.monitoring},
+			}
+			svc := &corev1.Service{}
+
+			constructService(mc, svc)
+
+			if len(svc.Spec.Ports) != 1 {
+				t.Fatalf("expected 1 port, got %d", len(svc.Spec.Ports))
+			}
+			if svc.Spec.Ports[0].Name != testPortName {
+				t.Errorf("port name = %q, want %q", svc.Spec.Ports[0].Name, testPortName)
+			}
+			if svc.Spec.Ports[0].Port != 11211 {
+				t.Errorf("port = %d, want 11211", svc.Spec.Ports[0].Port)
+			}
+		})
+	}
+}
+
+func TestConstructService_MonitoringEnabledPortDetails(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-details", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+	svc := &corev1.Service{}
+
+	constructService(mc, svc)
+
+	if len(svc.Spec.Ports) < 2 {
+		t.Fatalf("expected at least 2 ports, got %d", len(svc.Spec.Ports))
+	}
+
+	metricsPort := svc.Spec.Ports[1]
+
+	if metricsPort.Name != "metrics" {
+		t.Errorf("metrics port name = %q, want %q", metricsPort.Name, "metrics")
+	}
+	if metricsPort.Port != 9150 {
+		t.Errorf("metrics port = %d, want 9150", metricsPort.Port)
+	}
+	if metricsPort.TargetPort != intstr.FromString("metrics") {
+		t.Errorf("metrics targetPort = %v, want 'metrics'", metricsPort.TargetPort)
+	}
+	if metricsPort.Protocol != corev1.ProtocolTCP {
+		t.Errorf("metrics protocol = %q, want TCP", metricsPort.Protocol)
+	}
+}

@@ -2,8 +2,8 @@
   "feature_id": "MO-0013",
   "title": "D001: Implement Memcached exporter sidecar injection",
   "slug": "d001-implement-memcached-exporter-sidecar",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "When spec.monitoring.enabled is true, inject a prom/memcached-exporter:v0.15.4 sidecar container into the Deployment pod template. Expose metrics port 9150. Apply exporter-specific resource requests/limits from spec.monitoring.exporterResources.",
   "stories": [
@@ -312,6 +312,7 @@
       "description": "In `internal/controller/deployment.go`: Create a `buildExporterContainer(mc *Memcached) *corev1.Container` function that returns an exporter container when `mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled`. The container has: name='exporter', image from `mc.Spec.Monitoring.ExporterImage` (default 'prom/memcached-exporter:v0.15.4'), port 9150/TCP named 'metrics', resources from `mc.Spec.Monitoring.ExporterResources`. In `constructDeployment`, call `buildExporterContainer` and append the result to the containers slice if non-nil. The memcached container must always be first. Add unit tests in `internal/controller/deployment_test.go`: TestBuildExporterContainer_Enabled, TestBuildExporterContainer_Disabled, TestBuildExporterContainer_NilMonitoring, TestBuildExporterContainer_DefaultImage, TestBuildExporterContainer_CustomImage, TestBuildExporterContainer_WithResources, TestBuildExporterContainer_NilResources, TestConstructDeployment_MonitoringEnabled (verifies 2 containers), TestConstructDeployment_MonitoringDisabled (verifies 1 container).",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -325,6 +326,7 @@
       "description": "In `internal/controller/service.go`: Modify `constructService` to accept monitoring state. After setting the memcached port, check `mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled`. If true, append a second ServicePort: name='metrics', port=9150, targetPort=intstr.FromString('metrics'), protocol=TCP. Add unit tests in `internal/controller/service_test.go`: TestConstructService_MonitoringEnabled (2 ports), TestConstructService_MonitoringDisabled (1 port), TestConstructService_MonitoringNil (1 port), TestConstructService_MonitoringEnabledPortDetails (verify name, port, targetPort, protocol).",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -335,6 +337,7 @@
       "description": "In a new file `internal/controller/memcached_monitoring_reconcile_test.go` (Ginkgo/Gomega, package controller_test): Add envtest integration tests using the existing `reconcileOnce`, `fetchDeployment`, `fetchService`, `validMemcached`, `uniqueName` helpers. Test contexts: (1) 'monitoring enabled with defaults' - create CR with monitoring.enabled=true, verify 2 containers, exporter image default, port 9150, Service has 2 ports; (2) 'monitoring enabled with custom image and resources' - verify custom image and resources on exporter container; (3) 'monitoring disabled' - verify 1 container, 1 port; (4) 'toggle monitoring on then off' - create without monitoring, enable it, verify sidecar added, disable it, verify sidecar removed; (5) 'toggle monitoring off then on' - create with monitoring, disable it, verify sidecar removed, re-enable, verify sidecar added; (6) 'idempotency with monitoring enabled' - verify resourceVersion unchanged on second reconcile; (7) 'monitoring with graceful shutdown and anti-affinity' - verify all features coexist (REQ-008).",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -350,6 +353,7 @@
       "description": "Create `docs/reference/backend/exporter-sidecar-injection.md` documenting: overview, the `buildExporterContainer` function, container spec (name, image, port, resources), Service port addition, CRD fields (monitoring.enabled, exporterImage, exporterResources), deployment manifest examples (monitoring enabled with defaults, monitoring enabled with custom resources, monitoring disabled). Follow the existing pattern in `docs/reference/backend/deployment-reconciliation.md` for structure and formatting.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -505,6 +509,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T17:55:46.366802"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T17:57:26.849203"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T18:34:55.527910"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T18:34:55.545039"
     }
   },
   "execution_history": [
@@ -518,6 +534,50 @@
           "name": "prepare",
           "duration": 235.21380233764648,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "a3338d0c-45d4-4b6f-9a6e-fec17a9a73da",
+      "timestamp": "2026-02-19T18:33:54.573544",
+      "total_duration": 740.7707574367523,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 59.824315547943115,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 223.29540157318115,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 106.6183762550354,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0013] Code Review",
+          "duration": 122.91961145401001,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0013] Improvements",
+          "duration": 31.486987352371216,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0013] Simplify",
+          "duration": 196.62606525421143,
+          "type": "simplify",
           "status": "done"
         }
       ]

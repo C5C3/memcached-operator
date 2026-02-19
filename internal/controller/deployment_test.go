@@ -1168,3 +1168,185 @@ func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
 		t.Errorf("expected TerminationGracePeriodSeconds=30, got %v", dep.Spec.Template.Spec.TerminationGracePeriodSeconds)
 	}
 }
+
+func TestBuildExporterContainer_Enabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-test", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+
+	container := buildExporterContainer(mc)
+
+	if container == nil {
+		t.Fatal("expected non-nil container")
+	}
+	if container.Name != "exporter" {
+		t.Errorf("expected container name 'exporter', got %q", container.Name)
+	}
+	if container.Image != "prom/memcached-exporter:v0.15.4" {
+		t.Errorf("expected default image 'prom/memcached-exporter:v0.15.4', got %q", container.Image)
+	}
+	if len(container.Ports) != 1 {
+		t.Fatalf("expected 1 port, got %d", len(container.Ports))
+	}
+	port := container.Ports[0]
+	if port.Name != "metrics" || port.ContainerPort != 9150 || port.Protocol != corev1.ProtocolTCP {
+		t.Errorf("unexpected port: %+v", port)
+	}
+}
+
+func TestBuildExporterContainer_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name       string
+		monitoring *memcachedv1alpha1.MonitoringSpec
+	}{
+		{name: "monitoring disabled", monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: false}},
+		{name: "nil monitoring", monitoring: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "exp-nil", Namespace: "default"},
+				Spec:       memcachedv1alpha1.MemcachedSpec{Monitoring: tt.monitoring},
+			}
+
+			if container := buildExporterContainer(mc); container != nil {
+				t.Errorf("expected nil container, got %+v", container)
+			}
+		})
+	}
+}
+
+func TestBuildExporterContainer_CustomImage(t *testing.T) {
+	customImage := "my-registry/memcached-exporter:v1.0.0"
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-custom", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled:       true,
+				ExporterImage: &customImage,
+			},
+		},
+	}
+
+	container := buildExporterContainer(mc)
+
+	if container == nil {
+		t.Fatal("expected non-nil container")
+	}
+	if container.Image != customImage {
+		t.Errorf("expected custom image %q, got %q", customImage, container.Image)
+	}
+}
+
+func TestBuildExporterContainer_WithResources(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-res", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+				ExporterResources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("50m"),
+						corev1.ResourceMemory: resource.MustParse("64Mi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("100m"),
+						corev1.ResourceMemory: resource.MustParse("128Mi"),
+					},
+				},
+			},
+		},
+	}
+
+	container := buildExporterContainer(mc)
+
+	if container == nil {
+		t.Fatal("expected non-nil container")
+	}
+	cpuReq := container.Resources.Requests[corev1.ResourceCPU]
+	if cpuReq.String() != "50m" {
+		t.Errorf("cpu request = %s, want 50m", cpuReq.String())
+	}
+	memReq := container.Resources.Requests[corev1.ResourceMemory]
+	if memReq.String() != "64Mi" {
+		t.Errorf("memory request = %s, want 64Mi", memReq.String())
+	}
+	cpuLimit := container.Resources.Limits[corev1.ResourceCPU]
+	if cpuLimit.String() != "100m" {
+		t.Errorf("cpu limit = %s, want 100m", cpuLimit.String())
+	}
+	memLimit := container.Resources.Limits[corev1.ResourceMemory]
+	if memLimit.String() != "128Mi" {
+		t.Errorf("memory limit = %s, want 128Mi", memLimit.String())
+	}
+}
+
+func TestBuildExporterContainer_NilResources(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-nilres", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+
+	container := buildExporterContainer(mc)
+
+	if container == nil {
+		t.Fatal("expected non-nil container")
+	}
+	if len(container.Resources.Requests) != 0 || len(container.Resources.Limits) != 0 {
+		t.Errorf("expected empty resources, got requests=%v limits=%v",
+			container.Resources.Requests, container.Resources.Limits)
+	}
+}
+
+func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-on", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	containers := dep.Spec.Template.Spec.Containers
+	if len(containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(containers))
+	}
+	if containers[0].Name != "memcached" {
+		t.Errorf("first container name = %q, want 'memcached'", containers[0].Name)
+	}
+	if containers[1].Name != "exporter" {
+		t.Errorf("second container name = %q, want 'exporter'", containers[1].Name)
+	}
+}
+
+func TestConstructDeployment_MonitoringDisabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	containers := dep.Spec.Template.Spec.Containers
+	if len(containers) != 1 {
+		t.Fatalf("expected 1 container, got %d", len(containers))
+	}
+	if containers[0].Name != "memcached" {
+		t.Errorf("container name = %q, want 'memcached'", containers[0].Name)
+	}
+}
