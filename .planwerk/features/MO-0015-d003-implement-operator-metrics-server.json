@@ -1,0 +1,534 @@
+{
+  "feature_id": "MO-0015",
+  "title": "D003: Implement operator metrics server",
+  "slug": "d003-implement-operator-metrics-server",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Expose operator-level metrics on :8443 /metrics endpoint via controller-runtime's built-in metrics server. Include standard controller metrics (reconciliation duration, queue depth, errors) and custom Memcached operator metrics.",
+  "stories": [
+    {
+      "title": "SRE can scrape operator-level metrics from the /metrics endpoint",
+      "role": "SRE",
+      "want": "to scrape Prometheus metrics from the operator's :8443/metrics endpoint",
+      "so_that": "I can monitor the operator's health and reconciliation performance in my Prometheus/Grafana stack",
+      "criteria": [
+        "GET :8443/metrics returns HTTP 200 with Prometheus text format",
+        "Response includes standard controller-runtime metrics (controller_runtime_reconcile_total, controller_runtime_reconcile_errors_total, controller_runtime_reconcile_time_seconds, workqueue_depth, workqueue_adds_total)",
+        "Response includes custom memcached operator metrics (memcached_operator_reconcile_resource_total, memcached_operator_memcached_info, memcached_operator_memcached_status_replicas)",
+        "Metrics endpoint is served securely via HTTPS with authentication/authorization when --metrics-secure is set"
+      ]
+    },
+    {
+      "title": "SRE can observe per-resource reconciliation outcomes via custom metrics",
+      "role": "SRE",
+      "want": "to see per-resource-kind reconciliation outcomes (created, updated, unchanged) as labeled counters",
+      "so_that": "I can detect drift rates, creation storms, and reconciliation patterns per resource type",
+      "criteria": [
+        "memcached_operator_reconcile_resource_total counter is incremented after each successful CreateOrUpdate call",
+        "Counter has labels: controller=memcached, resource_kind=(Deployment|Service|PodDisruptionBudget|ServiceMonitor), result=(created|updated|unchanged)",
+        "Counter is NOT incremented on reconciliation errors",
+        "Counter persists across reconciliation loops for the same Memcached CR"
+      ]
+    },
+    {
+      "title": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "role": "SRE",
+      "want": "to see the current state of all Memcached CRs as gauge metrics",
+      "so_that": "I can build dashboards showing fleet health, detect under-replicated instances, and alert on desired vs ready replica mismatches",
+      "criteria": [
+        "memcached_operator_memcached_info gauge is set to 1 per active Memcached CR with labels: name, namespace",
+        "memcached_operator_memcached_status_replicas gauge reports ready replicas per CR with labels: name, namespace",
+        "Metrics are updated each reconciliation loop",
+        "Metrics for deleted CRs are cleaned up (gauge reset to 0 or labels removed)"
+      ]
+    },
+    {
+      "title": "SRE receives no metrics from a disabled metrics server",
+      "role": "SRE",
+      "want": "the metrics server to be disabled when --metrics-bind-address=0",
+      "so_that": "I can run the operator without exposing metrics in development or restricted environments",
+      "criteria": [
+        "When metricsAddr is '0', no HTTP server listens on any metrics port",
+        "Custom metrics are still registered (no panic) but not served",
+        "Operator starts and reconciles normally without metrics serving"
+      ]
+    },
+    {
+      "title": "Developer can extend operator metrics with new custom metrics",
+      "role": "developer",
+      "want": "a well-structured metrics package with clear registration patterns",
+      "so_that": "I can add new custom metrics without modifying the reconciler's core logic",
+      "criteria": [
+        "Custom metrics are defined in a dedicated internal/metrics package",
+        "Metrics are registered with the controller-runtime metrics registry (not the global default)",
+        "Each metric has descriptive Help text and consistent naming (memcached_operator_ prefix)",
+        "Recording functions accept typed parameters, not raw label strings"
+      ]
+    },
+    {
+      "title": "Operator documents all exposed metrics for SRE reference",
+      "role": "SRE",
+      "want": "reference documentation listing all operator metrics with descriptions, types, and labels",
+      "so_that": "I can configure alerts, build dashboards, and understand what each metric measures",
+      "criteria": [
+        "Reference doc lists every custom metric with name, type, help text, and label descriptions",
+        "Reference doc lists the standard controller-runtime metrics included",
+        "Reference doc describes the metrics endpoint configuration (port, path, authentication)",
+        "Doc is located at docs/reference/backend/operator-metrics-server.md"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL register custom Prometheus metrics with the controller-runtime metrics registry",
+      "priority": "SHALL",
+      "rationale": "Custom metrics provide operator-specific observability beyond standard controller-runtime metrics",
+      "scenarios": [
+        {
+          "name": "Metrics registered at startup",
+          "when": "the operator process starts and the metrics registry is initialized",
+          "then": "all custom metrics (memcached_operator_reconcile_resource_total, memcached_operator_memcached_info, memcached_operator_memcached_status_replicas) are registered without panic",
+          "and_then": [
+            "metrics appear in /metrics output with HELP and TYPE lines"
+          ]
+        },
+        {
+          "name": "Duplicate registration does not panic",
+          "when": "metrics registration is called more than once (e.g. during testing)",
+          "then": "the registration is idempotent and does not cause a panic",
+          "and_then": []
+        },
+        {
+          "name": "Metrics use correct naming convention",
+          "when": "metrics are registered",
+          "then": "all custom metric names start with 'memcached_operator_' prefix",
+          "and_then": [
+            "metric names follow Prometheus naming conventions (snake_case, unit suffix where applicable)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL expose a memcached_operator_reconcile_resource_total counter metric per resource kind and result",
+      "priority": "SHALL",
+      "rationale": "Per-resource reconciliation counters enable drift detection and reconciliation pattern analysis",
+      "scenarios": [
+        {
+          "name": "Counter incremented on resource creation",
+          "when": "reconcileResource creates a new Deployment for a Memcached CR",
+          "then": "memcached_operator_reconcile_resource_total{controller='memcached',resource_kind='Deployment',result='created'} is incremented by 1",
+          "and_then": []
+        },
+        {
+          "name": "Counter incremented on resource update",
+          "when": "reconcileResource updates an existing Service due to spec drift",
+          "then": "memcached_operator_reconcile_resource_total{controller='memcached',resource_kind='Service',result='updated'} is incremented by 1",
+          "and_then": []
+        },
+        {
+          "name": "Counter incremented on unchanged resource",
+          "when": "reconcileResource finds the resource already matches desired state",
+          "then": "memcached_operator_reconcile_resource_total{controller='memcached',resource_kind='Deployment',result='unchanged'} is incremented by 1",
+          "and_then": []
+        },
+        {
+          "name": "Counter NOT incremented on error",
+          "when": "reconcileResource fails with an error (e.g. conflict after max retries)",
+          "then": "the counter is NOT incremented for that attempt",
+          "and_then": [
+            "the error is handled by the existing error propagation path"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL expose a memcached_operator_memcached_info gauge metric for each reconciled Memcached CR",
+      "priority": "SHALL",
+      "rationale": "Info metrics enable fleet inventory queries and label-based joins with other metrics",
+      "scenarios": [
+        {
+          "name": "Info metric set during reconciliation",
+          "when": "the Reconcile method successfully processes a Memcached CR named 'my-cache' in namespace 'prod'",
+          "then": "memcached_operator_memcached_info{name='my-cache',namespace='prod'} is set to 1",
+          "and_then": []
+        },
+        {
+          "name": "Info metric not set for deleted CR",
+          "when": "the Reconcile method receives a request for a Memcached CR that no longer exists (IsNotFound)",
+          "then": "memcached_operator_memcached_info for that name/namespace is deleted from the gauge",
+          "and_then": [
+            "no stale info metrics remain for deleted CRs"
+          ]
+        },
+        {
+          "name": "Info metric updated on re-reconciliation",
+          "when": "the same Memcached CR is reconciled multiple times",
+          "then": "the info gauge value remains 1 (idempotent set)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL expose a memcached_operator_memcached_status_replicas gauge metric tracking ready replicas per Memcached CR",
+      "priority": "SHALL",
+      "rationale": "Replica gauges enable alerting on under-replicated instances and capacity planning",
+      "scenarios": [
+        {
+          "name": "Replicas gauge set after status reconciliation",
+          "when": "reconcileStatus updates the Memcached CR status with readyReplicas=3",
+          "then": "memcached_operator_memcached_status_replicas{name='my-cache',namespace='prod'} is set to 3",
+          "and_then": []
+        },
+        {
+          "name": "Replicas gauge set to 0 when no pods ready",
+          "when": "reconcileStatus finds 0 ready replicas",
+          "then": "memcached_operator_memcached_status_replicas{name='my-cache',namespace='prod'} is set to 0",
+          "and_then": []
+        },
+        {
+          "name": "Replicas gauge cleaned up for deleted CR",
+          "when": "the Memcached CR is deleted (IsNotFound in Reconcile)",
+          "then": "the replicas gauge label set for that CR is deleted",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The metrics server SHALL serve metrics on the configured bind address via controller-runtime's built-in server",
+      "priority": "SHALL",
+      "rationale": "Leveraging controller-runtime's metrics server ensures standard Kubernetes operator metrics serving patterns",
+      "scenarios": [
+        {
+          "name": "Metrics served on configured port",
+          "when": "the operator starts with --metrics-bind-address=:8443",
+          "then": "GET :8443/metrics returns HTTP 200 with text/plain content containing both standard and custom metrics",
+          "and_then": []
+        },
+        {
+          "name": "Metrics server disabled when address is 0",
+          "when": "the operator starts with --metrics-bind-address=0 (default)",
+          "then": "no metrics HTTP server is started",
+          "and_then": [
+            "the operator runs normally without metrics serving"
+          ]
+        },
+        {
+          "name": "Secure metrics with authentication",
+          "when": "the operator starts with --metrics-secure",
+          "then": "the metrics endpoint requires authentication via bearer token and authorization via SubjectAccessReview",
+          "and_then": [
+            "unauthenticated requests are rejected"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL include standard controller-runtime metrics for reconciliation observability",
+      "priority": "SHALL",
+      "rationale": "Standard metrics provide reconciliation duration, error rates, and queue depth without custom code",
+      "scenarios": [
+        {
+          "name": "Standard reconciliation metrics present",
+          "when": "the metrics endpoint is scraped after at least one reconciliation",
+          "then": "controller_runtime_reconcile_total, controller_runtime_reconcile_errors_total, and controller_runtime_reconcile_time_seconds are present",
+          "and_then": []
+        },
+        {
+          "name": "Standard workqueue metrics present",
+          "when": "the metrics endpoint is scraped",
+          "then": "workqueue_depth and workqueue_adds_total are present with controller='memcached' label",
+          "and_then": []
+        },
+        {
+          "name": "Go runtime metrics present",
+          "when": "the metrics endpoint is scraped",
+          "then": "go_goroutines, go_gc_duration_seconds, and process_* metrics are present",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator SHALL clean up custom metric label sets when Memcached CRs are deleted",
+      "priority": "SHALL",
+      "rationale": "Stale metric labels for deleted CRs cause incorrect dashboards and alerts",
+      "scenarios": [
+        {
+          "name": "Info and replicas gauges cleaned on CR deletion",
+          "when": "a Memcached CR is deleted and the reconciler receives a not-found response",
+          "then": "memcached_operator_memcached_info and memcached_operator_memcached_status_replicas label sets for that CR are deleted",
+          "and_then": [
+            "subsequent /metrics scrapes do not include stale labels"
+          ]
+        },
+        {
+          "name": "Cleanup is idempotent",
+          "when": "the reconciler receives a not-found for an already-cleaned-up CR",
+          "then": "no error occurs and no metrics are affected",
+          "and_then": []
+        },
+        {
+          "name": "Other CRs unaffected by deletion cleanup",
+          "when": "CR 'cache-a' is deleted while CR 'cache-b' still exists",
+          "then": "only 'cache-a' metric labels are removed; 'cache-b' metrics remain intact",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The operator SHALL provide reference documentation for all exposed metrics",
+      "priority": "SHALL",
+      "rationale": "SREs need metric documentation to build dashboards, configure alerts, and understand operator behavior",
+      "scenarios": [
+        {
+          "name": "Documentation covers all custom metrics",
+          "when": "an SRE reads docs/reference/backend/operator-metrics-server.md",
+          "then": "every custom metric is listed with its name, type, help text, and label descriptions",
+          "and_then": []
+        },
+        {
+          "name": "Documentation covers standard metrics",
+          "when": "an SRE reads the reference doc",
+          "then": "standard controller-runtime metrics are listed with descriptions",
+          "and_then": []
+        },
+        {
+          "name": "Documentation covers endpoint configuration",
+          "when": "an SRE reads the reference doc",
+          "then": "the metrics endpoint address, port, path, and authentication options are documented",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create internal/metrics package with custom Prometheus metric definitions and registration (REQ-001)",
+      "description": "Create internal/metrics/metrics.go defining: (1) memcached_operator_reconcile_resource_total CounterVec with labels [controller, resource_kind, result], (2) memcached_operator_memcached_info GaugeVec with labels [name, namespace], (3) memcached_operator_memcached_status_replicas GaugeVec with labels [name, namespace]. Register all with metrics.Registry from sigs.k8s.io/controller-runtime/pkg/metrics. Export typed recording functions: RecordReconcileResource(kind, result string), SetMemcachedInfo(name, namespace string), DeleteMemcachedInfo(name, namespace string), SetMemcachedStatusReplicas(name, namespace string, replicas float64), DeleteMemcachedStatusReplicas(name, namespace string).",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Write unit tests for metrics registration and recording functions (REQ-001, REQ-002, REQ-003, REQ-004)",
+      "description": "Create internal/metrics/metrics_test.go with standard Go table-driven tests: (1) Test all metrics are registered without panic, (2) Test RecordReconcileResource increments counter with correct labels for created/updated/unchanged, (3) Test SetMemcachedInfo sets gauge to 1 with correct labels, (4) Test DeleteMemcachedInfo removes label set, (5) Test SetMemcachedStatusReplicas sets gauge to correct value, (6) Test DeleteMemcachedStatusReplicas removes label set, (7) Test metric names follow memcached_operator_ prefix convention. Use prometheus/testutil for metric value assertions.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Instrument reconcileResource to record per-resource reconciliation metrics (REQ-002)",
+      "description": "Modify internal/controller/reconcile_resource.go: After successful CreateOrUpdate (line 48-52, in the err==nil block), call metrics.RecordReconcileResource(resourceKind, string(result)). Import the internal/metrics package. The result from controllerutil.CreateOrUpdate is already available as 'result' (OperationResultCreated, OperationResultUpdated, or OperationResultNone which maps to 'unchanged'). Map OperationResultNone to 'unchanged' string. Do NOT record on error paths.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Instrument Reconcile to record info and replicas gauge metrics and cleanup on deletion (REQ-003, REQ-004, REQ-007)",
+      "description": "Modify internal/controller/memcached_controller.go Reconcile method: (1) In the IsNotFound branch (line 47-50), call metrics.DeleteMemcachedInfo and metrics.DeleteMemcachedStatusReplicas for the request name/namespace, then return. (2) After the successful fetch of the Memcached CR (line 55), call metrics.SetMemcachedInfo(memcached.Name, memcached.Namespace). (3) After reconcileStatus succeeds (line 73-75), call metrics.SetMemcachedStatusReplicas(memcached.Name, memcached.Namespace, float64(memcached.Status.ReadyReplicas)). Import the internal/metrics package.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003",
+        "REQ-004",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add unit tests for reconcileResource metrics instrumentation (REQ-002)",
+      "description": "Update internal/controller/reconcile_resource_test.go: Add Ginkgo test cases verifying (1) after a successful create, memcached_operator_reconcile_resource_total{resource_kind='Deployment',result='created'} is incremented, (2) after a successful update, counter with result='updated' is incremented, (3) after an unchanged reconciliation, counter with result='unchanged' is incremented, (4) on error, counter is NOT incremented. Use the testutil package from prometheus/client_golang to read metric values. Reset metrics between tests using the existing test isolation patterns.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add integration tests for custom metrics during full reconciliation (REQ-003, REQ-004, REQ-007)",
+      "description": "Create internal/controller/memcached_metrics_reconcile_test.go with Ginkgo/Gomega envtest tests: (1) Create a Memcached CR, run reconciliation, verify memcached_operator_memcached_info{name=cr-name,namespace=default} == 1, (2) verify memcached_operator_memcached_status_replicas is set, (3) verify memcached_operator_reconcile_resource_total counters are incremented for Deployment, Service resource kinds, (4) Delete the Memcached CR, trigger reconciliation, verify info and replicas gauges are cleaned up (label set deleted), (5) verify metrics for other CRs are not affected by deletion of one CR.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-003",
+        "REQ-004",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for operator metrics server (REQ-008)",
+      "description": "Create docs/reference/backend/operator-metrics-server.md with: (1) Overview section describing the metrics endpoint (:8443/metrics), (2) Configuration table listing --metrics-bind-address and --metrics-secure flags with defaults, (3) Custom Metrics table listing each memcached_operator_* metric with Name, Type, Help, Labels columns, (4) Standard Metrics table listing controller_runtime_reconcile_total, controller_runtime_reconcile_errors_total, controller_runtime_reconcile_time_seconds, workqueue_depth, workqueue_adds_total with descriptions, (5) Authentication section describing bearer token auth and RBAC requirements, (6) Kustomize Configuration section referencing config/default/manager_metrics_patch.yaml and config/prometheus/monitor.yaml. Follow the style of existing docs in docs/reference/backend/.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/metrics/metrics_test.go",
+      "test_function": "TestMetricsRegistration",
+      "story": "Developer can extend operator metrics with new custom metrics",
+      "expected": "All custom metrics (reconcile_resource_total, memcached_info, memcached_status_replicas) are registered without panic and appear in the registry",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/metrics/metrics_test.go",
+      "test_function": "TestRecordReconcileResource",
+      "story": "SRE can observe per-resource reconciliation outcomes via custom metrics",
+      "expected": "RecordReconcileResource increments counter with correct controller/resource_kind/result labels",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/metrics/metrics_test.go",
+      "test_function": "TestSetMemcachedInfo",
+      "story": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "expected": "SetMemcachedInfo sets gauge to 1 with correct name/namespace labels",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/metrics/metrics_test.go",
+      "test_function": "TestDeleteMemcachedInfo",
+      "story": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "expected": "DeleteMemcachedInfo removes the label set from the info gauge",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/metrics/metrics_test.go",
+      "test_function": "TestSetMemcachedStatusReplicas",
+      "story": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "expected": "SetMemcachedStatusReplicas sets gauge to the specified replicas value with correct labels",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/metrics/metrics_test.go",
+      "test_function": "TestDeleteMemcachedStatusReplicas",
+      "story": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "expected": "DeleteMemcachedStatusReplicas removes the label set from the replicas gauge",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/metrics/metrics_test.go",
+      "test_function": "TestMetricNamingConvention",
+      "story": "Developer can extend operator metrics with new custom metrics",
+      "expected": "All custom metric names start with 'memcached_operator_' prefix",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "should increment reconcile_resource_total counter on successful create",
+      "story": "SRE can observe per-resource reconciliation outcomes via custom metrics",
+      "expected": "After reconcileResource creates a Deployment, counter with result='created' is incremented",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "should increment reconcile_resource_total counter on successful update",
+      "story": "SRE can observe per-resource reconciliation outcomes via custom metrics",
+      "expected": "After reconcileResource updates a Service, counter with result='updated' is incremented",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "should not increment counter on reconciliation error",
+      "story": "SRE can observe per-resource reconciliation outcomes via custom metrics",
+      "expected": "When reconcileResource fails, the counter is not incremented",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_metrics_reconcile_test.go",
+      "test_function": "should set info and replicas gauges after successful reconciliation",
+      "story": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "expected": "After reconciling a Memcached CR, memcached_operator_memcached_info=1 and memcached_operator_memcached_status_replicas is set",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_metrics_reconcile_test.go",
+      "test_function": "should clean up gauges when Memcached CR is deleted",
+      "story": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "expected": "After deleting a Memcached CR and re-reconciling, info and replicas gauges are cleaned up",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_metrics_reconcile_test.go",
+      "test_function": "should increment reconcile_resource_total for Deployment and Service during full reconciliation",
+      "story": "SRE can observe per-resource reconciliation outcomes via custom metrics",
+      "expected": "After full reconciliation, counters for Deployment and Service resource kinds are incremented",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_metrics_reconcile_test.go",
+      "test_function": "should not affect other CR metrics when one CR is deleted",
+      "story": "SRE can observe Memcached CR fleet status via info and replica metrics",
+      "expected": "Deleting CR 'cache-a' does not remove metrics for CR 'cache-b'",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All custom metrics (memcached_operator_reconcile_resource_total, memcached_operator_memcached_info, memcached_operator_memcached_status_replicas) are registered with controller-runtime metrics registry and appear in /metrics output",
+    "Unit tests in internal/metrics/metrics_test.go verify registration, recording, and cleanup for all custom metrics using prometheus/testutil",
+    "reconcileResource in reconcile_resource.go records per-resource-kind counters only on success paths, not on error paths",
+    "Reconcile method in memcached_controller.go sets info and replicas gauges on successful reconciliation and cleans up on CR deletion (IsNotFound)",
+    "Integration tests in memcached_metrics_reconcile_test.go verify end-to-end metrics recording during envtest reconciliation including creation, update, and deletion scenarios",
+    "Reference documentation at docs/reference/backend/operator-metrics-server.md lists all metrics with types, labels, and help text, plus endpoint configuration details",
+    "All code passes golangci-lint and go vet without errors",
+    "No modifications to existing metric infrastructure (cmd/main.go metrics server options, config/ manifests) — only additions of custom metrics and instrumentation"
+  ],
+  "implementation_notes": "ARCHITECTURE: Custom metrics are defined in a new internal/metrics package to separate concerns from the controller logic. Metrics are registered via an init() function using sigs.k8s.io/controller-runtime/pkg/metrics.Registry, which is the correct registry for controller-runtime operators (NOT prometheus.DefaultRegisterer). The controller-runtime metrics server automatically serves metrics from this registry.\n\nMETRICS DESIGN:\n- memcached_operator_reconcile_resource_total (CounterVec): Labels [controller, resource_kind, result]. Controller is always 'memcached'. resource_kind maps to the resourceKind string already passed to reconcileResource. result maps OperationResultCreated→'created', OperationResultUpdated→'updated', OperationResultNone→'unchanged'.\n- memcached_operator_memcached_info (GaugeVec): Labels [name, namespace]. Set to 1 for each active CR. Uses Delete() for cleanup on CR deletion.\n- memcached_operator_memcached_status_replicas (GaugeVec): Labels [name, namespace]. Set to float64(readyReplicas) after reconcileStatus.\n\nINSTRUMENTATION POINTS:\n- reconcile_resource_total: Recorded in reconcileResource (reconcile_resource.go) after successful CreateOrUpdate, in the err==nil block (line ~48).\n- memcached_info: Set in Reconcile (memcached_controller.go) after successful CR fetch. Deleted in the IsNotFound branch.\n- memcached_status_replicas: Set in Reconcile after reconcileStatus succeeds. Deleted in the IsNotFound branch.\n\nEXISTING INFRASTRUCTURE (DO NOT MODIFY):\n- cmd/main.go: metricsserver.Options already configured with bind address, secure serving, TLS, and auth filters.\n- config/default/manager_metrics_patch.yaml: --metrics-bind-address=:8443 --metrics-secure\n- config/prometheus/monitor.yaml: ServiceMonitor for operator scraping\n- config/rbac/metrics_auth_role.yaml, metrics_reader_role.yaml, metrics_auth_role_binding.yaml: RBAC for metrics\n- config/network-policy/allow-metrics-traffic.yaml: Network policy for port 8443\n\nKEY FILES:\n- internal/metrics/metrics.go (NEW): Custom metric definitions and recording functions\n- internal/metrics/metrics_test.go (NEW): Unit tests for metrics package\n- internal/controller/reconcile_resource.go (MODIFY): Add RecordReconcileResource call\n- internal/controller/memcached_controller.go (MODIFY): Add info/replicas gauge recording and cleanup\n- internal/controller/memcached_metrics_reconcile_test.go (NEW): Integration tests\n- docs/reference/backend/operator-metrics-server.md (NEW): Reference documentation\n\nTEST PATTERNS:\n- Unit tests: Standard Go table-driven tests using prometheus/testutil (ToFloat64, CollectAndCompare)\n- Integration tests: Ginkgo/Gomega with envtest, following the existing pattern in memcached_monitoring_reconcile_test.go (create CR → reconcile → assert metrics → delete CR → reconcile → assert cleanup)\n- Test isolation: Use prometheus.NewRegistry() in unit tests to avoid cross-test contamination. In integration tests, read metric values before and after to compute deltas.\n\nRISKS:\n- Metric cardinality: name/namespace labels on gauges scale linearly with CR count. Acceptable for an operator managing tens-to-hundreds of CRs.\n- Race conditions: Metric recording happens in the reconcile loop which is single-threaded per CR (controller-runtime guarantees). No mutex needed.\n- prometheus/testutil import: Ensure the test dependency is available in go.mod (prometheus/client_golang is already an indirect dep).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.424651"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T20:43:35.366094"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T20:48:30.334992"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "aa765c86-8d63-4eb8-ab81-07b1c2fbd54b",
+      "timestamp": "2026-02-19T20:48:30.335020",
+      "total_duration": 291.4204080104828,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 291.4204080104828,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
