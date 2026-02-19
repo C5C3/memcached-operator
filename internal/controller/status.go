@@ -29,12 +29,12 @@ const (
 
 // Condition reason constants.
 const (
-	ConditionReasonAvailable          = "Available"
-	ConditionReasonUnavailable        = "Unavailable"
-	ConditionReasonProgressing        = "Progressing"
+	ConditionReasonAvailable           = "Available"
+	ConditionReasonUnavailable         = "Unavailable"
+	ConditionReasonProgressing         = "Progressing"
 	ConditionReasonProgressingComplete = "ProgressingComplete"
-	ConditionReasonDegraded           = "Degraded"
-	ConditionReasonNotDegraded        = "NotDegraded"
+	ConditionReasonDegraded            = "Degraded"
+	ConditionReasonNotDegraded         = "NotDegraded"
 )
 
 // computeConditions derives status conditions from the Memcached spec and the current Deployment status.
@@ -73,56 +73,44 @@ func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) 
 	// Progressing: true when the Deployment doesn't exist yet, when updatedReplicas < desired
 	// (a rollout is underway), or when totalReplicas != desired (scaling in/out).
 	progressing := dep == nil || updatedReplicas < desiredReplicas || totalReplicas != desiredReplicas
+	progressingStatus, progressingReason := metav1.ConditionFalse, ConditionReasonProgressingComplete
+	progressingMsg := fmt.Sprintf("All %d replicas are updated", desiredReplicas)
 	if progressing {
-		msg := "Waiting for deployment to be created"
+		progressingStatus, progressingReason = metav1.ConditionTrue, ConditionReasonProgressing
+		progressingMsg = "Waiting for deployment to be created"
 		if dep != nil {
-			msg = fmt.Sprintf("Rollout in progress: %d/%d replicas updated", updatedReplicas, desiredReplicas)
+			progressingMsg = fmt.Sprintf("Rollout in progress: %d/%d replicas updated", updatedReplicas, desiredReplicas)
 		}
-		conditions = append(conditions, metav1.Condition{
-			Type:               ConditionTypeProgressing,
-			Status:             metav1.ConditionTrue,
-			Reason:             ConditionReasonProgressing,
-			Message:            msg,
-			LastTransitionTime: now,
-			ObservedGeneration: mc.Generation,
-		})
-	} else {
-		conditions = append(conditions, metav1.Condition{
-			Type:               ConditionTypeProgressing,
-			Status:             metav1.ConditionFalse,
-			Reason:             ConditionReasonProgressingComplete,
-			Message:            fmt.Sprintf("All %d replicas are updated", desiredReplicas),
-			LastTransitionTime: now,
-			ObservedGeneration: mc.Generation,
-		})
 	}
+	conditions = append(conditions, metav1.Condition{
+		Type:               ConditionTypeProgressing,
+		Status:             progressingStatus,
+		Reason:             progressingReason,
+		Message:            progressingMsg,
+		LastTransitionTime: now,
+		ObservedGeneration: mc.Generation,
+	})
 
 	// Degraded: true when ready < desired and desired > 0.
 	// (When dep is nil, readyReplicas is 0, so this naturally covers that case.)
 	degraded := desiredReplicas > 0 && readyReplicas < desiredReplicas
+	degradedStatus, degradedReason := metav1.ConditionFalse, ConditionReasonNotDegraded
+	degradedMsg := fmt.Sprintf("All %d desired replicas are ready", desiredReplicas)
 	if degraded {
-		msg := "Waiting for deployment to be created"
+		degradedStatus, degradedReason = metav1.ConditionTrue, ConditionReasonDegraded
+		degradedMsg = "Waiting for deployment to be created"
 		if dep != nil {
-			msg = fmt.Sprintf("Only %d/%d replicas are ready", readyReplicas, desiredReplicas)
+			degradedMsg = fmt.Sprintf("Only %d/%d replicas are ready", readyReplicas, desiredReplicas)
 		}
-		conditions = append(conditions, metav1.Condition{
-			Type:               ConditionTypeDegraded,
-			Status:             metav1.ConditionTrue,
-			Reason:             ConditionReasonDegraded,
-			Message:            msg,
-			LastTransitionTime: now,
-			ObservedGeneration: mc.Generation,
-		})
-	} else {
-		conditions = append(conditions, metav1.Condition{
-			Type:               ConditionTypeDegraded,
-			Status:             metav1.ConditionFalse,
-			Reason:             ConditionReasonNotDegraded,
-			Message:            fmt.Sprintf("All %d desired replicas are ready", desiredReplicas),
-			LastTransitionTime: now,
-			ObservedGeneration: mc.Generation,
-		})
 	}
+	conditions = append(conditions, metav1.Condition{
+		Type:               ConditionTypeDegraded,
+		Status:             degradedStatus,
+		Reason:             degradedReason,
+		Message:            degradedMsg,
+		LastTransitionTime: now,
+		ObservedGeneration: mc.Generation,
+	})
 
 	return conditions
 }

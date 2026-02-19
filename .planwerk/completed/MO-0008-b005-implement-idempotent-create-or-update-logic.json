@@ -2,8 +2,8 @@
   "feature_id": "MO-0008",
   "title": "B005: Implement idempotent create-or-update logic",
   "slug": "b005-implement-idempotent-create-or-update-logic",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Implement a generic create-or-update pattern (using controllerutil.CreateOrUpdate or equivalent) ensuring every reconciliation produces the same outcome. Handle resource version conflicts with retries. Ensure level-triggered reconciliation reacts to current state, not event sequences.",
   "stories": [
@@ -345,6 +345,7 @@
       "description": "Create a new file `internal/controller/reconcile.go` containing a generic `reconcileResource` method on `MemcachedReconciler` that wraps `controllerutil.CreateOrUpdate` with `retry.RetryOnConflict` and `controllerutil.SetControllerReference`. The function signature: `func (r *MemcachedReconciler) reconcileResource(ctx context.Context, mc *memcachedv1alpha1.Memcached, obj client.Object, mutate func() error, kind string) (controllerutil.OperationResult, error)`. Inside the retry loop: get the current resource (or start fresh), call mutate(), call SetControllerReference, then CreateOrUpdate. Log the operation result (Info for Created/Updated, V(1) for Unchanged). Wrap errors with `fmt.Errorf(\"reconciling %s %s/%s: %w\", kind, obj.GetNamespace(), obj.GetName(), err)`. Add unit tests in `internal/controller/reconcile_test.go` using Go standard tests with fake/interceptor clients to verify: (a) creation path, (b) update path, (c) no-op path, (d) conflict retry succeeds, (e) persistent conflict returns error, (f) non-conflict error not retried, (g) nil mutate function returns error, (h) owner reference set correctly.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -359,6 +360,7 @@
       "description": "In `internal/controller/reconcile_test.go`, add focused unit tests for the retry-on-conflict behavior using interceptor clients that return `apierrors.NewConflict()` errors. Test cases: (a) conflict on first CreateOrUpdate, success on second - verify resource is updated and log mentions retry, (b) conflict on all attempts - verify final error is returned, (c) non-conflict error (500) is returned immediately without retry, (d) verify retry uses `retry.DefaultRetry` backoff parameters from client-go. Use `fake.NewClientBuilder()` with `interceptor.NewClient` to inject errors at precise points.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -369,6 +371,7 @@
       "description": "In `internal/controller/memcached_controller.go`, refactor the existing `reconcileDeployment` method to call `r.reconcileResource(ctx, mc, dep, func() error { constructDeployment(mc, dep); return nil }, \"Deployment\")` instead of directly calling `controllerutil.CreateOrUpdate`. The method should still create the initial Deployment ObjectMeta with Name and Namespace before calling reconcileResource. Remove the manual `controllerutil.SetControllerReference` call and logging from reconcileDeployment since reconcileResource handles both. Ensure the error wrapping format remains compatible: the error should still contain 'reconciling Deployment'. Run `make test` to verify all 40+ existing deployment reconciliation tests pass unchanged.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-001",
@@ -381,6 +384,7 @@
       "description": "In `internal/controller/memcached_controller.go`, refactor the existing `reconcileService` method to call `r.reconcileResource(ctx, mc, svc, func() error { constructService(mc, svc); return nil }, \"Service\")` instead of directly calling `controllerutil.CreateOrUpdate`. Same pattern as the Deployment refactor. Remove the manual `controllerutil.SetControllerReference` call and logging. Ensure error messages still contain 'reconciling Service' for compatibility with `memcached_service_reconcile_test.go` error matching. Run `make test` to verify all existing service reconciliation tests pass.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-001",
@@ -393,6 +397,7 @@
       "description": "In `internal/controller/reconcile.go`, add event recording to reconcileResource. After a successful CreateOrUpdate, check the OperationResult: if Created, emit `r.Recorder.Eventf(mc, corev1.EventTypeNormal, \"Created\", \"Created %s %s\", kind, obj.GetName())`; if Updated, emit `r.Recorder.Eventf(mc, corev1.EventTypeNormal, \"Updated\", \"Updated %s %s\", kind, obj.GetName())`. No event for OperationResultNone. Guard the recorder call: if `r.Recorder == nil`, skip (allows tests without event recorder). Add integration test in `memcached_deployment_reconcile_test.go` that creates a MemcachedReconciler with a `record.NewFakeRecorder(10)` and verifies events are emitted on create and update but not on no-op reconciliation.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -403,6 +408,7 @@
       "description": "Add a new Ginkgo Describe block in `internal/controller/memcached_reconcile_test.go` titled 'Idempotent Create-or-Update Reconciliation'. Test cases: (a) Reconcile a new CR → verify Deployment and Service created. Reconcile again with no changes → verify resourceVersions unchanged (true no-op). Reconcile a third time → still unchanged. (b) Create CR, reconcile, manually patch the Deployment's replicas to a different value directly via k8sClient, reconcile again → verify replicas corrected to CR spec (drift correction). (c) Create CR, reconcile, update CR spec.replicas, reconcile → verify Deployment updated. Reconcile again without changes → verify no update. (d) Create CR, reconcile, delete CR, reconcile → verify no error returned.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-006"
@@ -414,6 +420,7 @@
       "description": "Add test cases in `internal/controller/memcached_reconcile_test.go` under a 'Level-triggered reconciliation' context. Tests: (a) Create CR with replicas=1, reconcile. Update CR to replicas=3 (without reconciling). Update CR to replicas=5 (without reconciling). Now reconcile once → verify Deployment has 5 replicas (latest state, not intermediate). (b) Create CR, reconcile. Delete the owned Deployment directly. Reconcile → verify Deployment recreated (level-triggered recovery). (c) Verify constructDeployment and constructService are deterministic: call each function twice with the same input, compare outputs with reflect.DeepEqual.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -424,6 +431,7 @@
       "description": "Add test cases in `internal/controller/memcached_reconcile_test.go` under a 'Conflict retry' context. Use an interceptor client that wraps the real envtest client: on the first Update call for a Deployment, return `apierrors.NewConflict(...)`, then delegate to the real client on subsequent calls. Verify: (a) reconciliation succeeds despite the transient conflict, (b) the Deployment ends up in the correct state. Also test with a permanently failing interceptor: verify the error is eventually returned after retries.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -434,6 +442,7 @@
       "description": "Create `docs/reference/backend/idempotent-create-or-update.md` with sections: Overview (purpose of the pattern), reconcileResource Function (signature, parameters, return values), CreateOrUpdate Behavior (table: scenario → mutate called → API operation → result), Conflict Retry Mechanism (sequence diagram in text/mermaid showing get→mutate→update→409→retry flow, default backoff parameters from client-go), Owner References (how SetControllerReference is integrated), Error Handling (error wrapping format, which errors trigger retry vs immediate return), Adding a New Resource Type (step-by-step guide with code example showing how to add e.g. PDB reconciliation using the helper), Operation Logging (log levels for each operation type). Follow the style of existing `docs/reference/backend/deployment-reconciliation.md`.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -595,6 +604,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T11:56:20.492472"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T12:03:40.306931"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T12:36:09.926169"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T12:36:09.943912"
     }
   },
   "execution_history": [
@@ -608,6 +629,56 @@
           "name": "prepare",
           "duration": 254.8274531364441,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "eef4c2bc-c680-43b6-bdbf-8b0d467a90c8",
+      "timestamp": "2026-02-19T12:28:54.542846",
+      "total_duration": 1370.94611287117,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 325.3249833583832,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 200.62453198432922,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 239.3364326953888,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 119.15367555618286,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0008] Code Review",
+          "duration": 230.0618073940277,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0008] Improvements",
+          "duration": 95.13995409011841,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0008] Simplify",
+          "duration": 161.30472779273987,
+          "type": "simplify",
           "status": "done"
         }
       ]

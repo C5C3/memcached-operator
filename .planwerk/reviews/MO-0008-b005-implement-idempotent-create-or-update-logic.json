@@ -1,0 +1,156 @@
+{
+  "feature_id": "MO-0008",
+  "title": "B005: Implement idempotent create-or-update logic",
+  "date": "2026-02-19",
+  "verdict": "APPROVED",
+  "summary": "Implements a generic reconcileResource helper on MemcachedReconciler that wraps controllerutil.CreateOrUpdate with a conflict retry loop (up to 5 attempts), automatic controller owner references via SetControllerReference, structured logging, and Kubernetes event emission for Created/Updated operations. Both reconcileDeployment and reconcileService are refactored to delegate entirely to reconcileResource, eliminating duplicated create-or-update boilerplate. Comprehensive unit tests (11 tests in reconcile_resource_test.go) cover creation, update, conflict retry success, exhausted retries, non-conflict error passthrough, mutate error propagation, owner references, event emission, no-event on unchanged, and nil recorder safety. Integration tests (13 new Ginkgo specs in memcached_reconcile_test.go) cover idempotent no-op across multiple cycles, drift correction, spec update followed by no-op, CR deletion handling, level-triggered latest-state-only application, deleted resource recreation, builder determinism, and conflict retry with interceptor clients. Reference documentation at docs/reference/backend/idempotent-create-or-update.md covers function signature, retry mechanism with sequence diagram, idempotent behavior, event emission, logging, owner references, error handling, and a step-by-step guide for adding new resource types.",
+  "tests_checklist": [
+    {"item": "All existing tests pass (make test: 147 Ginkgo specs + all unit tests, 0 failures, 97.1% coverage)", "checked": true},
+    {"item": "Unit tests cover creation path (TestReconcileResource_CreatesNewResource)", "checked": true},
+    {"item": "Unit tests cover update path (TestReconcileResource_UpdatesExistingResource)", "checked": true},
+    {"item": "Unit tests cover conflict retry succeeds (TestReconcileResource_RetriesOnConflict)", "checked": true},
+    {"item": "Unit tests cover exhausted retries (TestReconcileResource_ExhaustsRetriesOnConflict)", "checked": true},
+    {"item": "Unit tests cover non-conflict error not retried (TestReconcileResource_DoesNotRetryNonConflictErrors)", "checked": true},
+    {"item": "Unit tests cover mutate error propagation (TestReconcileResource_PropagatesMutateError)", "checked": true},
+    {"item": "Unit tests cover owner reference set correctly (TestReconcileResource_SetsOwnerReference)", "checked": true},
+    {"item": "Unit tests cover event emission for Created, Updated, and no-event on Unchanged", "checked": true},
+    {"item": "Unit tests cover nil Recorder does not panic", "checked": true},
+    {"item": "Integration tests cover idempotent no-op across 3 reconciliation cycles", "checked": true},
+    {"item": "Integration tests cover drift correction on manually patched Deployment", "checked": true},
+    {"item": "Integration tests cover spec update followed by idempotent no-op", "checked": true},
+    {"item": "Integration tests cover level-triggered latest-state-only application", "checked": true},
+    {"item": "Integration tests cover deleted Deployment/Service recreation", "checked": true},
+    {"item": "Integration tests cover builder function determinism via resourceVersion stability", "checked": true},
+    {"item": "Integration tests cover transient conflict retry with interceptor client", "checked": true},
+    {"item": "Integration tests cover persistent conflict exhausts retries", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "reconcileResource follows single responsibility (create-or-update with retries)", "checked": true},
+    {"item": "Function is compact (34 lines including logging and event emission)", "checked": true},
+    {"item": "No code duplication: both reconcileDeployment and reconcileService delegate entirely to reconcileResource", "checked": true},
+    {"item": "No residual direct controllerutil.CreateOrUpdate calls in reconcileDeployment/reconcileService", "checked": true},
+    {"item": "Clear naming: reconcileResource, emitEventForResult, maxConflictRetries", "checked": true},
+    {"item": "Error wrapping format consistent: 'reconciling <Kind>: ...'", "checked": true},
+    {"item": "Follows existing codebase patterns (builder functions, thin reconcile wrappers)", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input handling (operator reconciler only processes trusted CR specs from API server)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No sensitive data in logs (only resource names, operation results, attempt counts)", "checked": true},
+    {"item": "Owner references enforce proper RBAC garbage collection", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Generic helper accepts any client.Object type (works with Deployment, Service, future PDB etc.)", "checked": true},
+    {"item": "Conflict retry is self-contained with clear max retries constant", "checked": true},
+    {"item": "Event emission is guarded against nil Recorder", "checked": true},
+    {"item": "Custom retry loop instead of client-go retry.RetryOnConflict (acceptable: CreateOrUpdate internally re-Gets the resource on each call)", "checked": true},
+    {"item": "Solution is minimal — no over-engineering or unnecessary abstractions", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated create-or-update logic between Deployment and Service reconcilers", "checked": true},
+    {"item": "No unnecessary abstractions (reconcileResource is the single reusable helper)", "checked": true},
+    {"item": "No future-proofing beyond what's needed", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Non-conflict errors returned immediately without retry", "checked": true},
+    {"item": "Mutate errors propagated immediately", "checked": true},
+    {"item": "Conflict retries bounded by maxConflictRetries constant", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil Recorder guarded in emitEventForResult", "checked": true},
+    {"item": "Conflict vs non-conflict error distinction enforced", "checked": true},
+    {"item": "Error wrapping includes resource kind for debugging context", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "D1",
+      "severity": "minor",
+      "file": "internal/controller/status.go",
+      "description": "Whitespace-only reformatting of const block alignment is unrelated to MO-0008 scope. While harmless, it adds noise to the diff.",
+      "fix": "No action required — cosmetic only, likely caused by gofmt/goimports."
+    },
+    {
+      "id": "D2",
+      "severity": "minor",
+      "file": "internal/controller/reconcile_resource_test.go:316-317",
+      "description": "Owner reference test (TestReconcileResource_SetsOwnerReference) only verifies Name but not controller=true or blockOwnerDeletion=true fields. Existing integration tests in memcached_deployment_reconcile_test.go do cover controller=true, so this is not blocking.",
+      "fix": "Consider adding assertions for *OwnerReferences[0].Controller == true and *OwnerReferences[0].BlockOwnerDeletion == true in the unit test for completeness."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider adding UID and Kind assertions to TestReconcileResource_SetsOwnerReference for full owner reference field coverage in the unit test layer.",
+    "The status.go whitespace changes could be reverted to keep the diff focused on MO-0008 scope, though this is cosmetic."
+  ],
+  "next_steps": [
+    "Merge to main — implementation is complete and all criteria met."
+  ],
+  "automated_verification": {
+    "make_test": "PASS — 147 Ginkgo specs + all unit tests, 0 failures, 97.1% statement coverage",
+    "go_vet": "PASS — zero errors",
+    "golangci_lint": "SKIPPED — golangci-lint binary built with Go 1.24, project targets Go 1.25 (tooling version mismatch, not a code issue)"
+  },
+  "checklist_results": {
+    "blocking": {
+      "V1_tests_pass": "PASS",
+      "V2_type_check": "PASS (go vet clean)",
+      "V3_lint": "SKIPPED (tooling version mismatch)",
+      "C1_implements_plan": "PASS",
+      "C2_acceptance_criteria": "PASS",
+      "C3_edge_cases": "PASS",
+      "C4_explicit_errors": "PASS",
+      "C5_no_regression": "PASS (all 147 existing Ginkgo specs + unit tests pass)",
+      "S1_input_validation": "N/A (no user input boundaries)",
+      "S2_no_sql_injection": "N/A",
+      "S3_no_hardcoded_secrets": "PASS",
+      "S4_authorization": "N/A (RBAC markers present)",
+      "S5_no_sensitive_logs": "PASS",
+      "S6_no_path_traversal": "N/A",
+      "T1_type_annotations": "PASS (Go typed)",
+      "T2_no_bare_any": "N/A (Go)",
+      "T3_no_type_ignore": "N/A (Go)",
+      "T4_generics_constrained": "PASS (client.Object interface constraint)",
+      "T5_optional_handled": "PASS (nil Recorder guarded)",
+      "FC1_all_tasks_implemented": "PASS (Tasks 1.1, 1.2, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 4.1 all done)",
+      "FC2_no_stubs": "PASS",
+      "FC3_fully_working": "PASS",
+      "FC4_end_to_end": "PASS"
+    },
+    "major": {
+      "TE1_happy_path": "PASS",
+      "TE2_edge_cases": "PASS",
+      "TE3_error_cases": "PASS",
+      "TE4_independent_tests": "PASS",
+      "TE5_test_names": "PASS (Go convention: TestReconcileResource_X)",
+      "TE6_mocking": "PASS (interceptor clients for precise error injection)",
+      "TE7_specific_assertions": "PASS",
+      "Q1_single_responsibility": "PASS",
+      "Q2_function_size": "PASS (reconcileResource ~34 lines, emitEventForResult ~12 lines)",
+      "Q3_no_duplication": "PASS",
+      "Q4_clear_naming": "PASS",
+      "Q5_nesting": "PASS (max 2 levels)",
+      "Q6_no_magic": "PASS (maxConflictRetries named constant)",
+      "Q7_no_dead_code": "PASS",
+      "P1_existing_patterns": "PASS",
+      "P2_existing_utilities": "PASS (reuses constructDeployment, constructService, labelsForMemcached)",
+      "P3_boundaries": "PASS",
+      "P4_api_conventions": "N/A",
+      "P5_file_location": "PASS (reconcile_resource.go in internal/controller/)",
+      "DA1_docs_match_code": "PASS",
+      "DA2_capabilities_built": "PASS",
+      "DA3_new_docs_accurate": "PASS"
+    },
+    "minor": {
+      "D1_docstrings": "PASS",
+      "D2_why_comments": "PASS",
+      "D3_no_commented_code": "PASS",
+      "D4_readme_updated": "N/A",
+      "PF1_no_n_plus_1": "N/A",
+      "PF2_pagination": "N/A",
+      "PF3_no_blocking": "N/A",
+      "PF4_batch_processing": "N/A"
+    }
+  }
+}

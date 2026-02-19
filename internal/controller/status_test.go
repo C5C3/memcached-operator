@@ -12,15 +12,15 @@ import (
 
 func TestComputeConditions(t *testing.T) {
 	tests := []struct {
-		name          string
-		replicas      *int32
-		dep           *appsv1.Deployment
-		wantAvailable metav1.ConditionStatus
-		availReason   string
-		wantProgress  metav1.ConditionStatus
+		name           string
+		replicas       *int32
+		dep            *appsv1.Deployment
+		wantAvailable  metav1.ConditionStatus
+		availReason    string
+		wantProgress   metav1.ConditionStatus
 		progressReason string
-		wantDegraded  metav1.ConditionStatus
-		degradeReason string
+		wantDegraded   metav1.ConditionStatus
+		degradeReason  string
 	}{
 		{
 			name:           "fully available",

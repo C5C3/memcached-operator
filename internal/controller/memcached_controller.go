@@ -3,7 +3,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,7 +14,6 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
@@ -70,10 +68,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // reconcileDeployment ensures the Deployment for the Memcached CR matches the desired state.
-// It uses CreateOrUpdate for idempotent create/update and sets a controller owner reference.
+// It uses reconcileResource for idempotent create/update with conflict retries.
 func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
-	logger := log.FromContext(ctx)
-
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mc.Name,
@@ -81,23 +77,16 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
 		},
 	}
 
-	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {
+	_, err := r.reconcileResource(ctx, mc, dep, func() error {
 		constructDeployment(mc, dep)
-		return controllerutil.SetControllerReference(mc, dep, r.Scheme)
-	})
-	if err != nil {
-		return fmt.Errorf("reconciling Deployment: %w", err)
-	}
-
-	logger.Info("Deployment reconciled", "name", dep.Name, "operation", result)
-	return nil
+		return nil
+	}, "Deployment")
+	return err
 }
 
 // reconcileService ensures the headless Service for the Memcached CR matches the desired state.
-// It uses CreateOrUpdate for idempotent create/update and sets a controller owner reference.
+// It uses reconcileResource for idempotent create/update with conflict retries.
 func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
-	logger := log.FromContext(ctx)
-
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mc.Name,
@@ -105,16 +94,11 @@ func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcache
 		},
 	}
 
-	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, svc, func() error {
+	_, err := r.reconcileResource(ctx, mc, svc, func() error {
 		constructService(mc, svc)
-		return controllerutil.SetControllerReference(mc, svc, r.Scheme)
-	})
-	if err != nil {
-		return fmt.Errorf("reconciling Service: %w", err)
-	}
-
-	logger.Info("Service reconciled", "name", svc.Name, "operation", result)
-	return nil
+		return nil
+	}, "Service")
+	return err
 }
 
 // SetupWithManager sets up the controller with the Manager.
