@@ -1,0 +1,497 @@
+{
+  "feature_id": "MO-0012",
+  "title": "C004: Implement graceful shutdown",
+  "slug": "c004-implement-graceful-shutdown",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Configure a preStop lifecycle hook and appropriate terminationGracePeriodSeconds so Memcached processes can drain connections before pod termination, preventing cache stampedes during rolling updates.",
+  "stories": [
+    {
+      "title": "Operator configures preStop lifecycle hook on Memcached containers",
+      "role": "operator",
+      "want": "Memcached pods to receive a preStop lifecycle hook that allows in-flight connections to drain before SIGTERM",
+      "so_that": "clients experience no abrupt connection resets during rolling updates, preventing cache stampedes",
+      "criteria": [
+        "Deployment pod template includes a preStop lifecycle hook on the memcached container",
+        "The preStop hook executes a sleep command (e.g. `sleep 10`) to allow connection draining",
+        "The preStop hook is present on every reconciliation (idempotent)",
+        "The preStop hook is applied to both minimal and custom CR specs"
+      ]
+    },
+    {
+      "title": "Operator sets terminationGracePeriodSeconds on Memcached pod template",
+      "role": "operator",
+      "want": "the Deployment pod template to have terminationGracePeriodSeconds set to a value that exceeds the preStop hook duration",
+      "so_that": "Kubernetes allows enough time for the preStop hook to complete before sending SIGKILL",
+      "criteria": [
+        "The Deployment pod template spec has terminationGracePeriodSeconds set (default: 30)",
+        "The terminationGracePeriodSeconds value exceeds the preStop sleep duration",
+        "The value is applied consistently on every reconciliation"
+      ]
+    },
+    {
+      "title": "Operator supports configurable graceful shutdown duration",
+      "role": "operator",
+      "want": "to optionally configure the graceful shutdown duration via the Memcached CRD spec",
+      "so_that": "I can tune the drain period based on my workload's connection patterns",
+      "criteria": [
+        "A new field `spec.highAvailability.gracefulShutdown.enabled` controls whether graceful shutdown is configured",
+        "A new field `spec.highAvailability.gracefulShutdown.preStopDelaySeconds` sets the sleep duration (default: 10)",
+        "A new field `spec.highAvailability.gracefulShutdown.terminationGracePeriodSeconds` sets the pod termination grace period (default: 30)",
+        "When graceful shutdown is not enabled, no preStop hook or terminationGracePeriodSeconds are set",
+        "Validation rejects preStopDelaySeconds >= terminationGracePeriodSeconds"
+      ]
+    },
+    {
+      "title": "Deployment reflects graceful shutdown changes on CR update",
+      "role": "operator",
+      "want": "the Deployment to update when I change graceful shutdown settings",
+      "so_that": "drift is corrected and my new configuration takes effect without manual intervention",
+      "criteria": [
+        "Changing preStopDelaySeconds updates the preStop hook sleep duration in the Deployment",
+        "Changing terminationGracePeriodSeconds updates the pod template terminationGracePeriodSeconds",
+        "Disabling graceful shutdown removes the preStop hook and terminationGracePeriodSeconds from the Deployment",
+        "Enabling graceful shutdown on an existing CR adds the preStop hook and terminationGracePeriodSeconds"
+      ]
+    },
+    {
+      "title": "Graceful shutdown settings do not interfere with other HA features",
+      "role": "operator",
+      "want": "graceful shutdown to work alongside anti-affinity, topology spread constraints, and PDB",
+      "so_that": "I can use all HA features together without conflicts",
+      "criteria": [
+        "A CR with anti-affinity, topology spread, PDB, and graceful shutdown all enabled produces a correct Deployment",
+        "Removing graceful shutdown does not affect anti-affinity or topology spread constraint configuration",
+        "Adding graceful shutdown to a CR that already has other HA features does not reset those features"
+      ]
+    },
+    {
+      "title": "Reference documentation covers graceful shutdown reconciliation",
+      "role": "developer",
+      "want": "comprehensive reference documentation for the graceful shutdown feature",
+      "so_that": "I can understand the CRD fields, defaults, reconciliation behavior, and examples",
+      "criteria": [
+        "Reference doc covers CRD field path, types, defaults, and validation",
+        "Reference doc includes CR YAML examples for enabled, custom values, and disabled cases",
+        "Reference doc describes runtime behavior table (enable, update, disable, delete)",
+        "Reference doc is in docs/reference/backend/graceful-shutdown.md"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The system SHALL add GracefulShutdownSpec to the HighAvailabilitySpec CRD type with fields: enabled (bool), preStopDelaySeconds (int32, default 10, min 1, max 300), and terminationGracePeriodSeconds (int64, default 30, min 1, max 600)",
+      "priority": "SHALL",
+      "rationale": "Provides user-configurable graceful shutdown parameters via the CRD, following the existing pattern of HighAvailabilitySpec sub-structs",
+      "scenarios": [
+        {
+          "name": "Default values applied when enabled with no custom values",
+          "when": "spec.highAvailability.gracefulShutdown.enabled is true and no other fields are set",
+          "then": "preStopDelaySeconds defaults to 10 and terminationGracePeriodSeconds defaults to 30",
+          "and_then": []
+        },
+        {
+          "name": "Custom values accepted",
+          "when": "spec.highAvailability.gracefulShutdown has preStopDelaySeconds=15 and terminationGracePeriodSeconds=45",
+          "then": "both values are stored in the CR spec as provided",
+          "and_then": []
+        },
+        {
+          "name": "Invalid preStopDelaySeconds rejected",
+          "when": "spec.highAvailability.gracefulShutdown.preStopDelaySeconds is 0 or negative",
+          "then": "CRD validation rejects the CR with a validation error",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The system SHALL configure a preStop lifecycle hook with `exec: {command: [\"sleep\", \"<preStopDelaySeconds>\"]}` on the memcached container when graceful shutdown is enabled",
+      "priority": "SHALL",
+      "rationale": "A sleep-based preStop hook allows in-flight TCP connections to drain before the SIGTERM is delivered, preventing cache stampedes during rolling updates",
+      "scenarios": [
+        {
+          "name": "PreStop hook set with default delay",
+          "when": "graceful shutdown is enabled with default preStopDelaySeconds (10)",
+          "then": "the memcached container has lifecycle.preStop.exec.command = [\"sleep\", \"10\"]",
+          "and_then": []
+        },
+        {
+          "name": "PreStop hook set with custom delay",
+          "when": "graceful shutdown is enabled with preStopDelaySeconds=20",
+          "then": "the memcached container has lifecycle.preStop.exec.command = [\"sleep\", \"20\"]",
+          "and_then": []
+        },
+        {
+          "name": "No preStop hook when disabled",
+          "when": "graceful shutdown is not enabled (enabled=false or section is nil)",
+          "then": "the memcached container has no lifecycle configuration (nil)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The system SHALL set terminationGracePeriodSeconds on the Deployment pod template spec when graceful shutdown is enabled",
+      "priority": "SHALL",
+      "rationale": "terminationGracePeriodSeconds must exceed the preStop delay to give Kubernetes enough time to complete the hook before sending SIGKILL",
+      "scenarios": [
+        {
+          "name": "Default terminationGracePeriodSeconds set",
+          "when": "graceful shutdown is enabled with default values",
+          "then": "pod template spec has terminationGracePeriodSeconds=30",
+          "and_then": []
+        },
+        {
+          "name": "Custom terminationGracePeriodSeconds set",
+          "when": "graceful shutdown is enabled with terminationGracePeriodSeconds=60",
+          "then": "pod template spec has terminationGracePeriodSeconds=60",
+          "and_then": []
+        },
+        {
+          "name": "No terminationGracePeriodSeconds when disabled",
+          "when": "graceful shutdown is not enabled",
+          "then": "pod template spec has terminationGracePeriodSeconds as nil (Kubernetes default of 30s applies)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The constructDeployment function SHALL apply graceful shutdown settings from the Memcached CR spec to the Deployment pod template",
+      "priority": "SHALL",
+      "rationale": "Following the existing pure builder function pattern (constructDeployment), the graceful shutdown settings must be integrated into the existing Deployment construction logic",
+      "scenarios": [
+        {
+          "name": "Graceful shutdown integrated into constructDeployment",
+          "when": "constructDeployment is called with a Memcached CR that has graceful shutdown enabled",
+          "then": "the Deployment pod template has both the preStop lifecycle hook and terminationGracePeriodSeconds set",
+          "and_then": []
+        },
+        {
+          "name": "Graceful shutdown nil does not affect other fields",
+          "when": "constructDeployment is called with a Memcached CR with nil gracefulShutdown",
+          "then": "the Deployment has no lifecycle hook and no explicit terminationGracePeriodSeconds",
+          "and_then": [
+            "all other Deployment fields (replicas, image, args, probes, affinity) are unaffected"
+          ]
+        },
+        {
+          "name": "Graceful shutdown coexists with other HA features",
+          "when": "constructDeployment is called with anti-affinity, topology spread, and graceful shutdown all configured",
+          "then": "the Deployment has all three features correctly set without interference",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The system SHALL update the Deployment when graceful shutdown configuration changes in the Memcached CR",
+      "priority": "SHALL",
+      "rationale": "Drift detection ensures the Deployment always reflects the current desired state from the CR",
+      "scenarios": [
+        {
+          "name": "Enable graceful shutdown on existing CR",
+          "when": "graceful shutdown is enabled on a CR that previously had it disabled",
+          "then": "the Deployment is updated to include the preStop hook and terminationGracePeriodSeconds",
+          "and_then": []
+        },
+        {
+          "name": "Change preStopDelaySeconds",
+          "when": "preStopDelaySeconds is changed from 10 to 20",
+          "then": "the Deployment preStop hook command is updated to [\"sleep\", \"20\"]",
+          "and_then": []
+        },
+        {
+          "name": "Disable graceful shutdown",
+          "when": "graceful shutdown is disabled (enabled set to false or section removed)",
+          "then": "the Deployment preStop hook and terminationGracePeriodSeconds are removed",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The reconciliation SHALL be idempotent when graceful shutdown settings are unchanged",
+      "priority": "SHALL",
+      "rationale": "Idempotent reconciliation prevents unnecessary Deployment updates that would trigger rolling restarts",
+      "scenarios": [
+        {
+          "name": "No update when spec is unchanged",
+          "when": "reconciliation runs twice with the same graceful shutdown configuration",
+          "then": "the Deployment resourceVersion does not change on the second reconciliation",
+          "and_then": []
+        },
+        {
+          "name": "Idempotent with custom values",
+          "when": "reconciliation runs twice with preStopDelaySeconds=15 and terminationGracePeriodSeconds=45",
+          "then": "the Deployment resourceVersion does not change on the second reconciliation",
+          "and_then": []
+        },
+        {
+          "name": "Idempotent with disabled graceful shutdown",
+          "when": "reconciliation runs twice with graceful shutdown disabled",
+          "then": "the Deployment resourceVersion does not change on the second reconciliation",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The CRD manifests SHALL be regenerated after adding the GracefulShutdownSpec type to include validation markers",
+      "priority": "SHALL",
+      "rationale": "kubebuilder markers drive the OpenAPI schema validation in the generated CRD YAML; regeneration is required for validation to take effect",
+      "scenarios": [
+        {
+          "name": "CRD manifest includes gracefulShutdown fields",
+          "when": "make manifests generate is run after adding GracefulShutdownSpec",
+          "then": "the generated CRD YAML includes the gracefulShutdown object with min/max validation",
+          "and_then": []
+        },
+        {
+          "name": "Deep copy generated for new types",
+          "when": "make generate is run after adding GracefulShutdownSpec",
+          "then": "zz_generated.deepcopy.go includes DeepCopyInto for GracefulShutdownSpec",
+          "and_then": []
+        },
+        {
+          "name": "envtest uses updated CRD",
+          "when": "integration tests run with the updated CRD",
+          "then": "CRD validation for gracefulShutdown fields works correctly in envtest",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "Reference documentation SHALL describe the graceful shutdown CRD fields, defaults, reconciliation behavior, and provide CR YAML examples",
+      "priority": "SHALL",
+      "rationale": "Following the Diataxis reference quadrant and existing docs/reference/backend/ pattern, all new CRD features require reference documentation",
+      "scenarios": [
+        {
+          "name": "Documentation created at standard path",
+          "when": "the documentation task is completed",
+          "then": "docs/reference/backend/graceful-shutdown.md exists with overview, CRD field table, construction logic, reconciliation method, examples, and runtime behavior table",
+          "and_then": []
+        },
+        {
+          "name": "Examples cover all configurations",
+          "when": "reading the documentation",
+          "then": "examples include: enabled with defaults, custom values, disabled, and combined with other HA features",
+          "and_then": []
+        },
+        {
+          "name": "Documentation follows existing pattern",
+          "when": "comparing with docs/reference/backend/pdb-reconciliation.md",
+          "then": "the structure and sections match the established reference doc pattern",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add GracefulShutdownSpec to CRD types and regenerate manifests (REQ-001, REQ-007)",
+      "description": "Add GracefulShutdownSpec struct to api/v1alpha1/memcached_types.go with fields: Enabled (bool), PreStopDelaySeconds (int32, kubebuilder min=1, max=300, default=10), TerminationGracePeriodSeconds (int64, kubebuilder min=1, max=600, default=30). Add a GracefulShutdown *GracefulShutdownSpec field to HighAvailabilitySpec. Run `make manifests generate` to regenerate CRD YAML and deep copy. Verify the generated CRD includes the new fields with validation.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add buildGracefulShutdown helper and integrate into constructDeployment with unit tests (REQ-002, REQ-003, REQ-004)",
+      "description": "In internal/controller/deployment.go, add a pure helper function buildGracefulShutdown(mc *Memcached) (*corev1.Lifecycle, *int64) that returns the lifecycle hook and terminationGracePeriodSeconds (or nil, nil if not enabled). Apply defaults for preStopDelaySeconds (10) and terminationGracePeriodSeconds (30) when those fields are zero. Integrate into constructDeployment: set container.Lifecycle and podSpec.TerminationGracePeriodSeconds. In deployment_test.go, add table-driven unit tests for buildGracefulShutdown (nil HA, nil gracefulShutdown, disabled, enabled with defaults, enabled with custom values) and tests for constructDeployment verifying lifecycle hook and terminationGracePeriodSeconds are set correctly.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add integration tests for graceful shutdown reconciliation (REQ-005, REQ-006)",
+      "description": "In internal/controller/memcached_deployment_reconcile_test.go, add a new Ginkgo Context 'graceful shutdown' with integration tests using envtest: (1) Enable graceful shutdown with defaults, verify Deployment has preStop hook [sleep, 10] and terminationGracePeriodSeconds=30. (2) Enable with custom values (preStopDelaySeconds=15, terminationGracePeriodSeconds=45), verify both. (3) Update preStopDelaySeconds from 10 to 20, verify Deployment updates. (4) Disable graceful shutdown, verify preStop hook and terminationGracePeriodSeconds are removed. (5) Enable graceful shutdown alongside anti-affinity and topology spread, verify all coexist. (6) Idempotency: reconcile twice with same config, verify resourceVersion unchanged.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-005",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Write reference documentation for graceful shutdown (REQ-008)",
+      "description": "Create docs/reference/backend/graceful-shutdown.md following the pattern of pdb-reconciliation.md. Include: Overview section explaining preStop hook and terminationGracePeriodSeconds purpose, CRD Field Path section with the GracefulShutdownSpec field table (field, type, required, default, description), Construction section explaining buildGracefulShutdown helper and default values, Reconciliation Method section showing the integration in constructDeployment, CR Examples section (enabled with defaults, custom values, disabled, combined with other HA features), Runtime Behavior table (enable, update preStopDelaySeconds, update terminationGracePeriodSeconds, disable, delete CR, idempotent reconcile).",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildGracefulShutdown_EnabledWithDefaults",
+      "story": "Operator configures preStop lifecycle hook on Memcached containers",
+      "expected": "buildGracefulShutdown should return lifecycle with exec [sleep, 10] and terminationGracePeriodSeconds=30 when enabled with no custom values",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildGracefulShutdown_EnabledWithCustomValues",
+      "story": "Operator supports configurable graceful shutdown duration",
+      "expected": "buildGracefulShutdown should return lifecycle with exec [sleep, 15] and terminationGracePeriodSeconds=45 when custom values are set",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildGracefulShutdown_Disabled",
+      "story": "Operator configures preStop lifecycle hook on Memcached containers",
+      "expected": "buildGracefulShutdown should return nil, nil when graceful shutdown is not enabled",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildGracefulShutdown_NilHA",
+      "story": "Operator configures preStop lifecycle hook on Memcached containers",
+      "expected": "buildGracefulShutdown should return nil, nil when HighAvailability is nil",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_GracefulShutdownEnabled",
+      "story": "Operator configures preStop lifecycle hook on Memcached containers",
+      "expected": "constructDeployment should set lifecycle.preStop and terminationGracePeriodSeconds on the Deployment when graceful shutdown is enabled",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_GracefulShutdownDisabled",
+      "story": "Operator configures preStop lifecycle hook on Memcached containers",
+      "expected": "constructDeployment should not set lifecycle or terminationGracePeriodSeconds when graceful shutdown is nil/disabled",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_GracefulShutdownWithOtherHAFeatures",
+      "story": "Graceful shutdown settings do not interfere with other HA features",
+      "expected": "constructDeployment should correctly set anti-affinity, topology spread, and graceful shutdown together",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should create Deployment with preStop hook and terminationGracePeriodSeconds when graceful shutdown is enabled",
+      "story": "Operator configures preStop lifecycle hook on Memcached containers",
+      "expected": "Integration test verifying the full reconciliation creates a Deployment with lifecycle.preStop.exec.command=[sleep,10] and terminationGracePeriodSeconds=30",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should update Deployment when preStopDelaySeconds changes",
+      "story": "Deployment reflects graceful shutdown changes on CR update",
+      "expected": "Integration test verifying that changing preStopDelaySeconds from 10 to 20 updates the Deployment preStop hook command",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should remove preStop hook when graceful shutdown is disabled",
+      "story": "Deployment reflects graceful shutdown changes on CR update",
+      "expected": "Integration test verifying that disabling graceful shutdown removes the lifecycle hook and terminationGracePeriodSeconds",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should be idempotent with graceful shutdown enabled",
+      "story": "Operator configures preStop lifecycle hook on Memcached containers",
+      "expected": "Integration test verifying that two reconciliations with the same graceful shutdown config produce no Deployment update",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should support graceful shutdown alongside anti-affinity and topology spread",
+      "story": "Graceful shutdown settings do not interfere with other HA features",
+      "expected": "Integration test verifying all HA features coexist correctly in a single Deployment",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "should accept gracefulShutdown with valid preStopDelaySeconds",
+      "story": "Operator supports configurable graceful shutdown duration",
+      "expected": "CRD validation accepts preStopDelaySeconds=1 (minimum), preStopDelaySeconds=300 (maximum)",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "should reject gracefulShutdown with invalid preStopDelaySeconds",
+      "story": "Operator supports configurable graceful shutdown duration",
+      "expected": "CRD validation rejects preStopDelaySeconds=0 and preStopDelaySeconds=301",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "should accept gracefulShutdown with valid terminationGracePeriodSeconds",
+      "story": "Operator supports configurable graceful shutdown duration",
+      "expected": "CRD validation accepts terminationGracePeriodSeconds=1 (minimum) and terminationGracePeriodSeconds=600 (maximum)",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "should reject gracefulShutdown with invalid terminationGracePeriodSeconds",
+      "story": "Operator supports configurable graceful shutdown duration",
+      "expected": "CRD validation rejects terminationGracePeriodSeconds=0 and terminationGracePeriodSeconds=601",
+      "requirement_id": "REQ-001"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "GracefulShutdownSpec struct has correct kubebuilder markers for validation (Minimum, Maximum, default) and omitempty/omitzero tags matching existing CRD patterns",
+    "buildGracefulShutdown is a pure function (no side effects) returning (*corev1.Lifecycle, *int64), following the buildAntiAffinity/buildTopologySpreadConstraints pattern",
+    "constructDeployment correctly integrates lifecycle and terminationGracePeriodSeconds without breaking existing fields (replicas, image, args, probes, affinity, topologySpreadConstraints, strategy)",
+    "All unit tests in deployment_test.go follow table-driven Go test pattern with clear test names and assertions",
+    "All integration tests in memcached_deployment_reconcile_test.go follow Ginkgo/Gomega pattern with proper CR lifecycle (Create → Reconcile → Get → Assert)",
+    "Idempotency verified: reconciling twice with same graceful shutdown config does not change Deployment resourceVersion",
+    "CRD validation tests cover boundary values: preStopDelaySeconds min=1/max=300, terminationGracePeriodSeconds min=1/max=600",
+    "Reference documentation follows existing pdb-reconciliation.md structure with field table, construction logic, examples, and runtime behavior table"
+  ],
+  "implementation_notes": "Architecture: GracefulShutdownSpec is added as a sub-struct of HighAvailabilitySpec (matching PDBSpec pattern). A pure builder function buildGracefulShutdown(mc) returns the lifecycle hook and terminationGracePeriodSeconds, which are applied in constructDeployment. The preStop hook uses exec with [\"sleep\", \"<seconds>\"] which is the standard Kubernetes pattern for connection draining. The terminationGracePeriodSeconds on the pod template must exceed the preStop delay to avoid premature SIGKILL.\n\nKey files to modify:\n- api/v1alpha1/memcached_types.go: Add GracefulShutdownSpec struct, add field to HighAvailabilitySpec\n- internal/controller/deployment.go: Add buildGracefulShutdown helper, integrate into constructDeployment\n- internal/controller/deployment_test.go: Add unit tests for buildGracefulShutdown and constructDeployment integration\n- internal/controller/memcached_deployment_reconcile_test.go: Add integration tests\n- internal/controller/memcached_crd_validation_test.go: Add CRD validation tests\n- docs/reference/backend/graceful-shutdown.md: Reference documentation\n\nPatterns to follow:\n- Builder function pattern: see buildAntiAffinity, buildTopologySpreadConstraints in deployment.go\n- CRD type pattern: see PDBSpec in memcached_types.go (Enabled bool + optional config fields)\n- Unit test pattern: table-driven tests in deployment_test.go\n- Integration test pattern: Ginkgo Context blocks in memcached_deployment_reconcile_test.go\n- Doc pattern: docs/reference/backend/pdb-reconciliation.md\n\nPitfalls:\n- Must run `make manifests generate` after CRD type changes for validation markers to take effect and deep copy to be generated\n- terminationGracePeriodSeconds is *int64 on the PodSpec (pointer), not int32 — must match the Kubernetes API type\n- The lifecycle hook is set on the container (not the pod spec) — set on containers[0].Lifecycle\n- When graceful shutdown is disabled/nil, must set lifecycle to nil and terminationGracePeriodSeconds to nil to ensure idempotent reconciliation clears stale values",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.423322"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T16:19:06.824260"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T16:22:17.172749"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "9259d0ef-1b6e-4bc7-95aa-f8dabba8b149",
+      "timestamp": "2026-02-19T16:22:17.172777",
+      "total_duration": 184.80215620994568,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 184.80215620994568,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
