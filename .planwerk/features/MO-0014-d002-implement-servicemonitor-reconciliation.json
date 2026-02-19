@@ -1,0 +1,565 @@
+{
+  "feature_id": "MO-0014",
+  "title": "D002: Implement ServiceMonitor reconciliation",
+  "slug": "d002-implement-servicemonitor-reconciliation",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Create and reconcile a Prometheus ServiceMonitor resource when monitoring is enabled. Configure scrape interval, scrapeTimeout, and additionalLabels from spec.monitoring.serviceMonitor. Set owner references for cleanup.",
+  "stories": [
+    {
+      "title": "Operator creates ServiceMonitor when monitoring is enabled",
+      "role": "cluster operator",
+      "want": "a Prometheus ServiceMonitor to be automatically created when I enable monitoring on a Memcached CR",
+      "so_that": "Prometheus can auto-discover and scrape metrics from my Memcached pods without manual ServiceMonitor configuration",
+      "criteria": [
+        "When spec.monitoring.enabled is true and spec.monitoring.serviceMonitor is set, a ServiceMonitor resource is created in the same namespace with the same name as the Memcached CR",
+        "The ServiceMonitor has standard labels (app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator)",
+        "The ServiceMonitor spec.selector.matchLabels matches the headless Service labels so Prometheus finds the correct endpoints",
+        "The ServiceMonitor has a single endpoint targeting port 'metrics' with the configured interval and scrapeTimeout",
+        "An owner reference is set on the ServiceMonitor pointing to the Memcached CR with controller=true and blockOwnerDeletion=true"
+      ]
+    },
+    {
+      "title": "Operator applies custom scrape configuration from CR spec",
+      "role": "cluster operator",
+      "want": "to configure scrape interval, scrape timeout, and additional labels on the ServiceMonitor via the Memcached CR spec",
+      "so_that": "I can tune Prometheus scraping behaviour and match my Prometheus serviceMonitorSelector without editing the ServiceMonitor directly",
+      "criteria": [
+        "spec.monitoring.serviceMonitor.interval is applied to the ServiceMonitor endpoint (default '30s')",
+        "spec.monitoring.serviceMonitor.scrapeTimeout is applied to the ServiceMonitor endpoint (default '10s')",
+        "spec.monitoring.serviceMonitor.additionalLabels are merged into the ServiceMonitor metadata.labels alongside standard labels",
+        "Changing any of these fields on the CR and reconciling updates the ServiceMonitor accordingly"
+      ]
+    },
+    {
+      "title": "Operator skips ServiceMonitor when monitoring is not enabled",
+      "role": "cluster operator",
+      "want": "no ServiceMonitor to be created when monitoring is disabled or when the serviceMonitor sub-section is absent",
+      "so_that": "clusters without Prometheus or without monitoring needs are not polluted with unused resources",
+      "criteria": [
+        "When spec.monitoring is nil, no ServiceMonitor reconciliation occurs and no error is returned",
+        "When spec.monitoring.enabled is false, no ServiceMonitor reconciliation occurs",
+        "When spec.monitoring.enabled is true but spec.monitoring.serviceMonitor is nil, no ServiceMonitor is created"
+      ]
+    },
+    {
+      "title": "Operator corrects ServiceMonitor drift and maintains idempotency",
+      "role": "cluster operator",
+      "want": "the operator to correct any manual changes to the ServiceMonitor and not produce spurious updates when nothing has changed",
+      "so_that": "the ServiceMonitor always reflects the desired state from the CR spec and reconciliation is efficient",
+      "criteria": [
+        "Reconciling twice with the same spec does not change the ServiceMonitor resourceVersion (idempotent)",
+        "If someone manually edits the ServiceMonitor (e.g. changes interval), the next reconcile corrects it back to the CR spec",
+        "If someone deletes the ServiceMonitor, the next reconcile recreates it"
+      ]
+    },
+    {
+      "title": "ServiceMonitor is cleaned up when Memcached CR is deleted",
+      "role": "cluster operator",
+      "want": "the ServiceMonitor to be automatically deleted when I delete the Memcached CR",
+      "so_that": "no orphaned ServiceMonitor resources remain in the cluster after CR deletion",
+      "criteria": [
+        "The ServiceMonitor has an ownerReference with controller=true and blockOwnerDeletion=true referencing the Memcached CR",
+        "Deleting the Memcached CR triggers Kubernetes garbage collection which deletes the owned ServiceMonitor",
+        "The controller watches ServiceMonitor resources via Owns() so that external changes trigger re-reconciliation"
+      ]
+    },
+    {
+      "title": "ServiceMonitor coexists with other operator features",
+      "role": "cluster operator",
+      "want": "ServiceMonitor reconciliation to work correctly alongside exporter sidecar, PDB, anti-affinity, and graceful shutdown features",
+      "so_that": "enabling multiple features simultaneously does not cause conflicts or regressions",
+      "criteria": [
+        "A CR with monitoring.enabled=true, serviceMonitor configured, PDB enabled, and anti-affinity set produces all expected resources (Deployment with exporter, Service with metrics port, PDB, ServiceMonitor)",
+        "Toggling monitoring off removes the exporter sidecar and metrics port from Service, and skips ServiceMonitor reconciliation",
+        "ServiceMonitor reconciliation does not interfere with Deployment, Service, or PDB reconciliation"
+      ]
+    },
+    {
+      "title": "Reference documentation for ServiceMonitor reconciliation",
+      "role": "developer",
+      "want": "comprehensive reference documentation describing the ServiceMonitor construction, reconciliation method, skip logic, labels, owner references, and CR examples",
+      "so_that": "future contributors understand the ServiceMonitor implementation without reading the source code",
+      "criteria": [
+        "Documentation is created at docs/reference/backend/servicemonitor-reconciliation.md",
+        "Documentation follows the same structure as docs/reference/backend/pdb-reconciliation.md",
+        "Documentation includes: overview, CRD field path, construction logic, default values, labels, selector, reconciliation method, skip logic, owner reference, CR examples, runtime behavior table, and implementation details"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL create a ServiceMonitor resource when spec.monitoring.enabled is true and spec.monitoring.serviceMonitor is non-nil",
+      "priority": "SHALL",
+      "rationale": "Core feature requirement - enables Prometheus auto-discovery of Memcached metrics endpoints",
+      "scenarios": [
+        {
+          "name": "ServiceMonitor created on first reconcile",
+          "when": "a Memcached CR with spec.monitoring.enabled=true and spec.monitoring.serviceMonitor={} is created and reconciled",
+          "then": "a ServiceMonitor resource is created in the same namespace with the same name as the Memcached CR",
+          "and_then": [
+            "the ServiceMonitor has an endpoint targeting port 'metrics'",
+            "the ServiceMonitor has standard operator labels"
+          ]
+        },
+        {
+          "name": "ServiceMonitor uses defaults when fields are empty",
+          "when": "spec.monitoring.serviceMonitor is set to an empty struct (no explicit interval, scrapeTimeout, or additionalLabels)",
+          "then": "the ServiceMonitor endpoint uses interval='30s' and scrapeTimeout='10s' from kubebuilder defaults",
+          "and_then": [
+            "no additional labels beyond standard operator labels are set"
+          ]
+        },
+        {
+          "name": "ServiceMonitor has correct selector to match headless Service",
+          "when": "the ServiceMonitor is created",
+          "then": "spec.selector.matchLabels contains app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator",
+          "and_then": [
+            "Prometheus can discover the headless Service endpoints via this selector"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL configure the ServiceMonitor endpoint with scrape interval and timeout from spec.monitoring.serviceMonitor",
+      "priority": "SHALL",
+      "rationale": "Operators need control over scrape frequency to balance monitoring granularity against Prometheus load",
+      "scenarios": [
+        {
+          "name": "Custom interval applied",
+          "when": "spec.monitoring.serviceMonitor.interval is set to '15s'",
+          "then": "the ServiceMonitor endpoint has interval='15s'",
+          "and_then": []
+        },
+        {
+          "name": "Custom scrapeTimeout applied",
+          "when": "spec.monitoring.serviceMonitor.scrapeTimeout is set to '5s'",
+          "then": "the ServiceMonitor endpoint has scrapeTimeout='5s'",
+          "and_then": []
+        },
+        {
+          "name": "Both interval and scrapeTimeout applied together",
+          "when": "spec.monitoring.serviceMonitor has interval='60s' and scrapeTimeout='15s'",
+          "then": "the ServiceMonitor endpoint has interval='60s' and scrapeTimeout='15s'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL merge additionalLabels from spec.monitoring.serviceMonitor into the ServiceMonitor metadata.labels",
+      "priority": "SHALL",
+      "rationale": "Additional labels are essential for Prometheus serviceMonitorSelector matching (e.g. release: prometheus) and organizational tagging",
+      "scenarios": [
+        {
+          "name": "Additional labels merged with standard labels",
+          "when": "spec.monitoring.serviceMonitor.additionalLabels contains {release: prometheus, team: platform}",
+          "then": "the ServiceMonitor metadata.labels includes both the standard operator labels AND release=prometheus, team=platform",
+          "and_then": []
+        },
+        {
+          "name": "No additional labels leaves only standard labels",
+          "when": "spec.monitoring.serviceMonitor.additionalLabels is nil or empty",
+          "then": "the ServiceMonitor metadata.labels contains only the standard operator labels",
+          "and_then": []
+        },
+        {
+          "name": "Additional labels cannot override standard labels",
+          "when": "spec.monitoring.serviceMonitor.additionalLabels contains a key that conflicts with a standard label (e.g. app.kubernetes.io/name: override)",
+          "then": "the standard label value takes precedence and is not overridden",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL set a controller owner reference on the ServiceMonitor for garbage collection",
+      "priority": "SHALL",
+      "rationale": "Owner references enable automatic cleanup when the Memcached CR is deleted and allow the controller watch to map ServiceMonitor events back to the parent CR",
+      "scenarios": [
+        {
+          "name": "Owner reference set on creation",
+          "when": "a ServiceMonitor is created by the reconciler",
+          "then": "the ServiceMonitor metadata.ownerReferences contains a reference with apiVersion=memcached.c5c3.io/v1alpha1, kind=Memcached, controller=true, blockOwnerDeletion=true",
+          "and_then": []
+        },
+        {
+          "name": "Garbage collection on CR deletion",
+          "when": "the parent Memcached CR is deleted",
+          "then": "the owned ServiceMonitor is automatically deleted by Kubernetes garbage collection",
+          "and_then": []
+        },
+        {
+          "name": "Watch triggers reconciliation on ServiceMonitor changes",
+          "when": "an owned ServiceMonitor is modified or deleted externally",
+          "then": "the controller receives a reconciliation event for the parent Memcached CR",
+          "and_then": [
+            "the reconciler corrects the ServiceMonitor to match desired state"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The operator SHALL skip ServiceMonitor reconciliation when monitoring is not enabled or serviceMonitor is not configured",
+      "priority": "SHALL",
+      "rationale": "ServiceMonitor should only be created when explicitly configured; clusters without Prometheus should not get unused resources",
+      "scenarios": [
+        {
+          "name": "Skip when monitoring is nil",
+          "when": "spec.monitoring is nil on the Memcached CR",
+          "then": "reconcileServiceMonitor returns nil without creating or modifying any ServiceMonitor",
+          "and_then": []
+        },
+        {
+          "name": "Skip when monitoring.enabled is false",
+          "when": "spec.monitoring.enabled is false",
+          "then": "reconcileServiceMonitor returns nil without creating or modifying any ServiceMonitor",
+          "and_then": []
+        },
+        {
+          "name": "Skip when serviceMonitor sub-section is nil",
+          "when": "spec.monitoring.enabled is true but spec.monitoring.serviceMonitor is nil",
+          "then": "reconcileServiceMonitor returns nil without creating or modifying any ServiceMonitor",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL reconcile the ServiceMonitor idempotently, producing no update when spec has not changed",
+      "priority": "SHALL",
+      "rationale": "Idempotent reconciliation avoids unnecessary API server writes, reducing load and preventing watch storms",
+      "scenarios": [
+        {
+          "name": "No update on second reconcile with same spec",
+          "when": "a Memcached CR with serviceMonitor configured is reconciled twice without any spec changes",
+          "then": "the ServiceMonitor resourceVersion does not change after the second reconcile",
+          "and_then": []
+        },
+        {
+          "name": "Drift correction restores desired state",
+          "when": "someone manually changes the ServiceMonitor endpoint interval and reconciliation runs",
+          "then": "the ServiceMonitor endpoint is corrected back to the CR spec value",
+          "and_then": []
+        },
+        {
+          "name": "Update occurs when CR spec changes",
+          "when": "spec.monitoring.serviceMonitor.interval is changed and reconciliation runs",
+          "then": "the ServiceMonitor endpoint interval is updated to the new value",
+          "and_then": [
+            "the ServiceMonitor resourceVersion changes"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator SHALL register a watch on ServiceMonitor resources via Owns() in SetupWithManager",
+      "priority": "SHALL",
+      "rationale": "Without a watch, external changes to the ServiceMonitor (drift, deletion) would not trigger re-reconciliation",
+      "scenarios": [
+        {
+          "name": "ServiceMonitor watch registered",
+          "when": "the controller is set up via SetupWithManager",
+          "then": "the controller has Owns(&monitoringv1.ServiceMonitor{}) registered alongside existing watches",
+          "and_then": []
+        },
+        {
+          "name": "External ServiceMonitor deletion triggers reconcile",
+          "when": "an owned ServiceMonitor is deleted by a user",
+          "then": "the controller receives a reconciliation event and recreates the ServiceMonitor",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The operator SHALL add the prometheus-operator Go dependency and register its scheme for ServiceMonitor types",
+      "priority": "SHALL",
+      "rationale": "The monitoringv1.ServiceMonitor type from the prometheus-operator module is needed for typed construction and reconciliation",
+      "scenarios": [
+        {
+          "name": "Dependency added to go.mod",
+          "when": "the servicemonitor.go file imports monitoringv1",
+          "then": "go.mod includes github.com/prometheus-operator/prometheus-operator as a dependency and go build succeeds",
+          "and_then": []
+        },
+        {
+          "name": "Scheme registration for ServiceMonitor CRD in test suite",
+          "when": "envtest starts in the test suite",
+          "then": "the monitoringv1 scheme is registered so that the test client can read/write ServiceMonitor resources",
+          "and_then": []
+        },
+        {
+          "name": "ServiceMonitor CRD available in envtest",
+          "when": "the test suite boots envtest",
+          "then": "the ServiceMonitor CRD is loaded from the prometheus-operator module's CRD path or generated and available to the test environment",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The operator SHALL call reconcileServiceMonitor in the main Reconcile function between reconcilePDB and reconcileStatus",
+      "priority": "SHALL",
+      "rationale": "The reconciliation order matters - ServiceMonitor should be reconciled after the Service (which provides the metrics port) but before status computation",
+      "scenarios": [
+        {
+          "name": "reconcileServiceMonitor called in correct order",
+          "when": "Reconcile is invoked for a Memcached CR",
+          "then": "reconcileServiceMonitor is called after reconcilePDB and before reconcileStatus",
+          "and_then": [
+            "if reconcileServiceMonitor returns an error, reconcileStatus is not called and the error is returned"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "Reference documentation SHALL be created for the ServiceMonitor reconciliation feature",
+      "priority": "SHALL",
+      "rationale": "All reconciliation features have reference docs following a consistent structure; ServiceMonitor must follow the same pattern",
+      "scenarios": [
+        {
+          "name": "Documentation file exists and follows established structure",
+          "when": "the feature implementation is complete",
+          "then": "docs/reference/backend/servicemonitor-reconciliation.md exists and follows the same structure as pdb-reconciliation.md",
+          "and_then": [
+            "the doc includes: overview, CRD field path, construction logic, defaults, labels, selector, reconciliation method, skip logic, owner reference, CR examples, runtime behavior table"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add prometheus-operator dependency and register ServiceMonitor scheme in test suite (REQ-008)",
+      "description": "Run `go get github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1` to add the dependency. In `internal/controller/suite_test.go`, import `monitoringv1 \"github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1\"` and add `monitoringv1.AddToScheme(scheme.Scheme)` after the existing `memcachedv1alpha1.AddToScheme` call. Also add the ServiceMonitor CRD path to the envtest CRDDirectoryPaths (the CRD YAML can be sourced from the prometheus-operator module or a local config/crd path). Verify that `go build ./...` and `go vet ./...` pass.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create constructServiceMonitor builder function and serviceMonitorEnabled guard in servicemonitor.go (REQ-001, REQ-002, REQ-003, REQ-005)",
+      "description": "Create `internal/controller/servicemonitor.go` following the pattern of `pdb.go`. Implement: (1) `serviceMonitorEnabled(mc *Memcached) bool` returning true only when mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled && mc.Spec.Monitoring.ServiceMonitor != nil. (2) `constructServiceMonitor(mc *Memcached, sm *monitoringv1.ServiceMonitor)` that sets: metadata.labels to standard labels merged with additionalLabels (standard labels take precedence), spec.selector.matchLabels to labelsForMemcached(mc.Name), spec.endpoints to a single Endpoint{Port: 'metrics', Interval: monitoringv1.Duration(sm.Interval), ScrapeTimeout: monitoringv1.Duration(sm.ScrapeTimeout)}. Import monitoringv1 from the prometheus-operator module. Verify `go build ./...` passes.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add reconcileServiceMonitor method and wire into Reconcile + SetupWithManager (REQ-004, REQ-007, REQ-009)",
+      "description": "In `internal/controller/memcached_controller.go`: (1) Import `monitoringv1 \"github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1\"`. (2) Add `reconcileServiceMonitor(ctx, mc)` method following the exact pattern of `reconcilePDB`: guard with serviceMonitorEnabled, create monitoringv1.ServiceMonitor with ObjectMeta{Name: mc.Name, Namespace: mc.Namespace}, call r.reconcileResource with constructServiceMonitor mutate function and resourceKind 'ServiceMonitor'. (3) Call reconcileServiceMonitor in the Reconcile method between reconcilePDB and reconcileStatus. (4) Add `.Owns(&monitoringv1.ServiceMonitor{})` to SetupWithManager. Verify `go build ./...` passes.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004",
+        "REQ-007",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write tests for ServiceMonitor creation with defaults and custom configuration (REQ-001, REQ-002, REQ-003)",
+      "description": "Create `internal/controller/memcached_servicemonitor_reconcile_test.go`. Add a `fetchServiceMonitor(mc)` helper (following fetchPDB/fetchDeployment pattern). Write tests in a Describe('ServiceMonitor Reconciliation') block: (1) Context 'ServiceMonitor creation': It 'should create ServiceMonitor with default interval and scrapeTimeout' - create CR with monitoring.enabled=true and serviceMonitor={}, reconcile, verify ServiceMonitor exists with endpoint port='metrics', interval='30s', scrapeTimeout='10s', standard labels, correct selector matchLabels, and owner reference. (2) It 'should apply custom interval and scrapeTimeout' - set interval='15s', scrapeTimeout='5s', verify. (3) It 'should merge additionalLabels with standard labels' - set additionalLabels={release: prometheus}, verify both standard and additional labels present. (4) It 'should not allow additionalLabels to override standard labels' - set additionalLabels with app.kubernetes.io/name=override, verify standard value wins.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Write tests for ServiceMonitor skip logic (REQ-005)",
+      "description": "In `memcached_servicemonitor_reconcile_test.go`, add Context 'skip logic': (1) It 'should not create ServiceMonitor when monitoring is nil' - create CR without monitoring section, reconcile, verify no ServiceMonitor exists (Get returns NotFound). (2) It 'should not create ServiceMonitor when monitoring.enabled is false' - create CR with monitoring.enabled=false, reconcile, verify no ServiceMonitor. (3) It 'should not create ServiceMonitor when serviceMonitor is nil' - create CR with monitoring.enabled=true but no serviceMonitor sub-section, reconcile, verify no ServiceMonitor.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Write tests for ServiceMonitor idempotency and drift correction (REQ-006)",
+      "description": "In `memcached_servicemonitor_reconcile_test.go`, add Context 'idempotency': (1) It 'should be idempotent with serviceMonitor configured' - create CR with serviceMonitor, reconcile twice, verify ServiceMonitor resourceVersion unchanged after second reconcile. (2) It 'should converge after drift (manual endpoint change)' - create CR, reconcile, patch the ServiceMonitor to change interval, reconcile again, verify interval restored to CR spec value. (3) It 'should update ServiceMonitor when CR spec changes' - create CR with interval='30s', reconcile, update CR to interval='15s', reconcile, verify ServiceMonitor endpoint interval is '15s'.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.4",
+      "title": "Write tests for ServiceMonitor coexistence with other features (REQ-001, REQ-004)",
+      "description": "In `memcached_servicemonitor_reconcile_test.go`, add Context 'coexistence': (1) It 'should coexist with exporter sidecar, PDB, and anti-affinity' - create CR with monitoring.enabled=true, serviceMonitor configured, PDB enabled, anti-affinity soft, reconcile, verify all resources exist: Deployment with 2 containers, Service with 2 ports, PDB, ServiceMonitor. (2) It 'should handle toggling monitoring off and back on' - create CR with serviceMonitor, reconcile, verify ServiceMonitor exists, disable monitoring, reconcile, verify ServiceMonitor no longer created on subsequent reconciles (existing may persist via owner ref GC), re-enable monitoring with serviceMonitor, reconcile, verify ServiceMonitor is created again.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for ServiceMonitor reconciliation (REQ-010)",
+      "description": "Create `docs/reference/backend/servicemonitor-reconciliation.md` following the exact structure of `docs/reference/backend/pdb-reconciliation.md`. Include: (1) Title and overview. (2) Source file references (internal/controller/servicemonitor.go, memcached_controller.go). (3) CRD Field Path (spec.monitoring.serviceMonitor) with ServiceMonitorSpec struct definition and field table. (4) ServiceMonitor Construction section: labels (standard + additionalLabels merge with standard precedence), selector (matchLabels from labelsForMemcached), endpoint (port, interval, scrapeTimeout), default values. (5) Reconciliation Method showing reconcileServiceMonitor code. (6) Skip Logic section listing the three skip conditions. (7) Owner Reference table. (8) CR Examples: minimal (defaults), custom interval+timeout, additionalLabels, monitoring disabled. (9) Runtime Behavior table: enable/disable/update/delete/idempotency/drift scenarios. (10) Implementation section describing constructServiceMonitor and serviceMonitorEnabled.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-010"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should create ServiceMonitor with default interval and scrapeTimeout",
+      "story": "Operator creates ServiceMonitor when monitoring is enabled",
+      "expected": "ServiceMonitor created with endpoint port='metrics', interval='30s', scrapeTimeout='10s', standard labels, correct selector, owner reference",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should apply custom interval and scrapeTimeout",
+      "story": "Operator applies custom scrape configuration from CR spec",
+      "expected": "ServiceMonitor endpoint has interval='15s' and scrapeTimeout='5s' matching CR spec",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should merge additionalLabels with standard labels",
+      "story": "Operator applies custom scrape configuration from CR spec",
+      "expected": "ServiceMonitor labels contain both standard operator labels and additionalLabels (release=prometheus)",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should not allow additionalLabels to override standard labels",
+      "story": "Operator applies custom scrape configuration from CR spec",
+      "expected": "Standard label app.kubernetes.io/name=memcached is preserved even when additionalLabels tries to override it",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should create ServiceMonitor with correct owner reference",
+      "story": "ServiceMonitor is cleaned up when Memcached CR is deleted",
+      "expected": "ServiceMonitor ownerReferences contains apiVersion=memcached.c5c3.io/v1alpha1, kind=Memcached, controller=true, blockOwnerDeletion=true",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should not create ServiceMonitor when monitoring is nil",
+      "story": "Operator skips ServiceMonitor when monitoring is not enabled",
+      "expected": "No ServiceMonitor exists after reconciliation; Get returns NotFound",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should not create ServiceMonitor when monitoring.enabled is false",
+      "story": "Operator skips ServiceMonitor when monitoring is not enabled",
+      "expected": "No ServiceMonitor exists after reconciliation",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should not create ServiceMonitor when serviceMonitor is nil",
+      "story": "Operator skips ServiceMonitor when monitoring is not enabled",
+      "expected": "No ServiceMonitor exists after reconciliation even though monitoring.enabled=true",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should be idempotent with serviceMonitor configured",
+      "story": "Operator corrects ServiceMonitor drift and maintains idempotency",
+      "expected": "ServiceMonitor resourceVersion unchanged after second reconcile with same spec",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should converge after drift (manual endpoint change)",
+      "story": "Operator corrects ServiceMonitor drift and maintains idempotency",
+      "expected": "ServiceMonitor endpoint interval restored to CR spec value after manual change and reconcile",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should update ServiceMonitor when CR spec changes",
+      "story": "Operator applies custom scrape configuration from CR spec",
+      "expected": "ServiceMonitor endpoint interval updated from '30s' to '15s' after CR spec change",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should coexist with exporter sidecar, PDB, and anti-affinity",
+      "story": "ServiceMonitor coexists with other operator features",
+      "expected": "All resources created: Deployment with 2 containers, Service with 2 ports, PDB, and ServiceMonitor",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "should handle toggling monitoring off and back on",
+      "story": "Operator corrects ServiceMonitor drift and maintains idempotency",
+      "expected": "ServiceMonitor reconciliation skipped when monitoring disabled, ServiceMonitor recreated when re-enabled",
+      "requirement_id": "REQ-005"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "constructServiceMonitor sets standard labels (app.kubernetes.io/name, instance, managed-by) with precedence over additionalLabels",
+    "ServiceMonitor spec.selector.matchLabels uses labelsForMemcached() consistent with Service and Deployment selectors",
+    "serviceMonitorEnabled guard correctly checks all three conditions: monitoring != nil, enabled == true, serviceMonitor != nil",
+    "reconcileServiceMonitor uses reconcileResource helper (not manual Create/Update) for idempotent create-or-update with owner reference and conflict retries",
+    "SetupWithManager includes Owns(&monitoringv1.ServiceMonitor{}) for watch registration",
+    "monitoringv1 scheme is registered in suite_test.go BeforeSuite and ServiceMonitor CRD is available in envtest",
+    "All test specifications are implemented: creation with defaults, custom config, additionalLabels, additionalLabels precedence, skip logic (3 cases), idempotency, drift correction, spec update, coexistence, toggling",
+    "Reference documentation at docs/reference/backend/servicemonitor-reconciliation.md follows pdb-reconciliation.md structure with all sections",
+    "No scope creep: no CRD existence check at runtime (not in scope per feature description), no deletion of ServiceMonitor when disabled (handled by owner ref GC when CR is deleted)"
+  ],
+  "implementation_notes": "**Architecture**: Follow the exact same pattern as PDB reconciliation. Create a new file `internal/controller/servicemonitor.go` containing `constructServiceMonitor` (pure builder function) and `serviceMonitorEnabled` (guard function). The reconcileServiceMonitor method goes in `memcached_controller.go` using the existing `reconcileResource` helper for idempotent create-or-update with automatic owner reference and conflict retries.\n\n**Dependency**: The prometheus-operator Go module (`github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1`) must be added via `go get`. The monitoringv1 types provide the strongly-typed ServiceMonitor struct. The CRD YAML for envtest can be sourced from the module's bundled CRDs or generated.\n\n**Label Merge Strategy**: Standard labels from `labelsForMemcached(mc.Name)` always take precedence. Build labels by first copying additionalLabels, then overlaying standard labels. This prevents user-specified labels from breaking selector matching.\n\n**ServiceMonitor Endpoint**: The endpoint targets the named port 'metrics' (port 9150 on the headless Service). The Interval and ScrapeTimeout fields use the monitoringv1.Duration type which is a string alias - the values from ServiceMonitorSpec (which are plain strings like '30s') map directly.\n\n**Reconciliation Order**: reconcileServiceMonitor is called between reconcilePDB and reconcileStatus in the main Reconcile function. This ensures the Service (with metrics port) exists before ServiceMonitor is created.\n\n**Test Environment**: The monitoringv1 scheme must be registered in suite_test.go BeforeSuite. The ServiceMonitor CRD YAML must be available in envtest's CRDDirectoryPaths. The prometheus-operator module ships CRDs that can be referenced, or they can be placed in config/crd/bases/.\n\n**Key Files**:\n- `internal/controller/pdb.go` (lines 1-47): Template for servicemonitor.go\n- `internal/controller/memcached_controller.go` (lines 108-127): Template for reconcileServiceMonitor method\n- `internal/controller/memcached_controller.go` (lines 130-139): Template for Owns() registration\n- `internal/controller/reconcile_resource.go` (lines 31-71): Reused helper for create-or-update\n- `api/v1alpha1/memcached_types.go` (lines 125-160): MonitoringSpec and ServiceMonitorSpec types\n- `internal/controller/deployment.go`: labelsForMemcached helper used for standard labels\n- `docs/reference/backend/pdb-reconciliation.md`: Template for documentation",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.424207"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T18:35:21.095759"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T18:41:04.961513"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "91231bc7-0233-40e4-90d5-e2fdea1a53ee",
+      "timestamp": "2026-02-19T18:41:04.961541",
+      "total_duration": 339.76532554626465,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 339.76532554626465,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
