@@ -504,4 +504,3 @@ func TestSecuritySpec_DeepCopy(t *testing.T) {
 		t.Error("DeepCopy is not independent: ContainerSecurityContext.RunAsUser was mutated")
 	}
 }
-

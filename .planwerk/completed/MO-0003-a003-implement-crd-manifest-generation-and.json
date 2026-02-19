@@ -2,8 +2,8 @@
   "feature_id": "MO-0003",
   "title": "A003: Implement CRD manifest generation and registration",
   "slug": "a003-implement-crd-manifest-generation-and",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Generate CRD YAML manifests via controller-gen, register the scheme, and ensure the CRD can be installed on a cluster. Includes kubebuilder markers for validation, defaults, and printer columns.",
   "stories": [
@@ -409,6 +409,7 @@
       "description": "Create api/v1alpha1/scheme_registration_test.go with tests: (1) TestAddToScheme_RegistersMemcachedGVK - verify scheme.New() for memcached.c5c3.io/v1alpha1 Memcached returns *Memcached, (2) TestAddToScheme_RegistersMemcachedListGVK - same for MemcachedList, (3) TestAddToScheme_ObjectKindsReturnsCorrectGVK - verify scheme.ObjectKinds(&Memcached{}) returns expected GVK, (4) TestGroupVersion_Values - verify GroupVersion.Group and GroupVersion.Version constants. Use standard Go testing (not Ginkgo). Follow pattern from existing memcached_types_test.go.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -419,6 +420,7 @@
       "description": "Create api/v1alpha1/deepcopy_test.go with tests: (1) TestMemcached_DeepCopy_Independence - create a fully-populated Memcached, DeepCopy it, modify the copy, verify original is unchanged, (2) TestMemcachedList_DeepCopy_Independence - same for MemcachedList with multiple items, (3) TestMemcached_DeepCopyObject_ReturnsRuntimeObject - verify DeepCopyObject returns a runtime.Object that is a distinct pointer. Follow existing test patterns in memcached_types_test.go.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -429,6 +431,7 @@
       "description": "Create internal/controller/memcached_crd_manifest_test.go. Parse config/crd/bases/memcached.c5c3.io_memcacheds.yaml as apiextensionsv1.CustomResourceDefinition. Test: (1) apiVersion/kind, (2) metadata.name, group, scope, (3) resource names (kind, listKind, plural, singular), (4) printer columns (3 columns with correct names, types, jsonPaths), (5) status subresource enabled, (6) validation constraints (replicas min/max, maxMemoryMB min/max, maxItemSize pattern, antiAffinityPreset enum), (7) default values (replicas=1, image=memcached:1.6, maxMemoryMB=64, etc.), (8) all MemcachedSpec top-level properties present. Use Ginkgo/Gomega. Load the YAML file at test time relative to config/crd/bases/.",
       "level": 1,
       "estimate_minutes": 30,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-004",
@@ -444,6 +447,7 @@
       "description": "Create internal/controller/memcached_crd_installation_test.go using the existing envtest suite. Test: (1) TestCRDInstallation_CreateAndFetchMinimalCR - create minimal CR, fetch it, verify defaults applied, (2) TestCRDInstallation_FullCRUDLifecycle - create, get, update spec, update status, delete and verify each step, (3) TestCRDInstallation_StatusSubresourceIsolation - verify status update does not increment generation while spec update does, (4) TestCRDInstallation_ServerAppliedDefaults - create CR with empty memcached block, verify all defaults, (5) TestCRDInstallation_ValidationRejectsInvalidCR - submit CRs with replicas=100, maxItemSize='1g', antiAffinityPreset='invalid' and verify rejection. Use existing helper functions (uniqueName, validMemcached, int32Ptr, strPtr) from memcached_crd_validation_test.go.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-007",
         "REQ-008"
@@ -455,6 +459,7 @@
       "description": "Add a `verify-manifests` target to the Makefile that: (1) runs `make manifests generate`, (2) checks `git diff --exit-code config/crd/ api/v1alpha1/zz_generated.deepcopy.go`, (3) exits 0 if clean, non-zero with diff output if stale. Pattern: use `git diff --exit-code` with informative error message. Add to the ##@ Development section. Depends on existing manifests and generate targets.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -465,6 +470,7 @@
       "description": "Create docs/reference/backend/crd-generation-registration.md. Cover: (1) Controller-gen generation pipeline - what `make manifests` and `make generate` do, input types, output files, (2) Scheme registration chain - groupversion_info.go SchemeBuilder -> memcached_types.go init() Register -> cmd/main.go init() AddToScheme -> manager Options{Scheme: scheme}, (3) CRD installation via kustomize - `make install` / `make uninstall`, config/crd/ structure, (4) Verification - `make verify-manifests` for CI, (5) Key files table. Follow Diataxis reference style. Keep concise and developer-focused.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -639,6 +645,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T06:48:01.878238"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T07:06:48.032591"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T07:26:06.002161"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T07:26:06.020507"
     }
   },
   "execution_history": [
@@ -652,6 +670,50 @@
           "name": "prepare",
           "duration": 370.8866798877716,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "9cb03c56-23b0-443c-a56c-c022f187ba4c",
+      "timestamp": "2026-02-19T07:22:20.700287",
+      "total_duration": 810.758768081665,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 245.16315340995789,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 178.11627840995789,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 113.30647587776184,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0003] Code Review",
+          "duration": 133.6610198020935,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0003] Improvements",
+          "duration": 32.60527467727661,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0003] Simplify",
+          "duration": 107.90656590461731,
+          "type": "simplify",
           "status": "done"
         }
       ]
