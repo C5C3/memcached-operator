@@ -1,0 +1,616 @@
+{
+  "feature_id": "MO-0008",
+  "title": "B005: Implement idempotent create-or-update logic",
+  "slug": "b005-implement-idempotent-create-or-update-logic",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Implement a generic create-or-update pattern (using controllerutil.CreateOrUpdate or equivalent) ensuring every reconciliation produces the same outcome. Handle resource version conflicts with retries. Ensure level-triggered reconciliation reacts to current state, not event sequences.",
+  "stories": [
+    {
+      "title": "Operator reconciles resources idempotently regardless of call frequency",
+      "role": "operator maintainer",
+      "want": "every reconciliation to produce identical managed resources regardless of how many times it runs or what triggered it",
+      "so_that": "the system converges to the desired state without accumulating drift or side effects",
+      "criteria": [
+        "Calling Reconcile N times on an unchanged Memcached CR produces no API updates after the first call (resourceVersion unchanged)",
+        "The mutate function inside CreateOrUpdate is called on every reconciliation but only triggers an API update when the spec differs",
+        "All managed resources (Deployment, Service) use the same create-or-update pattern",
+        "Log output distinguishes between Created, Updated, and Unchanged operations"
+      ]
+    },
+    {
+      "title": "Operator recovers from resource version conflicts during updates",
+      "role": "operator maintainer",
+      "want": "the reconciler to handle resource version conflicts (HTTP 409) gracefully with automatic retries",
+      "so_that": "concurrent modifications by other controllers or manual edits do not cause permanent reconciliation failures",
+      "criteria": [
+        "When a 409 Conflict error occurs on CreateOrUpdate, the reconciler retries with a fresh resource version",
+        "The retry mechanism uses exponential backoff with a configurable maximum number of attempts",
+        "After exhausting retries, the error is returned to controller-runtime for standard requeue with backoff",
+        "Retry attempts are logged at debug level with the resource name and attempt number"
+      ]
+    },
+    {
+      "title": "Operator corrects external drift on managed resources",
+      "role": "cluster administrator",
+      "want": "manually edited managed resources to be automatically corrected to match the CR spec on the next reconciliation",
+      "so_that": "the operator maintains authority over resources it owns and prevents configuration drift",
+      "criteria": [
+        "If someone manually changes the Deployment replicas, the next reconciliation resets it to the CR spec",
+        "If someone manually changes Service ports, the next reconciliation resets them",
+        "The correction happens without deleting and recreating the resource (in-place update)",
+        "Drift correction is logged as an Update operation"
+      ]
+    },
+    {
+      "title": "Operator uses level-triggered reconciliation semantics",
+      "role": "operator maintainer",
+      "want": "reconciliation to react to the current observed state rather than a sequence of events",
+      "so_that": "missed events, duplicate events, or out-of-order events cannot lead to incorrect resource state",
+      "criteria": [
+        "The reconciler fetches the current CR state at the start of every Reconcile call (not relying on cached/stale state from the event)",
+        "The desired state is computed purely from the fetched CR spec (no reliance on previous reconciliation results)",
+        "Builder functions (constructDeployment, constructService) are pure functions of the CR spec with no hidden state",
+        "If the CR is deleted between event delivery and reconciliation, the reconciler returns successfully without error"
+      ]
+    },
+    {
+      "title": "Operator provides a generic reconcile helper for future resource types",
+      "role": "developer extending the operator",
+      "want": "a reusable reconcileResource helper function that any future resource reconciler (PDB, ServiceMonitor, NetworkPolicy) can use",
+      "so_that": "new resource types can be added with consistent idempotent behavior without duplicating the create-or-update boilerplate",
+      "criteria": [
+        "A generic reconcileResource function exists that accepts a client.Object, a mutate function, and the owner Memcached CR",
+        "The function handles CreateOrUpdate, owner reference setting, conflict retries, and operation logging",
+        "reconcileDeployment and reconcileService are refactored to use this generic helper",
+        "The generic helper is unit-testable in isolation with a mock client"
+      ]
+    },
+    {
+      "title": "Operator documents the create-or-update pattern for maintainers",
+      "role": "developer",
+      "want": "reference documentation explaining the idempotent reconciliation pattern, retry logic, and how to add new resource types",
+      "so_that": "future contributors understand the pattern and can extend it consistently",
+      "criteria": [
+        "Reference doc covers the generic reconcileResource function signature and behavior",
+        "Reference doc explains the retry-on-conflict mechanism with sequence diagram",
+        "Reference doc includes a code example showing how to add a new resource type using the helper",
+        "Reference doc is located at docs/reference/backend/idempotent-create-or-update.md"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The reconciler SHALL use controllerutil.CreateOrUpdate (or equivalent wrapper) for all managed resource reconciliation to ensure idempotent create-or-update semantics",
+      "priority": "SHALL",
+      "rationale": "controllerutil.CreateOrUpdate provides atomic get-mutate-create/update semantics that prevent duplicate resource creation and ensure consistent state",
+      "scenarios": [
+        {
+          "name": "Resource does not exist - creation",
+          "when": "reconcileResource is called for a resource that does not exist in the cluster",
+          "then": "the resource is created with the desired state from the mutate function",
+          "and_then": [
+            "the operation result is OperationResultCreated",
+            "an owner reference is set on the created resource"
+          ]
+        },
+        {
+          "name": "Resource exists with matching spec - no-op",
+          "when": "reconcileResource is called for a resource whose current state matches the desired state",
+          "then": "no API update is performed (resourceVersion unchanged)",
+          "and_then": [
+            "the operation result is OperationResultNone"
+          ]
+        },
+        {
+          "name": "Resource exists with different spec - update",
+          "when": "reconcileResource is called for a resource whose current state differs from the desired state",
+          "then": "the resource is updated to match the desired state",
+          "and_then": [
+            "the operation result is OperationResultUpdated",
+            "the owner reference is preserved"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The reconciler SHALL retry on resource version conflict errors (HTTP 409) using client.util.retry.RetryOnConflict with default backoff",
+      "priority": "SHALL",
+      "rationale": "Resource version conflicts are expected in a multi-controller environment; automatic retries prevent unnecessary requeue cycles",
+      "scenarios": [
+        {
+          "name": "Conflict on first attempt, success on retry",
+          "when": "CreateOrUpdate returns a 409 Conflict error on the first attempt",
+          "then": "the operation is retried with a fresh get of the resource",
+          "and_then": [
+            "the retry succeeds and the resource is updated",
+            "the conflict and successful retry are logged"
+          ]
+        },
+        {
+          "name": "Persistent conflict exhausts retries",
+          "when": "CreateOrUpdate returns 409 Conflict on every retry attempt",
+          "then": "after the maximum number of retries, the conflict error is returned to the caller",
+          "and_then": [
+            "controller-runtime requeues with exponential backoff",
+            "each failed attempt is logged"
+          ]
+        },
+        {
+          "name": "Non-conflict error is not retried",
+          "when": "CreateOrUpdate returns a non-409 error (e.g. 500, 403)",
+          "then": "the error is returned immediately without retrying",
+          "and_then": [
+            "the error is wrapped with context for debugging"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The reconciler SHALL provide a generic reconcileResource helper function that encapsulates the create-or-update-with-retry pattern for any client.Object type",
+      "priority": "SHALL",
+      "rationale": "Eliminates code duplication across Deployment, Service, and future resource reconcilers while ensuring consistent behavior",
+      "scenarios": [
+        {
+          "name": "Helper used for Deployment reconciliation",
+          "when": "reconcileDeployment calls reconcileResource with a Deployment and mutate function",
+          "then": "the Deployment is created or updated with conflict retries and owner reference",
+          "and_then": [
+            "behavior is identical to the current reconcileDeployment implementation"
+          ]
+        },
+        {
+          "name": "Helper used for Service reconciliation",
+          "when": "reconcileService calls reconcileResource with a Service and mutate function",
+          "then": "the Service is created or updated with conflict retries and owner reference",
+          "and_then": [
+            "behavior is identical to the current reconcileService implementation"
+          ]
+        },
+        {
+          "name": "Helper rejects nil mutate function",
+          "when": "reconcileResource is called with a nil mutate function",
+          "then": "the function returns an error immediately without making any API calls",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The reconciler SHALL log the operation result (Created, Updated, Unchanged) for every reconcileResource call",
+      "priority": "SHALL",
+      "rationale": "Operation logging is essential for debugging reconciliation behavior and detecting unexpected drift",
+      "scenarios": [
+        {
+          "name": "Creation logged",
+          "when": "a resource is created by reconcileResource",
+          "then": "an Info-level log entry is emitted with operation=created, resource kind, name, and namespace",
+          "and_then": []
+        },
+        {
+          "name": "Update logged",
+          "when": "a resource is updated by reconcileResource",
+          "then": "an Info-level log entry is emitted with operation=updated, resource kind, name, and namespace",
+          "and_then": []
+        },
+        {
+          "name": "No-op logged at debug level",
+          "when": "a resource is unchanged by reconcileResource",
+          "then": "a V(1) debug-level log entry is emitted with operation=unchanged",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The reconciler SHALL set a controller owner reference on every managed resource via controllerutil.SetControllerReference",
+      "priority": "SHALL",
+      "rationale": "Owner references enable garbage collection (deleting the CR cascades to owned resources) and watch filtering (owned resource events map to the correct CR)",
+      "scenarios": [
+        {
+          "name": "Owner reference set on creation",
+          "when": "a new resource is created by reconcileResource",
+          "then": "the resource has exactly one owner reference pointing to the Memcached CR with controller=true and blockOwnerDeletion=true",
+          "and_then": []
+        },
+        {
+          "name": "Owner reference preserved on update",
+          "when": "an existing resource is updated by reconcileResource",
+          "then": "the owner reference remains intact with the correct UID and controller=true",
+          "and_then": []
+        },
+        {
+          "name": "Owner reference error propagated",
+          "when": "SetControllerReference fails (e.g. cross-namespace ownership)",
+          "then": "the error is propagated without creating or updating the resource",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The reconciler SHALL use level-triggered semantics: compute desired state purely from the current CR spec fetched at reconciliation time",
+      "priority": "SHALL",
+      "rationale": "Level-triggered reconciliation ensures correctness regardless of event ordering, duplication, or loss",
+      "scenarios": [
+        {
+          "name": "Builder functions are pure",
+          "when": "constructDeployment or constructService is called with the same CR spec",
+          "then": "the output is always identical regardless of previous calls or external state",
+          "and_then": []
+        },
+        {
+          "name": "CR deleted before reconciliation",
+          "when": "the Memcached CR is deleted between event delivery and Reconcile execution",
+          "then": "the reconciler returns (ctrl.Result{}, nil) without error",
+          "and_then": []
+        },
+        {
+          "name": "Stale event does not cause incorrect state",
+          "when": "a reconciliation is triggered by a stale event (CR has been updated since the event)",
+          "then": "the reconciler fetches the current CR state and applies the latest desired state",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The reconciler SHALL wrap all errors returned from reconcileResource with contextual information including the resource kind and name",
+      "priority": "SHALL",
+      "rationale": "Contextual error wrapping enables quick identification of which resource and operation caused a reconciliation failure",
+      "scenarios": [
+        {
+          "name": "Create error includes context",
+          "when": "a resource creation fails",
+          "then": "the error message includes 'reconciling <Kind>' and the resource name",
+          "and_then": [
+            "the original error is preserved for apierrors.IsXxx() checks"
+          ]
+        },
+        {
+          "name": "Update error includes context",
+          "when": "a resource update fails",
+          "then": "the error message includes 'reconciling <Kind>' and the resource name",
+          "and_then": []
+        },
+        {
+          "name": "Conflict retry error includes context",
+          "when": "all conflict retries are exhausted",
+          "then": "the error message includes 'reconciling <Kind>' and indicates conflict retry exhaustion",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The existing reconcileDeployment and reconcileService methods SHALL be refactored to use the generic reconcileResource helper without changing external behavior",
+      "priority": "SHALL",
+      "rationale": "Refactoring to use the generic helper eliminates code duplication and validates the helper with existing proven reconciliation paths",
+      "scenarios": [
+        {
+          "name": "Deployment reconciliation behavior unchanged",
+          "when": "reconcileDeployment is called after refactoring",
+          "then": "all existing deployment reconciliation tests pass without modification",
+          "and_then": []
+        },
+        {
+          "name": "Service reconciliation behavior unchanged",
+          "when": "reconcileService is called after refactoring",
+          "then": "all existing service reconciliation tests pass without modification",
+          "and_then": []
+        },
+        {
+          "name": "Error messages remain compatible",
+          "when": "reconcileDeployment or reconcileService fails",
+          "then": "the error message format is compatible with existing error matching in tests (contains 'reconciling Deployment' or 'reconciling Service')",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The reconciler SHOULD emit Kubernetes events for significant resource operations (creation, update) via the EventRecorder",
+      "priority": "SHOULD",
+      "rationale": "Kubernetes events provide cluster-visible audit trail of operator actions, aiding debugging and monitoring",
+      "scenarios": [
+        {
+          "name": "Event emitted on resource creation",
+          "when": "reconcileResource creates a new resource",
+          "then": "a Normal event with reason 'Created' is emitted on the Memcached CR with the resource kind and name in the message",
+          "and_then": []
+        },
+        {
+          "name": "Event emitted on resource update",
+          "when": "reconcileResource updates an existing resource",
+          "then": "a Normal event with reason 'Updated' is emitted on the Memcached CR with the resource kind and name in the message",
+          "and_then": []
+        },
+        {
+          "name": "No event on no-op",
+          "when": "reconcileResource finds the resource already matches desired state",
+          "then": "no event is emitted to avoid event noise",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Implement generic reconcileResource helper with CreateOrUpdate and conflict retries (REQ-001, REQ-002, REQ-003, REQ-005, REQ-007)",
+      "description": "Create a new file `internal/controller/reconcile.go` containing a generic `reconcileResource` method on `MemcachedReconciler` that wraps `controllerutil.CreateOrUpdate` with `retry.RetryOnConflict` and `controllerutil.SetControllerReference`. The function signature: `func (r *MemcachedReconciler) reconcileResource(ctx context.Context, mc *memcachedv1alpha1.Memcached, obj client.Object, mutate func() error, kind string) (controllerutil.OperationResult, error)`. Inside the retry loop: get the current resource (or start fresh), call mutate(), call SetControllerReference, then CreateOrUpdate. Log the operation result (Info for Created/Updated, V(1) for Unchanged). Wrap errors with `fmt.Errorf(\"reconciling %s %s/%s: %w\", kind, obj.GetNamespace(), obj.GetName(), err)`. Add unit tests in `internal/controller/reconcile_test.go` using Go standard tests with fake/interceptor clients to verify: (a) creation path, (b) update path, (c) no-op path, (d) conflict retry succeeds, (e) persistent conflict returns error, (f) non-conflict error not retried, (g) nil mutate function returns error, (h) owner reference set correctly.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-005",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add unit tests for reconcileResource conflict retry behavior (REQ-002)",
+      "description": "In `internal/controller/reconcile_test.go`, add focused unit tests for the retry-on-conflict behavior using interceptor clients that return `apierrors.NewConflict()` errors. Test cases: (a) conflict on first CreateOrUpdate, success on second - verify resource is updated and log mentions retry, (b) conflict on all attempts - verify final error is returned, (c) non-conflict error (500) is returned immediately without retry, (d) verify retry uses `retry.DefaultRetry` backoff parameters from client-go. Use `fake.NewClientBuilder()` with `interceptor.NewClient` to inject errors at precise points.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Refactor reconcileDeployment to use generic reconcileResource helper (REQ-008)",
+      "description": "In `internal/controller/memcached_controller.go`, refactor the existing `reconcileDeployment` method to call `r.reconcileResource(ctx, mc, dep, func() error { constructDeployment(mc, dep); return nil }, \"Deployment\")` instead of directly calling `controllerutil.CreateOrUpdate`. The method should still create the initial Deployment ObjectMeta with Name and Namespace before calling reconcileResource. Remove the manual `controllerutil.SetControllerReference` call and logging from reconcileDeployment since reconcileResource handles both. Ensure the error wrapping format remains compatible: the error should still contain 'reconciling Deployment'. Run `make test` to verify all 40+ existing deployment reconciliation tests pass unchanged.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008",
+        "REQ-001",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Refactor reconcileService to use generic reconcileResource helper (REQ-008)",
+      "description": "In `internal/controller/memcached_controller.go`, refactor the existing `reconcileService` method to call `r.reconcileResource(ctx, mc, svc, func() error { constructService(mc, svc); return nil }, \"Service\")` instead of directly calling `controllerutil.CreateOrUpdate`. Same pattern as the Deployment refactor. Remove the manual `controllerutil.SetControllerReference` call and logging. Ensure error messages still contain 'reconciling Service' for compatibility with `memcached_service_reconcile_test.go` error matching. Run `make test` to verify all existing service reconciliation tests pass.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008",
+        "REQ-001",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Add Kubernetes event emission for resource operations in reconcileResource (REQ-009)",
+      "description": "In `internal/controller/reconcile.go`, add event recording to reconcileResource. After a successful CreateOrUpdate, check the OperationResult: if Created, emit `r.Recorder.Eventf(mc, corev1.EventTypeNormal, \"Created\", \"Created %s %s\", kind, obj.GetName())`; if Updated, emit `r.Recorder.Eventf(mc, corev1.EventTypeNormal, \"Updated\", \"Updated %s %s\", kind, obj.GetName())`. No event for OperationResultNone. Guard the recorder call: if `r.Recorder == nil`, skip (allows tests without event recorder). Add integration test in `memcached_deployment_reconcile_test.go` that creates a MemcachedReconciler with a `record.NewFakeRecorder(10)` and verifies events are emitted on create and update but not on no-op reconciliation.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add integration tests for idempotent reconciliation across multiple cycles (REQ-001, REQ-006)",
+      "description": "Add a new Ginkgo Describe block in `internal/controller/memcached_reconcile_test.go` titled 'Idempotent Create-or-Update Reconciliation'. Test cases: (a) Reconcile a new CR → verify Deployment and Service created. Reconcile again with no changes → verify resourceVersions unchanged (true no-op). Reconcile a third time → still unchanged. (b) Create CR, reconcile, manually patch the Deployment's replicas to a different value directly via k8sClient, reconcile again → verify replicas corrected to CR spec (drift correction). (c) Create CR, reconcile, update CR spec.replicas, reconcile → verify Deployment updated. Reconcile again without changes → verify no update. (d) Create CR, reconcile, delete CR, reconcile → verify no error returned.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add integration tests for level-triggered semantics verification (REQ-006)",
+      "description": "Add test cases in `internal/controller/memcached_reconcile_test.go` under a 'Level-triggered reconciliation' context. Tests: (a) Create CR with replicas=1, reconcile. Update CR to replicas=3 (without reconciling). Update CR to replicas=5 (without reconciling). Now reconcile once → verify Deployment has 5 replicas (latest state, not intermediate). (b) Create CR, reconcile. Delete the owned Deployment directly. Reconcile → verify Deployment recreated (level-triggered recovery). (c) Verify constructDeployment and constructService are deterministic: call each function twice with the same input, compare outputs with reflect.DeepEqual.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Add integration tests for conflict retry with envtest (REQ-002)",
+      "description": "Add test cases in `internal/controller/memcached_reconcile_test.go` under a 'Conflict retry' context. Use an interceptor client that wraps the real envtest client: on the first Update call for a Deployment, return `apierrors.NewConflict(...)`, then delegate to the real client on subsequent calls. Verify: (a) reconciliation succeeds despite the transient conflict, (b) the Deployment ends up in the correct state. Also test with a permanently failing interceptor: verify the error is eventually returned after retries.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for idempotent create-or-update pattern (REQ-001, REQ-002, REQ-003)",
+      "description": "Create `docs/reference/backend/idempotent-create-or-update.md` with sections: Overview (purpose of the pattern), reconcileResource Function (signature, parameters, return values), CreateOrUpdate Behavior (table: scenario → mutate called → API operation → result), Conflict Retry Mechanism (sequence diagram in text/mermaid showing get→mutate→update→409→retry flow, default backoff parameters from client-go), Owner References (how SetControllerReference is integrated), Error Handling (error wrapping format, which errors trigger retry vs immediate return), Adding a New Resource Type (step-by-step guide with code example showing how to add e.g. PDB reconciliation using the helper), Operation Logging (log levels for each operation type). Follow the style of existing `docs/reference/backend/deployment-reconciliation.md`.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_CreatesNewResource",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "When the target resource does not exist, reconcileResource should create it and return OperationResultCreated",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_UpdatesExistingResource",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "When the target resource exists with different spec, reconcileResource should update it and return OperationResultUpdated",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_NoOpWhenUnchanged",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "When the target resource exists with matching spec, reconcileResource should not perform an API update",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_RetriesOnConflict",
+      "story": "Operator recovers from resource version conflicts during updates",
+      "expected": "When CreateOrUpdate returns 409 Conflict, reconcileResource should retry and succeed on the next attempt",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_ExhaustsRetriesOnPersistentConflict",
+      "story": "Operator recovers from resource version conflicts during updates",
+      "expected": "When CreateOrUpdate returns 409 Conflict on every attempt, reconcileResource should return the conflict error",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_DoesNotRetryNonConflictErrors",
+      "story": "Operator recovers from resource version conflicts during updates",
+      "expected": "When CreateOrUpdate returns a non-409 error, reconcileResource should return it immediately without retrying",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_SetsOwnerReference",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "The created/updated resource should have a controller owner reference pointing to the Memcached CR",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_WrapsErrorsWithContext",
+      "story": "Operator provides a generic reconcile helper for future resource types",
+      "expected": "Errors from reconcileResource should include the resource kind and name in the error message",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_RejectsNilMutateFunction",
+      "story": "Operator provides a generic reconcile helper for future resource types",
+      "expected": "Calling reconcileResource with nil mutate function should return an error without making API calls",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "existing deployment tests unchanged",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "All existing deployment reconciliation tests (creation, update, drift detection, owner references) should pass after refactoring to use reconcileResource",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "existing service tests unchanged",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "All existing service reconciliation tests should pass after refactoring to use reconcileResource",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_reconcile_test.go",
+      "test_function": "Idempotent reconciliation: multiple cycles produce no updates",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "Reconciling the same unchanged CR three times should not change Deployment or Service resourceVersions after the first reconciliation",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_reconcile_test.go",
+      "test_function": "Drift correction: manually patched Deployment is restored",
+      "story": "Operator corrects external drift on managed resources",
+      "expected": "After manually changing Deployment replicas, the next reconciliation should restore them to match the CR spec",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_reconcile_test.go",
+      "test_function": "Level-triggered: only latest state applied",
+      "story": "Operator uses level-triggered reconciliation semantics",
+      "expected": "After multiple CR updates without intermediate reconciliations, a single Reconcile should apply only the latest state",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_reconcile_test.go",
+      "test_function": "Level-triggered: deleted Deployment is recreated",
+      "story": "Operator uses level-triggered reconciliation semantics",
+      "expected": "If the owned Deployment is deleted externally, the next reconciliation should recreate it",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/reconcile_test.go",
+      "test_function": "TestReconcileResource_LogsOperationResult",
+      "story": "Operator reconciles resources idempotently regardless of call frequency",
+      "expected": "reconcileResource should log Created/Updated at Info level and Unchanged at V(1) debug level",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_reconcile_test.go",
+      "test_function": "Conflict retry: transient conflict succeeds",
+      "story": "Operator recovers from resource version conflicts during updates",
+      "expected": "With an interceptor client that fails once with 409 Conflict, reconciliation should succeed and produce the correct Deployment state",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_reconcile_test.go",
+      "test_function": "Events: resource creation emits Normal event",
+      "story": "Operator provides a generic reconcile helper for future resource types",
+      "expected": "Creating a Memcached CR and reconciling should emit Normal events with reason 'Created' for both Deployment and Service",
+      "requirement_id": "REQ-009"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All existing tests pass: `make test` completes with zero failures (regression check for REQ-008)",
+    "New reconcile_test.go has unit tests covering all REQ-002 scenarios: conflict retry succeeds, exhausted retries, non-conflict errors bypass retry",
+    "reconcileResource function accepts any client.Object type and works with both Deployment and Service (REQ-003 generics verification)",
+    "Error messages from reconcileDeployment and reconcileService remain compatible with existing test assertions (REQ-008 backward compatibility)",
+    "No duplicate code: reconcileDeployment and reconcileService delegate entirely to reconcileResource with no residual CreateOrUpdate calls (REQ-003 dedup verification)",
+    "Owner references are set correctly on all managed resources: apiVersion, kind, name, uid, controller=true, blockOwnerDeletion=true (REQ-005)",
+    "`golangci-lint run` passes with zero errors (lint clean check)",
+    "`go vet ./...` passes with zero errors (type safety check)",
+    "Reference documentation exists at docs/reference/backend/idempotent-create-or-update.md with function signature, retry mechanism, and extension guide"
+  ],
+  "implementation_notes": "Architecture: Create `internal/controller/reconcile.go` with a `reconcileResource` method on `MemcachedReconciler`. Use `k8s.io/client-go/util/retry.RetryOnConflict` with `retry.DefaultRetry` to wrap `controllerutil.CreateOrUpdate`. The mutate function passed to CreateOrUpdate is composed of the caller's mutate function plus `controllerutil.SetControllerReference`. Operation logging uses structured logging via `log.FromContext(ctx)` with Info for Created/Updated and V(1) for Unchanged. Event recording uses the existing `r.Recorder` field (already on the struct). Refactoring: `reconcileDeployment` and `reconcileService` in `memcached_controller.go` become thin wrappers that construct the initial ObjectMeta and delegate to `reconcileResource`. This preserves the clean separation of builder functions (`constructDeployment`, `constructService`) from reconciliation mechanics. Key decision: Use `retry.RetryOnConflict` from client-go rather than implementing custom retry logic. This is the standard Kubernetes pattern used by kubectl, kubelet, and other controllers. It provides exponential backoff with jitter (initial 10ms, factor 2, max 5 retries). Files to create: `internal/controller/reconcile.go`, `internal/controller/reconcile_test.go`, `docs/reference/backend/idempotent-create-or-update.md`. Files to modify: `internal/controller/memcached_controller.go` (refactor reconcileDeployment and reconcileService). Risks: (1) RetryOnConflict wrapping CreateOrUpdate may cause double-get on the resource (once by retry, once by CreateOrUpdate internally). Mitigation: CreateOrUpdate already does a Get internally, so the retry just re-enters the whole CreateOrUpdate which will re-Get with fresh resourceVersion. (2) Changing error message format could break existing test assertions. Mitigation: Use the same 'reconciling <Kind>' prefix format and verify with existing tests.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.421561"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T11:52:02.807629"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T11:56:20.492472"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "c98ad45b-e38b-40c0-9f29-d4a8f135dde8",
+      "timestamp": "2026-02-19T11:56:20.492498",
+      "total_duration": 254.8274531364441,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 254.8274531364441,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
