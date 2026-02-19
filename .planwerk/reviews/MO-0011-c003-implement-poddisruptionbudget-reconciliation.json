@@ -1,0 +1,79 @@
+{
+  "feature_id": "MO-0011",
+  "title": "C003: Implement PodDisruptionBudget reconciliation",
+  "date": "2026-02-19",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "PDB reconciliation implementation is clean, minimal, and follows established patterns exactly. constructPDB is a pure function, pdbEnabled is a correct guard, reconcilePDB uses reconcileResource. Unit tests are thorough with table-driven cases. Integration tests cover creation, update, idempotency, and skip logic. Two issues found: (1) the reference doc runtime behavior table incorrectly claims PDB is deleted when disabled — in reality the PDB persists until CR deletion; (2) three integration test cases specified in task 3.2 are missing from the envtest file (percentage values and both-set precedence), though they are covered in unit tests.",
+  "tests_checklist": [
+    {"item": "Unit tests exist and pass (TestConstructPDB, TestPDBEnabled, Labels, InstanceScopedSelector)", "checked": true},
+    {"item": "Integration tests exist and pass (12 PDB-focused Ginkgo specs)", "checked": true},
+    {"item": "All 170 controller tests pass with 0 failures", "checked": true},
+    {"item": "Edge cases covered in unit tests (nil fields, both set, percentage strings)", "checked": true},
+    {"item": "Integration tests cover percentage and both-set scenarios per task 3.2", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "constructPDB follows constructDeployment/constructService pattern exactly", "checked": true},
+    {"item": "reconcilePDB follows reconcileDeployment/reconcileService pattern exactly", "checked": true},
+    {"item": "Functions are small and single-responsibility (constructPDB: 25 lines, pdbEnabled: 3 lines, reconcilePDB: 15 lines)", "checked": true},
+    {"item": "No code duplication — reuses labelsForMemcached and reconcileResource", "checked": true},
+    {"item": "Clear naming: constructPDB, pdbEnabled, reconcilePDB", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "go vet passes cleanly", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "RBAC marker already present for policy/poddisruptionbudgets", "checked": true},
+    {"item": "Owner references set correctly (controller=true, blockOwnerDeletion=true)", "checked": true},
+    {"item": "No user input processed outside CRD validation", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible — pure functions + reconcileResource reuse", "checked": true},
+    {"item": "Follows existing reconciliation architecture", "checked": true},
+    {"item": "PDB selector labels match Deployment pod template labels (labelsForMemcached)", "checked": true},
+    {"item": "Reconciliation order correct (after Service, before Status)", "checked": true},
+    {"item": "SetupWithManager already watches PDBs via Owns()", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "No future-proofing beyond requirements", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Errors propagated from reconcileResource to caller", "checked": true},
+    {"item": "pdbEnabled guards against nil pointer dereference with short-circuit evaluation", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil HighAvailability handled in pdbEnabled", "checked": true},
+    {"item": "Nil PodDisruptionBudget handled in pdbEnabled", "checked": true},
+    {"item": "Mutual exclusivity enforced (minAvailable clears maxUnavailable and vice versa)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "DA3-001",
+      "severity": "major",
+      "check_id": "DA3",
+      "file": "docs/reference/backend/pdb-reconciliation.md:262-263",
+      "description": "Runtime behavior table incorrectly states 'Disable PDB (enabled: false) → PDB deleted via garbage collection (owner reference)' and 'Remove highAvailability section → PDB deleted via garbage collection (owner reference)'. In reality, reconcilePDB returns nil when disabled — it does NOT delete the PDB. The existing PDB persists until the Memcached CR itself is deleted. Only CR deletion triggers garbage collection. This is acknowledged in the task 3.3 description itself.",
+      "fix": "Change the two rows to: 'Disable PDB (enabled: false) → Reconciler stops managing PDB; existing PDB persists until CR deletion' and 'Remove highAvailability section → Reconciler stops managing PDB; existing PDB persists until CR deletion'. Alternatively, implement active deletion in reconcilePDB when pdbEnabled returns false (which would be a code change, not just a doc fix)."
+    },
+    {
+      "id": "FC1-001",
+      "severity": "major",
+      "check_id": "FC1",
+      "file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "description": "Task 3.2 explicitly requires envtest integration tests for: (1) minAvailable percentage, (2) maxUnavailable percentage, (3) both minAvailable and maxUnavailable set (minAvailable wins). These three test contexts are missing from the integration test file. They ARE covered in unit tests (pdb_test.go), but the task specification required them as envtest tests.",
+      "fix": "Add three test contexts to memcached_pdb_reconcile_test.go: 'PDB with minAvailable percentage' (minAvailable='50%'), 'PDB with maxUnavailable percentage' (maxUnavailable='25%'), and 'PDB with both minAvailable and maxUnavailable' (verify minAvailable wins and maxUnavailable is nil)."
+    }
+  ],
+  "suggested_improvements": [
+    "D3: Remove the no-op 'PDB Reconciliation error handling' Describe block at memcached_pdb_reconcile_test.go:187-195 — it creates a reconciler but never uses it and the comment says coverage is implicit",
+    "Consider implementing active PDB deletion in reconcilePDB when pdbEnabled returns false, to match the user story 'PDB to be updated automatically when I change the PDB configuration' — disabling should arguably remove the PDB rather than leaving an orphan"
+  ],
+  "next_steps": [
+    "Fix runtime behavior table in docs/reference/backend/pdb-reconciliation.md to accurately describe disable/remove behavior",
+    "Add missing envtest integration test contexts for percentage values and both-set precedence per task 3.2",
+    "Remove no-op error handling test block"
+  ]
+}

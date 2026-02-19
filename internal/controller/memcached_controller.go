@@ -60,6 +60,10 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcilePDB(ctx, memcached); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	if err := r.reconcileStatus(ctx, memcached); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -98,6 +102,27 @@ func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcache
 		constructService(mc, svc)
 		return nil
 	}, "Service")
+	return err
+}
+
+// reconcilePDB ensures the PodDisruptionBudget for the Memcached CR matches the desired state.
+// It skips reconciliation when PDB is not enabled in the CR spec.
+func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+	if !pdbEnabled(mc) {
+		return nil
+	}
+
+	pdb := &policyv1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mc.Name,
+			Namespace: mc.Namespace,
+		},
+	}
+
+	_, err := r.reconcileResource(ctx, mc, pdb, func() error {
+		constructPDB(mc, pdb)
+		return nil
+	}, "PodDisruptionBudget")
 	return err
 }
 

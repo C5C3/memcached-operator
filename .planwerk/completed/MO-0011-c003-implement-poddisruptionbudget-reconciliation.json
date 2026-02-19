@@ -2,8 +2,8 @@
   "feature_id": "MO-0011",
   "title": "C003: Implement PodDisruptionBudget reconciliation",
   "slug": "c003-implement-poddisruptionbudget-reconciliation",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Create and reconcile a PodDisruptionBudget when spec.highAvailability.podDisruptionBudget.enabled is true. Support minAvailable configuration (default: 1). Set owner references for cleanup.",
   "stories": [
@@ -330,6 +330,7 @@
       "description": "Create internal/controller/pdb.go with a pure `constructPDB` function that builds a PodDisruptionBudget from a Memcached CR. Follow the exact pattern of constructDeployment and constructService: pure function, mutates PDB in-place, sets labels, selector, and either minAvailable or maxUnavailable. Default minAvailable to 1 when neither is set. When both minAvailable and maxUnavailable are provided, use only minAvailable. Create internal/controller/pdb_test.go with table-driven unit tests covering: minimal PDB (enabled + default minAvailable=1), custom minAvailable integer, minAvailable percentage, maxUnavailable integer, maxUnavailable percentage, both set (minAvailable wins), labels match labelsForMemcached, selector uses standard labels.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -343,6 +344,7 @@
       "description": "Add a `pdbEnabled` helper function in internal/controller/pdb.go that returns true only when spec.highAvailability != nil && spec.highAvailability.podDisruptionBudget != nil && spec.highAvailability.podDisruptionBudget.enabled == true. Add unit tests in pdb_test.go for: nil HighAvailability, nil PodDisruptionBudget, enabled=false, enabled=true.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -353,6 +355,7 @@
       "description": "Add a `reconcilePDB` method to MemcachedReconciler in internal/controller/memcached_controller.go. When pdbEnabled returns true, create a policyv1.PodDisruptionBudget with the CR's name/namespace and call r.reconcileResource with constructPDB as the mutate function. When pdbEnabled returns false, return nil (no-op). Add the reconcilePDB call to the Reconcile method after reconcileService and before reconcileStatus. This follows the exact pattern of reconcileDeployment and reconcileService.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-007"
@@ -364,6 +367,7 @@
       "description": "Create internal/controller/memcached_pdb_reconcile_test.go (package controller_test) with Ginkgo integration tests following the pattern in memcached_deployment_reconcile_test.go. Add a fetchPDB helper. Test Context 'PDB creation with defaults': CR with PDB enabled (no minAvailable) creates PDB with minAvailable=1, correct selector labels, correct owner reference (apiVersion, kind, name, uid, controller=true, blockOwnerDeletion=true), standard metadata labels.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-004",
@@ -377,6 +381,7 @@
       "description": "In memcached_pdb_reconcile_test.go, add test contexts for: PDB with custom minAvailable integer (e.g. 2), PDB with minAvailable percentage (e.g. '50%'), PDB with maxUnavailable integer, PDB with maxUnavailable percentage, PDB with both minAvailable and maxUnavailable (verify minAvailable wins). Follow the pattern of existing envtest tests.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -388,6 +393,7 @@
       "description": "In memcached_pdb_reconcile_test.go, add test contexts for: no PDB when highAvailability is nil, no PDB when podDisruptionBudget is nil, no PDB when enabled=false, PDB update when minAvailable changes, idempotent reconciliation (resource version unchanged on second reconcile with same spec), PDB removed when spec.highAvailability.podDisruptionBudget.enabled changed to false (via disabling then reconcile - note: with owner references, disabling won't auto-delete but the reconciler should stop managing it; however per the pattern, when disabled the reconciler simply skips PDB reconciliation and the existing PDB remains until CR deletion).",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-006"
@@ -399,6 +405,7 @@
       "description": "Create docs/reference/backend/pdb-reconciliation.md following the exact pattern of topology-spread-constraints.md. Include: Overview section, CRD Field Path section (spec.highAvailability.podDisruptionBudget), Field table (enabled, minAvailable, maxUnavailable with types and defaults), PDB Construction section explaining constructPDB logic, CR Example YAML and Generated PDB YAML, maxUnavailable section with example, Default Behavior section, Runtime Behavior table (add/modify/remove/disable scenarios), Implementation section describing constructPDB and pdbEnabled functions.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -553,6 +560,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T14:54:29.353827"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T15:10:29.632194"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T16:18:52.296905"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T16:18:52.313057"
     }
   },
   "execution_history": [
@@ -566,6 +585,56 @@
           "name": "prepare",
           "duration": 254.4880073070526,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "ba97a9e1-77fc-44b5-960f-44b38eeb0eb7",
+      "timestamp": "2026-02-19T15:30:53.775217",
+      "total_duration": 1087.8587055206299,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 135.33319306373596,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 462.67388677597046,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 58.35238194465637,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 72.92664623260498,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0011] Code Review",
+          "duration": 170.71101880073547,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0011] Improvements",
+          "duration": 124.14371752738953,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0011] Simplify",
+          "duration": 63.71786117553711,
+          "type": "simplify",
           "status": "done"
         }
       ]

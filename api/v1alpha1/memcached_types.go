@@ -85,7 +85,7 @@ type PDBSpec struct {
 
 	// MinAvailable is the minimum number of pods that must be available during disruption.
 	// Can be an absolute number or a percentage (e.g. "50%").
-	// +kubebuilder:default=1
+	// Defaults to 1 when neither minAvailable nor maxUnavailable is set (applied by the controller).
 	// +optional
 	MinAvailable *intstr.IntOrString `json:"minAvailable,omitempty,omitzero"`
 

@@ -84,10 +84,10 @@ spec:
                         anyOf:
                         - type: integer
                         - type: string
-                        default: 1
                         description: |-
                           MinAvailable is the minimum number of pods that must be available during disruption.
                           Can be an absolute number or a percentage (e.g. "50%").
+                          Defaults to 1 when neither minAvailable nor maxUnavailable is set (applied by the controller).
                         x-kubernetes-int-or-string: true
                     type: object
                   topologySpreadConstraints:
