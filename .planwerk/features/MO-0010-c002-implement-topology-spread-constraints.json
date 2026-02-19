@@ -1,0 +1,475 @@
+{
+  "feature_id": "MO-0010",
+  "title": "C002: Implement topology spread constraints",
+  "slug": "c002-implement-topology-spread-constraints",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Apply user-defined topologySpreadConstraints from spec.highAvailability.topologySpreadConstraints to the Deployment pod template. Supports zone-aware scheduling (e.g. maxSkew: 1, topologyKey: topology.kubernetes.io/zone).",
+  "stories": [
+    {
+      "title": "Operator applies user-defined topology spread constraints to Memcached Deployment",
+      "role": "cluster operator",
+      "want": "to define topologySpreadConstraints in the Memcached CR spec so pods are spread across topology domains (e.g. availability zones)",
+      "so_that": "Memcached pods are resilient to zone failures and distributed evenly across the cluster topology",
+      "criteria": [
+        "When spec.highAvailability.topologySpreadConstraints contains one or more constraints, the Deployment pod template spec.topologySpreadConstraints is set to those exact values",
+        "Each TopologySpreadConstraint supports all Kubernetes fields: maxSkew, topologyKey, whenUnsatisfiable, labelSelector, matchLabelKeys, minDomains, nodeAffinityPolicy, nodeTaintsPolicy",
+        "The labelSelector within each constraint is passed through as-is from the CR (user controls the selector)",
+        "The Deployment is updated on the next reconcile when constraints are added, modified, or removed"
+      ]
+    },
+    {
+      "title": "Operator clears topology spread constraints when removed from CR",
+      "role": "cluster operator",
+      "want": "topology spread constraints to be removed from the Deployment when I remove them from the CR spec",
+      "so_that": "I can revert to default scheduler behavior without manual Deployment edits",
+      "criteria": [
+        "When spec.highAvailability.topologySpreadConstraints is set to an empty list or omitted, the Deployment pod template has no topologySpreadConstraints (nil/empty)",
+        "When spec.highAvailability is set to nil, the Deployment pod template has no topologySpreadConstraints",
+        "The Deployment is updated on the next reconcile to clear constraints"
+      ]
+    },
+    {
+      "title": "Operator handles topology spread constraints alongside anti-affinity presets",
+      "role": "cluster operator",
+      "want": "to use both topologySpreadConstraints and antiAffinityPreset together on the same CR",
+      "so_that": "I can achieve both node-level spreading (anti-affinity) and zone-level spreading (topology constraints) simultaneously",
+      "criteria": [
+        "When both antiAffinityPreset and topologySpreadConstraints are set, the Deployment has both Affinity and TopologySpreadConstraints on the pod template",
+        "Changing one does not affect the other",
+        "Removing antiAffinityPreset does not remove topologySpreadConstraints and vice versa"
+      ]
+    },
+    {
+      "title": "Operator reconciliation is idempotent with topology spread constraints",
+      "role": "cluster operator",
+      "want": "reconciliation to be idempotent when topology spread constraints have not changed",
+      "so_that": "unnecessary Deployment updates are avoided, preventing unneeded pod restarts",
+      "criteria": [
+        "When reconciling twice with the same spec.highAvailability.topologySpreadConstraints, the Deployment resource version does not change",
+        "No spurious rollouts are triggered by idempotent reconciliation"
+      ]
+    },
+    {
+      "title": "Operator documentation covers topology spread constraints",
+      "role": "developer",
+      "want": "reference documentation describing the topology spread constraints feature",
+      "so_that": "I can understand how to configure zone-aware scheduling for Memcached pods",
+      "criteria": [
+        "Reference doc exists at docs/reference/backend/topology-spread-constraints.md",
+        "Doc describes the CRD field path, supported sub-fields, and generated Deployment structure",
+        "Doc includes CR YAML examples for zone-aware and multi-constraint scenarios",
+        "Doc describes runtime behavior (add, update, remove, idempotency)"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL apply spec.highAvailability.topologySpreadConstraints to the Deployment pod template spec.topologySpreadConstraints",
+      "priority": "SHALL",
+      "rationale": "Core feature: user-defined topology spread constraints must be passed through to the Deployment for zone-aware scheduling",
+      "scenarios": [
+        {
+          "name": "Single zone-aware constraint applied",
+          "when": "spec.highAvailability.topologySpreadConstraints contains one constraint with maxSkew=1, topologyKey=topology.kubernetes.io/zone, whenUnsatisfiable=DoNotSchedule",
+          "then": "the Deployment pod template spec.topologySpreadConstraints contains exactly that one constraint with matching fields",
+          "and_then": [
+            "the Deployment is created or updated successfully"
+          ]
+        },
+        {
+          "name": "Multiple constraints applied",
+          "when": "spec.highAvailability.topologySpreadConstraints contains two constraints (zone + hostname)",
+          "then": "the Deployment pod template spec.topologySpreadConstraints contains both constraints in order",
+          "and_then": [
+            "all fields of each constraint are preserved exactly"
+          ]
+        },
+        {
+          "name": "Constraint with labelSelector passthrough",
+          "when": "a topologySpreadConstraint includes a custom labelSelector",
+          "then": "the labelSelector is passed through to the Deployment without modification",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL clear topologySpreadConstraints from the Deployment when the CR field is empty or omitted",
+      "priority": "SHALL",
+      "rationale": "Operators must be able to revert to default scheduling by removing constraints from the CR",
+      "scenarios": [
+        {
+          "name": "Constraints cleared when field is removed",
+          "when": "spec.highAvailability.topologySpreadConstraints was set and is now removed from the CR",
+          "then": "the Deployment pod template spec.topologySpreadConstraints is nil/empty after reconciliation",
+          "and_then": []
+        },
+        {
+          "name": "Constraints cleared when highAvailability is nil",
+          "when": "spec.highAvailability is set to nil after previously having topologySpreadConstraints",
+          "then": "the Deployment pod template spec.topologySpreadConstraints is nil/empty after reconciliation",
+          "and_then": []
+        },
+        {
+          "name": "No constraints when never set",
+          "when": "a CR is created without spec.highAvailability.topologySpreadConstraints",
+          "then": "the Deployment pod template spec.topologySpreadConstraints is nil/empty",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL update the Deployment topologySpreadConstraints when the CR spec changes",
+      "priority": "SHALL",
+      "rationale": "Drift detection must work for topology spread constraints just like other spec fields",
+      "scenarios": [
+        {
+          "name": "Constraint maxSkew updated",
+          "when": "spec.highAvailability.topologySpreadConstraints[0].maxSkew changes from 1 to 2",
+          "then": "the Deployment pod template reflects the updated maxSkew=2 after reconciliation",
+          "and_then": []
+        },
+        {
+          "name": "Constraint added to existing list",
+          "when": "a second topologySpreadConstraint is added to the CR",
+          "then": "the Deployment pod template contains both constraints after reconciliation",
+          "and_then": []
+        },
+        {
+          "name": "Constraint removed from list",
+          "when": "one constraint is removed from a list of two",
+          "then": "the Deployment pod template contains only the remaining constraint after reconciliation",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL support topologySpreadConstraints coexisting with antiAffinityPreset",
+      "priority": "SHALL",
+      "rationale": "Both HA mechanisms serve different purposes and must work independently",
+      "scenarios": [
+        {
+          "name": "Both set simultaneously",
+          "when": "spec.highAvailability has both antiAffinityPreset=soft and topologySpreadConstraints with one constraint",
+          "then": "the Deployment has both Affinity (with PodAntiAffinity) and TopologySpreadConstraints set",
+          "and_then": []
+        },
+        {
+          "name": "Remove antiAffinity keeps constraints",
+          "when": "antiAffinityPreset is removed while topologySpreadConstraints remain",
+          "then": "the Deployment Affinity is cleared but TopologySpreadConstraints remain unchanged",
+          "and_then": []
+        },
+        {
+          "name": "Remove constraints keeps antiAffinity",
+          "when": "topologySpreadConstraints are removed while antiAffinityPreset=hard remains",
+          "then": "the Deployment TopologySpreadConstraints are cleared but Affinity (PodAntiAffinity) remains unchanged",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The operator SHALL reconcile topologySpreadConstraints idempotently",
+      "priority": "SHALL",
+      "rationale": "Idempotent reconciliation avoids unnecessary Deployment updates and pod restarts",
+      "scenarios": [
+        {
+          "name": "No update when spec unchanged",
+          "when": "reconciliation runs twice with the same topologySpreadConstraints",
+          "then": "the Deployment resource version does not change between reconciliations",
+          "and_then": []
+        },
+        {
+          "name": "No update when no constraints",
+          "when": "reconciliation runs twice with no topologySpreadConstraints",
+          "then": "the Deployment resource version does not change between reconciliations",
+          "and_then": []
+        },
+        {
+          "name": "No update with both HA features unchanged",
+          "when": "reconciliation runs twice with both antiAffinityPreset and topologySpreadConstraints unchanged",
+          "then": "the Deployment resource version does not change between reconciliations",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The CRD types SHALL already include TopologySpreadConstraints field in HighAvailabilitySpec",
+      "priority": "SHALL",
+      "rationale": "The field is already defined in api/v1alpha1/memcached_types.go as []corev1.TopologySpreadConstraint",
+      "scenarios": [
+        {
+          "name": "Field exists in types",
+          "when": "the HighAvailabilitySpec struct is inspected",
+          "then": "it contains a TopologySpreadConstraints field of type []corev1.TopologySpreadConstraint with json tag topologySpreadConstraints",
+          "and_then": []
+        },
+        {
+          "name": "Field is optional",
+          "when": "a CR is submitted without topologySpreadConstraints",
+          "then": "the field defaults to nil/empty and the CR is accepted",
+          "and_then": []
+        },
+        {
+          "name": "CRD accepts valid constraint",
+          "when": "a CR is submitted with a valid topologySpreadConstraint (maxSkew=1, topologyKey, whenUnsatisfiable)",
+          "then": "the CR is accepted by the API server",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The constructDeployment function SHALL set TopologySpreadConstraints on the pod template",
+      "priority": "SHALL",
+      "rationale": "The pure builder function must include topology spread constraints in the Deployment spec",
+      "scenarios": [
+        {
+          "name": "Constraints set when defined",
+          "when": "constructDeployment is called with a Memcached CR that has topologySpreadConstraints",
+          "then": "the Deployment pod template spec.topologySpreadConstraints matches the CR constraints",
+          "and_then": []
+        },
+        {
+          "name": "Constraints nil when not defined",
+          "when": "constructDeployment is called with a Memcached CR without topologySpreadConstraints",
+          "then": "the Deployment pod template spec.topologySpreadConstraints is nil",
+          "and_then": []
+        },
+        {
+          "name": "Constraints nil when HA nil",
+          "when": "constructDeployment is called with spec.highAvailability = nil",
+          "then": "the Deployment pod template spec.topologySpreadConstraints is nil",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "Reference documentation SHALL describe the topology spread constraints feature",
+      "priority": "SHALL",
+      "rationale": "Documentation is required for all new features per project conventions",
+      "scenarios": [
+        {
+          "name": "Doc file exists",
+          "when": "the documentation directory is inspected",
+          "then": "docs/reference/backend/topology-spread-constraints.md exists",
+          "and_then": []
+        },
+        {
+          "name": "Doc contains CR examples",
+          "when": "the reference doc is read",
+          "then": "it contains at least one complete CR YAML example showing topologySpreadConstraints usage",
+          "and_then": []
+        },
+        {
+          "name": "Doc describes runtime behavior",
+          "when": "the reference doc is read",
+          "then": "it describes the behavior for adding, updating, removing constraints, and idempotency",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add buildTopologySpreadConstraints helper function to deployment.go with unit tests (REQ-001, REQ-002, REQ-007)",
+      "description": "Create a pure helper function `buildTopologySpreadConstraints(mc *Memcached) []corev1.TopologySpreadConstraint` in `internal/controller/deployment.go` following the same pattern as `buildAntiAffinity`. Returns the slice from `spec.highAvailability.topologySpreadConstraints` or nil when HA is nil or constraints are empty. Add table-driven unit tests in `internal/controller/deployment_test.go` covering: single constraint, multiple constraints, nil HA, nil constraints, empty constraints slice, constraint with custom labelSelector.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Wire buildTopologySpreadConstraints into constructDeployment (REQ-001, REQ-007)",
+      "description": "In `constructDeployment()` in `internal/controller/deployment.go`, call `buildTopologySpreadConstraints(mc)` and set the result on `dep.Spec.Template.Spec.TopologySpreadConstraints`. This goes alongside the existing `buildAntiAffinity(mc)` call. Add unit tests in `deployment_test.go` verifying constructDeployment sets TopologySpreadConstraints correctly: with constraints, without constraints, with nil HA, and combined with anti-affinity.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add envtest integration tests for topology spread constraint reconciliation (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "description": "Add a new Context block in `internal/controller/memcached_deployment_reconcile_test.go` titled 'topology spread constraints'. Tests: (1) CR with single zone-aware constraint creates Deployment with matching TopologySpreadConstraints, (2) CR with multiple constraints preserves all in order, (3) updating constraints triggers Deployment update, (4) removing constraints clears them from Deployment, (5) removing entire highAvailability clears constraints, (6) constraints coexist with antiAffinityPreset, (7) removing antiAffinity keeps constraints, (8) removing constraints keeps antiAffinity, (9) idempotent reconciliation with constraints does not update Deployment. Follow existing test patterns using `validMemcached`, `uniqueName`, `reconcileOnce`, `fetchDeployment`.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write reference documentation for topology spread constraints (REQ-008)",
+      "description": "Create `docs/reference/backend/topology-spread-constraints.md` following the exact structure and style of `docs/reference/backend/pod-anti-affinity-presets.md`. Include: overview section explaining the feature, CRD field path `spec.highAvailability.topologySpreadConstraints`, supported TopologySpreadConstraint fields table, CR YAML examples (zone-aware single constraint, multi-constraint zone+hostname), generated Deployment structure YAML, runtime behavior table (add/update/remove/idempotent), implementation section describing `buildTopologySpreadConstraints` function and how it integrates with `constructDeployment`.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTopologySpreadConstraints_SingleConstraint",
+      "story": "Operator applies user-defined topology spread constraints to Memcached Deployment",
+      "expected": "Should return a slice with one TopologySpreadConstraint matching the CR spec",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTopologySpreadConstraints_MultipleConstraints",
+      "story": "Operator applies user-defined topology spread constraints to Memcached Deployment",
+      "expected": "Should return a slice with multiple constraints in the same order as CR spec",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTopologySpreadConstraints_NilHA",
+      "story": "Operator clears topology spread constraints when removed from CR",
+      "expected": "Should return nil when spec.highAvailability is nil",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTopologySpreadConstraints_NilConstraints",
+      "story": "Operator clears topology spread constraints when removed from CR",
+      "expected": "Should return nil when topologySpreadConstraints field is nil",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTopologySpreadConstraints_EmptySlice",
+      "story": "Operator clears topology spread constraints when removed from CR",
+      "expected": "Should return nil when topologySpreadConstraints is an empty slice",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_TopologySpreadConstraints",
+      "story": "Operator applies user-defined topology spread constraints to Memcached Deployment",
+      "expected": "constructDeployment should set TopologySpreadConstraints on pod template when defined in CR",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_TopologySpreadConstraints_NilHA",
+      "story": "Operator clears topology spread constraints when removed from CR",
+      "expected": "constructDeployment should leave TopologySpreadConstraints nil when HA is nil",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_TopologySpreadAndAntiAffinity",
+      "story": "Operator handles topology spread constraints alongside anti-affinity presets",
+      "expected": "constructDeployment should set both Affinity and TopologySpreadConstraints when both are configured",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should create Deployment with zone-aware topology spread constraint",
+      "story": "Operator applies user-defined topology spread constraints to Memcached Deployment",
+      "expected": "Reconciling a CR with zone topology constraint produces a Deployment with matching TopologySpreadConstraints",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should update Deployment when topology spread constraints change",
+      "story": "Operator applies user-defined topology spread constraints to Memcached Deployment",
+      "expected": "Changing maxSkew on a constraint should update the Deployment after reconciliation",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should clear topology spread constraints when removed from CR",
+      "story": "Operator clears topology spread constraints when removed from CR",
+      "expected": "Removing topologySpreadConstraints from the CR clears them from the Deployment",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should be idempotent with topology spread constraints",
+      "story": "Operator reconciliation is idempotent with topology spread constraints",
+      "expected": "Reconciling twice with same constraints does not change Deployment resource version",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should support both antiAffinityPreset and topologySpreadConstraints",
+      "story": "Operator handles topology spread constraints alongside anti-affinity presets",
+      "expected": "Deployment has both Affinity and TopologySpreadConstraints when both are configured",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "should keep topologySpreadConstraints when antiAffinityPreset is removed",
+      "story": "Operator handles topology spread constraints alongside anti-affinity presets",
+      "expected": "Removing antiAffinityPreset does not affect TopologySpreadConstraints on the Deployment",
+      "requirement_id": "REQ-004"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "buildTopologySpreadConstraints returns the CR's constraints directly (passthrough) or nil when HA/constraints are absent",
+    "constructDeployment sets TopologySpreadConstraints on pod template spec alongside existing Affinity logic",
+    "All unit tests pass: buildTopologySpreadConstraints and constructDeployment topology-related tests in deployment_test.go",
+    "All integration tests pass: envtest tests in memcached_deployment_reconcile_test.go for topology spread constraints",
+    "Idempotency verified: reconciling twice with same constraints does not update Deployment (resource version unchanged)",
+    "Coexistence verified: antiAffinityPreset and topologySpreadConstraints work independently without interference",
+    "Reference documentation at docs/reference/backend/topology-spread-constraints.md follows the style of pod-anti-affinity-presets.md",
+    "golangci-lint passes with no new warnings",
+    "go vet passes with no errors",
+    "make test passes all existing and new tests"
+  ],
+  "implementation_notes": "The TopologySpreadConstraints field already exists in the CRD types (api/v1alpha1/memcached_types.go, HighAvailabilitySpec struct). No type changes or CRD regeneration needed.\n\nImplementation follows the exact same pattern as buildAntiAffinity:\n1. A pure helper function `buildTopologySpreadConstraints(mc *Memcached) []corev1.TopologySpreadConstraint` that reads from the CR spec and returns the constraints or nil.\n2. The function is called from `constructDeployment` and the result is assigned to `dep.Spec.Template.Spec.TopologySpreadConstraints`.\n3. Unlike buildAntiAffinity which constructs Affinity objects from preset enums, this function is a simple passthrough — the constraints are user-defined in the CR and applied directly to the Deployment without transformation.\n\nKey files:\n- `internal/controller/deployment.go` — add buildTopologySpreadConstraints, wire into constructDeployment\n- `internal/controller/deployment_test.go` — add unit tests following existing table-driven patterns\n- `internal/controller/memcached_deployment_reconcile_test.go` — add envtest integration tests following existing Context/It patterns\n- `docs/reference/backend/topology-spread-constraints.md` — reference doc following pod-anti-affinity-presets.md style\n\nPotential pitfalls:\n- Empty slice vs nil: ensure empty topologySpreadConstraints slice is treated as nil to maintain idempotency (controllerutil.CreateOrUpdate compares desired vs actual state)\n- The `omitzero` json tag on the field handles nil correctly; an empty slice should also be normalized to nil to avoid spurious updates",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.422446"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:07:59.651723"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T14:10:51.962597"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "15123c39-67e6-4187-ae09-7fada3902eb5",
+      "timestamp": "2026-02-19T14:10:51.962626",
+      "total_duration": 167.84610557556152,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 167.84610557556152,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
