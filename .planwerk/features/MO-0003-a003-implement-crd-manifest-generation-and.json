@@ -1,0 +1,660 @@
+{
+  "feature_id": "MO-0003",
+  "title": "A003: Implement CRD manifest generation and registration",
+  "slug": "a003-implement-crd-manifest-generation-and",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Generate CRD YAML manifests via controller-gen, register the scheme, and ensure the CRD can be installed on a cluster. Includes kubebuilder markers for validation, defaults, and printer columns.",
+  "stories": [
+    {
+      "title": "Operator developer generates CRD manifests via controller-gen",
+      "role": "operator developer",
+      "want": "to run `make manifests` and have controller-gen produce a valid, complete CRD YAML from the Go type definitions and kubebuilder markers",
+      "so_that": "the CRD manifest stays in sync with the Go types and can be deployed to any Kubernetes cluster",
+      "criteria": [
+        "`make manifests` succeeds without errors and produces config/crd/bases/memcached.c5c3.io_memcacheds.yaml",
+        "Generated CRD YAML includes apiVersion: apiextensions.k8s.io/v1 with kind: CustomResourceDefinition",
+        "Generated CRD contains OpenAPI v3 validation schema matching all kubebuilder markers on Go types",
+        "Running `make manifests` twice produces identical output (idempotent generation)"
+      ]
+    },
+    {
+      "title": "Operator developer generates DeepCopy methods via controller-gen",
+      "role": "operator developer",
+      "want": "to run `make generate` and have controller-gen produce DeepCopy, DeepCopyInto, and DeepCopyObject methods for all CRD types",
+      "so_that": "all custom resource types satisfy the runtime.Object interface required by controller-runtime",
+      "criteria": [
+        "`make generate` succeeds and produces api/v1alpha1/zz_generated.deepcopy.go",
+        "DeepCopy methods exist for all registered types: Memcached, MemcachedList, MemcachedSpec, MemcachedStatus, and all nested structs",
+        "Running `make generate` twice produces identical output (idempotent generation)",
+        "Generated file contains the `DO NOT EDIT` header with license boilerplate"
+      ]
+    },
+    {
+      "title": "Operator developer verifies scheme registration chain is complete",
+      "role": "operator developer",
+      "want": "the Memcached and MemcachedList types to be registered in the controller-runtime scheme via SchemeBuilder and AddToScheme",
+      "so_that": "the controller manager can serialize, deserialize, and watch Memcached custom resources",
+      "criteria": [
+        "GroupVersion is set to memcached.c5c3.io/v1alpha1 in groupversion_info.go",
+        "SchemeBuilder.Register is called with &Memcached{} and &MemcachedList{} in init()",
+        "AddToScheme is exported and callable from cmd/main.go",
+        "cmd/main.go init() calls AddToScheme on the manager's scheme",
+        "Memcached type is resolvable from the scheme by GVK"
+      ]
+    },
+    {
+      "title": "Cluster admin installs CRD on a Kubernetes cluster",
+      "role": "cluster admin",
+      "want": "to install the Memcached CRD via `make install` (kustomize build config/crd | kubectl apply) and have it registered in the API server",
+      "so_that": "I can create Memcached custom resources on the cluster",
+      "criteria": [
+        "CRD is installable via envtest (simulated API server) without errors",
+        "After installation, the API server accepts Memcached CR creation requests",
+        "The CRD scope is Namespaced",
+        "The CRD names are correct: kind=Memcached, plural=memcacheds, singular=memcached, listKind=MemcachedList"
+      ]
+    },
+    {
+      "title": "Generated CRD includes printer columns for kubectl output",
+      "role": "cluster admin",
+      "want": "the CRD to define additionalPrinterColumns for Replicas, Ready, and Age",
+      "so_that": "running `kubectl get memcacheds` displays useful columns without requiring `-o yaml`",
+      "criteria": [
+        "CRD YAML contains printer column 'Replicas' with type=integer and JSONPath=.spec.replicas",
+        "CRD YAML contains printer column 'Ready' with type=integer and JSONPath=.status.readyReplicas",
+        "CRD YAML contains printer column 'Age' with type=date and JSONPath=.metadata.creationTimestamp",
+        "Printer columns appear in the correct order: Replicas, Ready, Age"
+      ]
+    },
+    {
+      "title": "Generated CRD includes validation constraints from kubebuilder markers",
+      "role": "cluster admin",
+      "want": "the generated CRD OpenAPI schema to enforce the validation rules defined via kubebuilder markers on the Go types",
+      "so_that": "the API server rejects invalid Memcached CRs at admission time, before the reconciler processes them",
+      "criteria": [
+        "spec.replicas has minimum: 0 and maximum: 64 in the generated schema",
+        "spec.memcached.maxMemoryMB has minimum: 16, maximum: 65536",
+        "spec.memcached.maxItemSize has pattern: ^[0-9]+(k|m)$",
+        "spec.highAvailability.antiAffinityPreset has enum: [soft, hard]",
+        "Status subresource is enabled via subresources.status in the CRD"
+      ]
+    },
+    {
+      "title": "Generated CRD includes default values from kubebuilder markers",
+      "role": "cluster admin",
+      "want": "the generated CRD OpenAPI schema to include default values that the API server applies to omitted fields",
+      "so_that": "a minimal Memcached CR (e.g., just spec.replicas: 1) gets sensible defaults for all configuration fields",
+      "criteria": [
+        "spec.replicas defaults to 1 in the generated schema",
+        "spec.image defaults to 'memcached:1.6'",
+        "spec.memcached.maxMemoryMB defaults to 64, maxConnections to 1024, threads to 4, maxItemSize to '1m'",
+        "spec.highAvailability.antiAffinityPreset defaults to 'soft'",
+        "spec.monitoring.exporterImage defaults to 'prom/memcached-exporter:v0.15.4'"
+      ]
+    },
+    {
+      "title": "Generated artifacts are not stale (CI-verifiable freshness)",
+      "role": "CI system",
+      "want": "to verify that `make manifests` and `make generate` do not produce changes to the working tree",
+      "so_that": "developers always commit up-to-date generated artifacts and PRs with stale manifests are detected",
+      "criteria": [
+        "Running `make manifests` followed by `git diff --exit-code config/crd/` returns exit code 0 (no changes)",
+        "Running `make generate` followed by `git diff --exit-code api/v1alpha1/zz_generated.deepcopy.go` returns exit code 0",
+        "A test or Makefile target exists to verify generated artifact freshness"
+      ]
+    },
+    {
+      "title": "Reference documentation for CRD generation and registration",
+      "role": "operator developer",
+      "want": "documentation explaining how CRD manifests are generated, how scheme registration works, and how to install/uninstall the CRD",
+      "so_that": "new contributors understand the code generation pipeline and CRD lifecycle without reading Makefile internals",
+      "criteria": [
+        "Document covers the controller-gen generation pipeline (make manifests, make generate)",
+        "Document explains the scheme registration chain (groupversion_info.go -> memcached_types.go init -> cmd/main.go init)",
+        "Document explains CRD installation via kustomize (make install/uninstall)",
+        "Document is placed in docs/reference/backend/"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The system SHALL generate a valid CRD YAML manifest via `make manifests` (controller-gen) that includes the full OpenAPI v3 validation schema for all Memcached types",
+      "priority": "SHALL",
+      "rationale": "The CRD manifest is the primary artifact that defines the Memcached API on a Kubernetes cluster; it must accurately reflect the Go type definitions",
+      "scenarios": [
+        {
+          "name": "CRD YAML is generated successfully",
+          "when": "`make manifests` is executed",
+          "then": "config/crd/bases/memcached.c5c3.io_memcacheds.yaml is produced without errors",
+          "and_then": [
+            "file contains apiVersion: apiextensions.k8s.io/v1 and kind: CustomResourceDefinition"
+          ]
+        },
+        {
+          "name": "CRD generation is idempotent",
+          "when": "`make manifests` is run twice consecutively",
+          "then": "the output file is identical both times",
+          "and_then": [
+            "git diff on the generated file shows no changes"
+          ]
+        },
+        {
+          "name": "CRD YAML contains all spec fields",
+          "when": "the generated CRD YAML is parsed",
+          "then": "the OpenAPI schema includes properties for all MemcachedSpec fields: replicas, image, resources, memcached, highAvailability, monitoring, security",
+          "and_then": [
+            "nested structs are fully expanded in the schema"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The system SHALL generate DeepCopy methods via `make generate` (controller-gen) for all CRD types so they satisfy runtime.Object",
+      "priority": "SHALL",
+      "rationale": "controller-runtime requires all API types to implement runtime.Object which needs DeepCopyObject(); without generated code the operator cannot compile",
+      "scenarios": [
+        {
+          "name": "DeepCopy file is generated",
+          "when": "`make generate` is executed",
+          "then": "api/v1alpha1/zz_generated.deepcopy.go is produced with DeepCopy methods for all types",
+          "and_then": [
+            "file contains the DO NOT EDIT header"
+          ]
+        },
+        {
+          "name": "DeepCopy generation is idempotent",
+          "when": "`make generate` is run twice consecutively",
+          "then": "the generated file is identical both times",
+          "and_then": []
+        },
+        {
+          "name": "Memcached type satisfies runtime.Object",
+          "when": "a Memcached instance is used with controller-runtime client",
+          "then": "it compiles and can be passed to client.Create, client.Get, client.Update",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The system SHALL register Memcached and MemcachedList types in the controller-runtime scheme via SchemeBuilder and AddToScheme",
+      "priority": "SHALL",
+      "rationale": "Without proper scheme registration, the controller manager cannot serialize/deserialize Memcached CRs or set up watches",
+      "scenarios": [
+        {
+          "name": "Types are registered via SchemeBuilder",
+          "when": "the v1alpha1 package is imported",
+          "then": "the init() function calls SchemeBuilder.Register(&Memcached{}, &MemcachedList{})",
+          "and_then": [
+            "AddToScheme is available as an exported function"
+          ]
+        },
+        {
+          "name": "Scheme resolves Memcached GVK",
+          "when": "AddToScheme is called on a runtime.Scheme and the scheme is queried for memcached.c5c3.io/v1alpha1 Memcached",
+          "then": "the scheme returns the correct Go type (*Memcached)",
+          "and_then": [
+            "ObjectKinds() returns the expected GVK"
+          ]
+        },
+        {
+          "name": "Manager scheme includes Memcached types",
+          "when": "the operator main() function initializes the manager",
+          "then": "the manager's scheme can resolve Memcached and MemcachedList types",
+          "and_then": [
+            "the reconciler can create, get, update, and delete Memcached resources"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The generated CRD SHALL include additionalPrinterColumns for Replicas (integer, .spec.replicas), Ready (integer, .status.readyReplicas), and Age (date, .metadata.creationTimestamp)",
+      "priority": "SHALL",
+      "rationale": "Printer columns enable cluster admins to see key resource state via kubectl get without requiring -o yaml",
+      "scenarios": [
+        {
+          "name": "Printer columns present in CRD YAML",
+          "when": "the generated CRD YAML is parsed",
+          "then": "the versions[0].additionalPrinterColumns array contains exactly 3 entries: Replicas, Ready, Age",
+          "and_then": [
+            "each column has correct name, type, and jsonPath"
+          ]
+        },
+        {
+          "name": "Replicas column reflects spec value",
+          "when": "a Memcached CR with spec.replicas=3 is created and fetched",
+          "then": "spec.replicas is accessible and equals 3",
+          "and_then": []
+        },
+        {
+          "name": "Ready column reflects status value",
+          "when": "a Memcached CR status is updated with readyReplicas=2",
+          "then": "status.readyReplicas is accessible and equals 2",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The generated CRD SHALL include validation constraints that match the kubebuilder markers on Go types, enforced by the API server at admission time",
+      "priority": "SHALL",
+      "rationale": "Server-side validation via CRD OpenAPI schema prevents invalid resources from being persisted, catching errors before reconciliation",
+      "scenarios": [
+        {
+          "name": "Numeric range validation in CRD schema",
+          "when": "the generated CRD YAML is inspected for spec.replicas",
+          "then": "the schema includes minimum: 0 and maximum: 64",
+          "and_then": [
+            "same pattern applies for maxMemoryMB (16-65536), maxConnections (1-65536), threads (1-128), verbosity (0-2)"
+          ]
+        },
+        {
+          "name": "Pattern validation in CRD schema",
+          "when": "the generated CRD YAML is inspected for spec.memcached.maxItemSize",
+          "then": "the schema includes pattern: ^[0-9]+(k|m)$",
+          "and_then": []
+        },
+        {
+          "name": "Enum validation in CRD schema",
+          "when": "the generated CRD YAML is inspected for spec.highAvailability.antiAffinityPreset",
+          "then": "the schema includes enum: [soft, hard]",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The generated CRD SHALL include default values matching the kubebuilder default markers, applied by the API server when fields are omitted",
+      "priority": "SHALL",
+      "rationale": "Server-side defaults ensure consistent behavior even when users submit minimal CRs, reducing misconfiguration risk",
+      "scenarios": [
+        {
+          "name": "Top-level defaults in CRD schema",
+          "when": "the generated CRD YAML is inspected",
+          "then": "spec.replicas has default: 1 and spec.image has default: memcached:1.6",
+          "and_then": []
+        },
+        {
+          "name": "MemcachedConfig defaults in CRD schema",
+          "when": "the generated CRD YAML is inspected",
+          "then": "maxMemoryMB has default: 64, maxConnections default: 1024, threads default: 4, maxItemSize default: 1m, verbosity default: 0",
+          "and_then": []
+        },
+        {
+          "name": "Defaults applied by API server on minimal CR",
+          "when": "a Memcached CR is created with empty spec and fetched back",
+          "then": "fetched CR has spec.replicas=1, spec.image=memcached:1.6",
+          "and_then": [
+            "if memcached config block is provided empty, its fields get defaults"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The generated CRD SHALL enable the status subresource so that status updates use the /status endpoint and do not increment spec generation",
+      "priority": "SHALL",
+      "rationale": "Status subresource separation ensures the reconciler can update status without triggering unnecessary reconciliation loops",
+      "scenarios": [
+        {
+          "name": "Status subresource declared in CRD",
+          "when": "the generated CRD YAML is inspected",
+          "then": "versions[0].subresources.status is present",
+          "and_then": []
+        },
+        {
+          "name": "Status update does not change generation",
+          "when": "a Memcached CR status is updated via Status().Update()",
+          "then": "metadata.generation does not increment",
+          "and_then": []
+        },
+        {
+          "name": "Spec update increments generation",
+          "when": "a Memcached CR spec field is changed",
+          "then": "metadata.generation increments by 1",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The CRD SHALL be installable on a Kubernetes API server (envtest) and support full CRUD lifecycle for Memcached CRs",
+      "priority": "SHALL",
+      "rationale": "Installation test verifies the full chain from generated YAML through API server registration to resource operations",
+      "scenarios": [
+        {
+          "name": "CRD installs on envtest",
+          "when": "envtest starts with CRDDirectoryPaths=[config/crd/bases/]",
+          "then": "the environment starts successfully",
+          "and_then": [
+            "client with v1alpha1 scheme can be created"
+          ]
+        },
+        {
+          "name": "CRUD operations succeed",
+          "when": "a valid Memcached CR is created, fetched, updated, deleted",
+          "then": "all operations succeed without errors",
+          "and_then": []
+        },
+        {
+          "name": "Invalid CR rejected",
+          "when": "a Memcached CR with replicas=100 is submitted",
+          "then": "API server returns a validation error",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The system SHALL provide a Makefile target `verify-manifests` to detect stale generated artifacts by running generation and checking for git diff",
+      "priority": "SHALL",
+      "rationale": "Prevents stale CRD manifests or DeepCopy code from being merged; essential for CI gating",
+      "scenarios": [
+        {
+          "name": "Clean tree passes verification",
+          "when": "`make verify-manifests` is run with up-to-date artifacts",
+          "then": "the target exits with code 0",
+          "and_then": []
+        },
+        {
+          "name": "Stale artifacts fail verification",
+          "when": "a type is modified and `make verify-manifests` is run without regeneration",
+          "then": "the target exits with non-zero code and prints the diff",
+          "and_then": []
+        },
+        {
+          "name": "Target is CI-friendly",
+          "when": "the target runs in a clean CI environment",
+          "then": "it downloads controller-gen automatically and runs generation",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The generated CRD SHALL use the correct API group (memcached.c5c3.io), version (v1alpha1), resource names, and Namespaced scope",
+      "priority": "SHALL",
+      "rationale": "Correct naming and scoping is essential for API discovery, RBAC rules, and client generation",
+      "scenarios": [
+        {
+          "name": "CRD metadata correct",
+          "when": "generated CRD YAML is inspected",
+          "then": "metadata.name=memcacheds.memcached.c5c3.io, spec.group=memcached.c5c3.io",
+          "and_then": []
+        },
+        {
+          "name": "Resource names correct",
+          "when": "generated CRD YAML is inspected",
+          "then": "kind=Memcached, listKind=MemcachedList, plural=memcacheds, singular=memcached",
+          "and_then": []
+        },
+        {
+          "name": "Scope is Namespaced",
+          "when": "generated CRD YAML is inspected",
+          "then": "spec.scope=Namespaced",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add scheme registration unit tests verifying GVK resolution and type mapping (REQ-003)",
+      "description": "Create api/v1alpha1/scheme_registration_test.go with tests: (1) TestAddToScheme_RegistersMemcachedGVK - verify scheme.New() for memcached.c5c3.io/v1alpha1 Memcached returns *Memcached, (2) TestAddToScheme_RegistersMemcachedListGVK - same for MemcachedList, (3) TestAddToScheme_ObjectKindsReturnsCorrectGVK - verify scheme.ObjectKinds(&Memcached{}) returns expected GVK, (4) TestGroupVersion_Values - verify GroupVersion.Group and GroupVersion.Version constants. Use standard Go testing (not Ginkgo). Follow pattern from existing memcached_types_test.go.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add DeepCopy independence tests for Memcached and MemcachedList (REQ-002)",
+      "description": "Create api/v1alpha1/deepcopy_test.go with tests: (1) TestMemcached_DeepCopy_Independence - create a fully-populated Memcached, DeepCopy it, modify the copy, verify original is unchanged, (2) TestMemcachedList_DeepCopy_Independence - same for MemcachedList with multiple items, (3) TestMemcached_DeepCopyObject_ReturnsRuntimeObject - verify DeepCopyObject returns a runtime.Object that is a distinct pointer. Follow existing test patterns in memcached_types_test.go.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add CRD YAML structural verification tests parsing the generated manifest (REQ-001, REQ-004, REQ-005, REQ-006, REQ-007, REQ-010)",
+      "description": "Create internal/controller/memcached_crd_manifest_test.go. Parse config/crd/bases/memcached.c5c3.io_memcacheds.yaml as apiextensionsv1.CustomResourceDefinition. Test: (1) apiVersion/kind, (2) metadata.name, group, scope, (3) resource names (kind, listKind, plural, singular), (4) printer columns (3 columns with correct names, types, jsonPaths), (5) status subresource enabled, (6) validation constraints (replicas min/max, maxMemoryMB min/max, maxItemSize pattern, antiAffinityPreset enum), (7) default values (replicas=1, image=memcached:1.6, maxMemoryMB=64, etc.), (8) all MemcachedSpec top-level properties present. Use Ginkgo/Gomega. Load the YAML file at test time relative to config/crd/bases/.",
+      "level": 1,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add CRD installation integration tests for CRUD lifecycle and status subresource (REQ-007, REQ-008)",
+      "description": "Create internal/controller/memcached_crd_installation_test.go using the existing envtest suite. Test: (1) TestCRDInstallation_CreateAndFetchMinimalCR - create minimal CR, fetch it, verify defaults applied, (2) TestCRDInstallation_FullCRUDLifecycle - create, get, update spec, update status, delete and verify each step, (3) TestCRDInstallation_StatusSubresourceIsolation - verify status update does not increment generation while spec update does, (4) TestCRDInstallation_ServerAppliedDefaults - create CR with empty memcached block, verify all defaults, (5) TestCRDInstallation_ValidationRejectsInvalidCR - submit CRs with replicas=100, maxItemSize='1g', antiAffinityPreset='invalid' and verify rejection. Use existing helper functions (uniqueName, validMemcached, int32Ptr, strPtr) from memcached_crd_validation_test.go.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add Makefile `verify-manifests` target for CI-verifiable artifact freshness (REQ-009)",
+      "description": "Add a `verify-manifests` target to the Makefile that: (1) runs `make manifests generate`, (2) checks `git diff --exit-code config/crd/ api/v1alpha1/zz_generated.deepcopy.go`, (3) exits 0 if clean, non-zero with diff output if stale. Pattern: use `git diff --exit-code` with informative error message. Add to the ##@ Development section. Depends on existing manifests and generate targets.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write reference documentation for CRD generation pipeline and scheme registration (REQ-001, REQ-002, REQ-003)",
+      "description": "Create docs/reference/backend/crd-generation-registration.md. Cover: (1) Controller-gen generation pipeline - what `make manifests` and `make generate` do, input types, output files, (2) Scheme registration chain - groupversion_info.go SchemeBuilder -> memcached_types.go init() Register -> cmd/main.go init() AddToScheme -> manager Options{Scheme: scheme}, (3) CRD installation via kustomize - `make install` / `make uninstall`, config/crd/ structure, (4) Verification - `make verify-manifests` for CI, (5) Key files table. Follow Diataxis reference style. Keep concise and developer-focused.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1alpha1/scheme_registration_test.go",
+      "test_function": "TestAddToScheme_RegistersMemcachedGVK",
+      "story": "Operator developer verifies scheme registration chain is complete",
+      "expected": "After calling AddToScheme, the scheme should resolve memcached.c5c3.io/v1alpha1 Memcached to *v1alpha1.Memcached",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/scheme_registration_test.go",
+      "test_function": "TestAddToScheme_RegistersMemcachedListGVK",
+      "story": "Operator developer verifies scheme registration chain is complete",
+      "expected": "After calling AddToScheme, the scheme should resolve memcached.c5c3.io/v1alpha1 MemcachedList to *v1alpha1.MemcachedList",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/scheme_registration_test.go",
+      "test_function": "TestAddToScheme_ObjectKindsReturnsCorrectGVK",
+      "story": "Operator developer verifies scheme registration chain is complete",
+      "expected": "scheme.ObjectKinds(&Memcached{}) should return []GVK{{Group: memcached.c5c3.io, Version: v1alpha1, Kind: Memcached}}",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/scheme_registration_test.go",
+      "test_function": "TestGroupVersion_Values",
+      "story": "Operator developer verifies scheme registration chain is complete",
+      "expected": "GroupVersion.Group should be memcached.c5c3.io and GroupVersion.Version should be v1alpha1",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_HasCorrectMetadata",
+      "story": "Generated CRD uses correct API group and resource names",
+      "expected": "CRD YAML has metadata.name=memcacheds.memcached.c5c3.io, group=memcached.c5c3.io, scope=Namespaced",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_HasCorrectResourceNames",
+      "story": "Generated CRD uses correct API group and resource names",
+      "expected": "CRD YAML has kind=Memcached, listKind=MemcachedList, plural=memcacheds, singular=memcached",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_HasPrinterColumns",
+      "story": "Generated CRD includes printer columns for kubectl output",
+      "expected": "CRD YAML contains 3 printer columns: Replicas (integer, .spec.replicas), Ready (integer, .status.readyReplicas), Age (date, .metadata.creationTimestamp)",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_HasStatusSubresource",
+      "story": "Generated CRD enables status subresource",
+      "expected": "CRD YAML has versions[0].subresources.status defined",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_HasValidationConstraints",
+      "story": "Generated CRD includes validation constraints from kubebuilder markers",
+      "expected": "CRD schema includes minimum/maximum for replicas (0-64), maxMemoryMB (16-65536), pattern for maxItemSize, enum for antiAffinityPreset",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_HasDefaultValues",
+      "story": "Generated CRD includes default values from kubebuilder markers",
+      "expected": "CRD schema includes default values: replicas=1, image=memcached:1.6, maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_HasAllSpecFields",
+      "story": "Operator developer generates CRD manifests via controller-gen",
+      "expected": "CRD schema contains properties for all MemcachedSpec fields: replicas, image, resources, memcached, highAvailability, monitoring, security",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_manifest_test.go",
+      "test_function": "TestCRDManifest_IsValidAPIExtensionsV1",
+      "story": "Operator developer generates CRD manifests via controller-gen",
+      "expected": "CRD YAML has apiVersion=apiextensions.k8s.io/v1, kind=CustomResourceDefinition",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_installation_test.go",
+      "test_function": "TestCRDInstallation_CreateAndFetchMinimalCR",
+      "story": "Cluster admin installs CRD on a Kubernetes cluster",
+      "expected": "A minimal Memcached CR can be created and fetched via envtest, with defaults applied",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_installation_test.go",
+      "test_function": "TestCRDInstallation_FullCRUDLifecycle",
+      "story": "Cluster admin installs CRD on a Kubernetes cluster",
+      "expected": "Create, Get, Update (spec change), Status update, Delete all succeed on envtest",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_installation_test.go",
+      "test_function": "TestCRDInstallation_StatusSubresourceIsolation",
+      "story": "Generated CRD enables status subresource",
+      "expected": "Status update via Status().Update() does not increment metadata.generation; spec update does increment it",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_installation_test.go",
+      "test_function": "TestCRDInstallation_ServerAppliedDefaults",
+      "story": "Generated CRD includes default values from kubebuilder markers",
+      "expected": "Minimal CR fetched back has all defaults applied by the API server",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_installation_test.go",
+      "test_function": "TestCRDInstallation_ValidationRejectsInvalidCR",
+      "story": "Generated CRD includes validation constraints from kubebuilder markers",
+      "expected": "CRs with out-of-range replicas, invalid pattern, invalid enum are rejected",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/deepcopy_test.go",
+      "test_function": "TestMemcached_DeepCopy_Independence",
+      "story": "Operator developer generates DeepCopy methods via controller-gen",
+      "expected": "DeepCopy of Memcached produces an independent copy; modifying the copy does not affect the original",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/deepcopy_test.go",
+      "test_function": "TestMemcachedList_DeepCopy_Independence",
+      "story": "Operator developer generates DeepCopy methods via controller-gen",
+      "expected": "DeepCopy of MemcachedList produces an independent copy",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/deepcopy_test.go",
+      "test_function": "TestMemcached_DeepCopyObject_ReturnsRuntimeObject",
+      "story": "Operator developer generates DeepCopy methods via controller-gen",
+      "expected": "DeepCopyObject returns a runtime.Object that is not the same pointer",
+      "requirement_id": "REQ-002"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All scheme registration tests pass: GVK resolution for Memcached and MemcachedList, ObjectKinds returns correct GVK, GroupVersion constants correct",
+    "All CRD manifest structural tests pass: correct metadata, resource names, scope, printer columns, status subresource, validation constraints, default values, all spec properties present",
+    "All CRD installation integration tests pass: CRUD lifecycle, status subresource isolation (generation behavior), server-applied defaults, validation rejection",
+    "DeepCopy independence tests pass: modifying a DeepCopy does not affect the original for Memcached and MemcachedList",
+    "Makefile verify-manifests target works: exits 0 on clean tree, non-zero on stale artifacts, runs in CI without manual intervention",
+    "Reference documentation covers generation pipeline, scheme registration chain, CRD installation, and verification workflow",
+    "All tests use existing test conventions: Ginkgo/Gomega for envtest tests, standard Go testing for unit tests, existing helper functions reused",
+    "No modifications to existing production code (api/, cmd/, internal/controller/*.go) - this feature adds only tests, Makefile target, and docs"
+  ],
+  "implementation_notes": "This feature is primarily a VERIFICATION AND TESTING feature. The CRD types (MO-0002), scheme registration (MO-0001), and generated artifacts already exist. MO-0003 adds the test coverage and CI mechanisms to verify the generation pipeline works correctly.\n\nArchitectural decisions:\n- CRD YAML structural tests parse the actual generated file (not re-generate) to verify the committed artifact matches expectations. This catches cases where `make manifests` was not run after type changes.\n- Scheme registration tests are pure Go unit tests (no envtest) since they only test the scheme builder, not the API server.\n- CRD installation tests reuse the existing envtest suite in internal/controller/suite_test.go.\n- The verify-manifests Makefile target uses git diff to detect staleness, which is the standard Kubebuilder pattern.\n\nKey files to create:\n- api/v1alpha1/scheme_registration_test.go (new - scheme registration unit tests)\n- api/v1alpha1/deepcopy_test.go (new - DeepCopy independence tests)\n- internal/controller/memcached_crd_manifest_test.go (new - CRD YAML structural tests)\n- internal/controller/memcached_crd_installation_test.go (new - envtest CRUD/status/defaults/validation tests)\n- docs/reference/backend/crd-generation-registration.md (new - reference documentation)\n\nKey files to modify:\n- Makefile (add verify-manifests target)\n\nExisting files NOT to modify:\n- api/v1alpha1/groupversion_info.go (already correct)\n- api/v1alpha1/memcached_types.go (already correct)\n- api/v1alpha1/zz_generated.deepcopy.go (auto-generated)\n- cmd/main.go (already correct)\n- config/crd/bases/memcached.c5c3.io_memcacheds.yaml (auto-generated)\n\nPotential pitfalls:\n- CRD YAML structural tests must handle relative file paths correctly from the test execution directory (internal/controller/ runs at that directory level, need filepath.Join to reach config/crd/bases/).\n- The envtest suite_test.go already loads CRDs and registers the scheme - new test files in the same package get this for free.\n- The verify-manifests target must handle the case where controller-gen is not yet installed (the existing Makefile dependency mechanism handles this).\n- DeepCopy tests should test pointer fields to ensure deep independence (not shallow copy).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.419148"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T06:41:47.522175"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T06:48:01.878238"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "d3c22515-592d-4ae1-be22-e50356db03c8",
+      "timestamp": "2026-02-19T06:48:01.878265",
+      "total_duration": 370.8866798877716,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 370.8866798877716,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
