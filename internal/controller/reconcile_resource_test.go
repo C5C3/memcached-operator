@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,8 +20,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	// Import metrics package to ensure init() registration runs.
+	_ "github.com/c5c3/memcached-operator/internal/metrics"
 )
 
 // testScheme returns a scheme with both core Kubernetes types and Memcached types registered.
@@ -468,4 +473,189 @@ func TestReconcileResource_NilRecorderDoesNotPanic(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Test passes if no panic occurred.
+}
+
+// getReconcileResourceCounter reads the current value of memcached_reconcile_resource_total
+// for the given resource_kind and result labels from the controller-runtime metrics registry.
+func getReconcileResourceCounter(t *testing.T, resourceKind, result string) float64 {
+	t.Helper()
+	gatherer, ok := ctrlmetrics.Registry.(prometheus.Gatherer)
+	if !ok {
+		t.Fatal("controller-runtime registry does not implement prometheus.Gatherer")
+	}
+	families, err := gatherer.Gather()
+	if err != nil {
+		t.Fatalf("failed to gather metrics: %v", err)
+	}
+	for _, f := range families {
+		if f.GetName() != "memcached_reconcile_resource_total" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := m.GetLabel()
+			if matchLabels(labels, resourceKind, result) {
+				return m.GetCounter().GetValue()
+			}
+		}
+	}
+	return 0
+}
+
+func matchLabels(labels []*dto.LabelPair, resourceKind, result string) bool {
+	var kindMatch, resultMatch bool
+	for _, l := range labels {
+		if l.GetName() == "resource_kind" && l.GetValue() == resourceKind {
+			kindMatch = true
+		}
+		if l.GetName() == "result" && l.GetValue() == result {
+			resultMatch = true
+		}
+	}
+	return kindMatch && resultMatch
+}
+
+func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: "default", UID: "m-1"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	c := newFakeClient(mc)
+	r := newTestReconciler(c)
+
+	before := getReconcileResourceCounter(t, "Service", "created")
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: "default"},
+	}
+	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
+		constructService(mc, svc)
+		return nil
+	}, "Service")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	after := getReconcileResourceCounter(t, "Service", "created")
+	if after != before+1 {
+		t.Errorf("expected Service/created counter to increment by 1, got before=%v after=%v", before, after)
+	}
+}
+
+func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default", UID: "m-2"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	existingSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default"},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{{Name: "old", Port: 9999}},
+		},
+	}
+	c := newFakeClient(mc, existingSvc)
+	r := newTestReconciler(c)
+
+	before := getReconcileResourceCounter(t, "Service", "updated")
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default"},
+	}
+	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
+		constructService(mc, svc)
+		return nil
+	}, "Service")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	after := getReconcileResourceCounter(t, "Service", "updated")
+	if after != before+1 {
+		t.Errorf("expected Service/updated counter to increment by 1, got before=%v after=%v", before, after)
+	}
+}
+
+func TestReconcileResource_IncrementsMetricOnUnchanged(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-unchanged", Namespace: "default", UID: "m-3"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	c := newFakeClient(mc)
+	r := newTestReconciler(c)
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-unchanged", Namespace: "default"},
+	}
+	// First call: create.
+	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
+		constructService(mc, svc)
+		return nil
+	}, "Service")
+	if err != nil {
+		t.Fatalf("unexpected error on create: %v", err)
+	}
+
+	before := getReconcileResourceCounter(t, "Service", "unchanged")
+
+	// Second call: unchanged.
+	_, err = r.reconcileResource(context.Background(), mc, svc, func() error {
+		constructService(mc, svc)
+		return nil
+	}, "Service")
+	if err != nil {
+		t.Fatalf("unexpected error on unchanged: %v", err)
+	}
+
+	after := getReconcileResourceCounter(t, "Service", "unchanged")
+	if after != before+1 {
+		t.Errorf("expected Service/unchanged counter to increment by 1, got before=%v after=%v", before, after)
+	}
+}
+
+func TestReconcileResource_DoesNotIncrementMetricOnError(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default", UID: "m-4"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	existingSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default"},
+	}
+
+	internalErr := apierrors.NewInternalError(fmt.Errorf("server exploded"))
+	baseClient := newFakeClient(mc, existingSvc)
+	wrappedClient := interceptor.NewClient(baseClient, interceptor.Funcs{
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			if _, ok := obj.(*corev1.Service); ok {
+				return internalErr
+			}
+			return c.Update(ctx, obj, opts...)
+		},
+	})
+	r := newTestReconciler(wrappedClient)
+
+	// Gather all Service counters before to compare delta.
+	createdBefore := getReconcileResourceCounter(t, "Service", "created")
+	updatedBefore := getReconcileResourceCounter(t, "Service", "updated")
+	unchangedBefore := getReconcileResourceCounter(t, "Service", "unchanged")
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default"},
+	}
+	_, _ = r.reconcileResource(context.Background(), mc, svc, func() error {
+		constructService(mc, svc)
+		return nil
+	}, "Service")
+
+	createdAfter := getReconcileResourceCounter(t, "Service", "created")
+	updatedAfter := getReconcileResourceCounter(t, "Service", "updated")
+	unchangedAfter := getReconcileResourceCounter(t, "Service", "unchanged")
+
+	if createdAfter != createdBefore {
+		t.Errorf("Service/created counter changed on error: before=%v after=%v", createdBefore, createdAfter)
+	}
+	if updatedAfter != updatedBefore {
+		t.Errorf("Service/updated counter changed on error: before=%v after=%v", updatedBefore, updatedAfter)
+	}
+	if unchangedAfter != unchangedBefore {
+		t.Errorf("Service/unchanged counter changed on error: before=%v after=%v", unchangedBefore, unchangedAfter)
+	}
 }

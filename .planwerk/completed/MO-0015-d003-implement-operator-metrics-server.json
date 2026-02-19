@@ -2,8 +2,8 @@
   "feature_id": "MO-0015",
   "title": "D003: Implement operator metrics server",
   "slug": "d003-implement-operator-metrics-server",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Expose operator-level metrics on :8443 /metrics endpoint via controller-runtime's built-in metrics server. Include standard controller metrics (reconciliation duration, queue depth, errors) and custom Memcached operator metrics.",
   "stories": [
@@ -316,6 +316,7 @@
       "description": "Create internal/metrics/metrics.go defining: (1) memcached_operator_reconcile_resource_total CounterVec with labels [controller, resource_kind, result], (2) memcached_operator_memcached_info GaugeVec with labels [name, namespace], (3) memcached_operator_memcached_status_replicas GaugeVec with labels [name, namespace]. Register all with metrics.Registry from sigs.k8s.io/controller-runtime/pkg/metrics. Export typed recording functions: RecordReconcileResource(kind, result string), SetMemcachedInfo(name, namespace string), DeleteMemcachedInfo(name, namespace string), SetMemcachedStatusReplicas(name, namespace string, replicas float64), DeleteMemcachedStatusReplicas(name, namespace string).",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -326,6 +327,7 @@
       "description": "Create internal/metrics/metrics_test.go with standard Go table-driven tests: (1) Test all metrics are registered without panic, (2) Test RecordReconcileResource increments counter with correct labels for created/updated/unchanged, (3) Test SetMemcachedInfo sets gauge to 1 with correct labels, (4) Test DeleteMemcachedInfo removes label set, (5) Test SetMemcachedStatusReplicas sets gauge to correct value, (6) Test DeleteMemcachedStatusReplicas removes label set, (7) Test metric names follow memcached_operator_ prefix convention. Use prometheus/testutil for metric value assertions.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -339,6 +341,7 @@
       "description": "Modify internal/controller/reconcile_resource.go: After successful CreateOrUpdate (line 48-52, in the err==nil block), call metrics.RecordReconcileResource(resourceKind, string(result)). Import the internal/metrics package. The result from controllerutil.CreateOrUpdate is already available as 'result' (OperationResultCreated, OperationResultUpdated, or OperationResultNone which maps to 'unchanged'). Map OperationResultNone to 'unchanged' string. Do NOT record on error paths.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -349,6 +352,7 @@
       "description": "Modify internal/controller/memcached_controller.go Reconcile method: (1) In the IsNotFound branch (line 47-50), call metrics.DeleteMemcachedInfo and metrics.DeleteMemcachedStatusReplicas for the request name/namespace, then return. (2) After the successful fetch of the Memcached CR (line 55), call metrics.SetMemcachedInfo(memcached.Name, memcached.Namespace). (3) After reconcileStatus succeeds (line 73-75), call metrics.SetMemcachedStatusReplicas(memcached.Name, memcached.Namespace, float64(memcached.Status.ReadyReplicas)). Import the internal/metrics package.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004",
@@ -361,6 +365,7 @@
       "description": "Update internal/controller/reconcile_resource_test.go: Add Ginkgo test cases verifying (1) after a successful create, memcached_operator_reconcile_resource_total{resource_kind='Deployment',result='created'} is incremented, (2) after a successful update, counter with result='updated' is incremented, (3) after an unchanged reconciliation, counter with result='unchanged' is incremented, (4) on error, counter is NOT incremented. Use the testutil package from prometheus/client_golang to read metric values. Reset metrics between tests using the existing test isolation patterns.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -371,6 +376,7 @@
       "description": "Create internal/controller/memcached_metrics_reconcile_test.go with Ginkgo/Gomega envtest tests: (1) Create a Memcached CR, run reconciliation, verify memcached_operator_memcached_info{name=cr-name,namespace=default} == 1, (2) verify memcached_operator_memcached_status_replicas is set, (3) verify memcached_operator_reconcile_resource_total counters are incremented for Deployment, Service resource kinds, (4) Delete the Memcached CR, trigger reconciliation, verify info and replicas gauges are cleaned up (label set deleted), (5) verify metrics for other CRs are not affected by deletion of one CR.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004",
@@ -383,6 +389,7 @@
       "description": "Create docs/reference/backend/operator-metrics-server.md with: (1) Overview section describing the metrics endpoint (:8443/metrics), (2) Configuration table listing --metrics-bind-address and --metrics-secure flags with defaults, (3) Custom Metrics table listing each memcached_operator_* metric with Name, Type, Help, Labels columns, (4) Standard Metrics table listing controller_runtime_reconcile_total, controller_runtime_reconcile_errors_total, controller_runtime_reconcile_time_seconds, workqueue_depth, workqueue_adds_total with descriptions, (5) Authentication section describing bearer token auth and RBAC requirements, (6) Kustomize Configuration section referencing config/default/manager_metrics_patch.yaml and config/prometheus/monitor.yaml. Follow the style of existing docs in docs/reference/backend/.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -513,6 +520,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T20:48:30.334992"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T20:57:43.104979"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T21:40:53.349672"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T21:40:53.366131"
     }
   },
   "execution_history": [
@@ -526,6 +545,56 @@
           "name": "prepare",
           "duration": 291.4204080104828,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "d3333914-6599-41af-bfc6-3a15b14084a8",
+      "timestamp": "2026-02-19T21:26:32.226399",
+      "total_duration": 1599.7490828037262,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 405.4666302204132,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 375.4633951187134,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 110.30475306510925,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 106.77939867973328,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0015] Code Review",
+          "duration": 253.65345430374146,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0015] Improvements",
+          "duration": 237.16961455345154,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0015] Simplify",
+          "duration": 110.91183686256409,
+          "type": "simplify",
           "status": "done"
         }
       ]

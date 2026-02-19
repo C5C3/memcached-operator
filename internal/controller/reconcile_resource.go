@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	"github.com/c5c3/memcached-operator/internal/metrics"
 )
 
 // maxConflictRetries is the number of times reconcileResource retries on
@@ -49,6 +50,11 @@ func (r *MemcachedReconciler) reconcileResource(
 				"name", obj.GetName(),
 				"operation", result)
 			r.emitEventForResult(mc, obj, resourceKind, result)
+			metricResult := string(result)
+			if result == controllerutil.OperationResultNone {
+				metricResult = "unchanged"
+			}
+			metrics.RecordReconcileResource(resourceKind, metricResult)
 			return result, nil
 		}
 

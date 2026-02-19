@@ -1,0 +1,131 @@
+{
+  "feature_id": "MO-0015",
+  "title": "D003: Implement operator metrics server",
+  "date": "2026-02-19",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Implementation delivers a well-structured internal/metrics package with custom Prometheus metrics, correct controller instrumentation in reconcileResource and Reconcile, comprehensive unit tests, quality integration tests, and thorough reference documentation. However, two major issues require changes: (1) metric names use 'memcached_' prefix instead of the required 'memcached_operator_' prefix per REQ-001, and (2) RecordReconciliation function and its two associated metrics (memcached_reconcile_total, memcached_reconcile_duration_seconds) are defined, tested, and documented but never called from controller code, constituting dead code and misleading documentation. The reconcile_resource_total counter label 'controller' specified in the plan is also missing from the implementation.",
+  "tests_checklist": [
+    {"item": "Unit tests exist for metrics package (metrics_test.go) - 12 tests all pass", "checked": true},
+    {"item": "Unit tests verify registration, recording, and cleanup for all custom metrics using prometheus/testutil", "checked": true},
+    {"item": "Unit tests for reconcileResource metrics instrumentation (4 tests: create/update/unchanged/error)", "checked": true},
+    {"item": "Integration tests (memcached_metrics_reconcile_test.go) cover creation, deletion, and multi-CR isolation", "checked": true},
+    {"item": "Integration tests could not be executed (envtest binaries missing in CI env)", "checked": false},
+    {"item": "Tests verify counter NOT incremented on error paths", "checked": true},
+    {"item": "Tests verify gauge cleanup on CR deletion", "checked": true},
+    {"item": "Tests verify metric isolation across different CRs", "checked": true},
+    {"item": "Missing: test that metric names follow memcached_operator_ prefix convention (REQ-001 scenario)", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing code patterns (table-driven tests, Ginkgo for integration)", "checked": true},
+    {"item": "Functions are small and focused (all recording functions ≤5 lines)", "checked": true},
+    {"item": "Clear naming (RecordReconcileResource, RecordInstanceInfo, ResetInstanceMetrics)", "checked": true},
+    {"item": "No code duplication", "checked": true},
+    {"item": "No dead code - RecordReconciliation function never called from controller", "checked": false},
+    {"item": "Proper separation of concerns (metrics package separate from controller)", "checked": true},
+    {"item": "Uses controller-runtime metrics registry, not global default", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input reaches metric labels directly (labels from K8s metadata and controlled strings)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No injection vulnerabilities", "checked": true},
+    {"item": "Metric cardinality bounded (O(CRs) for per-instance, O(12) for per-resource)", "checked": true},
+    {"item": "Existing secure metrics endpoint infrastructure not modified", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible for the requirements", "checked": true},
+    {"item": "Metrics defined in dedicated internal/metrics package", "checked": true},
+    {"item": "Recording functions accept typed parameters, not raw labels", "checked": true},
+    {"item": "Correct use of init() for metric registration", "checked": true},
+    {"item": "cmd/main.go not modified (metrics server infra preserved)", "checked": true},
+    {"item": "config/ manifests not modified", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code across files", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "RecordReconciliation + reconcileTotal + reconcileDuration are YAGNI - defined but never used", "checked": false}
+  ],
+  "fail_fast_checklist": [
+    {"item": "MustRegister used for fail-fast on registration errors", "checked": true},
+    {"item": "Errors detected early in reconcile paths", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "DeletePartialMatch used for safe metric cleanup (handles missing labels gracefully)", "checked": true},
+    {"item": "Nil image/replicas fields handled with defaults before recording", "checked": true},
+    {"item": "Thread-safe: Prometheus client handles concurrent access internally", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [
+    {
+      "severity": "MAJOR",
+      "check_id": "C1",
+      "description": "Metric names use 'memcached_' prefix instead of the required 'memcached_operator_' prefix. REQ-001 scenario explicitly states: 'all custom metric names start with memcached_operator_ prefix'. Plan task 1.1 specifies: memcached_operator_reconcile_resource_total, memcached_operator_memcached_info, memcached_operator_memcached_status_replicas. Implementation uses: memcached_reconcile_resource_total, memcached_instance_info, memcached_instance_replicas_desired, memcached_instance_replicas_ready.",
+      "location": "internal/metrics/metrics.go:15,24,33,44,53,62",
+      "fix": "Rename all metrics to use 'memcached_operator_' prefix as specified in REQ-001. Update all recording functions, tests, integration tests, and documentation to match."
+    },
+    {
+      "severity": "MAJOR",
+      "check_id": "Q7",
+      "description": "RecordReconciliation function and its two metrics (memcached_reconcile_total, memcached_reconcile_duration_seconds) are defined in metrics.go:22-38,89-92, tested in metrics_test.go, and documented in operator-metrics-server.md:121-161, but NEVER called from any controller code. These metrics will always be 0 in production.",
+      "location": "internal/metrics/metrics.go:22-38,89-92",
+      "fix": "Either (a) instrument RecordReconciliation in the Reconcile method (memcached_controller.go) to record reconciliation outcomes and duration, or (b) remove the unused metrics, recording function, tests, and documentation if they are not needed for this feature."
+    },
+    {
+      "severity": "MAJOR",
+      "check_id": "DA2",
+      "description": "Documentation describes memcached_reconcile_total and memcached_reconcile_duration_seconds as working metrics with recording functions and cardinality analysis, but they are never instrumented in controller code.",
+      "location": "docs/reference/backend/operator-metrics-server.md:121-161,257-258,315-316,355",
+      "fix": "Either instrument the metrics (preferred) or remove their documentation to match reality."
+    },
+    {
+      "severity": "MINOR",
+      "check_id": "C1",
+      "description": "Plan specifies 'controller' label on memcached_operator_reconcile_resource_total counter, but implementation only has labels [resource_kind, result]. The plan's REQ-002 scenarios reference controller='memcached' label. Implementation omitted it.",
+      "location": "internal/metrics/metrics.go:17-18",
+      "fix": "Consider adding 'controller' label as specified in REQ-002 scenarios, or document the deviation. Since this operator only has one controller, omitting it is reasonable but deviates from spec."
+    },
+    {
+      "severity": "MINOR",
+      "check_id": "C1",
+      "description": "Plan specifies a single memcached_operator_memcached_status_replicas gauge, but implementation split this into two gauges: memcached_instance_replicas_desired and memcached_instance_replicas_ready. Additionally, memcached_instance_info gained an 'image' label not in the original spec. These are reasonable improvements but represent scope divergence.",
+      "location": "internal/metrics/metrics.go:42-66",
+      "fix": "No action required - the split into desired/ready gauges and the image label are improvements. Document the deviation from plan."
+    }
+  ],
+  "issues_found": [
+    {
+      "id": "ISSUE-001",
+      "severity": "major",
+      "check_id": "C1",
+      "description": "Metric naming prefix mismatch: all 6 custom metrics use 'memcached_' prefix instead of required 'memcached_operator_' prefix per REQ-001",
+      "location": "internal/metrics/metrics.go:15,24,33,44,53,62",
+      "fix": "Rename all metric Name fields to use 'memcached_operator_' prefix. Update all references in tests and documentation."
+    },
+    {
+      "id": "ISSUE-002",
+      "severity": "major",
+      "check_id": "Q7",
+      "description": "Dead code: RecordReconciliation() + memcached_reconcile_total + memcached_reconcile_duration_seconds are defined, registered, tested, and documented but never called from controller code",
+      "location": "internal/metrics/metrics.go:22-38,89-92",
+      "fix": "Either instrument in Reconcile method or remove entirely (function, metric vars, init registration, tests, docs)"
+    },
+    {
+      "id": "ISSUE-003",
+      "severity": "major",
+      "check_id": "DA2",
+      "description": "Documentation claims memcached_reconcile_total and memcached_reconcile_duration_seconds are active metrics with specific instrumentation points, but they are never recorded",
+      "location": "docs/reference/backend/operator-metrics-server.md:121-161",
+      "fix": "Sync documentation with actual implementation - either add instrumentation or remove docs for unused metrics"
+    }
+  ],
+  "suggested_improvements": [
+    "Consider instrumenting RecordReconciliation at the beginning and end of the Reconcile method to capture per-CR reconciliation success/error counts and duration - this is valuable SRE observability that the docs already promise",
+    "Add a test verifying metric name prefix convention (TestMetricNamingConvention) as specified in test_specifications",
+    "golangci-lint could not run due to Go version mismatch (tool go1.24 vs project go1.25) - verify lint pass in proper CI environment"
+  ],
+  "next_steps": [
+    "Fix metric name prefix: rename all 6 metrics from 'memcached_*' to 'memcached_operator_*' per REQ-001",
+    "Either instrument RecordReconciliation in Reconcile method or remove the unused metrics/function/tests/docs",
+    "Update all test assertions and documentation to match renamed metrics",
+    "Run full test suite after changes to verify nothing breaks"
+  ]
+}

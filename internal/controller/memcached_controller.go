@@ -3,6 +3,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -19,6 +20,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	"github.com/c5c3/memcached-operator/internal/metrics"
 )
 
 // MemcachedReconciler reconciles a Memcached object.
@@ -46,6 +48,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Memcached resource not found; ignoring since it must have been deleted")
+			metrics.ResetInstanceMetrics(req.Name, req.Namespace)
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to get Memcached resource")
@@ -54,25 +57,48 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	logger.Info("Reconciling Memcached", "name", memcached.Name, "namespace", memcached.Namespace)
 
-	if err := r.reconcileDeployment(ctx, memcached); err != nil {
-		return ctrl.Result{}, err
+	reconcileStart := time.Now()
+	var reconcileErr error
+	defer func() {
+		result := "success"
+		if reconcileErr != nil {
+			result = "error"
+		}
+		metrics.RecordReconciliation(memcached.Name, memcached.Namespace, result, time.Since(reconcileStart))
+	}()
+
+	// Record instance info gauge with current spec values.
+	image := "memcached:1.6"
+	if memcached.Spec.Image != nil {
+		image = *memcached.Spec.Image
+	}
+	desiredReplicas := int32(1)
+	if memcached.Spec.Replicas != nil {
+		desiredReplicas = *memcached.Spec.Replicas
+	}
+	metrics.RecordInstanceInfo(memcached.Name, memcached.Namespace, image, desiredReplicas)
+
+	if reconcileErr = r.reconcileDeployment(ctx, memcached); reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
 
-	if err := r.reconcileService(ctx, memcached); err != nil {
-		return ctrl.Result{}, err
+	if reconcileErr = r.reconcileService(ctx, memcached); reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
 
-	if err := r.reconcilePDB(ctx, memcached); err != nil {
-		return ctrl.Result{}, err
+	if reconcileErr = r.reconcilePDB(ctx, memcached); reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
 
-	if err := r.reconcileServiceMonitor(ctx, memcached); err != nil {
-		return ctrl.Result{}, err
+	if reconcileErr = r.reconcileServiceMonitor(ctx, memcached); reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
 
-	if err := r.reconcileStatus(ctx, memcached); err != nil {
-		return ctrl.Result{}, err
+	if reconcileErr = r.reconcileStatus(ctx, memcached); reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
 	}
+
+	metrics.RecordReadyReplicas(memcached.Name, memcached.Namespace, memcached.Status.ReadyReplicas)
 
 	return ctrl.Result{}, nil
 }
