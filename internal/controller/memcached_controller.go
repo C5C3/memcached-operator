@@ -3,16 +3,19 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
@@ -50,7 +53,36 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	logger.Info("Reconciling Memcached", "name", memcached.Name, "namespace", memcached.Namespace)
+
+	if err := r.reconcileDeployment(ctx, memcached); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// reconcileDeployment ensures the Deployment for the Memcached CR matches the desired state.
+// It uses CreateOrUpdate for idempotent create/update and sets a controller owner reference.
+func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+	logger := log.FromContext(ctx)
+
+	dep := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mc.Name,
+			Namespace: mc.Namespace,
+		},
+	}
+
+	result, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {
+		constructDeployment(mc, dep)
+		return controllerutil.SetControllerReference(mc, dep, r.Scheme)
+	})
+	if err != nil {
+		return fmt.Errorf("reconciling Deployment: %w", err)
+	}
+
+	logger.Info("Deployment reconciled", "name", dep.Name, "operation", result)
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -2,8 +2,8 @@
   "feature_id": "MO-0005",
   "title": "B002: Implement deployment reconciliation",
   "slug": "b002-implement-deployment-reconciliation",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Reconcile a Deployment for the Memcached pods. Map CRD spec fields to container args (-m, -c, -t, -I, -v/-vv, extraArgs), set resource requests/limits, configure the memcached:1.6 container image (or user-specified), expose port 11211. Set owner references for garbage collection. Detect drift and update.",
   "stories": [
@@ -375,6 +375,7 @@
       "description": "Create internal/controller/deployment.go with a buildMemcachedArgs(*MemcachedConfig) []string function. When config is nil, use defaults (maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=\"1m\"). Map: maxMemoryMB→\"-m\", maxConnections→\"-c\", threads→\"-t\", maxItemSize→\"-I\". Verbosity: 0=no flag, 1=\"-v\", 2=\"-vv\". Append extraArgs at end. Create internal/controller/deployment_test.go (standard testing.T, not Ginkgo) with table-driven tests covering: default config, custom values, all verbosity levels, extraArgs, nil config, combined verbosity+extraArgs.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -385,6 +386,7 @@
       "description": "Add labelsForMemcached(name string) map[string]string to internal/controller/deployment.go. Returns: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<name>, app.kubernetes.io/managed-by=memcached-operator. Add unit tests in internal/controller/deployment_test.go verifying all three labels are present and correct for various CR names.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -395,6 +397,7 @@
       "description": "Add constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) to internal/controller/deployment.go. This pure function mutates dep to match desired state: set replicas from mc.Spec.Replicas (default 1), labels from labelsForMemcached, selector matchLabels, RollingUpdate strategy (maxSurge=1, maxUnavailable=0), pod template labels. Build memcached container: name='memcached', image from mc.Spec.Image (default 'memcached:1.6'), args from buildMemcachedArgs, port 11211/TCP named 'memcached', resources from mc.Spec.Resources (nil-safe), readinessProbe (tcpSocket port 'memcached', initialDelaySeconds=5, periodSeconds=5), livenessProbe (tcpSocket port 'memcached', initialDelaySeconds=10, periodSeconds=10). Add unit tests: minimal spec (verify defaults), full custom spec, nil resources, zero replicas, custom image.",
       "level": 2,
       "estimate_minutes": 30,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -409,6 +412,7 @@
       "description": "Add reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) error method to MemcachedReconciler in internal/controller/memcached_controller.go. Create empty Deployment with ObjectMeta (Name=mc.Name, Namespace=mc.Namespace). Use controllerutil.CreateOrUpdate with mutate function that calls constructDeployment and controllerutil.SetControllerReference. Log operation result (created/updated/unchanged). Return wrapped error on failure. Add import for 'sigs.k8s.io/controller-runtime/pkg/controller/controllerutil' and 'fmt'.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006",
@@ -421,6 +425,7 @@
       "description": "Modify the Reconcile method in internal/controller/memcached_controller.go: after fetching the Memcached CR successfully, call r.reconcileDeployment(ctx, memcached). If it returns an error, return ctrl.Result{}, err. Update internal/controller/memcached_reconcile_test.go: the 'when the Memcached CR exists' test now creates a Deployment, so verify Reconcile still returns empty result and no error. The 'when client.Get returns a non-NotFound error' test should still pass unchanged.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -431,6 +436,7 @@
       "description": "Create internal/controller/memcached_deployment_reconcile_test.go using Ginkgo/Gomega with envtest (uses k8sClient, ctx from suite_test.go). Test: create a minimal Memcached CR (empty spec), run Reconcile, then fetch the Deployment and verify: replicas=1, image=memcached:1.6, container args=[\"-m\",\"64\",\"-c\",\"1024\",\"-t\",\"4\",\"-I\",\"1m\"], port 11211/TCP named 'memcached', readiness/liveness probes, RollingUpdate strategy (maxSurge=1, maxUnavailable=0), standard labels on Deployment and pod template, owner reference pointing to the CR. Use uniqueName helper for test isolation.",
       "level": 4,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-004",
@@ -446,6 +452,7 @@
       "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: create a Memcached CR with spec.replicas=3, spec.image='memcached:1.6.29', spec.resources (cpu/memory requests and limits), spec.memcached (maxMemoryMB=256, maxConnections=2048, threads=8, maxItemSize='2m', verbosity=2, extraArgs=[\"-o\", \"modern\"]). Run Reconcile, fetch Deployment, verify all fields match: 3 replicas, custom image, args [\"-m\",\"256\",\"-c\",\"2048\",\"-t\",\"8\",\"-I\",\"2m\",\"-vv\",\"-o\",\"modern\"], resource requests/limits set correctly.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -458,6 +465,7 @@
       "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: 1) Create Memcached CR with replicas=1, reconcile, verify Deployment has 1 replica. 2) Update CR spec.replicas=3 via k8sClient.Update, reconcile again, verify Deployment now has 3 replicas. 3) Test image change: update spec.image, reconcile, verify container image changed. 4) Test idempotency: reconcile twice without changes, verify Deployment unchanged (no resourceVersion bump).",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -468,6 +476,7 @@
       "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: 1) Verify owner reference: create CR, reconcile, fetch Deployment, check ownerReferences has exactly one entry with correct apiVersion, kind, name, controller=true, blockOwnerDeletion=true. 2) Test zero replicas: create CR with replicas=0, reconcile, verify Deployment has 0 replicas. 3) Test error propagation: use interceptor.NewClient to simulate API failure on Create, verify Reconcile returns the error.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-010"
@@ -479,6 +488,7 @@
       "description": "Add tests in internal/controller/memcached_deployment_reconcile_test.go: 1) CR with nil spec.memcached: reconcile, verify container args use defaults. 2) CR with verbosity=1: verify args include \"-v\" but not \"-vv\". 3) CR with extraArgs=[\"--extended\", \"ext_item_size=2M\"]: verify args end with the extra args. 4) CR with empty extraArgs ([]): verify no extra args appended.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -489,6 +499,7 @@
       "description": "Create docs/reference/backend/deployment-reconciliation.md documenting: 1) Overview of what reconcileDeployment does. 2) Container args mapping table (CRD field → flag → default). 3) Standard labels applied to Deployment and pod template. 4) Deployment spec details (strategy, probes, ports). 5) Owner reference behavior and garbage collection. 6) How drift detection works via CreateOrUpdate. 7) Error handling behavior. Cross-reference memcached-crd-types.md for field definitions and reconciler-scaffold-watches.md for watch configuration.",
       "level": 5,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -670,6 +681,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T08:28:29.431639"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T08:55:06.091202"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T09:23:32.113417"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T09:23:32.131822"
     }
   },
   "execution_history": [
@@ -683,6 +706,62 @@
           "name": "prepare",
           "duration": 358.65471839904785,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "4e715bb4-d92d-4472-b081-4bd8890f9984",
+      "timestamp": "2026-02-19T09:19:30.176416",
+      "total_duration": 1342.5279257297516,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 480.63070702552795,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 151.77660727500916,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 112.68560767173767,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (5 tasks)",
+          "duration": 161.43995118141174,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 5 (1 tasks)",
+          "duration": 135.18931460380554,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0005] Code Review",
+          "duration": 144.59905123710632,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0005] Improvements",
+          "duration": 23.397817373275757,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0005] Simplify",
+          "duration": 132.80886936187744,
+          "type": "simplify",
           "status": "done"
         }
       ]
