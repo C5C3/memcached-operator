@@ -2,8 +2,8 @@
   "feature_id": "MO-0016",
   "title": "E001: Implement pod security contexts",
   "slug": "e001-implement-pod-security-contexts",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Apply restrictive pod and container security contexts: runAsNonRoot, readOnlyRootFilesystem, drop ALL capabilities, seccompProfile RuntimeDefault. Follow Kubernetes Pod Security Standards (restricted profile).",
   "stories": [
@@ -303,6 +303,7 @@
       "description": "In `internal/controller/deployment.go`: Create `buildPodSecurityContext(mc *Memcached) *corev1.PodSecurityContext` that returns `mc.Spec.Security.PodSecurityContext` when security is configured, or nil otherwise. Create `buildContainerSecurityContext(mc *Memcached) *corev1.SecurityContext` with the same nil-guard pattern. In `constructDeployment`: call `buildPodSecurityContext` and set on `corev1.PodSpec.SecurityContext`. Call `buildContainerSecurityContext` and set on the memcached container's `SecurityContext` field. Also set the same container security context on the exporter sidecar container (in `buildExporterContainer` or after appending it). Add unit tests in `internal/controller/deployment_test.go`: TestBuildPodSecurityContext_WithValue, TestBuildPodSecurityContext_NilSecurity, TestBuildPodSecurityContext_NilPodSecurityContext, TestBuildContainerSecurityContext_WithValue, TestBuildContainerSecurityContext_NilSecurity, TestBuildContainerSecurityContext_NilContainerSecurityContext, TestConstructDeployment_SecurityContexts (verifies pod and container security contexts on the deployment), TestConstructDeployment_SecurityContextsNil (verifies nil when security not set), TestConstructDeployment_SecurityContextsOnExporterSidecar (verifies exporter also gets container security context when monitoring enabled).",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -316,6 +317,7 @@
       "description": "In a new file `internal/controller/memcached_security_context_reconcile_test.go` (Ginkgo/Gomega, package controller_test): Add envtest integration tests using existing `reconcileOnce`, `fetchDeployment`, `validMemcached`, `uniqueName` helpers. Test contexts: (1) 'pod and container security contexts applied' - create CR with full restricted profile security contexts (runAsNonRoot=true, readOnlyRootFilesystem=true, capabilities.drop=[ALL], seccompProfile=RuntimeDefault, allowPrivilegeEscalation=false), verify pod securityContext and memcached container securityContext are set correctly; (2) 'no security contexts when security is nil' - verify both are nil; (3) 'only pod security context when containerSecurityContext is nil' - verify pod set, container nil; (4) 'only container security context when podSecurityContext is nil' - verify container set, pod nil; (5) 'security contexts on exporter sidecar' - enable monitoring + security contexts, verify both containers have container security context; (6) 'update security contexts' - create without security, add security contexts, verify applied; then change runAsUser, verify updated; then remove security, verify cleared; (7) 'idempotency with security contexts' - verify resourceVersion unchanged on second reconcile; (8) 'coexistence with all features' - enable anti-affinity, topology spread, graceful shutdown, monitoring, and security contexts, verify all features present on the Deployment.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -331,6 +333,7 @@
       "description": "Update `config/samples/memcached_v1alpha1_memcached.yaml` to include a security section demonstrating the Kubernetes restricted profile: `spec.security.podSecurityContext` with `runAsNonRoot: true`, `seccompProfile.type: RuntimeDefault`, `fsGroup: 11211`; and `spec.security.containerSecurityContext` with `readOnlyRootFilesystem: true`, `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`. Replace the existing `security: enableNetworkPolicy: true` placeholder (which is invalid for the current CRD schema) with the correct security context fields.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -342,6 +345,7 @@
       "description": "Create `docs/reference/backend/pod-security-contexts.md` documenting: overview of the feature and Kubernetes Pod Security Standards restricted profile, the `buildPodSecurityContext` and `buildContainerSecurityContext` functions, CRD field mapping (`spec.security.podSecurityContext` -> `PodSpec.SecurityContext`, `spec.security.containerSecurityContext` -> Container.SecurityContext on all containers), examples showing a minimal security configuration, a full restricted profile configuration, and monitoring with security contexts. Follow the existing pattern in `docs/reference/backend/deployment-reconciliation.md` for structure and formatting (overview, function documentation, field mapping tables, YAML examples).",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -483,6 +487,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T21:46:22.939027"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T21:50:11.094753"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T22:13:56.125862"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T22:13:56.145038"
     }
   },
   "execution_history": [
@@ -496,6 +512,50 @@
           "name": "prepare",
           "duration": 299.29095220565796,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "8ff01330-b43e-46db-8c18-f5a43ba575e2",
+      "timestamp": "2026-02-19T22:11:39.312038",
+      "total_duration": 1167.792585849762,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (1 tasks)",
+          "duration": 306.39568161964417,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 271.175400018692,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 92.17378687858582,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0016] Code Review",
+          "duration": 225.6813576221466,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0016] Improvements",
+          "duration": 139.13796019554138,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0016] Simplify",
+          "duration": 133.22839951515198,
+          "type": "simplify",
           "status": "done"
         }
       ]

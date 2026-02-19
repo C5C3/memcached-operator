@@ -31,4 +31,16 @@ spec:
       enabled: true
       scrapeInterval: "30s"
   security:
-    enableNetworkPolicy: true
+    podSecurityContext:
+      runAsNonRoot: true
+      fsGroup: 11211
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      runAsUser: 1000
+      runAsNonRoot: true
+      readOnlyRootFilesystem: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL

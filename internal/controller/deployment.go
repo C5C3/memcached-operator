@@ -188,6 +188,24 @@ func buildExporterContainer(mc *memcachedv1alpha1.Memcached) *corev1.Container {
 	}
 }
 
+// buildPodSecurityContext returns the PodSecurityContext from the Memcached CR,
+// or nil if no pod security context is configured.
+func buildPodSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.PodSecurityContext {
+	if mc.Spec.Security == nil || mc.Spec.Security.PodSecurityContext == nil {
+		return nil
+	}
+	return mc.Spec.Security.PodSecurityContext
+}
+
+// buildContainerSecurityContext returns the container SecurityContext from the Memcached CR,
+// or nil if no container security context is configured.
+func buildContainerSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.SecurityContext {
+	if mc.Spec.Security == nil || mc.Spec.Security.ContainerSecurityContext == nil {
+		return nil
+	}
+	return mc.Spec.Security.ContainerSecurityContext
+}
+
 // constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
 // It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
 func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) {
@@ -216,13 +234,16 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 	affinity := buildAntiAffinity(mc)
 	topologySpreadConstraints := buildTopologySpreadConstraints(mc)
 	lifecycle, terminationGracePeriodSeconds := buildGracefulShutdown(mc)
+	podSecurityContext := buildPodSecurityContext(mc)
+	containerSecurityContext := buildContainerSecurityContext(mc)
 
 	memcachedContainer := corev1.Container{
-		Name:      "memcached",
-		Image:     image,
-		Args:      args,
-		Resources: resources,
-		Lifecycle: lifecycle,
+		Name:            "memcached",
+		Image:           image,
+		Args:            args,
+		Resources:       resources,
+		Lifecycle:       lifecycle,
+		SecurityContext: containerSecurityContext,
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "memcached",
@@ -252,6 +273,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 
 	containers := []corev1.Container{memcachedContainer}
 	if exporterContainer := buildExporterContainer(mc); exporterContainer != nil {
+		exporterContainer.SecurityContext = containerSecurityContext
 		containers = append(containers, *exporterContainer)
 	}
 
@@ -276,6 +298,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 				Affinity:                      affinity,
 				TopologySpreadConstraints:     topologySpreadConstraints,
 				TerminationGracePeriodSeconds: terminationGracePeriodSeconds,
+				SecurityContext:               podSecurityContext,
 				Containers:                    containers,
 			},
 		},

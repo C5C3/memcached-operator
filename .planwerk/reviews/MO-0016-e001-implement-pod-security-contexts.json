@@ -1,0 +1,120 @@
+{
+  "summary": "Implements buildPodSecurityContext and buildContainerSecurityContext helpers following the nil-guard pattern, integrates them into constructDeployment (pod-level and all containers including exporter sidecar), with unit tests (9 new), integration tests (6 of 8 specified), reference documentation, and sample CR update. Core logic is correct, minimal, and idempotent. Two integration test cases from the task spec are missing, and the sample CR retains an invalid enableNetworkPolicy field that was supposed to be replaced.",
+  "verdict": "NEEDS_CHANGES",
+  "tests_checklist": [
+    {"item": "Unit tests exist and pass for buildPodSecurityContext (3 cases)", "checked": true},
+    {"item": "Unit tests exist and pass for buildContainerSecurityContext (3 cases)", "checked": true},
+    {"item": "Unit tests exist and pass for constructDeployment security contexts (3 cases)", "checked": true},
+    {"item": "Integration test: pod and container security contexts applied", "checked": true},
+    {"item": "Integration test: nil security contexts", "checked": true},
+    {"item": "Integration test: only pod security context (containerSecurityContext nil)", "checked": false},
+    {"item": "Integration test: only container security context (podSecurityContext nil)", "checked": false},
+    {"item": "Integration test: exporter sidecar gets container security context", "checked": true},
+    {"item": "Integration test: update and remove security contexts", "checked": true},
+    {"item": "Integration test: idempotency (resourceVersion unchanged)", "checked": true},
+    {"item": "Integration test: coexistence with all features", "checked": true},
+    {"item": "Pre-existing tests still pass (no regressions)", "checked": true},
+    {"item": "Update test includes intermediate runAsUser change step", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing nil-guard pattern (buildAntiAffinity, buildGracefulShutdown)", "checked": true},
+    {"item": "Functions are small and single-responsibility", "checked": true},
+    {"item": "No code duplication", "checked": true},
+    {"item": "Clear naming and intention-revealing code", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "No magic numbers or strings", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "Security contexts are passed through from CR (not hardcoded)", "checked": true},
+    {"item": "No secrets or credentials in code", "checked": true},
+    {"item": "No injection vulnerabilities", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal — two helper functions + three integration points", "checked": true},
+    {"item": "No changes to API types (SecuritySpec already has required fields)", "checked": true},
+    {"item": "No changes to controller logic (constructDeployment handles it)", "checked": true},
+    {"item": "Container security context applied to ALL containers (memcached + exporter)", "checked": true},
+    {"item": "Exporter security context set after build, not inside buildExporterContainer (simpler)", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "No future-proofing or unused code", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil guards check parent before child (Security before PodSecurityContext)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil security spec produces nil security contexts (not empty structs)", "checked": true},
+    {"item": "Nil sub-fields produce nil (not panics)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "FC1-1",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "Missing 2 of 8 integration test cases specified in task 2.1: (3) 'only pod security context when containerSecurityContext is nil' and (4) 'only container security context when podSecurityContext is nil'. These partial-nil scenarios are covered by unit tests (TestBuildPodSecurityContext_NilPodSecurityContext, TestBuildContainerSecurityContext_NilContainerSecurityContext) but the task explicitly requires envtest integration coverage.",
+      "location": "internal/controller/memcached_security_context_reconcile_test.go",
+      "fix": "Add two integration test cases: (1) Create CR with spec.security.podSecurityContext set and spec.security.containerSecurityContext nil, verify pod security context set and container security context nil/empty. (2) Create CR with spec.security.containerSecurityContext set and spec.security.podSecurityContext nil, verify container security context set and pod security context nil/empty."
+    },
+    {
+      "id": "TE2-1",
+      "severity": "major",
+      "check_id": "TE2",
+      "description": "The 'update security contexts' integration test omits the intermediate 'change runAsUser' step specified in task 2.1 description. The task says: 'create without security, add security contexts, verify applied; then change runAsUser, verify updated; then remove security, verify cleared.' The current test goes from add directly to remove.",
+      "location": "internal/controller/memcached_security_context_reconcile_test.go:103-152",
+      "fix": "After verifying security contexts are applied (line 136), add an intermediate step: re-fetch the CR, change runAsUser from 1000 to 65534, update, reconcile, and verify the Deployment reflects the new runAsUser value before proceeding to the remove step."
+    },
+    {
+      "id": "DA2-1",
+      "severity": "major",
+      "check_id": "DA2",
+      "description": "Sample CR retains invalid field 'enableNetworkPolicy: true' under spec.security. Task 3.1 explicitly states: 'Replace the existing security: enableNetworkPolicy: true placeholder (which is invalid for the current CRD schema) with the correct security context fields.' The field was added alongside instead of replacing. SecuritySpec has no enableNetworkPolicy field — this makes the sample CR invalid against the CRD schema.",
+      "location": "config/samples/memcached_v1alpha1_memcached.yaml:34",
+      "fix": "Remove the line 'enableNetworkPolicy: true' from the security section. The security section should only contain podSecurityContext and containerSecurityContext."
+    },
+    {
+      "id": "DA2-2",
+      "severity": "minor",
+      "check_id": "DA2",
+      "description": "Task 3.1 specifies fsGroup: 11211 (memcached default port as UID convention) but the implementation uses fsGroup: 1000. This is a cosmetic deviation from the task specification — either value is valid, but the task was explicit.",
+      "location": "config/samples/memcached_v1alpha1_memcached.yaml:37",
+      "fix": "Consider changing fsGroup from 1000 to 11211 to match the task specification, or document the deviation."
+    }
+  ],
+  "suggested_improvements": [
+    "The integration test for 'should apply pod and container security contexts to Deployment' (line 18) uses a minimal set of security context fields (runAsNonRoot, fsGroup, runAsUser, readOnlyRootFilesystem). Task 2.1 specifies the full restricted profile (including capabilities.drop=[ALL], seccompProfile=RuntimeDefault, allowPrivilegeEscalation=false). Consider adding these fields to the first integration test for full restricted profile coverage."
+  ],
+  "next_steps": [
+    "Add missing integration test: 'only pod security context when containerSecurityContext is nil'",
+    "Add missing integration test: 'only container security context when podSecurityContext is nil'",
+    "Add intermediate 'change runAsUser' step to the update integration test",
+    "Remove enableNetworkPolicy: true from config/samples/memcached_v1alpha1_memcached.yaml"
+  ],
+  "metadata": {
+    "feature_id": "MO-0016",
+    "title": "E001: Implement pod security contexts",
+    "date": "2026-02-19",
+    "verdict": "NEEDS_CHANGES",
+    "verification": {
+      "go_vet": "PASS (clean output)",
+      "golangci_lint": "SKIP (Go version mismatch: golangci-lint built with go1.24 vs project go1.25 — not a code issue)",
+      "go_test_unit": "PASS (all security context unit tests pass)",
+      "go_test_integration": "PASS (228/228 Ginkgo specs pass, 0 failures)",
+      "pre_existing_failures": "3 metric tests (TestReconcileResource_IncrementsMetric*) fail on main — pre-existing, not introduced by this feature"
+    },
+    "files_changed": [
+      "internal/controller/deployment.go (+33 lines)",
+      "internal/controller/deployment_test.go (+229 lines)",
+      "internal/controller/memcached_security_context_reconcile_test.go (+241 lines, new file)",
+      "docs/reference/backend/pod-security-contexts.md (+252 lines, new file)",
+      "config/samples/memcached_v1alpha1_memcached.yaml (+13 lines)"
+    ],
+    "files_not_changed": [
+      "api/v1alpha1/memcached_types.go (correct — SecuritySpec already has required fields)",
+      "internal/controller/memcached_controller.go (correct — constructDeployment handles it)"
+    ]
+  }
+}

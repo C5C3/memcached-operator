@@ -1350,3 +1350,216 @@ func TestConstructDeployment_MonitoringDisabled(t *testing.T) {
 		t.Errorf("container name = %q, want 'memcached'", containers[0].Name)
 	}
 }
+
+// --- Security Context Tests ---
+
+func TestBuildPodSecurityContext_WithValue(t *testing.T) {
+	runAsNonRoot := true
+	fsGroup := int64(1000)
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				PodSecurityContext: &corev1.PodSecurityContext{
+					RunAsNonRoot: &runAsNonRoot,
+					FSGroup:      &fsGroup,
+				},
+			},
+		},
+	}
+
+	got := buildPodSecurityContext(mc)
+
+	if got == nil {
+		t.Fatal("expected non-nil PodSecurityContext")
+	}
+	if got.RunAsNonRoot == nil || !*got.RunAsNonRoot {
+		t.Error("expected RunAsNonRoot=true")
+	}
+	if got.FSGroup == nil || *got.FSGroup != 1000 {
+		t.Errorf("expected FSGroup=1000, got %v", got.FSGroup)
+	}
+}
+
+func TestBuildPodSecurityContext_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name     string
+		security *memcachedv1alpha1.SecuritySpec
+	}{
+		{name: "nil Security", security: nil},
+		{name: "nil PodSecurityContext", security: &memcachedv1alpha1.SecuritySpec{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			}
+
+			if got := buildPodSecurityContext(mc); got != nil {
+				t.Errorf("expected nil PodSecurityContext, got %+v", got)
+			}
+		})
+	}
+}
+
+func TestBuildContainerSecurityContext_WithValue(t *testing.T) {
+	runAsUser := int64(1000)
+	readOnly := true
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				ContainerSecurityContext: &corev1.SecurityContext{
+					RunAsUser:              &runAsUser,
+					ReadOnlyRootFilesystem: &readOnly,
+				},
+			},
+		},
+	}
+
+	got := buildContainerSecurityContext(mc)
+
+	if got == nil {
+		t.Fatal("expected non-nil SecurityContext")
+	}
+	if got.RunAsUser == nil || *got.RunAsUser != 1000 {
+		t.Errorf("expected RunAsUser=1000, got %v", got.RunAsUser)
+	}
+	if got.ReadOnlyRootFilesystem == nil || !*got.ReadOnlyRootFilesystem {
+		t.Error("expected ReadOnlyRootFilesystem=true")
+	}
+}
+
+func TestBuildContainerSecurityContext_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name     string
+		security *memcachedv1alpha1.SecuritySpec
+	}{
+		{name: "nil Security", security: nil},
+		{name: "nil ContainerSecurityContext", security: &memcachedv1alpha1.SecuritySpec{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			}
+
+			if got := buildContainerSecurityContext(mc); got != nil {
+				t.Errorf("expected nil SecurityContext, got %+v", got)
+			}
+		})
+	}
+}
+
+func TestConstructDeployment_SecurityContexts(t *testing.T) {
+	runAsNonRoot := true
+	fsGroup := int64(1000)
+	runAsUser := int64(1000)
+	readOnly := true
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sec-test", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				PodSecurityContext: &corev1.PodSecurityContext{
+					RunAsNonRoot: &runAsNonRoot,
+					FSGroup:      &fsGroup,
+				},
+				ContainerSecurityContext: &corev1.SecurityContext{
+					RunAsUser:              &runAsUser,
+					ReadOnlyRootFilesystem: &readOnly,
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	// Pod security context.
+	podSC := dep.Spec.Template.Spec.SecurityContext
+	if podSC == nil {
+		t.Fatal("expected non-nil pod SecurityContext")
+	}
+	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
+		t.Error("expected pod RunAsNonRoot=true")
+	}
+	if podSC.FSGroup == nil || *podSC.FSGroup != 1000 {
+		t.Errorf("expected pod FSGroup=1000, got %v", podSC.FSGroup)
+	}
+
+	// Container security context on memcached container.
+	containerSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
+	if containerSC == nil {
+		t.Fatal("expected non-nil container SecurityContext")
+	}
+	if containerSC.RunAsUser == nil || *containerSC.RunAsUser != 1000 {
+		t.Errorf("expected container RunAsUser=1000, got %v", containerSC.RunAsUser)
+	}
+	if containerSC.ReadOnlyRootFilesystem == nil || !*containerSC.ReadOnlyRootFilesystem {
+		t.Error("expected container ReadOnlyRootFilesystem=true")
+	}
+}
+
+func TestConstructDeployment_SecurityContextsNil(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sec-nil", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	if dep.Spec.Template.Spec.SecurityContext != nil {
+		t.Errorf("expected nil pod SecurityContext, got %+v", dep.Spec.Template.Spec.SecurityContext)
+	}
+	if dep.Spec.Template.Spec.Containers[0].SecurityContext != nil {
+		t.Errorf("expected nil container SecurityContext, got %+v", dep.Spec.Template.Spec.Containers[0].SecurityContext)
+	}
+}
+
+func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
+	runAsUser := int64(1000)
+	readOnly := true
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sec-exp", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				ContainerSecurityContext: &corev1.SecurityContext{
+					RunAsUser:              &runAsUser,
+					ReadOnlyRootFilesystem: &readOnly,
+				},
+			},
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	if len(dep.Spec.Template.Spec.Containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(dep.Spec.Template.Spec.Containers))
+	}
+
+	// Memcached container has security context.
+	mcSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
+	if mcSC == nil {
+		t.Fatal("expected non-nil SecurityContext on memcached container")
+	}
+	if mcSC.RunAsUser == nil || *mcSC.RunAsUser != 1000 {
+		t.Errorf("memcached container RunAsUser = %v, want 1000", mcSC.RunAsUser)
+	}
+
+	// Exporter container has the same security context.
+	expSC := dep.Spec.Template.Spec.Containers[1].SecurityContext
+	if expSC == nil {
+		t.Fatal("expected non-nil SecurityContext on exporter container")
+	}
+	if expSC.RunAsUser == nil || *expSC.RunAsUser != 1000 {
+		t.Errorf("exporter container RunAsUser = %v, want 1000", expSC.RunAsUser)
+	}
+	if expSC.ReadOnlyRootFilesystem == nil || !*expSC.ReadOnlyRootFilesystem {
+		t.Error("expected exporter ReadOnlyRootFilesystem=true")
+	}
+}
