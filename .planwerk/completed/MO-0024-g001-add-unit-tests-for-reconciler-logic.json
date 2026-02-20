@@ -2,8 +2,8 @@
   "feature_id": "MO-0024",
   "title": "G001: Add unit tests for reconciler logic",
   "slug": "g001-add-unit-tests-for-reconciler-logic",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Write unit tests for the reconciler's resource-building logic: Deployment construction, Service construction, PDB construction, ServiceMonitor construction, NetworkPolicy construction. Test field mapping from CRD spec to Kubernetes resource specs. Mock the Kubernetes client for isolated testing.",
   "stories": [
@@ -308,6 +308,7 @@
       "description": "Add a test `TestConstructDeployment_AllFeaturesEnabled` to `internal/controller/deployment_test.go` that creates a Memcached CR with ALL optional features enabled (custom replicas=3, custom image, custom resources, custom memcached config with verbosity+extraArgs, SASL enabled, TLS enabled with client cert, monitoring enabled with custom exporter image, pod+container security contexts, soft anti-affinity, topology spread constraints, graceful shutdown with custom values). Verify the resulting Deployment has: 2 containers (memcached + exporter), SASL+TLS volumes and volume mounts on memcached container only, correct args order (standard flags, verbosity, SASL -Y, TLS -Z and ssl opts, extraArgs), both container ports (11211, 11212), lifecycle hook, termination grace period, affinity, topology constraints, security contexts on both containers, correct replicas/image/resources. Follow existing table-driven test style.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -318,6 +319,7 @@
       "description": "Add two tests to `internal/controller/deployment_test.go`: (1) `TestConstructDeployment_ZeroReplicas` - verify that when spec.Replicas is a pointer to 0, the Deployment replicas is set to 0 and all other fields are still correctly populated (labels, probes, strategy). (2) `TestConstructDeployment_Idempotent` - call constructDeployment twice on the same Deployment object with the same CR, verify the Deployment spec is byte-identical after both calls using reflect.DeepEqual. Test with a non-trivial CR (custom replicas, image, monitoring enabled).",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -328,6 +330,7 @@
       "description": "Add tests to `internal/controller/service_test.go`: (1) `TestConstructService_ClearsAnnotations` - create a Service with pre-existing annotations, call constructService with a CR that has nil spec.Service, verify annotations are nil. (2) `TestConstructService_EmptyAnnotationsMap` - call with spec.Service.Annotations as empty map, verify annotations are nil. (3) `TestConstructService_Idempotent` - call constructService twice with monitoring+TLS enabled CR on same Service, verify specs are identical via reflect.DeepEqual.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -338,6 +341,7 @@
       "description": "Add tests to `internal/controller/pdb_test.go`: (1) `TestConstructPDB_SwitchMaxUnavailableToMinAvailable` - create PDB with maxUnavailable=1, then call constructPDB with CR that has minAvailable=2, verify maxUnavailable is nil and minAvailable is 2. (2) `TestConstructPDB_SwitchMinAvailableToMaxUnavailable` - reverse: PDB starts with minAvailable, switched to maxUnavailable. (3) `TestConstructPDB_Idempotent` - call constructPDB twice, verify DeepEqual.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -348,6 +352,7 @@
       "description": "Add test `TestConstructServiceMonitor_Idempotent` to `internal/controller/servicemonitor_test.go`: call constructServiceMonitor twice on the same ServiceMonitor with a CR that has custom interval, scrapeTimeout, and additional labels, verify specs are identical via reflect.DeepEqual.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -358,6 +363,7 @@
       "description": "Add tests to `internal/controller/networkpolicy_test.go`: (1) `TestConstructNetworkPolicy_MultiplePeers` - create CR with 3 allowed sources (namespace selector, pod selector, combined namespace+pod selector), verify all 3 peers appear in From field. (2) `TestConstructNetworkPolicy_Idempotent` - call constructNetworkPolicy twice with TLS+monitoring+allowedSources CR, verify specs are identical via reflect.DeepEqual.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -368,6 +374,7 @@
       "description": "Add test file `internal/controller/reconcile_deployment_unit_test.go` (or add to `reconcile_resource_test.go`): (1) `TestReconcileDeployment_CreatesDeployment` - use fake.NewClientBuilder with testScheme(), call reconcileDeployment, verify a Deployment exists in the fake client with correct name/namespace, owner reference pointing to the Memcached CR, and spec matching constructDeployment output. (2) `TestReconcileDeployment_UpdatesExistingDeployment` - pre-create a Deployment with different replicas, call reconcileDeployment, verify the Deployment is updated. Reuse existing testScheme() and newTestReconciler() helpers from reconcile_resource_test.go.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -378,6 +385,7 @@
       "description": "Add tests: (1) `TestReconcileService_CreatesService` - use fake client, call reconcileService, verify Service exists with ClusterIP=None, correct ports and labels, and owner reference. (2) `TestReconcileService_UpdatesExistingService` - pre-create Service, call reconcileService with changed CR (add monitoring), verify metrics port added.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -388,6 +396,7 @@
       "description": "Add tests: (1) `TestReconcilePDB_SkipsWhenDisabled` - call reconcilePDB with PDB not enabled, verify no PDB created and no error. (2) `TestReconcilePDB_CreatesWhenEnabled` - call with PDB enabled, verify PDB exists with correct minAvailable and owner reference.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007"
@@ -399,6 +408,7 @@
       "description": "Add tests: (1) `TestReconcileServiceMonitor_SkipsWhenDisabled` - call with monitoring nil, verify no ServiceMonitor created. (2) `TestReconcileServiceMonitor_CreatesWhenEnabled` - call with monitoring+serviceMonitor enabled, verify ServiceMonitor exists with correct endpoint and owner reference. NOTE: must register monitoring.coreos.com scheme in testScheme for ServiceMonitor type.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007"
@@ -410,6 +420,7 @@
       "description": "Add tests: (1) `TestReconcileNetworkPolicy_SkipsWhenDisabled` - call with NetworkPolicy not enabled, verify no NetworkPolicy created. (2) `TestReconcileNetworkPolicy_CreatesWhenEnabled` - call with NetworkPolicy enabled, verify NetworkPolicy exists with correct ingress rules and owner reference.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007"
@@ -417,27 +428,11 @@
     },
     {
       "id": "3.1",
-      "title": "Run full test suite and verify all tests pass with go vet and golangci-lint (REQ-001 to REQ-008)",
+      "title": "Write reference documentation for unit test coverage (REQ-001 to REQ-008)",
       "description": "Run `make test` to execute all unit and integration tests. Run `make vet` and `make lint` to verify no static analysis errors. Fix any failures. Verify test count increased by the expected number of new tests.",
       "level": 3,
       "estimate_minutes": 15,
-      "requirements": [
-        "REQ-001",
-        "REQ-002",
-        "REQ-003",
-        "REQ-004",
-        "REQ-005",
-        "REQ-006",
-        "REQ-007",
-        "REQ-008"
-      ]
-    },
-    {
-      "id": "3.2",
-      "title": "Write reference documentation for unit test coverage (REQ-001 to REQ-008)",
-      "description": "Create `docs/reference/backend/unit-test-coverage.md` documenting: (1) which builder functions are tested and in which files, (2) which reconcile methods have mock-based unit tests, (3) test patterns used (table-driven, idempotency, field-switching, fake client), (4) how to run the tests. Reference the existing test file locations and naming conventions.",
-      "level": 3,
-      "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -603,6 +598,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T13:00:50.453045"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T13:03:20.745026"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:12:41.544908"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:12:41.561388"
     }
   },
   "execution_history": [
@@ -616,6 +623,50 @@
           "name": "prepare",
           "duration": 246.39245867729187,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "01d3b4ef-08de-49d0-82fe-70e8c6f0436f",
+      "timestamp": "2026-02-20T13:44:54.500840",
+      "total_duration": 2346.4692997932434,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (6 tasks)",
+          "duration": 430.2716658115387,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (5 tasks)",
+          "duration": 198.27766036987305,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 1288.9601075649261,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0024] Code Review",
+          "duration": 185.126784324646,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0024] Improvements",
+          "duration": 108.04271721839905,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0024] Simplify",
+          "duration": 135.79036450386047,
+          "type": "simplify",
           "status": "done"
         }
       ]

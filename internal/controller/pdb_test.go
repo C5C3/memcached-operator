@@ -2,6 +2,8 @@
 package controller
 
 import (
+	"maps"
+	"reflect"
 	"testing"
 
 	policyv1 "k8s.io/api/policy/v1"
@@ -237,6 +239,171 @@ func TestPDBEnabled(t *testing.T) {
 				t.Errorf("pdbEnabled() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConstructPDB_SwitchMinAvailableToMaxUnavailable(t *testing.T) {
+	// Step 1: Create a PDB with minAvailable=2.
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "switch-min-max", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+					Enabled:      true,
+					MinAvailable: intOrStringPtr(intstr.FromInt32(2)),
+				},
+			},
+		},
+	}
+	pdb := &policyv1.PodDisruptionBudget{}
+
+	constructPDB(mc, pdb)
+
+	// Verify minAvailable is set to 2.
+	if pdb.Spec.MinAvailable == nil {
+		t.Fatal("after first call: expected MinAvailable to be set, got nil")
+	}
+	if *pdb.Spec.MinAvailable != intstr.FromInt32(2) {
+		t.Errorf("after first call: MinAvailable = %v, want 2", *pdb.Spec.MinAvailable)
+	}
+	// Verify maxUnavailable is nil.
+	if pdb.Spec.MaxUnavailable != nil {
+		t.Errorf("after first call: expected MaxUnavailable nil, got %v", *pdb.Spec.MaxUnavailable)
+	}
+
+	// Step 2: Change the CR to use maxUnavailable=1, removing minAvailable.
+	mc.Spec.HighAvailability.PodDisruptionBudget = &memcachedv1alpha1.PDBSpec{
+		Enabled:        true,
+		MaxUnavailable: intOrStringPtr(intstr.FromInt32(1)),
+	}
+
+	constructPDB(mc, pdb)
+
+	// Verify minAvailable is now nil (cleared).
+	if pdb.Spec.MinAvailable != nil {
+		t.Errorf("after second call: expected MinAvailable nil, got %v", *pdb.Spec.MinAvailable)
+	}
+	// Verify maxUnavailable is set to 1.
+	if pdb.Spec.MaxUnavailable == nil {
+		t.Fatal("after second call: expected MaxUnavailable to be set, got nil")
+	}
+	if *pdb.Spec.MaxUnavailable != intstr.FromInt32(1) {
+		t.Errorf("after second call: MaxUnavailable = %v, want 1", *pdb.Spec.MaxUnavailable)
+	}
+
+	// Verify labels and selector are still correctly set.
+	expectedLabels := labelsForMemcached("switch-min-max")
+	for k, v := range expectedLabels {
+		if pdb.Labels[k] != v {
+			t.Errorf("after second call: label %q = %q, want %q", k, pdb.Labels[k], v)
+		}
+	}
+	if pdb.Spec.Selector == nil {
+		t.Fatal("after second call: expected non-nil selector")
+	}
+	for k, v := range expectedLabels {
+		if pdb.Spec.Selector.MatchLabels[k] != v {
+			t.Errorf("after second call: selector %q = %q, want %q", k, pdb.Spec.Selector.MatchLabels[k], v)
+		}
+	}
+}
+
+func TestConstructPDB_SwitchMaxUnavailableToMinAvailable(t *testing.T) {
+	// Step 1: Create a PDB with maxUnavailable=1.
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "switch-max-min", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+					Enabled:        true,
+					MaxUnavailable: intOrStringPtr(intstr.FromInt32(1)),
+				},
+			},
+		},
+	}
+	pdb := &policyv1.PodDisruptionBudget{}
+
+	constructPDB(mc, pdb)
+
+	// Verify maxUnavailable is set to 1.
+	if pdb.Spec.MaxUnavailable == nil {
+		t.Fatal("after first call: expected MaxUnavailable to be set, got nil")
+	}
+	if *pdb.Spec.MaxUnavailable != intstr.FromInt32(1) {
+		t.Errorf("after first call: MaxUnavailable = %v, want 1", *pdb.Spec.MaxUnavailable)
+	}
+	// Verify minAvailable is nil.
+	if pdb.Spec.MinAvailable != nil {
+		t.Errorf("after first call: expected MinAvailable nil, got %v", *pdb.Spec.MinAvailable)
+	}
+
+	// Step 2: Change the CR to use minAvailable=3, removing maxUnavailable.
+	mc.Spec.HighAvailability.PodDisruptionBudget = &memcachedv1alpha1.PDBSpec{
+		Enabled:      true,
+		MinAvailable: intOrStringPtr(intstr.FromInt32(3)),
+	}
+
+	constructPDB(mc, pdb)
+
+	// Verify maxUnavailable is now nil (cleared).
+	if pdb.Spec.MaxUnavailable != nil {
+		t.Errorf("after second call: expected MaxUnavailable nil, got %v", *pdb.Spec.MaxUnavailable)
+	}
+	// Verify minAvailable is set to 3.
+	if pdb.Spec.MinAvailable == nil {
+		t.Fatal("after second call: expected MinAvailable to be set, got nil")
+	}
+	if *pdb.Spec.MinAvailable != intstr.FromInt32(3) {
+		t.Errorf("after second call: MinAvailable = %v, want 3", *pdb.Spec.MinAvailable)
+	}
+
+	// Verify labels and selector are still correctly set.
+	expectedLabels := labelsForMemcached("switch-max-min")
+	for k, v := range expectedLabels {
+		if pdb.Labels[k] != v {
+			t.Errorf("after second call: label %q = %q, want %q", k, pdb.Labels[k], v)
+		}
+	}
+	if pdb.Spec.Selector == nil {
+		t.Fatal("after second call: expected non-nil selector")
+	}
+	for k, v := range expectedLabels {
+		if pdb.Spec.Selector.MatchLabels[k] != v {
+			t.Errorf("after second call: selector %q = %q, want %q", k, pdb.Spec.Selector.MatchLabels[k], v)
+		}
+	}
+}
+
+func TestConstructPDB_Idempotent(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-pdb", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+					Enabled:      true,
+					MinAvailable: intOrStringPtr(intstr.FromInt32(2)),
+				},
+			},
+		},
+	}
+	pdb := &policyv1.PodDisruptionBudget{}
+
+	// First call.
+	constructPDB(mc, pdb)
+	firstLabels := maps.Clone(pdb.Labels)
+	firstSpec := *pdb.Spec.DeepCopy()
+
+	// Second call with the same CR on the same PDB object.
+	constructPDB(mc, pdb)
+
+	// Verify Labels unchanged.
+	if !reflect.DeepEqual(pdb.Labels, firstLabels) {
+		t.Errorf("Labels changed: got %v, want %v", pdb.Labels, firstLabels)
+	}
+
+	// Verify full PDB spec is identical after the second call.
+	if !reflect.DeepEqual(pdb.Spec, firstSpec) {
+		t.Errorf("PDB spec changed between calls:\nfirst:  %+v\nsecond: %+v", firstSpec, pdb.Spec)
 	}
 }
 

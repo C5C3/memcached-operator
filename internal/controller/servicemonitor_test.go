@@ -2,6 +2,7 @@
 package controller
 
 import (
+	"reflect"
 	"testing"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -9,6 +10,8 @@ import (
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 )
+
+const testReleaseLabel = "prometheus"
 
 func TestConstructServiceMonitor(t *testing.T) {
 	tests := []struct {
@@ -150,7 +153,7 @@ func TestConstructServiceMonitor_AdditionalLabels(t *testing.T) {
 				Enabled: true,
 				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
-						"release": "prometheus",
+						"release": testReleaseLabel,
 						"team":    "platform",
 					},
 				},
@@ -162,7 +165,7 @@ func TestConstructServiceMonitor_AdditionalLabels(t *testing.T) {
 	constructServiceMonitor(mc, sm)
 
 	// Should have base labels + additional labels on metadata.
-	if sm.Labels["release"] != "prometheus" {
+	if sm.Labels["release"] != testReleaseLabel {
 		t.Errorf("expected additional label release=prometheus, got %q", sm.Labels["release"])
 	}
 	if sm.Labels["team"] != "platform" {
@@ -191,7 +194,7 @@ func TestConstructServiceMonitor_AdditionalLabelsConflict(t *testing.T) {
 				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
 						"app.kubernetes.io/name": "override",
-						"release":                "prometheus",
+						"release":                testReleaseLabel,
 					},
 				},
 			},
@@ -212,8 +215,8 @@ func TestConstructServiceMonitor_AdditionalLabelsConflict(t *testing.T) {
 		t.Errorf("standard label app.kubernetes.io/managed-by = %q, want %q", sm.Labels["app.kubernetes.io/managed-by"], "memcached-operator")
 	}
 	// Non-conflicting additional label should still be present.
-	if sm.Labels["release"] != "prometheus" {
-		t.Errorf("additional label release = %q, want %q", sm.Labels["release"], "prometheus")
+	if sm.Labels["release"] != testReleaseLabel {
+		t.Errorf("additional label release = %q, want %q", sm.Labels["release"], testReleaseLabel)
 	}
 }
 
@@ -329,5 +332,93 @@ func TestServiceMonitorEnabled(t *testing.T) {
 				t.Errorf("serviceMonitorEnabled() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestConstructServiceMonitor_Idempotent(t *testing.T) {
+	releaseLabel := testReleaseLabel
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "idem-test",
+			Namespace: "monitoring",
+		},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+					AdditionalLabels: map[string]string{
+						"release": releaseLabel,
+						"team":    "platform",
+					},
+					Interval:      "45s",
+					ScrapeTimeout: "15s",
+				},
+			},
+		},
+	}
+
+	sm := &monitoringv1.ServiceMonitor{}
+
+	// First call.
+	constructServiceMonitor(mc, sm)
+
+	// Capture the state after the first call.
+	labelsAfterFirst := make(map[string]string, len(sm.Labels))
+	for k, v := range sm.Labels {
+		labelsAfterFirst[k] = v
+	}
+	endpointsAfterFirst := make([]monitoringv1.Endpoint, len(sm.Spec.Endpoints))
+	copy(endpointsAfterFirst, sm.Spec.Endpoints)
+	selectorAfterFirst := sm.Spec.Selector.DeepCopy()
+	nsSelectorAfterFirst := sm.Spec.NamespaceSelector.DeepCopy()
+
+	// Second call on the same object.
+	constructServiceMonitor(mc, sm)
+
+	// Verify labels are identical.
+	if !reflect.DeepEqual(sm.Labels, labelsAfterFirst) {
+		t.Errorf("labels after second call = %v, want %v", sm.Labels, labelsAfterFirst)
+	}
+
+	// Verify endpoints are identical.
+	if !reflect.DeepEqual(sm.Spec.Endpoints, endpointsAfterFirst) {
+		t.Errorf("endpoints after second call = %v, want %v", sm.Spec.Endpoints, endpointsAfterFirst)
+	}
+
+	// Verify selector is identical.
+	if !reflect.DeepEqual(sm.Spec.Selector, *selectorAfterFirst) {
+		t.Errorf("selector after second call = %v, want %v", sm.Spec.Selector, *selectorAfterFirst)
+	}
+
+	// Verify namespaceSelector is identical.
+	if !reflect.DeepEqual(sm.Spec.NamespaceSelector, *nsSelectorAfterFirst) {
+		t.Errorf("namespaceSelector after second call = %v, want %v", sm.Spec.NamespaceSelector, *nsSelectorAfterFirst)
+	}
+
+	// Sanity check: verify the values are what we expect (not just that two calls match).
+	if sm.Labels["release"] != releaseLabel {
+		t.Errorf("expected additional label release=%s, got %q", releaseLabel, sm.Labels["release"])
+	}
+	if sm.Labels["team"] != "platform" {
+		t.Errorf("expected additional label team=platform, got %q", sm.Labels["team"])
+	}
+	if sm.Labels["app.kubernetes.io/name"] != "memcached" {
+		t.Errorf("expected standard label app.kubernetes.io/name=memcached, got %q", sm.Labels["app.kubernetes.io/name"])
+	}
+	if len(sm.Spec.Endpoints) != 1 {
+		t.Fatalf("expected 1 endpoint, got %d", len(sm.Spec.Endpoints))
+	}
+	ep := sm.Spec.Endpoints[0]
+	if ep.Interval != "45s" {
+		t.Errorf("interval = %q, want %q", ep.Interval, "45s")
+	}
+	if ep.ScrapeTimeout != "15s" {
+		t.Errorf("scrapeTimeout = %q, want %q", ep.ScrapeTimeout, "15s")
+	}
+	if ep.Port != "metrics" {
+		t.Errorf("endpoint port = %q, want %q", ep.Port, "metrics")
+	}
+	if len(sm.Spec.NamespaceSelector.MatchNames) != 1 || sm.Spec.NamespaceSelector.MatchNames[0] != "monitoring" {
+		t.Errorf("namespaceSelector = %v, want [monitoring]", sm.Spec.NamespaceSelector.MatchNames)
 	}
 }

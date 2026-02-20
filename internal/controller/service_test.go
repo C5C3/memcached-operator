@@ -2,6 +2,7 @@
 package controller
 
 import (
+	"reflect"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -438,5 +439,161 @@ func TestConstructService_TLSNilSecurity(t *testing.T) {
 	}
 	if svc.Spec.Ports[0].Port != 11211 {
 		t.Errorf("port = %d, want 11211", svc.Spec.Ports[0].Port)
+	}
+}
+
+func TestConstructService_AnnotationClearing(t *testing.T) {
+	tests := []struct {
+		name       string
+		secondSpec memcachedv1alpha1.MemcachedSpec
+	}{
+		{
+			name:       "Service field set to nil clears annotations",
+			secondSpec: memcachedv1alpha1.MemcachedSpec{Service: nil},
+		},
+		{
+			name: "empty annotations map clears annotations",
+			secondSpec: memcachedv1alpha1.MemcachedSpec{
+				Service: &memcachedv1alpha1.ServiceSpec{
+					Annotations: map[string]string{},
+				},
+			},
+		},
+		{
+			name: "nil annotations map clears annotations",
+			secondSpec: memcachedv1alpha1.MemcachedSpec{
+				Service: &memcachedv1alpha1.ServiceSpec{
+					Annotations: nil,
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Step 1: Create a CR with annotations and apply to Service.
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "anno-clear", Namespace: "default"},
+				Spec: memcachedv1alpha1.MemcachedSpec{
+					Service: &memcachedv1alpha1.ServiceSpec{
+						Annotations: map[string]string{
+							"prometheus.io/scrape": "true",
+							"custom/key":           "value",
+						},
+					},
+				},
+			}
+			svc := &corev1.Service{}
+
+			constructService(mc, svc)
+
+			// Verify annotations are set after first call.
+			if len(svc.Annotations) != 2 {
+				t.Fatalf("after first call: expected 2 annotations, got %d: %v", len(svc.Annotations), svc.Annotations)
+			}
+			if svc.Annotations["prometheus.io/scrape"] != "true" {
+				t.Errorf("after first call: annotation prometheus.io/scrape = %q, want %q", svc.Annotations["prometheus.io/scrape"], "true")
+			}
+			if svc.Annotations["custom/key"] != "value" {
+				t.Errorf("after first call: annotation custom/key = %q, want %q", svc.Annotations["custom/key"], "value")
+			}
+
+			// Step 2: Change the CR to have no annotations and re-apply on the same Service.
+			mc.Spec = tt.secondSpec
+
+			constructService(mc, svc)
+
+			// Verify annotations are cleared to nil (not just empty map).
+			if svc.Annotations != nil {
+				t.Errorf("after second call: expected nil annotations, got %v", svc.Annotations)
+			}
+
+			// Verify other fields are still correctly set.
+			if svc.Spec.ClusterIP != corev1.ClusterIPNone {
+				t.Errorf("after second call: expected clusterIP %q, got %q", corev1.ClusterIPNone, svc.Spec.ClusterIP)
+			}
+			if len(svc.Spec.Ports) != 1 {
+				t.Fatalf("after second call: expected 1 port, got %d", len(svc.Spec.Ports))
+			}
+			if svc.Spec.Ports[0].Name != testPortName {
+				t.Errorf("after second call: port name = %q, want %q", svc.Spec.Ports[0].Name, testPortName)
+			}
+		})
+	}
+}
+
+func TestConstructService_Idempotent(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-test", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Service: &memcachedv1alpha1.ServiceSpec{
+				Annotations: map[string]string{
+					"example.com/key": "val",
+				},
+			},
+		},
+	}
+	svc := &corev1.Service{}
+
+	// First call.
+	constructService(mc, svc)
+
+	// Snapshot all relevant fields after the first call.
+	firstClusterIP := svc.Spec.ClusterIP
+	firstPorts := make([]corev1.ServicePort, len(svc.Spec.Ports))
+	copy(firstPorts, svc.Spec.Ports)
+	firstLabels := make(map[string]string, len(svc.Labels))
+	for k, v := range svc.Labels {
+		firstLabels[k] = v
+	}
+	firstSelector := make(map[string]string, len(svc.Spec.Selector))
+	for k, v := range svc.Spec.Selector {
+		firstSelector[k] = v
+	}
+	firstAnnotations := make(map[string]string, len(svc.Annotations))
+	for k, v := range svc.Annotations {
+		firstAnnotations[k] = v
+	}
+
+	// Second call with the same CR on the same Service object.
+	constructService(mc, svc)
+
+	// Verify ClusterIP unchanged.
+	if svc.Spec.ClusterIP != firstClusterIP {
+		t.Errorf("ClusterIP changed: got %q, want %q", svc.Spec.ClusterIP, firstClusterIP)
+	}
+
+	// Verify Ports unchanged.
+	if len(svc.Spec.Ports) != len(firstPorts) {
+		t.Fatalf("port count changed: got %d, want %d", len(svc.Spec.Ports), len(firstPorts))
+	}
+	for i, p := range svc.Spec.Ports {
+		if p.Name != firstPorts[i].Name {
+			t.Errorf("port[%d].Name changed: got %q, want %q", i, p.Name, firstPorts[i].Name)
+		}
+		if p.Port != firstPorts[i].Port {
+			t.Errorf("port[%d].Port changed: got %d, want %d", i, p.Port, firstPorts[i].Port)
+		}
+		if p.TargetPort != firstPorts[i].TargetPort {
+			t.Errorf("port[%d].TargetPort changed: got %v, want %v", i, p.TargetPort, firstPorts[i].TargetPort)
+		}
+		if p.Protocol != firstPorts[i].Protocol {
+			t.Errorf("port[%d].Protocol changed: got %q, want %q", i, p.Protocol, firstPorts[i].Protocol)
+		}
+	}
+
+	// Verify Labels unchanged.
+	if !reflect.DeepEqual(svc.Labels, firstLabels) {
+		t.Errorf("Labels changed: got %v, want %v", svc.Labels, firstLabels)
+	}
+
+	// Verify Selector unchanged.
+	if !reflect.DeepEqual(svc.Spec.Selector, firstSelector) {
+		t.Errorf("Selector changed: got %v, want %v", svc.Spec.Selector, firstSelector)
+	}
+
+	// Verify Annotations unchanged.
+	if !reflect.DeepEqual(svc.Annotations, firstAnnotations) {
+		t.Errorf("Annotations changed: got %v, want %v", svc.Annotations, firstAnnotations)
 	}
 }

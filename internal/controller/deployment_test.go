@@ -2,6 +2,7 @@
 package controller
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -12,6 +13,16 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+)
+
+const (
+	testExporterContainer = "exporter"
+	testExporterImage     = "my-registry/memcached-exporter:v1.0.0"
+	testSASLSecret        = "my-sasl-secret"
+	testTLSSecret         = "my-tls-secret"
+	testCPU100m           = "100m"
+	testMem128Mi          = "128Mi"
+	testDefaultImage      = "memcached:1.6"
 )
 
 func TestLabelsForMemcached(t *testing.T) {
@@ -216,7 +227,7 @@ func TestConstructDeployment_MinimalSpec(t *testing.T) {
 	if len(containers) != 1 {
 		t.Fatalf("expected 1 container, got %d", len(containers))
 	}
-	if containers[0].Image != "memcached:1.6" {
+	if containers[0].Image != testDefaultImage {
 		t.Errorf("expected image memcached:1.6, got %q", containers[0].Image)
 	}
 	if containers[0].Name != testPortName {
@@ -286,8 +297,8 @@ func TestConstructDeployment_CustomSpec(t *testing.T) {
 			Image:    stringPtr("memcached:1.6.29"),
 			Resources: &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("100m"),
-					corev1.ResourceMemory: resource.MustParse("128Mi"),
+					corev1.ResourceCPU:    resource.MustParse(testCPU100m),
+					corev1.ResourceMemory: resource.MustParse(testMem128Mi),
 				},
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -328,7 +339,7 @@ func TestConstructDeployment_CustomSpec(t *testing.T) {
 
 	// Resources.
 	cpuReq := container.Resources.Requests[corev1.ResourceCPU]
-	if cpuReq.String() != "100m" {
+	if cpuReq.String() != testCPU100m {
 		t.Errorf("expected cpu request 100m, got %s", cpuReq.String())
 	}
 	memLimit := container.Resources.Limits[corev1.ResourceMemory]
@@ -430,8 +441,8 @@ func TestConstructDeployment_Resources(t *testing.T) {
 			name: "resources from spec are set on container",
 			resources: &corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("100m"),
-					corev1.ResourceMemory: resource.MustParse("128Mi"),
+					corev1.ResourceCPU:    resource.MustParse(testCPU100m),
+					corev1.ResourceMemory: resource.MustParse(testMem128Mi),
 				},
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -462,11 +473,11 @@ func TestConstructDeployment_Resources(t *testing.T) {
 				}
 			} else {
 				cpuReq := container.Resources.Requests[corev1.ResourceCPU]
-				if cpuReq.String() != "100m" {
+				if cpuReq.String() != testCPU100m {
 					t.Errorf("cpu request = %s, want 100m", cpuReq.String())
 				}
 				memReq := container.Resources.Requests[corev1.ResourceMemory]
-				if memReq.String() != "128Mi" {
+				if memReq.String() != testMem128Mi {
 					t.Errorf("memory request = %s, want 128Mi", memReq.String())
 				}
 				cpuLimit := container.Resources.Limits[corev1.ResourceCPU]
@@ -1184,7 +1195,7 @@ func TestBuildExporterContainer_Enabled(t *testing.T) {
 	if container == nil {
 		t.Fatal("expected non-nil container")
 	}
-	if container.Name != "exporter" {
+	if container.Name != testExporterContainer {
 		t.Errorf("expected container name 'exporter', got %q", container.Name)
 	}
 	if container.Image != "prom/memcached-exporter:v0.15.4" {
@@ -1194,7 +1205,7 @@ func TestBuildExporterContainer_Enabled(t *testing.T) {
 		t.Fatalf("expected 1 port, got %d", len(container.Ports))
 	}
 	port := container.Ports[0]
-	if port.Name != "metrics" || port.ContainerPort != 9150 || port.Protocol != corev1.ProtocolTCP {
+	if port.Name != testMetricsPort || port.ContainerPort != 9150 || port.Protocol != corev1.ProtocolTCP {
 		t.Errorf("unexpected port: %+v", port)
 	}
 }
@@ -1223,7 +1234,7 @@ func TestBuildExporterContainer_ReturnsNil(t *testing.T) {
 }
 
 func TestBuildExporterContainer_CustomImage(t *testing.T) {
-	customImage := "my-registry/memcached-exporter:v1.0.0"
+	customImage := testExporterImage
 	mc := &memcachedv1alpha1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "exp-custom", Namespace: "default"},
 		Spec: memcachedv1alpha1.MemcachedSpec{
@@ -1256,8 +1267,8 @@ func TestBuildExporterContainer_WithResources(t *testing.T) {
 						corev1.ResourceMemory: resource.MustParse("64Mi"),
 					},
 					Limits: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("100m"),
-						corev1.ResourceMemory: resource.MustParse("128Mi"),
+						corev1.ResourceCPU:    resource.MustParse(testCPU100m),
+						corev1.ResourceMemory: resource.MustParse(testMem128Mi),
 					},
 				},
 			},
@@ -1278,11 +1289,11 @@ func TestBuildExporterContainer_WithResources(t *testing.T) {
 		t.Errorf("memory request = %s, want 64Mi", memReq.String())
 	}
 	cpuLimit := container.Resources.Limits[corev1.ResourceCPU]
-	if cpuLimit.String() != "100m" {
+	if cpuLimit.String() != testCPU100m {
 		t.Errorf("cpu limit = %s, want 100m", cpuLimit.String())
 	}
 	memLimit := container.Resources.Limits[corev1.ResourceMemory]
-	if memLimit.String() != "128Mi" {
+	if memLimit.String() != testMem128Mi {
 		t.Errorf("memory limit = %s, want 128Mi", memLimit.String())
 	}
 }
@@ -1328,7 +1339,7 @@ func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
 	if containers[0].Name != "memcached" {
 		t.Errorf("first container name = %q, want 'memcached'", containers[0].Name)
 	}
-	if containers[1].Name != "exporter" {
+	if containers[1].Name != testExporterContainer {
 		t.Errorf("second container name = %q, want 'exporter'", containers[1].Name)
 	}
 }
@@ -1574,7 +1585,7 @@ func TestBuildSASLVolume_Enabled(t *testing.T) {
 				SASL: &memcachedv1alpha1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "my-sasl-secret",
+						Name: testSASLSecret,
 					},
 				},
 			},
@@ -1586,14 +1597,14 @@ func TestBuildSASLVolume_Enabled(t *testing.T) {
 	if vol == nil {
 		t.Fatal("expected non-nil Volume")
 	}
-	if vol.Name != "sasl-credentials" {
-		t.Errorf("volume name = %q, want %q", vol.Name, "sasl-credentials")
+	if vol.Name != saslVolumeName {
+		t.Errorf("volume name = %q, want %q", vol.Name, saslVolumeName)
 	}
 	if vol.Secret == nil {
 		t.Fatal("expected Secret volume source")
 	}
-	if vol.Secret.SecretName != "my-sasl-secret" {
-		t.Errorf("secretName = %q, want %q", vol.Secret.SecretName, "my-sasl-secret")
+	if vol.Secret.SecretName != testSASLSecret {
+		t.Errorf("secretName = %q, want %q", vol.Secret.SecretName, testSASLSecret)
 	}
 	if len(vol.Secret.Items) != 1 {
 		t.Fatalf("expected 1 Items entry, got %d", len(vol.Secret.Items))
@@ -1642,7 +1653,7 @@ func TestBuildSASLVolumeMount_Enabled(t *testing.T) {
 				SASL: &memcachedv1alpha1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "my-sasl-secret",
+						Name: testSASLSecret,
 					},
 				},
 			},
@@ -1654,8 +1665,8 @@ func TestBuildSASLVolumeMount_Enabled(t *testing.T) {
 	if vm == nil {
 		t.Fatal("expected non-nil VolumeMount")
 	}
-	if vm.Name != "sasl-credentials" {
-		t.Errorf("volumeMount name = %q, want %q", vm.Name, "sasl-credentials")
+	if vm.Name != saslVolumeName {
+		t.Errorf("volumeMount name = %q, want %q", vm.Name, saslVolumeName)
 	}
 	if vm.MountPath != "/etc/memcached/sasl" {
 		t.Errorf("mountPath = %q, want %q", vm.MountPath, "/etc/memcached/sasl")
@@ -1697,7 +1708,7 @@ func TestBuildMemcachedArgs_SASLEnabled(t *testing.T) {
 	sasl := &memcachedv1alpha1.SASLSpec{
 		Enabled: true,
 		CredentialsSecretRef: corev1.LocalObjectReference{
-			Name: "my-sasl-secret",
+			Name: testSASLSecret,
 		},
 	}
 
@@ -1758,7 +1769,7 @@ func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
 	sasl := &memcachedv1alpha1.SASLSpec{
 		Enabled: true,
 		CredentialsSecretRef: corev1.LocalObjectReference{
-			Name: "my-sasl-secret",
+			Name: testSASLSecret,
 		},
 	}
 
@@ -1791,7 +1802,7 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 				SASL: &memcachedv1alpha1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "my-sasl-secret",
+						Name: testSASLSecret,
 					},
 				},
 			},
@@ -1825,8 +1836,8 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 		t.Fatalf("expected 1 volumeMount, got %d", len(container.VolumeMounts))
 	}
 	vm := container.VolumeMounts[0]
-	if vm.Name != "sasl-credentials" {
-		t.Errorf("volumeMount name = %q, want %q", vm.Name, "sasl-credentials")
+	if vm.Name != saslVolumeName {
+		t.Errorf("volumeMount name = %q, want %q", vm.Name, saslVolumeName)
 	}
 	if vm.MountPath != "/etc/memcached/sasl" {
 		t.Errorf("volumeMount mountPath = %q, want %q", vm.MountPath, "/etc/memcached/sasl")
@@ -1841,14 +1852,14 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 		t.Fatalf("expected 1 volume, got %d", len(volumes))
 	}
 	vol := volumes[0]
-	if vol.Name != "sasl-credentials" {
-		t.Errorf("volume name = %q, want %q", vol.Name, "sasl-credentials")
+	if vol.Name != saslVolumeName {
+		t.Errorf("volume name = %q, want %q", vol.Name, saslVolumeName)
 	}
 	if vol.Secret == nil {
 		t.Fatal("expected Secret volume source")
 	}
-	if vol.Secret.SecretName != "my-sasl-secret" {
-		t.Errorf("volume secretName = %q, want %q", vol.Secret.SecretName, "my-sasl-secret")
+	if vol.Secret.SecretName != testSASLSecret {
+		t.Errorf("volume secretName = %q, want %q", vol.Secret.SecretName, testSASLSecret)
 	}
 	if len(vol.Secret.Items) != 1 {
 		t.Fatalf("expected 1 Items entry, got %d", len(vol.Secret.Items))
@@ -1918,8 +1929,8 @@ func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
 	if len(mcContainer.VolumeMounts) != 1 {
 		t.Fatalf("expected 1 volumeMount on memcached, got %d", len(mcContainer.VolumeMounts))
 	}
-	if mcContainer.VolumeMounts[0].Name != "sasl-credentials" {
-		t.Errorf("memcached volumeMount name = %q, want %q", mcContainer.VolumeMounts[0].Name, "sasl-credentials")
+	if mcContainer.VolumeMounts[0].Name != saslVolumeName {
+		t.Errorf("memcached volumeMount name = %q, want %q", mcContainer.VolumeMounts[0].Name, saslVolumeName)
 	}
 
 	// Pod has SASL volume.
@@ -1962,8 +1973,8 @@ func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
 	if len(container.VolumeMounts) != 1 {
 		t.Fatalf("expected 1 volumeMount, got %d", len(container.VolumeMounts))
 	}
-	if container.VolumeMounts[0].Name != "sasl-credentials" {
-		t.Errorf("volumeMount name = %q, want %q", container.VolumeMounts[0].Name, "sasl-credentials")
+	if container.VolumeMounts[0].Name != saslVolumeName {
+		t.Errorf("volumeMount name = %q, want %q", container.VolumeMounts[0].Name, saslVolumeName)
 	}
 
 	// SASL: -Y flag in args.
@@ -2047,8 +2058,8 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	if len(container.VolumeMounts) != 1 {
 		t.Fatalf("expected 1 volumeMount, got %d", len(container.VolumeMounts))
 	}
-	if container.VolumeMounts[0].Name != "sasl-credentials" {
-		t.Errorf("volumeMount name = %q, want %q", container.VolumeMounts[0].Name, "sasl-credentials")
+	if container.VolumeMounts[0].Name != saslVolumeName {
+		t.Errorf("volumeMount name = %q, want %q", container.VolumeMounts[0].Name, saslVolumeName)
 	}
 
 	// SASL: -Y flag in args.
@@ -2101,7 +2112,7 @@ func TestBuildTLSVolume_Enabled(t *testing.T) {
 				TLS: &memcachedv1alpha1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "my-tls-secret",
+						Name: testTLSSecret,
 					},
 				},
 			},
@@ -2119,8 +2130,8 @@ func TestBuildTLSVolume_Enabled(t *testing.T) {
 	if vol.Secret == nil {
 		t.Fatal("expected Secret volume source")
 	}
-	if vol.Secret.SecretName != "my-tls-secret" {
-		t.Errorf("secretName = %q, want %q", vol.Secret.SecretName, "my-tls-secret")
+	if vol.Secret.SecretName != testTLSSecret {
+		t.Errorf("secretName = %q, want %q", vol.Secret.SecretName, testTLSSecret)
 	}
 	if len(vol.Secret.Items) != 2 {
 		t.Fatalf("expected 2 Items entries, got %d", len(vol.Secret.Items))
@@ -2176,7 +2187,7 @@ func TestBuildTLSVolume_WithClientCert(t *testing.T) {
 					Enabled:          true,
 					EnableClientCert: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "my-tls-secret",
+						Name: testTLSSecret,
 					},
 				},
 			},
@@ -2207,7 +2218,7 @@ func TestBuildTLSVolumeMount_Enabled(t *testing.T) {
 				TLS: &memcachedv1alpha1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "my-tls-secret",
+						Name: testTLSSecret,
 					},
 				},
 			},
@@ -2262,7 +2273,7 @@ func TestBuildMemcachedArgs_TLSEnabled(t *testing.T) {
 	tls := &memcachedv1alpha1.TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
-			Name: "my-tls-secret",
+			Name: testTLSSecret,
 		},
 	}
 
@@ -2320,7 +2331,7 @@ func TestBuildMemcachedArgs_TLSWithClientCert(t *testing.T) {
 		Enabled:          true,
 		EnableClientCert: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
-			Name: "my-tls-secret",
+			Name: testTLSSecret,
 		},
 	}
 
@@ -2349,13 +2360,13 @@ func TestBuildMemcachedArgs_TLSWithSASL(t *testing.T) {
 	sasl := &memcachedv1alpha1.SASLSpec{
 		Enabled: true,
 		CredentialsSecretRef: corev1.LocalObjectReference{
-			Name: "my-sasl-secret",
+			Name: testSASLSecret,
 		},
 	}
 	tls := &memcachedv1alpha1.TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
-			Name: "my-tls-secret",
+			Name: testTLSSecret,
 		},
 	}
 
@@ -2389,7 +2400,7 @@ func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
 	tls := &memcachedv1alpha1.TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
-			Name: "my-tls-secret",
+			Name: testTLSSecret,
 		},
 	}
 
@@ -2424,7 +2435,7 @@ func TestConstructDeployment_TLSEnabled(t *testing.T) {
 				TLS: &memcachedv1alpha1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "my-tls-secret",
+						Name: testTLSSecret,
 					},
 				},
 			},
@@ -2499,8 +2510,8 @@ func TestConstructDeployment_TLSEnabled(t *testing.T) {
 	if vol.Secret == nil {
 		t.Fatal("expected Secret volume source")
 	}
-	if vol.Secret.SecretName != "my-tls-secret" {
-		t.Errorf("volume secretName = %q, want %q", vol.Secret.SecretName, "my-tls-secret")
+	if vol.Secret.SecretName != testTLSSecret {
+		t.Errorf("volume secretName = %q, want %q", vol.Secret.SecretName, testTLSSecret)
 	}
 	if len(vol.Secret.Items) != 2 {
 		t.Fatalf("expected 2 Items entries, got %d", len(vol.Secret.Items))
@@ -2599,8 +2610,8 @@ func TestConstructDeployment_TLSWithSASL(t *testing.T) {
 	if len(container.VolumeMounts) != 2 {
 		t.Fatalf("expected 2 volumeMounts, got %d", len(container.VolumeMounts))
 	}
-	if container.VolumeMounts[0].Name != "sasl-credentials" {
-		t.Errorf("volumeMount[0] name = %q, want %q", container.VolumeMounts[0].Name, "sasl-credentials")
+	if container.VolumeMounts[0].Name != saslVolumeName {
+		t.Errorf("volumeMount[0] name = %q, want %q", container.VolumeMounts[0].Name, saslVolumeName)
 	}
 	if container.VolumeMounts[1].Name != tlsVolumeName {
 		t.Errorf("volumeMount[1] name = %q, want %q", container.VolumeMounts[1].Name, tlsVolumeName)
@@ -2611,8 +2622,8 @@ func TestConstructDeployment_TLSWithSASL(t *testing.T) {
 	if len(volumes) != 2 {
 		t.Fatalf("expected 2 volumes, got %d", len(volumes))
 	}
-	if volumes[0].Name != "sasl-credentials" {
-		t.Errorf("volume[0] name = %q, want %q", volumes[0].Name, "sasl-credentials")
+	if volumes[0].Name != saslVolumeName {
+		t.Errorf("volume[0] name = %q, want %q", volumes[0].Name, saslVolumeName)
 	}
 	if volumes[1].Name != tlsVolumeName {
 		t.Errorf("volume[1] name = %q, want %q", volumes[1].Name, tlsVolumeName)
@@ -2638,7 +2649,7 @@ func TestConstructDeployment_TLSPort(t *testing.T) {
 				TLS: &memcachedv1alpha1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "my-tls-secret",
+						Name: testTLSSecret,
 					},
 				},
 			},
@@ -2750,5 +2761,484 @@ func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) 
 	exporterContainer := dep.Spec.Template.Spec.Containers[1]
 	if exporterContainer.SecurityContext == nil {
 		t.Fatal("expected non-nil container SecurityContext on exporter")
+	}
+}
+
+// kitchenSinkDeployment constructs a Deployment from a Memcached CR with ALL features enabled.
+// Used by TestConstructDeployment_KitchenSink_* subtests.
+func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
+	t.Helper()
+	runAsNonRoot := true
+	runAsUser := int64(1000)
+	readOnlyRootFS := true
+	allowPrivEsc := false
+	exporterImg := testExporterImage
+
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kitchen-sink",
+			Namespace: "production",
+		},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+			Image:    stringPtr("memcached:1.6.29"),
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("250m"),
+					corev1.ResourceMemory: resource.MustParse("512Mi"),
+				},
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("1"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
+				},
+			},
+			Memcached: &memcachedv1alpha1.MemcachedConfig{
+				MaxMemoryMB:    256,
+				MaxConnections: 2048,
+				Threads:        8,
+				MaxItemSize:    "2m",
+				Verbosity:      2,
+				ExtraArgs:      []string{"--max-reqs-per-event", "20"},
+			},
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           15,
+					TerminationGracePeriodSeconds: 45,
+				},
+			},
+			Security: &memcachedv1alpha1.SecuritySpec{
+				PodSecurityContext: &corev1.PodSecurityContext{
+					RunAsNonRoot: &runAsNonRoot,
+					RunAsUser:    &runAsUser,
+				},
+				ContainerSecurityContext: &corev1.SecurityContext{
+					ReadOnlyRootFilesystem:   &readOnlyRootFS,
+					AllowPrivilegeEscalation: &allowPrivEsc,
+				},
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: testSASLSecret,
+					},
+				},
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled:          true,
+					EnableClientCert: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: testTLSSecret,
+					},
+				},
+			},
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled:       true,
+				ExporterImage: &exporterImg,
+				ExporterResources: &corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("50m"),
+						corev1.ResourceMemory: resource.MustParse("64Mi"),
+					},
+					Limits: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse(testCPU100m),
+						corev1.ResourceMemory: resource.MustParse(testMem128Mi),
+					},
+				},
+			},
+			Service: &memcachedv1alpha1.ServiceSpec{
+				Annotations: map[string]string{
+					"prometheus.io/scrape": "true",
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+	constructDeployment(mc, dep)
+	return dep
+}
+
+func TestConstructDeployment_KitchenSink_Containers(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+
+	if dep.Spec.Replicas == nil || *dep.Spec.Replicas != 3 {
+		t.Errorf("expected 3 replicas, got %v", dep.Spec.Replicas)
+	}
+
+	containers := dep.Spec.Template.Spec.Containers
+	if len(containers) != 2 {
+		t.Fatalf("expected 2 containers (memcached + exporter), got %d", len(containers))
+	}
+
+	mc := containers[0]
+	if mc.Image != "memcached:1.6.29" {
+		t.Errorf("memcached image = %q, want memcached:1.6.29", mc.Image)
+	}
+	if mc.Name != testPortName {
+		t.Errorf("memcached container name = %q, want %q", mc.Name, testPortName)
+	}
+	if mc.LivenessProbe == nil {
+		t.Error("expected liveness probe")
+	}
+	if mc.ReadinessProbe == nil {
+		t.Error("expected readiness probe")
+	}
+
+	exp := containers[1]
+	if exp.Name != testExporterContainer {
+		t.Errorf("exporter container name = %q, want exporter", exp.Name)
+	}
+	if exp.Image != testExporterImage {
+		t.Errorf("exporter image = %q, want my-registry/memcached-exporter:v1.0.0", exp.Image)
+	}
+}
+
+func TestConstructDeployment_KitchenSink_Args(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+	mc := dep.Spec.Template.Spec.Containers[0]
+
+	expectedArgs := []string{
+		"-m", "256", "-c", "2048", "-t", "8", "-I", "2m",
+		"-vv",
+		"-Y", saslMountPath + "/password-file",
+		"-Z",
+		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
+		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+		"-o", "ssl_ca_cert=/etc/memcached/tls/ca.crt",
+		"--max-reqs-per-event", "20",
+	}
+	if len(mc.Args) != len(expectedArgs) {
+		t.Fatalf("expected %d args, got %d\ngot:  %v\nwant: %v",
+			len(expectedArgs), len(mc.Args), mc.Args, expectedArgs)
+	}
+	for i, arg := range expectedArgs {
+		if mc.Args[i] != arg {
+			t.Errorf("args[%d] = %q, want %q", i, mc.Args[i], arg)
+		}
+	}
+}
+
+func TestConstructDeployment_KitchenSink_Resources(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+	mc := dep.Spec.Template.Spec.Containers[0]
+	exp := dep.Spec.Template.Spec.Containers[1]
+
+	// Memcached container resources.
+	if cpuReq := mc.Resources.Requests[corev1.ResourceCPU]; cpuReq.String() != "250m" {
+		t.Errorf("memcached cpu request = %s, want 250m", cpuReq.String())
+	}
+	if memReq := mc.Resources.Requests[corev1.ResourceMemory]; memReq.String() != "512Mi" {
+		t.Errorf("memcached memory request = %s, want 512Mi", memReq.String())
+	}
+	if cpuLim := mc.Resources.Limits[corev1.ResourceCPU]; cpuLim.String() != "1" {
+		t.Errorf("memcached cpu limit = %s, want 1", cpuLim.String())
+	}
+	if memLim := mc.Resources.Limits[corev1.ResourceMemory]; memLim.String() != "1Gi" {
+		t.Errorf("memcached memory limit = %s, want 1Gi", memLim.String())
+	}
+
+	// Exporter container resources.
+	if cpuReq := exp.Resources.Requests[corev1.ResourceCPU]; cpuReq.String() != "50m" {
+		t.Errorf("exporter cpu request = %s, want 50m", cpuReq.String())
+	}
+	if memReq := exp.Resources.Requests[corev1.ResourceMemory]; memReq.String() != "64Mi" {
+		t.Errorf("exporter memory request = %s, want 64Mi", memReq.String())
+	}
+	if cpuLim := exp.Resources.Limits[corev1.ResourceCPU]; cpuLim.String() != testCPU100m {
+		t.Errorf("exporter cpu limit = %s, want 100m", cpuLim.String())
+	}
+	if memLim := exp.Resources.Limits[corev1.ResourceMemory]; memLim.String() != testMem128Mi {
+		t.Errorf("exporter memory limit = %s, want 128Mi", memLim.String())
+	}
+}
+
+func TestConstructDeployment_KitchenSink_Ports(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+	mc := dep.Spec.Template.Spec.Containers[0]
+	exp := dep.Spec.Template.Spec.Containers[1]
+
+	if len(mc.Ports) != 2 {
+		t.Fatalf("expected 2 memcached ports, got %d", len(mc.Ports))
+	}
+	if mc.Ports[0].Name != testPortName || mc.Ports[0].ContainerPort != 11211 {
+		t.Errorf("port[0] = %+v, want name=%s containerPort=11211", mc.Ports[0], testPortName)
+	}
+	if mc.Ports[1].Name != tlsPortName || mc.Ports[1].ContainerPort != 11212 {
+		t.Errorf("port[1] = %+v, want name=%s containerPort=11212", mc.Ports[1], tlsPortName)
+	}
+
+	if len(exp.Ports) != 1 {
+		t.Fatalf("expected 1 exporter port, got %d", len(exp.Ports))
+	}
+	if exp.Ports[0].Name != testMetricsPort || exp.Ports[0].ContainerPort != 9150 {
+		t.Errorf("exporter port = %+v, want name=metrics containerPort=9150", exp.Ports[0])
+	}
+}
+
+func TestConstructDeployment_KitchenSink_SecurityContexts(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+	mc := dep.Spec.Template.Spec.Containers[0]
+	exp := dep.Spec.Template.Spec.Containers[1]
+
+	// Pod-level security context.
+	podSC := dep.Spec.Template.Spec.SecurityContext
+	if podSC == nil {
+		t.Fatal("expected non-nil pod SecurityContext")
+	}
+	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
+		t.Error("expected pod RunAsNonRoot=true")
+	}
+	if podSC.RunAsUser == nil || *podSC.RunAsUser != 1000 {
+		t.Errorf("pod RunAsUser = %v, want 1000", podSC.RunAsUser)
+	}
+
+	// Memcached container security context.
+	mcSC := mc.SecurityContext
+	if mcSC == nil {
+		t.Fatal("expected non-nil memcached SecurityContext")
+	}
+	if mcSC.ReadOnlyRootFilesystem == nil || !*mcSC.ReadOnlyRootFilesystem {
+		t.Error("expected memcached ReadOnlyRootFilesystem=true")
+	}
+	if mcSC.AllowPrivilegeEscalation == nil || *mcSC.AllowPrivilegeEscalation {
+		t.Error("expected memcached AllowPrivilegeEscalation=false")
+	}
+
+	// Exporter container security context.
+	expSC := exp.SecurityContext
+	if expSC == nil {
+		t.Fatal("expected non-nil exporter SecurityContext")
+	}
+	if expSC.ReadOnlyRootFilesystem == nil || !*expSC.ReadOnlyRootFilesystem {
+		t.Error("expected exporter ReadOnlyRootFilesystem=true")
+	}
+	if expSC.AllowPrivilegeEscalation == nil || *expSC.AllowPrivilegeEscalation {
+		t.Error("expected exporter AllowPrivilegeEscalation=false")
+	}
+}
+
+func TestConstructDeployment_KitchenSink_HA(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+	mc := dep.Spec.Template.Spec.Containers[0]
+
+	// Graceful shutdown.
+	if mc.Lifecycle == nil || mc.Lifecycle.PreStop == nil || mc.Lifecycle.PreStop.Exec == nil {
+		t.Fatal("expected PreStop Exec handler on memcached container")
+	}
+	expectedCmd := []string{"sleep", "15"}
+	for i, cmd := range expectedCmd {
+		if mc.Lifecycle.PreStop.Exec.Command[i] != cmd {
+			t.Errorf("preStop command[%d] = %q, want %q", i, mc.Lifecycle.PreStop.Exec.Command[i], cmd)
+		}
+	}
+	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if tgps == nil || *tgps != 45 {
+		t.Errorf("TerminationGracePeriodSeconds = %v, want 45", tgps)
+	}
+
+	// Anti-affinity.
+	affinity := dep.Spec.Template.Spec.Affinity
+	if affinity == nil || affinity.PodAntiAffinity == nil {
+		t.Fatal("expected non-nil Affinity with PodAntiAffinity")
+	}
+	preferred := affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution
+	if len(preferred) != 1 {
+		t.Fatalf("expected 1 preferred anti-affinity term, got %d", len(preferred))
+	}
+	if preferred[0].Weight != 100 {
+		t.Errorf("anti-affinity weight = %d, want 100", preferred[0].Weight)
+	}
+	if preferred[0].PodAffinityTerm.TopologyKey != "kubernetes.io/hostname" {
+		t.Errorf("anti-affinity topologyKey = %q, want kubernetes.io/hostname", preferred[0].PodAffinityTerm.TopologyKey)
+	}
+
+	// Topology spread.
+	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+	if len(tsc) != 1 {
+		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
+	}
+	if tsc[0].TopologyKey != "topology.kubernetes.io/zone" {
+		t.Errorf("topology spread topologyKey = %q, want topology.kubernetes.io/zone", tsc[0].TopologyKey)
+	}
+	if tsc[0].WhenUnsatisfiable != corev1.DoNotSchedule {
+		t.Errorf("whenUnsatisfiable = %q, want DoNotSchedule", tsc[0].WhenUnsatisfiable)
+	}
+}
+
+func TestConstructDeployment_KitchenSink_Volumes(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+	mc := dep.Spec.Template.Spec.Containers[0]
+
+	// Volume mounts.
+	if len(mc.VolumeMounts) != 2 {
+		t.Fatalf("expected 2 volumeMounts, got %d", len(mc.VolumeMounts))
+	}
+	if mc.VolumeMounts[0].Name != saslVolumeName || mc.VolumeMounts[0].MountPath != saslMountPath {
+		t.Errorf("volumeMount[0] = {Name:%q MountPath:%q}, want {Name:%q MountPath:%q}",
+			mc.VolumeMounts[0].Name, mc.VolumeMounts[0].MountPath, saslVolumeName, saslMountPath)
+	}
+	if !mc.VolumeMounts[0].ReadOnly {
+		t.Error("expected SASL volumeMount readOnly=true")
+	}
+	if mc.VolumeMounts[1].Name != tlsVolumeName {
+		t.Errorf("volumeMount[1] name = %q, want %q", mc.VolumeMounts[1].Name, tlsVolumeName)
+	}
+	if !mc.VolumeMounts[1].ReadOnly {
+		t.Error("expected TLS volumeMount readOnly=true")
+	}
+
+	// Volumes.
+	volumes := dep.Spec.Template.Spec.Volumes
+	if len(volumes) != 2 {
+		t.Fatalf("expected 2 volumes (SASL + TLS), got %d", len(volumes))
+	}
+	if volumes[0].Name != saslVolumeName || volumes[0].Secret == nil || volumes[0].Secret.SecretName != testSASLSecret {
+		t.Errorf("SASL volume = %+v, want name=%s secret=my-sasl-secret", volumes[0], saslVolumeName)
+	}
+	if volumes[1].Name != tlsVolumeName || volumes[1].Secret == nil || volumes[1].Secret.SecretName != testTLSSecret {
+		t.Errorf("TLS volume = %+v, want name=%s secret=my-tls-secret", volumes[1], tlsVolumeName)
+	}
+	if len(volumes[1].Secret.Items) != 3 {
+		t.Fatalf("expected 3 TLS volume items, got %d", len(volumes[1].Secret.Items))
+	}
+	wantKeys := []string{"tls.crt", "tls.key", "ca.crt"}
+	for i, wantKey := range wantKeys {
+		if volumes[1].Secret.Items[i].Key != wantKey {
+			t.Errorf("TLS items[%d].Key = %q, want %s", i, volumes[1].Secret.Items[i].Key, wantKey)
+		}
+	}
+}
+
+func TestConstructDeployment_KitchenSink_StrategyAndLabels(t *testing.T) {
+	dep := kitchenSinkDeployment(t)
+
+	// Rolling update strategy.
+	if dep.Spec.Strategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
+		t.Errorf("strategy type = %q, want RollingUpdate", dep.Spec.Strategy.Type)
+	}
+	if dep.Spec.Strategy.RollingUpdate == nil {
+		t.Fatal("expected non-nil RollingUpdate config")
+	}
+	wantMaxSurge := intstr.FromInt32(1)
+	if *dep.Spec.Strategy.RollingUpdate.MaxSurge != wantMaxSurge {
+		t.Errorf("maxSurge = %v, want %v", *dep.Spec.Strategy.RollingUpdate.MaxSurge, wantMaxSurge)
+	}
+	wantMaxUnavailable := intstr.FromInt32(0)
+	if *dep.Spec.Strategy.RollingUpdate.MaxUnavailable != wantMaxUnavailable {
+		t.Errorf("maxUnavailable = %v, want %v", *dep.Spec.Strategy.RollingUpdate.MaxUnavailable, wantMaxUnavailable)
+	}
+
+	// Labels.
+	expectedLabels := labelsForMemcached("kitchen-sink")
+	for k, v := range expectedLabels {
+		if dep.Labels[k] != v {
+			t.Errorf("deployment label %q = %q, want %q", k, dep.Labels[k], v)
+		}
+		if dep.Spec.Selector.MatchLabels[k] != v {
+			t.Errorf("selector label %q = %q, want %q", k, dep.Spec.Selector.MatchLabels[k], v)
+		}
+		if dep.Spec.Template.Labels[k] != v {
+			t.Errorf("template label %q = %q, want %q", k, dep.Spec.Template.Labels[k], v)
+		}
+	}
+}
+
+func TestConstructDeployment_ZeroReplicas(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "zero-replicas",
+			Namespace: "default",
+		},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(0),
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	if dep.Spec.Replicas == nil {
+		t.Fatal("expected non-nil Replicas")
+	}
+	if *dep.Spec.Replicas != 0 {
+		t.Errorf("expected 0 replicas, got %d", *dep.Spec.Replicas)
+	}
+
+	// Verify the rest of the deployment is still well-formed.
+	if len(dep.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("expected 1 container, got %d", len(dep.Spec.Template.Spec.Containers))
+	}
+	if dep.Spec.Template.Spec.Containers[0].Image != testDefaultImage {
+		t.Errorf("expected default image memcached:1.6, got %q", dep.Spec.Template.Spec.Containers[0].Image)
+	}
+	if dep.Spec.Strategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
+		t.Errorf("expected RollingUpdate strategy, got %q", dep.Spec.Strategy.Type)
+	}
+}
+
+func TestConstructDeployment_Idempotent(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "idempotent-test",
+			Namespace: "default",
+		},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+			Image:    stringPtr("memcached:1.6.29"),
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse(testCPU100m),
+					corev1.ResourceMemory: resource.MustParse(testMem128Mi),
+				},
+			},
+			Memcached: &memcachedv1alpha1.MemcachedConfig{
+				MaxMemoryMB:    128,
+				MaxConnections: 512,
+				Threads:        4,
+				MaxItemSize:    "1m",
+				Verbosity:      1,
+				ExtraArgs:      []string{"-o", "modern"},
+			},
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			},
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "sasl-secret",
+					},
+				},
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "tls-secret",
+					},
+				},
+			},
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+
+	dep := &appsv1.Deployment{}
+
+	// First call.
+	constructDeployment(mc, dep)
+	firstSpec := *dep.Spec.DeepCopy()
+
+	// Second call on the same Deployment object.
+	constructDeployment(mc, dep)
+
+	// Verify full spec is identical after the second call.
+	if !reflect.DeepEqual(firstSpec, dep.Spec) {
+		t.Errorf("Deployment spec changed between calls:\nfirst:  %+v\nsecond: %+v", firstSpec, dep.Spec)
 	}
 }
