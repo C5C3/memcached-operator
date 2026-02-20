@@ -2,8 +2,8 @@
   "feature_id": "MO-0028",
   "title": "H001: Implement multi-stage Dockerfile",
   "slug": "h001-implement-multi-stage-dockerfile",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Create a multi-stage Dockerfile: build stage with Go 1.24+ compiles the operator binary, runtime stage uses distroless/static base image for minimal attack surface. Include labels for OCI image spec.",
   "stories": [
@@ -332,6 +332,7 @@
       "description": "Create internal/version/version.go with exported var Version, GitCommit, BuildDate (defaults: 'dev', 'unknown', 'unknown'). Add a String() function returning formatted version info. Create internal/version/version_test.go testing defaults and String() output. File: internal/version/version.go, internal/version/version_test.go.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -342,6 +343,7 @@
       "description": "Modify the existing Dockerfile to: (1) Add ARG declarations for VERSION, GIT_COMMIT, BUILD_DATE in the builder stage, (2) Update the go build RUN command to include -ldflags '-s -w -X github.com/c5c3/memcached-operator/internal/version.Version=${VERSION} -X ...GitCommit=${GIT_COMMIT} -X ...BuildDate=${BUILD_DATE}', (3) Add ARG declarations for the same in the runtime stage, (4) Add a LABEL block with all 8 OCI image spec labels (title, description, url, source, version, revision, created, licenses). Keep existing structure (multi-stage, distroless, nonroot user). File: Dockerfile.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -356,6 +358,7 @@
       "description": "Add test/ to .dockerignore to exclude E2E test files from the Docker build context. The existing .dockerignore already excludes most artifacts but is missing the test/ directory. File: .dockerignore.",
       "level": 1,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -366,6 +369,7 @@
       "description": "Add Makefile variables: VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev), GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown), BUILD_DATE ?= $(shell date -u +\"%Y-%m-%dT%H:%M:%SZ\"). Update docker-build target to pass --build-arg VERSION=$(VERSION) --build-arg GIT_COMMIT=$(GIT_COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE). Update docker-buildx target similarly. File: Makefile.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -376,6 +380,7 @@
       "description": "Run docker build -t memcached-operator:test --build-arg VERSION=test --build-arg GIT_COMMIT=abc123 --build-arg BUILD_DATE=2026-01-01T00:00:00Z . and verify: (1) build succeeds, (2) docker inspect shows all 8 OCI labels with correct values, (3) image uses distroless base. This is a manual verification step.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007",
         "REQ-001"
@@ -387,6 +392,7 @@
       "description": "Create docs/reference/backend/multi-stage-dockerfile.md documenting: (1) Dockerfile structure (builder stage, runtime stage), (2) OCI labels table with all 8 labels and their sources, (3) Build ARGs table (VERSION, GIT_COMMIT, BUILD_DATE, TARGETOS, TARGETARCH), (4) Makefile targets (docker-build, docker-push, docker-buildx) with usage examples, (5) .dockerignore contents, (6) Security properties (distroless, nonroot, static binary, CGO_ENABLED=0). File: docs/reference/backend/multi-stage-dockerfile.md.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -490,6 +496,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T16:58:49.950075"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T17:03:59.441432"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T17:20:35.205211"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T17:20:35.223509"
     }
   },
   "execution_history": [
@@ -503,6 +521,56 @@
           "name": "prepare",
           "duration": 320.4689779281616,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "d64c4943-90a5-4c91-b5bf-efe02f24cac2",
+      "timestamp": "2026-02-20T17:17:53.447135",
+      "total_duration": 715.269371509552,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 115.71993613243103,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 54.28597903251648,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 135.1695637702942,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 70.292888879776,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0028] Code Review",
+          "duration": 126.92099118232727,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0028] Improvements",
+          "duration": 90.81872987747192,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0028] Simplify",
+          "duration": 122.06128263473511,
+          "type": "simplify",
           "status": "done"
         }
       ]

@@ -1,6 +1,11 @@
 # Image URL to use all building/pushing image targets
 IMG ?= controller:latest
 
+# Build metadata for OCI labels and ldflags injection
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.32.0
 
@@ -79,7 +84,11 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG} .
+	$(CONTAINER_TOOL) build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		-t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -89,7 +98,11 @@ docker-push: ## Push docker image with the manager.
 docker-buildx: ## Build and push docker image for cross-platform support.
 	- $(CONTAINER_TOOL) buildx create --name memcached-operator-builder
 	$(CONTAINER_TOOL) buildx use memcached-operator-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_DATE=$(BUILD_DATE) \
+		--tag ${IMG} -f Dockerfile .
 	- $(CONTAINER_TOOL) buildx rm memcached-operator-builder
 
 PLATFORMS ?= linux/arm64,linux/amd64

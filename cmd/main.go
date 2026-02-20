@@ -20,6 +20,7 @@ import (
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 	"github.com/c5c3/memcached-operator/internal/controller"
+	"github.com/c5c3/memcached-operator/internal/version"
 )
 
 var (
@@ -110,7 +111,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	setupLog.Info("starting manager", "version", version.String())
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
