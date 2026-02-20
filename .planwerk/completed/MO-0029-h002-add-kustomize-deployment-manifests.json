@@ -2,8 +2,8 @@
   "feature_id": "MO-0029",
   "title": "H002: Add Kustomize deployment manifests",
   "slug": "h002-add-kustomize-deployment-manifests",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Organize config/ directory with Kustomize overlays: base (CRD, RBAC, Deployment), default (with webhook and cert-manager), samples (example Memcached CRs). Follow Kubebuilder conventions for config/manager, config/rbac, config/crd, config/webhook.",
   "stories": [
@@ -400,6 +400,7 @@
       "description": "Verify config/crd/kustomization.yaml correctly references bases/memcached.c5c3.io_memcacheds.yaml. Verify kustomize build config/crd succeeds and produces only the CRD. Fix any issues found.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -410,6 +411,7 @@
       "description": "Verify config/rbac/kustomization.yaml lists all 8 RBAC files: role.yaml, role_binding.yaml, leader_election_role.yaml, leader_election_role_binding.yaml, service_account.yaml, metrics_auth_role.yaml, metrics_auth_role_binding.yaml, metrics_reader_role.yaml. Verify kustomize build config/rbac succeeds. Verify role.yaml has correct permissions for all managed resources (memcacheds, deployments, services, PDBs, servicemonitors, networkpolicies, secrets). Fix any issues.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -420,6 +422,7 @@
       "description": "Verify config/manager/kustomization.yaml references manager.yaml. Verify manager.yaml defines a Namespace and Deployment for controller-manager with security contexts (runAsNonRoot, seccompProfile, drop ALL capabilities), health probes (/healthz, /readyz on 8081), resource limits, and image: controller:latest placeholder. Verify kustomize build config/manager succeeds. Fix any issues.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -430,6 +433,7 @@
       "description": "Verify config/webhook/kustomization.yaml references manifests.yaml and service.yaml. Verify manifests.yaml defines MutatingWebhookConfiguration and ValidatingWebhookConfiguration with correct paths. Verify service.yaml defines webhook-service on port 443 targeting 9443. Verify kustomize build config/webhook succeeds. Fix any issues.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -440,6 +444,7 @@
       "description": "Verify config/certmanager/kustomization.yaml references certificate.yaml and kustomizeconfig.yaml. Verify certificate.yaml defines a self-signed Issuer and Certificate with dnsNames using $(SERVICE_NAME) and $(SERVICE_NAMESPACE) vars and secretName: webhook-server-cert. Verify kustomizeconfig.yaml has nameReference and varReference for cert-manager. Fix any issues.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -450,6 +455,7 @@
       "description": "Verify config/samples/kustomization.yaml references memcached_v1alpha1_memcached.yaml. Verify the sample CR has realistic values within CRD validation ranges: replicas, memcached config (maxMemoryMB, maxConnections, threads, maxItemSize), highAvailability (antiAffinityPreset, podDisruptionBudget), monitoring, security contexts. Ensure field names match current CRD types (e.g. serviceMonitor.interval not scrapeInterval). Fix any mismatches with the current CRD schema.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -460,6 +466,7 @@
       "description": "Verify config/prometheus/kustomization.yaml references monitor.yaml. Verify monitor.yaml defines a ServiceMonitor targeting controller-manager on HTTPS metrics port. Verify config/network-policy/kustomization.yaml references allow-metrics-traffic.yaml. Verify allow-metrics-traffic.yaml defines a NetworkPolicy for port 8443. Verify kustomize build succeeds for both. Fix any issues.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -470,6 +477,7 @@
       "description": "Verify config/default/kustomization.yaml: (1) sets namespace memcached-operator-system, (2) sets namePrefix memcached-operator-, (3) lists resources ../crd, ../rbac, ../manager, ../webhook, ../certmanager, (4) applies patches manager_metrics_patch.yaml, manager_webhook_patch.yaml, webhookcainjection_patch.yaml, (5) defines vars for CERTIFICATE_NAMESPACE, CERTIFICATE_NAME, SERVICE_NAMESPACE, SERVICE_NAME. Verify manager_metrics_patch.yaml adds --metrics-bind-address and --metrics-secure args. Verify manager_webhook_patch.yaml adds webhook port 9443 and cert volume. Verify webhookcainjection_patch.yaml adds cert-manager.io/inject-ca-from annotations. Fix any issues.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -481,6 +489,7 @@
       "description": "Run kustomize build for each config/ subdirectory (crd, rbac, manager, webhook, certmanager, samples, prometheus, network-policy, default) and verify each produces valid YAML with exit code 0. For config/default, verify the output contains all expected resource kinds: Namespace, Deployment, ServiceAccount, ClusterRole, ClusterRoleBinding, Role, RoleBinding, CustomResourceDefinition, MutatingWebhookConfiguration, ValidatingWebhookConfiguration, Service, Certificate, Issuer. Fix any build errors found.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -491,6 +500,7 @@
       "description": "Verify Makefile targets: (1) make install uses kustomize build config/crd, (2) make deploy uses kustomize build config/default with kustomize edit set image, (3) make uninstall uses kustomize build config/crd, (4) make undeploy uses kustomize build config/default, (5) make build-installer uses kustomize build config/default. Verify all references are correct and consistent. Fix any issues.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -501,6 +511,7 @@
       "description": "Create docs/reference/backend/kustomize-deployment-manifests.md documenting: (1) config/ directory layout with purpose of each subdirectory (crd, rbac, manager, webhook, certmanager, samples, prometheus, network-policy, default), (2) how config/default aggregates all components, (3) the three patches applied (metrics, webhook, CA injection), (4) kustomize vars for cert-manager integration, (5) how to use kustomize build for different targets (install CRDs only, deploy full stack, apply samples), (6) how to customize the image via kustomize edit set image. Follow existing docs/reference/backend/ conventions.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -681,6 +692,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T17:24:21.809898"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T17:36:10.018776"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:00:08.416221"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:00:08.436340"
     }
   },
   "execution_history": [
@@ -694,6 +717,56 @@
           "name": "prepare",
           "duration": 209.5731017589569,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "aea50db9-c01e-4de5-a97e-7edd093b9f06",
+      "timestamp": "2026-02-20T17:54:24.674075",
+      "total_duration": 963.1456167697906,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (7 tasks)",
+          "duration": 381.4958829879761,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 89.48533058166504,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 103.22460603713989,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 141.27259063720703,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0029] Code Review",
+          "duration": 137.216805934906,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0029] Improvements",
+          "duration": 21.01875376701355,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0029] Simplify",
+          "duration": 89.43164682388306,
+          "type": "simplify",
           "status": "done"
         }
       ]

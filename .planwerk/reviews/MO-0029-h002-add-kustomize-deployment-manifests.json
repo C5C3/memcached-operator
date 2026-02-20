@@ -1,0 +1,71 @@
+{
+  "feature_id": "MO-0029",
+  "title": "H002: Add Kustomize deployment manifests",
+  "date": "2026-02-20",
+  "summary": "Kustomize deployment manifests following Kubebuilder v4 layout with config/ directory containing 9 subdirectories (crd, rbac, manager, webhook, certmanager, samples, prometheus, network-policy, default). The config/default overlay aggregates all bases with namespace, namePrefix, and three strategic merge patches (metrics, webhook, CA injection). Sample CR field names corrected to match CRD schema (serviceMonitor.interval). Makefile targets (install, deploy, uninstall, undeploy, build-installer) reference correct kustomize paths. Reference documentation added at docs/reference/backend/kustomize-deployment-manifests.md.",
+  "verdict": "APPROVED",
+  "tests_checklist": [
+    {"item": "kustomize build config/crd succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/rbac succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/manager succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/webhook succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/certmanager succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/samples succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/prometheus succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/network-policy succeeds (exit 0)", "checked": true},
+    {"item": "kustomize build config/default succeeds and produces 16 resources across 13 kinds", "checked": true},
+    {"item": "config/default output contains all expected kinds: Namespace, Deployment, ServiceAccount, ClusterRole, ClusterRoleBinding, Role, RoleBinding, CRD, MutatingWebhookConfiguration, ValidatingWebhookConfiguration, Service, Certificate, Issuer", "checked": true},
+    {"item": "go vet ./... passes without errors", "checked": true},
+    {"item": "go test ./... non-controller packages pass (controller tests pre-existing envtest binary failure)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows standard Kubebuilder v4 config/ directory layout", "checked": true},
+    {"item": "Sample CR field names match Go types (serviceMonitor.interval, not scrapeInterval)", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "config/default/kustomization.yaml uses proper namespace, namePrefix, vars", "checked": true},
+    {"item": "All kustomization.yaml files reference correct resource files", "checked": true},
+    {"item": "Patches are minimal and targeted (strategic merge patches)", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No hardcoded secrets in any config/ manifests", "checked": true},
+    {"item": "No hardcoded image references - controller:latest placeholder used", "checked": true},
+    {"item": "Deployment uses runAsNonRoot: true", "checked": true},
+    {"item": "Deployment uses seccompProfile: RuntimeDefault", "checked": true},
+    {"item": "Container drops ALL capabilities", "checked": true},
+    {"item": "Container disallows privilege escalation (allowPrivilegeEscalation: false)", "checked": true},
+    {"item": "Webhook failurePolicy: Fail (secure default)", "checked": true},
+    {"item": "TLS cert provisioned via cert-manager (not manual secrets)", "checked": true},
+    {"item": "RBAC follows least-privilege (role.yaml scoped to required resources)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "config/ directory structure follows Kubebuilder v4 conventions", "checked": true},
+    {"item": "Modular bases allow independent deployment (CRD-only for local dev)", "checked": true},
+    {"item": "config/default aggregation with patches is standard Kubebuilder pattern", "checked": true},
+    {"item": "Kustomize vars correctly wire cert-manager to webhook resources", "checked": true},
+    {"item": "Solution is minimal - no over-engineering", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated manifests across subdirectories", "checked": true},
+    {"item": "Patches avoid duplicating base manifests (overlay-only changes)", "checked": true},
+    {"item": "No unnecessary abstractions or extra overlays", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Webhook failurePolicy: Fail rejects invalid resources immediately", "checked": true},
+    {"item": "Health probes detect unready/unhealthy controller manager", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Resource limits set on controller-manager container", "checked": true},
+    {"item": "NetworkPolicy restricts ingress to metrics port only", "checked": true},
+    {"item": "Sample CR uses values within CRD validation ranges", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "D1 (minor): docs/reference/backend/kustomize-deployment-manifests.md Makefile targets table omits --ignore-not-found flag used in uninstall/undeploy targets. Consider adding for completeness.",
+    "D2 (minor): The sample CR at config/samples/memcached_v1alpha1_memcached.yaml has a hardcoded image 'memcached:1.6' which is fine for a sample but may want a comment noting it should be updated for production use."
+  ],
+  "next_steps": [
+    "Proceed to next task in MO-0029 feature development."
+  ]
+}

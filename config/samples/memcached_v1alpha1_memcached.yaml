@@ -7,6 +7,7 @@ metadata:
   name: memcached-sample
 spec:
   replicas: 3
+  # TODO: Update image tag to a specific digest for production use.
   image: "memcached:1.6"
   resources:
     requests:
@@ -28,8 +29,7 @@ spec:
   monitoring:
     enabled: true
     serviceMonitor:
-      enabled: true
-      scrapeInterval: "30s"
+      interval: "30s"
   security:
     podSecurityContext:
       runAsNonRoot: true
