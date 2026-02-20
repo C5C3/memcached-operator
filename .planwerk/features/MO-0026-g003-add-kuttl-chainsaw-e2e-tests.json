@@ -1,0 +1,676 @@
+{
+  "feature_id": "MO-0026",
+  "title": "G003: Add KUTTL/Chainsaw E2E tests",
+  "slug": "g003-add-kuttl-chainsaw-e2e-tests",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Write end-to-end tests using KUTTL or Chainsaw that run against a real (kind) cluster. Test scenarios: basic deployment, scaling, configuration changes, monitoring toggle, PDB creation, graceful rolling update, webhook rejection of invalid CRs.",
+  "stories": [
+    {
+      "title": "Operator creates Memcached resources on a real cluster",
+      "role": "operator developer",
+      "want": "to verify that creating a Memcached CR on a real kind cluster produces a running Deployment and headless Service with correct configuration",
+      "so_that": "I can be confident the operator works end-to-end outside of envtest",
+      "criteria": [
+        "Applying a minimal Memcached CR creates a Deployment with the expected replica count and container args",
+        "A headless Service (clusterIP: None) is created on port 11211 with correct selectors",
+        "The Memcached pods reach Ready state within 120s",
+        "Status conditions (Available=True, Progressing=False, Degraded=False) are set correctly after pods are ready",
+        "Owner references are set on all managed resources"
+      ]
+    },
+    {
+      "title": "Operator scales Memcached replicas on spec change",
+      "role": "operator developer",
+      "want": "to verify that updating spec.replicas on a live cluster correctly scales the Deployment and updates status",
+      "so_that": "I can be confident scaling works in production",
+      "criteria": [
+        "Updating spec.replicas from 1 to 3 increases the Deployment replicas to 3",
+        "All 3 pods reach Ready state within 120s",
+        "status.readyReplicas reflects 3 after scaling completes",
+        "Scaling down from 3 to 1 reduces the Deployment replicas to 1"
+      ]
+    },
+    {
+      "title": "Operator applies configuration changes to running Memcached",
+      "role": "operator developer",
+      "want": "to verify that changing memcached config fields (maxMemoryMB, threads, etc.) triggers a rolling update with correct container args",
+      "so_that": "I can be confident configuration drift is corrected",
+      "criteria": [
+        "Updating spec.memcached.maxMemoryMB from 64 to 128 updates the container args to include '-m 128'",
+        "The Deployment undergoes a rolling update (new pods created, old pods terminated)",
+        "Updated pods reach Ready state within 120s",
+        "Multiple config fields changed simultaneously are all reflected in the new pod spec"
+      ]
+    },
+    {
+      "title": "Operator toggles monitoring sidecar and ServiceMonitor",
+      "role": "operator developer",
+      "want": "to verify that enabling/disabling monitoring injects/removes the exporter sidecar and creates/deletes the ServiceMonitor",
+      "so_that": "I can be confident the monitoring toggle works correctly on a real cluster",
+      "criteria": [
+        "Setting monitoring.enabled=true adds an exporter container to the pod and creates a ServiceMonitor",
+        "The exporter container runs on port 9150",
+        "Disabling monitoring removes the exporter sidecar from pods and deletes the ServiceMonitor",
+        "The ServiceMonitor has correct selector labels matching the Service"
+      ]
+    },
+    {
+      "title": "Operator creates PDB when HA is configured",
+      "role": "operator developer",
+      "want": "to verify that enabling PDB creates a PodDisruptionBudget with correct minAvailable/maxUnavailable values",
+      "so_that": "I can be confident HA primitives are applied in production",
+      "criteria": [
+        "Setting highAvailability.podDisruptionBudget.enabled=true with minAvailable=1 creates a PDB with minAvailable=1",
+        "The PDB selector matches the Deployment pod labels",
+        "Disabling PDB removes the PodDisruptionBudget resource",
+        "PDB is owned by the Memcached CR (owner reference set)"
+      ]
+    },
+    {
+      "title": "Operator performs graceful rolling update",
+      "role": "operator developer",
+      "want": "to verify that spec changes trigger rolling updates with zero-downtime strategy (maxSurge=1, maxUnavailable=0)",
+      "so_that": "I can be confident rolling updates preserve availability in production",
+      "criteria": [
+        "The Deployment strategy is RollingUpdate with maxSurge=1 and maxUnavailable=0",
+        "When gracefulShutdown is enabled, preStopDelaySeconds and terminationGracePeriodSeconds are set on the pod",
+        "During a rolling update triggered by an image change, Available condition remains True",
+        "After rolling update completes, all pods run the new configuration"
+      ]
+    },
+    {
+      "title": "Webhook rejects invalid Memcached CRs",
+      "role": "operator developer",
+      "want": "to verify that the validating webhook rejects invalid CRs with clear error messages on a real cluster",
+      "so_that": "I can be confident admission control prevents invalid configurations in production",
+      "criteria": [
+        "Submitting a CR with replicas=-1 is rejected by CRD validation",
+        "Submitting a CR with memory limit less than maxMemoryMB + 32Mi overhead is rejected by the webhook",
+        "Submitting a CR with PDB minAvailable >= replicas is rejected by the webhook",
+        "Submitting a CR with SASL enabled but missing credentialsSecretRef.name is rejected by the webhook",
+        "Error messages from the webhook clearly describe the validation failure"
+      ]
+    },
+    {
+      "title": "Operator cleans up resources on CR deletion",
+      "role": "operator developer",
+      "want": "to verify that deleting a Memcached CR garbage-collects all owned resources",
+      "so_that": "I can be confident no orphaned resources remain after CR deletion",
+      "criteria": [
+        "Deleting the Memcached CR removes the Deployment, Service, PDB, and ServiceMonitor",
+        "No pods remain running after garbage collection completes",
+        "Deletion completes within 60s"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The E2E test infrastructure SHALL use Kyverno Chainsaw as the declarative test framework running against a kind cluster",
+      "priority": "SHALL",
+      "rationale": "Chainsaw provides declarative YAML-based E2E testing with built-in assert/error operations, automatic namespace creation and cleanup, and is the modern successor to KUTTL recommended by the Kubernetes community",
+      "scenarios": [
+        {
+          "name": "Chainsaw configuration exists",
+          "when": "a developer runs 'make test-e2e'",
+          "then": "Chainsaw discovers and executes all test cases in test/e2e/",
+          "and_then": [
+            "test results are printed to stdout with pass/fail status per test"
+          ]
+        },
+        {
+          "name": "Each test runs in an isolated namespace",
+          "when": "Chainsaw executes a test",
+          "then": "it creates a unique namespace for the test and cleans it up afterward",
+          "and_then": [
+            "no cross-test interference occurs"
+          ]
+        },
+        {
+          "name": "Tests can be run selectively",
+          "when": "a developer wants to run a single test",
+          "then": "Chainsaw supports --include-test-regex to filter tests",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The E2E tests SHALL verify basic Memcached deployment: a minimal CR creates a Deployment, headless Service, and pods that reach Ready state",
+      "priority": "SHALL",
+      "rationale": "This is the fundamental smoke test validating the operator's core reconciliation loop on a real cluster",
+      "scenarios": [
+        {
+          "name": "Minimal CR creates Deployment and Service",
+          "when": "a Memcached CR with replicas=1 is applied",
+          "then": "a Deployment with 1 replica and a headless Service are created within 30s",
+          "and_then": [
+            "pods reach Ready state within 120s",
+            "status.conditions[Available]=True"
+          ]
+        },
+        {
+          "name": "Deployment has correct container args",
+          "when": "the Memcached CR specifies memcached config (maxMemoryMB=64, threads=4)",
+          "then": "the memcached container args include '-m 64 -t 4'",
+          "and_then": []
+        },
+        {
+          "name": "Service is headless with correct ports",
+          "when": "the Deployment is created",
+          "then": "the Service has clusterIP=None and port 11211",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The E2E tests SHALL verify scaling: updating spec.replicas changes the Deployment replica count and updates status",
+      "priority": "SHALL",
+      "rationale": "Scaling is a core operator capability that must work correctly on a real cluster with actual pod scheduling",
+      "scenarios": [
+        {
+          "name": "Scale up from 1 to 3",
+          "when": "spec.replicas is updated from 1 to 3",
+          "then": "the Deployment replicas becomes 3 and all pods reach Ready within 120s",
+          "and_then": [
+            "status.readyReplicas=3"
+          ]
+        },
+        {
+          "name": "Scale down from 3 to 1",
+          "when": "spec.replicas is updated from 3 to 1",
+          "then": "the Deployment replicas becomes 1 and excess pods are terminated",
+          "and_then": [
+            "status.readyReplicas=1"
+          ]
+        },
+        {
+          "name": "Scale to zero",
+          "when": "spec.replicas is set to 0",
+          "then": "the Deployment has 0 replicas and no pods are running",
+          "and_then": [
+            "status.readyReplicas=0"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The E2E tests SHALL verify configuration changes: updating memcached config fields triggers a rolling update with correct container args",
+      "priority": "SHALL",
+      "rationale": "Configuration drift correction is essential for a Kubernetes operator to maintain desired state",
+      "scenarios": [
+        {
+          "name": "Update maxMemoryMB",
+          "when": "spec.memcached.maxMemoryMB is changed from 64 to 128",
+          "then": "pods are restarted with container args containing '-m 128'",
+          "and_then": [
+            "pods reach Ready state within 120s"
+          ]
+        },
+        {
+          "name": "Update multiple config fields simultaneously",
+          "when": "maxMemoryMB, threads, and maxItemSize are all changed",
+          "then": "the new pod spec reflects all three changes",
+          "and_then": []
+        },
+        {
+          "name": "Update verbosity",
+          "when": "spec.memcached.verbosity is changed from 0 to 1",
+          "then": "container args include '-v'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The E2E tests SHALL verify monitoring toggle: enabling monitoring injects exporter sidecar and creates ServiceMonitor, disabling removes them",
+      "priority": "SHALL",
+      "rationale": "The monitoring toggle affects the pod template (sidecar injection) and creates a separate ServiceMonitor resource, both must be verified on a real cluster",
+      "scenarios": [
+        {
+          "name": "Enable monitoring adds exporter sidecar",
+          "when": "spec.monitoring.enabled is set to true",
+          "then": "the pod template contains 2 containers (memcached + exporter)",
+          "and_then": [
+            "exporter container has port 9150"
+          ]
+        },
+        {
+          "name": "Enable monitoring creates ServiceMonitor",
+          "when": "spec.monitoring.enabled is true and Prometheus Operator CRDs are installed",
+          "then": "a ServiceMonitor resource is created with correct labels and scrape config",
+          "and_then": []
+        },
+        {
+          "name": "Disable monitoring removes sidecar",
+          "when": "spec.monitoring.enabled is changed from true to false",
+          "then": "the pod template reverts to 1 container and the ServiceMonitor is deleted",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The E2E tests SHALL verify PDB creation: enabling PDB creates a PodDisruptionBudget with correct spec, disabling removes it",
+      "priority": "SHALL",
+      "rationale": "PDB is a critical HA primitive that must be verified on a real cluster to ensure it integrates correctly with the Kubernetes disruption API",
+      "scenarios": [
+        {
+          "name": "Enable PDB with minAvailable",
+          "when": "highAvailability.podDisruptionBudget.enabled=true with minAvailable=1",
+          "then": "a PDB is created with minAvailable=1 and correct label selector",
+          "and_then": []
+        },
+        {
+          "name": "PDB has correct owner reference",
+          "when": "PDB is created",
+          "then": "it has an ownerReference pointing to the Memcached CR with controller=true",
+          "and_then": []
+        },
+        {
+          "name": "Disable PDB removes the resource",
+          "when": "podDisruptionBudget.enabled is changed to false",
+          "then": "the PDB resource is deleted",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The E2E tests SHALL verify graceful rolling updates: Deployment uses RollingUpdate strategy and gracefulShutdown config applies preStop hooks",
+      "priority": "SHALL",
+      "rationale": "Rolling updates with zero downtime are critical for production deployments; graceful shutdown prevents connection drops during pod termination",
+      "scenarios": [
+        {
+          "name": "Deployment strategy is RollingUpdate",
+          "when": "a Memcached CR is created",
+          "then": "the Deployment strategy is RollingUpdate with maxSurge=1, maxUnavailable=0",
+          "and_then": []
+        },
+        {
+          "name": "GracefulShutdown applies preStop hook",
+          "when": "highAvailability.gracefulShutdown.enabled=true with preStopDelaySeconds=5",
+          "then": "the pod template has a preStop lifecycle hook with 'sleep 5' and terminationGracePeriodSeconds is set",
+          "and_then": []
+        },
+        {
+          "name": "Config change triggers rolling update completing successfully",
+          "when": "the image is updated on a running Memcached CR",
+          "then": "a rolling update occurs and completes with all pods running the new image",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The E2E tests SHALL verify webhook rejection: invalid CRs are rejected by CRD validation and the validating webhook",
+      "priority": "SHALL",
+      "rationale": "Webhook validation prevents invalid configurations from being persisted, which is critical for operational safety",
+      "scenarios": [
+        {
+          "name": "CRD rejects out-of-range replicas",
+          "when": "a CR with replicas=-1 is submitted",
+          "then": "the API server rejects the CR",
+          "and_then": []
+        },
+        {
+          "name": "Webhook rejects insufficient memory limit",
+          "when": "a CR with maxMemoryMB=128 and resources.limits.memory=100Mi is submitted",
+          "then": "the validating webhook rejects the CR with an error about insufficient memory",
+          "and_then": []
+        },
+        {
+          "name": "Webhook rejects PDB minAvailable >= replicas",
+          "when": "a CR with replicas=2 and PDB minAvailable=2 is submitted",
+          "then": "the validating webhook rejects the CR",
+          "and_then": []
+        },
+        {
+          "name": "Webhook rejects SASL without secret reference",
+          "when": "a CR with sasl.enabled=true and empty credentialsSecretRef.name is submitted",
+          "then": "the validating webhook rejects the CR",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The E2E tests SHALL verify CR deletion garbage-collects all owned resources",
+      "priority": "SHALL",
+      "rationale": "Kubernetes owner references ensure child resources are cleaned up, but this must be verified end-to-end",
+      "scenarios": [
+        {
+          "name": "Deleting CR removes all resources",
+          "when": "a Memcached CR with monitoring and PDB enabled is deleted",
+          "then": "the Deployment, Service, PDB, and ServiceMonitor are all garbage-collected",
+          "and_then": [
+            "no pods remain running"
+          ]
+        },
+        {
+          "name": "Deletion is clean",
+          "when": "garbage collection completes",
+          "then": "no resources with the Memcached CR's labels remain in the namespace",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The E2E test suite SHALL include a Makefile target and Chainsaw configuration for repeatable test execution",
+      "priority": "SHALL",
+      "rationale": "Reproducible test execution is essential for CI/CD integration and developer workflow",
+      "scenarios": [
+        {
+          "name": "make test-e2e runs Chainsaw tests",
+          "when": "a developer runs 'make test-e2e' with a kind cluster and operator deployed",
+          "then": "Chainsaw discovers and executes all tests in test/e2e/",
+          "and_then": [
+            "exit code 0 on all tests passing, non-zero on failure"
+          ]
+        },
+        {
+          "name": "Chainsaw configuration sets appropriate timeouts",
+          "when": "tests are executed",
+          "then": "apply timeout is 30s, assert timeout is 120s",
+          "and_then": []
+        },
+        {
+          "name": "Tests run with failFast mode",
+          "when": "failFast is enabled in configuration",
+          "then": "Chainsaw stops after the first test failure",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create Chainsaw configuration and Makefile target (REQ-001, REQ-010)",
+      "description": "Create `.chainsaw.yaml` configuration file at project root with v1alpha2 API, timeouts (apply=30s, assert=120s, cleanup=60s, delete=30s), failFast=true, test discovery pointing to `test/e2e/`. Update `Makefile` to replace the existing `test-e2e` target: add a `chainsaw` binary download target (similar to existing golangci-lint pattern) and update `test-e2e` to run `$(CHAINSAW) test test/e2e/`. Create the `test/e2e/` directory structure.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create shared test fixtures: minimal Memcached CR YAML and assertion templates (REQ-002)",
+      "description": "Create reusable YAML fixture files in `test/e2e/resources/`: (1) `memcached-minimal.yaml` - minimal Memcached CR with replicas=1, image=memcached:1.6, maxMemoryMB=64. (2) `assert-deployment.yaml` - partial Deployment assert checking labels, replicas, container name/image/args. (3) `assert-service.yaml` - partial Service assert checking clusterIP=None, port 11211, selector labels. These will be referenced by individual test cases.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Write E2E test: basic deployment (REQ-002)",
+      "description": "Create `test/e2e/basic-deployment/chainsaw-test.yaml` with steps: (1) Apply minimal Memcached CR. (2) Assert Deployment exists with replicas=1, correct labels (app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<name>, app.kubernetes.io/managed-by=memcached-operator), container args containing '-m 64', liveness/readiness probes. (3) Assert headless Service with clusterIP=None, port 11211. (4) Assert Memcached status has condition Available=True. (5) Assert ownerReferences on Deployment and Service.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Write E2E test: scaling (REQ-003)",
+      "description": "Create `test/e2e/scaling/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with replicas=1, wait for Available=True. (2) Update CR to replicas=3. (3) Assert Deployment has replicas=3. (4) Assert Memcached status has readyReplicas=3. (5) Update CR to replicas=1. (6) Assert Deployment has replicas=1, status.readyReplicas=1. Include intermediate YAML files for the update patches and assertion files.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Write E2E test: configuration changes (REQ-004)",
+      "description": "Create `test/e2e/config-change/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with maxMemoryMB=64, threads=4. (2) Assert initial pod args contain '-m 64 -t 4'. (3) Update CR to maxMemoryMB=128, threads=8, maxItemSize=2m. (4) Assert updated Deployment has container args '-m 128 -t 8 -I 2m'. (5) Assert pods reach Ready after rolling update. Include YAML files for the initial CR, update patch, and assertions.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Write E2E test: monitoring toggle (REQ-005)",
+      "description": "Create `test/e2e/monitoring-toggle/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with monitoring.enabled=true. (2) Assert Deployment has 2 containers (memcached + exporter). (3) Assert exporter container has port 9150. (4) Assert ServiceMonitor exists with correct labels and endpoints. (5) Update CR to monitoring.enabled=false. (6) Assert Deployment has 1 container. (7) Assert ServiceMonitor does not exist (use Chainsaw error assertion). Note: requires ServiceMonitor CRD to be installed in the kind cluster.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Write E2E test: PDB creation (REQ-006)",
+      "description": "Create `test/e2e/pdb-creation/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with replicas=3 and PDB enabled, minAvailable=1. (2) Assert PDB exists with minAvailable=1 and correct label selector. (3) Assert PDB has ownerReference to the Memcached CR. (4) Update CR to disable PDB. (5) Assert PDB does not exist (use Chainsaw error assertion to verify absence).",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.6",
+      "title": "Write E2E test: graceful rolling update (REQ-007)",
+      "description": "Create `test/e2e/graceful-rolling-update/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with gracefulShutdown enabled (preStopDelaySeconds=5, terminationGracePeriodSeconds=30). (2) Assert Deployment strategy is RollingUpdate with maxSurge=1, maxUnavailable=0. (3) Assert pod template has preStop lifecycle hook with 'sleep 5' and terminationGracePeriodSeconds=30. (4) Update the image to trigger a rolling update. (5) Assert all pods are running the new image after the update completes. (6) Assert Available condition remains True throughout.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.7",
+      "title": "Write E2E test: webhook rejection of invalid CRs (REQ-008)",
+      "description": "Create `test/e2e/webhook-rejection/chainsaw-test.yaml` with steps using Chainsaw's `error` operation to verify rejection: (1) Apply CR with replicas=-1, assert creation fails (CRD validation). (2) Apply CR with maxMemoryMB=128 and resources.limits.memory=100Mi, assert creation fails (webhook: memory limit too low). (3) Apply CR with replicas=2, PDB enabled, minAvailable=2, assert creation fails (webhook: minAvailable >= replicas). (4) Apply CR with sasl.enabled=true and empty credentialsSecretRef.name, assert creation fails (webhook: missing secret ref). Each invalid CR in a separate YAML file under the test directory.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.8",
+      "title": "Write E2E test: CR deletion and garbage collection (REQ-009)",
+      "description": "Create `test/e2e/deletion-cleanup/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with monitoring enabled and PDB enabled. (2) Assert all resources exist (Deployment, Service, PDB, ServiceMonitor). (3) Delete the Memcached CR. (4) Assert Deployment does not exist (error assertion). (5) Assert Service does not exist. (6) Assert PDB does not exist. (7) Assert ServiceMonitor does not exist. (8) Assert no pods with the Memcached labels remain.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write reference documentation for E2E test suite (REQ-001 to REQ-010)",
+      "description": "Create `docs/reference/backend/e2e-tests-chainsaw.md` documenting: (1) Prerequisites (kind cluster, operator deployed, cert-manager, ServiceMonitor CRD). (2) How to run tests (`make test-e2e`). (3) Test directory structure and naming conventions. (4) How to add new test cases. (5) Chainsaw configuration reference. (6) List of all test scenarios covered. (7) Troubleshooting common test failures.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-010"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "test/e2e/basic-deployment/chainsaw-test.yaml",
+      "test_function": "basic-deployment",
+      "story": "Operator creates Memcached resources on a real cluster",
+      "expected": "Applying a minimal CR creates a Deployment with correct labels/args, a headless Service on port 11211, and status Available=True",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "test/e2e/basic-deployment/chainsaw-test.yaml",
+      "test_function": "basic-deployment: assert owner references",
+      "story": "Operator creates Memcached resources on a real cluster",
+      "expected": "Deployment and Service have ownerReferences pointing to the Memcached CR",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "test/e2e/scaling/chainsaw-test.yaml",
+      "test_function": "scaling: scale up",
+      "story": "Operator scales Memcached replicas on spec change",
+      "expected": "Updating replicas from 1 to 3 results in Deployment.spec.replicas=3 and status.readyReplicas=3",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "test/e2e/scaling/chainsaw-test.yaml",
+      "test_function": "scaling: scale down",
+      "story": "Operator scales Memcached replicas on spec change",
+      "expected": "Updating replicas from 3 to 1 results in Deployment.spec.replicas=1 and status.readyReplicas=1",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "test/e2e/config-change/chainsaw-test.yaml",
+      "test_function": "config-change: update memcached config",
+      "story": "Operator applies configuration changes to running Memcached",
+      "expected": "Changing maxMemoryMB from 64 to 128 results in container args containing '-m 128'",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "test/e2e/config-change/chainsaw-test.yaml",
+      "test_function": "config-change: multiple fields",
+      "story": "Operator applies configuration changes to running Memcached",
+      "expected": "Changing maxMemoryMB, threads, and maxItemSize simultaneously reflects all three in the new pod spec",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "test/e2e/monitoring-toggle/chainsaw-test.yaml",
+      "test_function": "monitoring-toggle: enable monitoring",
+      "story": "Operator toggles monitoring sidecar and ServiceMonitor",
+      "expected": "Enabling monitoring adds an exporter container on port 9150 and creates a ServiceMonitor",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "test/e2e/monitoring-toggle/chainsaw-test.yaml",
+      "test_function": "monitoring-toggle: disable monitoring",
+      "story": "Operator toggles monitoring sidecar and ServiceMonitor",
+      "expected": "Disabling monitoring removes the exporter container and deletes the ServiceMonitor",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "test/e2e/pdb-creation/chainsaw-test.yaml",
+      "test_function": "pdb-creation: enable PDB",
+      "story": "Operator creates PDB when HA is configured",
+      "expected": "Enabling PDB creates a PodDisruptionBudget with minAvailable=1 and correct selector",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "test/e2e/pdb-creation/chainsaw-test.yaml",
+      "test_function": "pdb-creation: disable PDB",
+      "story": "Operator creates PDB when HA is configured",
+      "expected": "Disabling PDB removes the PodDisruptionBudget resource",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "test/e2e/graceful-rolling-update/chainsaw-test.yaml",
+      "test_function": "graceful-rolling-update: strategy and preStop",
+      "story": "Operator performs graceful rolling update",
+      "expected": "Deployment has RollingUpdate strategy (maxSurge=1, maxUnavailable=0) and pod has preStop hook",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "test/e2e/graceful-rolling-update/chainsaw-test.yaml",
+      "test_function": "graceful-rolling-update: image update",
+      "story": "Operator performs graceful rolling update",
+      "expected": "Updating image triggers rolling update; after completion all pods run new image",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "test/e2e/webhook-rejection/chainsaw-test.yaml",
+      "test_function": "webhook-rejection: invalid replicas",
+      "story": "Webhook rejects invalid Memcached CRs",
+      "expected": "CR with replicas=-1 is rejected by CRD validation",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "test/e2e/webhook-rejection/chainsaw-test.yaml",
+      "test_function": "webhook-rejection: insufficient memory",
+      "story": "Webhook rejects invalid Memcached CRs",
+      "expected": "CR with maxMemoryMB=128 and memory limit=100Mi is rejected by webhook",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "test/e2e/webhook-rejection/chainsaw-test.yaml",
+      "test_function": "webhook-rejection: PDB minAvailable >= replicas",
+      "story": "Webhook rejects invalid Memcached CRs",
+      "expected": "CR with replicas=2 and PDB minAvailable=2 is rejected by webhook",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "test/e2e/webhook-rejection/chainsaw-test.yaml",
+      "test_function": "webhook-rejection: SASL without secret ref",
+      "story": "Webhook rejects invalid Memcached CRs",
+      "expected": "CR with sasl.enabled=true and empty credentialsSecretRef.name is rejected by webhook",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "test/e2e/deletion-cleanup/chainsaw-test.yaml",
+      "test_function": "deletion-cleanup: all resources removed",
+      "story": "Operator cleans up resources on CR deletion",
+      "expected": "Deleting the Memcached CR garbage-collects Deployment, Service, PDB, and ServiceMonitor",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "test/e2e/deletion-cleanup/chainsaw-test.yaml",
+      "test_function": "deletion-cleanup: no orphaned pods",
+      "story": "Operator cleans up resources on CR deletion",
+      "expected": "No pods with Memcached labels remain after deletion",
+      "requirement_id": "REQ-009"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 8 test scenarios from S026 are covered: basic deployment, scaling, configuration changes, monitoring toggle, PDB creation, graceful rolling update, webhook rejection, CR deletion",
+    "Chainsaw test files use v1alpha1 API and follow proper YAML structure with try/assert/error operations",
+    "Assert files use partial object matching (only fields that matter) to avoid brittle tests that break on unrelated changes",
+    "Timeouts are appropriate: 120s for pod readiness assertions, 30s for resource creation, 60s for cleanup",
+    "Webhook rejection tests use Chainsaw error assertions to verify that invalid CRs are rejected, not just that they fail",
+    "All test YAMLs are syntactically valid and parseable by Chainsaw",
+    "Makefile test-e2e target correctly installs and invokes Chainsaw binary following the project's existing go-install-tool pattern",
+    "Reference documentation covers prerequisites, execution, adding new tests, and troubleshooting"
+  ],
+  "implementation_notes": "Framework choice: Kyverno Chainsaw (v1alpha1 test API / v1alpha2 config API) over KUTTL. Chainsaw is actively maintained, provides richer assertion capabilities (partial object matching, error assertions for webhook testing), and is the modern successor recommended by the Kubernetes community.\n\nTest architecture: Each test scenario gets its own directory under test/e2e/ with a chainsaw-test.yaml defining the test steps and separate YAML files for resources and assertions. Chainsaw automatically creates an isolated namespace per test and cleans up afterward.\n\nKey design decisions:\n1. Tests assert on partial objects (only fields we care about) to avoid brittleness\n2. Webhook rejection tests use Chainsaw's 'error' operation which expects the apply to FAIL\n3. The monitoring toggle test requires ServiceMonitor CRD to be pre-installed in the kind cluster (part of prerequisites)\n4. Tests are sequential within each test case but can run in parallel across test cases\n5. The Makefile target uses the same go-install-tool pattern as controller-gen, kustomize, etc.\n\nPrerequisites for running tests:\n- kind cluster with operator deployed (make deploy IMG=...)\n- cert-manager installed (for webhook certificates)\n- ServiceMonitor CRD installed (for monitoring tests)\n\nFile structure:\n```\ntest/e2e/\n├── basic-deployment/\n│   ├── chainsaw-test.yaml\n│   ├── 00-memcached.yaml\n│   ├── 01-assert-deployment.yaml\n│   ├── 01-assert-service.yaml\n│   └── 01-assert-status.yaml\n├── scaling/\n│   └── ...\n├── config-change/\n│   └── ...\n├── monitoring-toggle/\n│   └── ...\n├── pdb-creation/\n│   └── ...\n├── graceful-rolling-update/\n│   └── ...\n├── webhook-rejection/\n│   └── ...\n└── deletion-cleanup/\n    └── ...\n```\n\nExisting patterns to follow:\n- Labels: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<name>, app.kubernetes.io/managed-by=memcached-operator\n- Container ports: memcached=11211, metrics=9150\n- Deployment strategy: RollingUpdate, maxSurge=1, maxUnavailable=0\n- Condition types: Available, Progressing, Degraded\n\nRisks and mitigations:\n- Pod scheduling time varies: use 120s assert timeout for readiness checks\n- Webhook requires cert-manager: document as prerequisite, tests will fail clearly if missing\n- ServiceMonitor CRD may not be installed: document as prerequisite for monitoring-toggle test",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.429808"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:51:17.861173"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:56:01.160561"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "cf87e311-b184-4681-846f-785b38aacd10",
+      "timestamp": "2026-02-20T14:56:01.160589",
+      "total_duration": 279.37387895584106,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 279.37387895584106,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
