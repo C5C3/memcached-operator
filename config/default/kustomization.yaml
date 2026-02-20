@@ -19,6 +19,7 @@ resources:
 - ../crd
 - ../rbac
 - ../manager
+- ../webhook
 
 patches:
 - path: manager_metrics_patch.yaml

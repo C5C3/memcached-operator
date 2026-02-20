@@ -1,0 +1,80 @@
+{
+  "feature_id": "MO-0021",
+  "title": "F001: Implement defaulting webhook",
+  "date": "2026-02-20",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Mutating admission webhook implementing CustomDefaulter interface for Memcached CRs. Sets defaults for replicas=1, image=memcached:1.6, memcached config (maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m), monitoring.exporterImage, serviceMonitor interval/scrapeTimeout, and antiAffinityPreset=soft. Optional sections (monitoring, highAvailability) are not force-initialized. All 15 unit tests and 272 envtest integration tests pass. Implementation is clean, minimal, and follows existing patterns. Two issues: stale generated deepcopy file and go fmt formatting issue in test file need to be committed.",
+  "tests_checklist": [
+    {"item": "Unit tests exist and pass (15/15)", "checked": true},
+    {"item": "Integration tests exist and pass (272/272 envtest specs)", "checked": true},
+    {"item": "Edge cases covered: nil structs, zero values, partial specs, replicas=0 preserved", "checked": true},
+    {"item": "Happy path tested: empty spec, fully specified CR, partial configs", "checked": true},
+    {"item": "Preservation tests: explicit values never overwritten", "checked": true},
+    {"item": "Interface compliance verified at compile time", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing Kubebuilder/controller-runtime patterns", "checked": true},
+    {"item": "Default method is single-responsibility and minimal (~60 lines)", "checked": true},
+    {"item": "Clear naming and REQ-xxx requirement traceability in comments", "checked": true},
+    {"item": "No code duplication", "checked": true},
+    {"item": "No magic numbers (all defaults are documented constants)", "checked": true},
+    {"item": "No dead code or unnecessary abstractions", "checked": true},
+    {"item": "go fmt clean (committed code)", "checked": false},
+    {"item": "Generated files up to date", "checked": false}
+  ],
+  "security_checklist": [
+    {"item": "No user input validation required (defaulting only)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No sensitive data in logs (only CR name logged)", "checked": true},
+    {"item": "failurePolicy=Fail prevents bypass", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible", "checked": true},
+    {"item": "Uses typed CustomDefaulter (admission.Defaulter[*Memcached]) not untyped", "checked": true},
+    {"item": "Optional sections respect opt-in semantics (not force-initialized)", "checked": true},
+    {"item": "Webhook registration follows exact same pattern as controller registration", "checked": true},
+    {"item": "Webhook path follows Kubebuilder convention", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions or helpers", "checked": true},
+    {"item": "No future-proofing or unused features", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Webhook registration failure stops operator startup (os.Exit(1))", "checked": true},
+    {"item": "failurePolicy=Fail rejects requests when webhook unavailable", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil pointer checks before every default assignment", "checked": true},
+    {"item": "Zero-value checks for int32 fields (0 is not a valid user value for these fields)", "checked": true},
+    {"item": "Empty string checks for string fields", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "V3-1",
+      "severity": "blocking",
+      "check_id": "V3",
+      "description": "Committed test file fails go fmt. Line 284 in api/v1alpha1/memcached_webhook_test.go has misaligned struct field 'Enabled: true' which go fmt corrects to 'Enabled:        true' (with alignment padding). Running 'make test' auto-fixes this, producing an uncommitted change.",
+      "location": "api/v1alpha1/memcached_webhook_test.go:284",
+      "fix": "Run 'go fmt ./api/v1alpha1/memcached_webhook_test.go' and commit the result."
+    },
+    {
+      "id": "V3-2",
+      "severity": "blocking",
+      "check_id": "V3",
+      "description": "Generated deepcopy file api/v1alpha1/zz_generated.deepcopy.go is stale. Running 'make manifests' (which invokes controller-gen) regenerates DeepCopyInto/DeepCopy methods for the new MemcachedCustomDefaulter struct. The committed version is missing these methods. CI that checks for clean 'make manifests' will fail.",
+      "location": "api/v1alpha1/zz_generated.deepcopy.go",
+      "fix": "Run 'make manifests && make generate' and commit the updated zz_generated.deepcopy.go."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider extracting default values into named constants (e.g. DefaultReplicas, DefaultImage) for reuse across webhook and reconciler code. This is optional and does not block approval."
+  ],
+  "next_steps": [
+    "Fix V3-1: Run go fmt on the test file and commit",
+    "Fix V3-2: Run make manifests/generate and commit the updated zz_generated.deepcopy.go",
+    "Re-request review after both fixes are committed"
+  ]
+}

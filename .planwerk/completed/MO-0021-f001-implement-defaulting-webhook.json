@@ -2,8 +2,8 @@
   "feature_id": "MO-0021",
   "title": "F001: Implement defaulting webhook",
   "slug": "f001-implement-defaulting-webhook",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Implement a mutating admission webhook that sets sensible defaults for omitted fields: replicas=1, image=memcached:1.6, maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, monitoring.exporterImage=prom/memcached-exporter:v0.15.4, antiAffinityPreset=soft, etc.",
   "stories": [
@@ -367,6 +367,7 @@
       "title": "Create defaulting webhook file with CustomDefaulter implementation and Default method (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-009)",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -382,6 +383,7 @@
       "title": "Write unit tests for the defaulting webhook covering all fields and edge cases (REQ-008)",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-001",
@@ -397,6 +399,7 @@
       "title": "Register the defaulting webhook in cmd/main.go (REQ-007)",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -406,6 +409,7 @@
       "title": "Generate webhook configuration manifests via controller-gen (REQ-007)",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -415,6 +419,7 @@
       "title": "Write envtest integration tests for defaulting webhook admission (REQ-008)",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -423,7 +428,8 @@
       "id": "4.1",
       "title": "Write reference documentation for the defaulting webhook (REQ-009 doc)",
       "level": 4,
-      "estimate_minutes": 15
+      "estimate_minutes": 15,
+      "status": "done"
     }
   ],
   "test_specifications": [
@@ -554,6 +560,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T09:37:30.128996"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T09:51:15.491336"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T10:21:59.408873"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T10:21:59.426664"
     }
   },
   "execution_history": [
@@ -567,6 +585,56 @@
           "name": "prepare",
           "duration": 169.29371643066406,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "8f689072-232c-4198-91fb-7a1d159138e6",
+      "timestamp": "2026-02-20T10:12:05.816403",
+      "total_duration": 1143.252896785736,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 259.445680141449,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 97.20567440986633,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 283.46912813186646,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 115.06424355506897,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0021] Code Review",
+          "duration": 204.9522066116333,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0021] Improvements",
+          "duration": 110.01739978790283,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0021] Simplify",
+          "duration": 73.09856414794922,
+          "type": "simplify",
           "status": "done"
         }
       ]
