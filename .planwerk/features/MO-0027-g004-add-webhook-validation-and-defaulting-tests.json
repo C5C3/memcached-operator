@@ -1,0 +1,695 @@
+{
+  "feature_id": "MO-0027",
+  "title": "G004: Add webhook validation and defaulting tests",
+  "slug": "g004-add-webhook-validation-and-defaulting-tests",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Test defaulting and validation webhooks: verify defaults are applied for omitted fields, verify invalid configurations are rejected with clear error messages, verify edge cases in validation logic.",
+  "stories": [
+    {
+      "title": "Operator applies sensible defaults to minimal Memcached CRs",
+      "role": "cluster operator",
+      "want": "to create a Memcached CR with only metadata and have all core spec fields populated automatically",
+      "so_that": "I don't need to know every configuration parameter to get a working Memcached deployment",
+      "criteria": [
+        "An empty-spec CR gets replicas=1, image=memcached:1.6, maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m after webhook runs",
+        "Optional sections (monitoring, highAvailability) remain nil when not specified",
+        "Partially specified memcached config fields get remaining fields defaulted",
+        "Explicitly set values (replicas=0, custom image, custom memory) are never overwritten"
+      ]
+    },
+    {
+      "title": "Operator defaults optional sub-sections when their parent is present",
+      "role": "cluster operator",
+      "want": "monitoring and HA sub-fields to receive defaults when I opt into those sections",
+      "so_that": "I only need to enable monitoring or HA and get reasonable sub-field values automatically",
+      "criteria": [
+        "When spec.monitoring is non-nil, exporterImage defaults to prom/memcached-exporter:v0.15.4",
+        "When spec.monitoring.serviceMonitor is non-nil, interval defaults to 30s and scrapeTimeout to 10s",
+        "When spec.highAvailability is non-nil, antiAffinityPreset defaults to soft",
+        "Custom exporterImage, interval, scrapeTimeout, or antiAffinityPreset values are preserved"
+      ]
+    },
+    {
+      "title": "Operator rejects invalid Memcached configurations with clear error messages",
+      "role": "cluster operator",
+      "want": "to see specific, actionable error messages when my CR has invalid field combinations",
+      "so_that": "I can fix all issues in one pass rather than discovering them one at a time",
+      "criteria": [
+        "Memory limit < maxMemoryMB + 32Mi overhead is rejected with field path spec.resources.limits.memory",
+        "PDB with both minAvailable and maxUnavailable is rejected mentioning mutual exclusivity",
+        "PDB minAvailable >= replicas is rejected with both values in the error message",
+        "SASL enabled without credentialsSecretRef.name is rejected with specific field path",
+        "TLS enabled without certificateSecretRef.name is rejected with specific field path",
+        "Graceful shutdown with terminationGracePeriodSeconds <= preStopDelaySeconds is rejected"
+      ]
+    },
+    {
+      "title": "Operator collects multiple validation errors in a single response",
+      "role": "cluster operator",
+      "want": "all validation errors returned at once rather than one at a time",
+      "so_that": "I can fix every issue in my CR in a single edit",
+      "criteria": [
+        "A CR with memory limit, PDB, and SASL violations returns all three errors in one response",
+        "Each error includes the specific field path (e.g. spec.resources.limits.memory)",
+        "The error response uses standard Kubernetes StatusError format",
+        "Update operations apply the same validation rules as create operations"
+      ]
+    },
+    {
+      "title": "Operator allows deletion without validation",
+      "role": "cluster operator",
+      "want": "to delete any Memcached CR regardless of its current spec validity",
+      "so_that": "I can always clean up resources even if the CR was created before new validation rules were added",
+      "criteria": [
+        "DELETE operations always succeed without running validation logic",
+        "A CR with invalid fields (e.g. SASL enabled without secret) can still be deleted",
+        "ValidateDelete returns nil error and no warnings"
+      ]
+    },
+    {
+      "title": "Webhook tests run in envtest and verify admission chain behavior",
+      "role": "developer",
+      "want": "comprehensive webhook test coverage at both unit and integration levels",
+      "so_that": "webhook regressions are caught before merge and behavior is verified against a real API server",
+      "criteria": [
+        "Unit tests cover every defaulting path (empty spec, partial spec, fully specified, nil sections)",
+        "Unit tests cover every validation rule (memory limit, PDB, graceful shutdown, SASL, TLS, multiple errors)",
+        "Integration tests (envtest) verify defaults are applied after API server round-trip",
+        "Integration tests verify validation rejections come through the API server admission chain"
+      ]
+    },
+    {
+      "title": "Webhook tests cover edge cases in validation logic",
+      "role": "developer",
+      "want": "edge cases and boundary conditions tested for all validation rules",
+      "so_that": "corner cases like exact boundary values, nil guards, and percentage values don't cause unexpected behavior",
+      "criteria": [
+        "Memory limit at exact boundary (maxMemoryMB + 32Mi overhead) passes validation",
+        "PDB minAvailable as percentage string skips integer comparison with replicas",
+        "Disabled PDB bypasses all PDB validation rules",
+        "Nil highAvailability, nil security, nil resources all skip their respective validations",
+        "Graceful shutdown disabled bypasses timing validation"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The defaulting webhook SHALL set replicas=1 when spec.replicas is nil",
+      "priority": "SHALL",
+      "rationale": "Ensures every Memcached CR has a valid replica count even when the field is omitted",
+      "scenarios": [
+        {
+          "name": "Empty spec gets default replicas",
+          "when": "a Memcached CR is created with empty spec",
+          "then": "spec.replicas is set to 1",
+          "and_then": [
+            "the default is visible after API server round-trip"
+          ]
+        },
+        {
+          "name": "Explicit replicas preserved",
+          "when": "a Memcached CR is created with spec.replicas=3",
+          "then": "spec.replicas remains 3",
+          "and_then": []
+        },
+        {
+          "name": "Zero replicas preserved",
+          "when": "a Memcached CR is created with spec.replicas=0",
+          "then": "spec.replicas remains 0 (not overwritten to default)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The defaulting webhook SHALL set image=memcached:1.6 when spec.image is nil",
+      "priority": "SHALL",
+      "rationale": "Ensures every Memcached CR has a valid container image",
+      "scenarios": [
+        {
+          "name": "Empty spec gets default image",
+          "when": "a Memcached CR is created with nil spec.image",
+          "then": "spec.image is set to memcached:1.6",
+          "and_then": []
+        },
+        {
+          "name": "Custom image preserved",
+          "when": "a Memcached CR is created with spec.image=memcached:1.6.28",
+          "then": "spec.image remains memcached:1.6.28",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The defaulting webhook SHALL initialize spec.memcached with default values when nil or partially specified",
+      "priority": "SHALL",
+      "rationale": "Memcached config is required for every deployment; the webhook ensures all parameters are set",
+      "scenarios": [
+        {
+          "name": "Nil memcached config initialized",
+          "when": "a Memcached CR is created with spec.memcached=nil",
+          "then": "spec.memcached is created with maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m",
+          "and_then": []
+        },
+        {
+          "name": "Partial memcached config filled",
+          "when": "a Memcached CR is created with spec.memcached.maxMemoryMB=256 and other fields omitted",
+          "then": "maxMemoryMB=256 is preserved, other fields get defaults",
+          "and_then": []
+        },
+        {
+          "name": "Fully specified config unchanged",
+          "when": "a Memcached CR is created with all memcached config fields set",
+          "then": "no values are modified",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The defaulting webhook SHALL default monitoring sub-fields only when spec.monitoring is non-nil",
+      "priority": "SHALL",
+      "rationale": "Monitoring is opt-in; the webhook should not force-initialize the monitoring section",
+      "scenarios": [
+        {
+          "name": "Nil monitoring stays nil",
+          "when": "a Memcached CR is created with spec.monitoring=nil",
+          "then": "spec.monitoring remains nil",
+          "and_then": []
+        },
+        {
+          "name": "Monitoring section gets exporter image default",
+          "when": "a Memcached CR is created with spec.monitoring.enabled=true and nil exporterImage",
+          "then": "exporterImage is set to prom/memcached-exporter:v0.15.4",
+          "and_then": []
+        },
+        {
+          "name": "ServiceMonitor sub-fields defaulted",
+          "when": "a Memcached CR is created with spec.monitoring.serviceMonitor={} (empty)",
+          "then": "interval=30s and scrapeTimeout=10s are set",
+          "and_then": [
+            "nil serviceMonitor stays nil when monitoring section exists"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The defaulting webhook SHALL default antiAffinityPreset to soft only when spec.highAvailability is non-nil",
+      "priority": "SHALL",
+      "rationale": "HA is opt-in; the webhook should not force-initialize the HA section",
+      "scenarios": [
+        {
+          "name": "Nil HA stays nil",
+          "when": "a Memcached CR is created with spec.highAvailability=nil",
+          "then": "spec.highAvailability remains nil",
+          "and_then": []
+        },
+        {
+          "name": "HA section gets soft preset default",
+          "when": "a Memcached CR is created with spec.highAvailability={} (empty)",
+          "then": "antiAffinityPreset is set to soft",
+          "and_then": []
+        },
+        {
+          "name": "Hard preset preserved",
+          "when": "a Memcached CR is created with spec.highAvailability.antiAffinityPreset=hard",
+          "then": "antiAffinityPreset remains hard",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The validation webhook SHALL reject CRs where resources.limits.memory < maxMemoryMB + 32Mi overhead",
+      "priority": "SHALL",
+      "rationale": "Prevents OOMKilled pods by ensuring the memory limit can accommodate the configured cache size",
+      "scenarios": [
+        {
+          "name": "Insufficient memory rejected",
+          "when": "a Memcached CR is created with maxMemoryMB=64 and memory limit=64Mi",
+          "then": "the request is rejected with error containing spec.resources.limits.memory",
+          "and_then": [
+            "error message includes the required minimum (96Mi)"
+          ]
+        },
+        {
+          "name": "Exact boundary accepted",
+          "when": "a Memcached CR is created with maxMemoryMB=64 and memory limit=96Mi",
+          "then": "the request is accepted",
+          "and_then": []
+        },
+        {
+          "name": "No memory limit skips validation",
+          "when": "a Memcached CR is created without resources.limits.memory",
+          "then": "validation is skipped (no error)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The validation webhook SHALL reject PDB configurations with both minAvailable and maxUnavailable, or with neither",
+      "priority": "SHALL",
+      "rationale": "Prevents impossible PDB configurations that would block all voluntary disruptions",
+      "scenarios": [
+        {
+          "name": "Both minAvailable and maxUnavailable rejected",
+          "when": "a Memcached CR is created with PDB enabled and both minAvailable and maxUnavailable set",
+          "then": "the request is rejected with error mentioning mutually exclusive",
+          "and_then": []
+        },
+        {
+          "name": "Neither set rejected",
+          "when": "a Memcached CR is created with PDB enabled but neither minAvailable nor maxUnavailable set",
+          "then": "the request is rejected with error requiring one of the two",
+          "and_then": []
+        },
+        {
+          "name": "minAvailable >= replicas rejected",
+          "when": "a Memcached CR is created with replicas=3 and PDB minAvailable=3",
+          "then": "the request is rejected with error showing both values",
+          "and_then": []
+        },
+        {
+          "name": "Disabled PDB bypasses validation",
+          "when": "a Memcached CR is created with PDB enabled=false",
+          "then": "no PDB validation is performed",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The validation webhook SHALL reject security configurations where SASL or TLS is enabled without the required secret reference",
+      "priority": "SHALL",
+      "rationale": "Prevents runtime failures from missing secrets by catching the issue at admission time",
+      "scenarios": [
+        {
+          "name": "SASL without secret rejected",
+          "when": "a Memcached CR is created with SASL enabled and empty credentialsSecretRef.name",
+          "then": "the request is rejected with error at spec.security.sasl.credentialsSecretRef.name",
+          "and_then": []
+        },
+        {
+          "name": "TLS without secret rejected",
+          "when": "a Memcached CR is created with TLS enabled and empty certificateSecretRef.name",
+          "then": "the request is rejected with error at spec.security.tls.certificateSecretRef.name",
+          "and_then": []
+        },
+        {
+          "name": "Both valid with secrets accepted",
+          "when": "a Memcached CR is created with both SASL and TLS enabled and valid secret references",
+          "then": "the request is accepted",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The validation webhook SHALL reject graceful shutdown configurations where terminationGracePeriodSeconds <= preStopDelaySeconds",
+      "priority": "SHALL",
+      "rationale": "Ensures the preStop hook completes before SIGKILL by requiring the grace period to exceed the delay",
+      "scenarios": [
+        {
+          "name": "Equal values rejected",
+          "when": "a Memcached CR is created with preStopDelaySeconds=10 and terminationGracePeriodSeconds=10",
+          "then": "the request is rejected with error at spec.highAvailability.gracefulShutdown.terminationGracePeriodSeconds",
+          "and_then": []
+        },
+        {
+          "name": "Grace period less than delay rejected",
+          "when": "a Memcached CR is created with preStopDelaySeconds=30 and terminationGracePeriodSeconds=10",
+          "then": "the request is rejected",
+          "and_then": []
+        },
+        {
+          "name": "Valid timing accepted",
+          "when": "a Memcached CR is created with preStopDelaySeconds=10 and terminationGracePeriodSeconds=30",
+          "then": "the request is accepted",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The validation webhook SHALL aggregate all field errors and return them in a single StatusError response",
+      "priority": "SHALL",
+      "rationale": "Allows operators to fix all issues in one edit rather than iterating through errors one at a time",
+      "scenarios": [
+        {
+          "name": "Multiple violations return all errors",
+          "when": "a Memcached CR has memory limit, PDB, and SASL violations simultaneously",
+          "then": "the response contains errors for all three fields",
+          "and_then": [
+            "each error includes the specific field path"
+          ]
+        },
+        {
+          "name": "Update propagates same validation",
+          "when": "a valid CR is updated to an invalid configuration",
+          "then": "the update is rejected with the same error format as create",
+          "and_then": []
+        },
+        {
+          "name": "Delete always succeeds",
+          "when": "a Memcached CR is deleted regardless of spec validity",
+          "then": "the delete succeeds with no error",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add unit tests for defaulting webhook edge cases: replicas=0 preserved, fully specified CR unchanged, nil-to-initialized memcached config (REQ-001, REQ-002, REQ-003)",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add unit tests for defaulting webhook monitoring and HA sub-section defaults (REQ-004, REQ-005)",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add unit tests for validation webhook memory limit rule with boundary conditions (REQ-006)",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Add unit tests for validation webhook PDB rules: mutual exclusivity, replicas boundary, disabled bypass (REQ-007)",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Add unit tests for validation webhook security secret refs and graceful shutdown timing (REQ-008, REQ-009)",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Add unit tests for validation webhook error aggregation, delete bypass, and update propagation (REQ-010)",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add envtest integration tests for defaulting webhook: minimal CR, fully specified CR, defaults visible after round-trip (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add envtest integration tests for validation webhook: rejection scenarios via API server (REQ-006, REQ-007, REQ-008, REQ-009, REQ-010)",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add Chainsaw E2E test for webhook defaulting: verify defaults applied on a real cluster (REQ-001, REQ-002, REQ-003)",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add Chainsaw E2E test for webhook validation rejections: verify invalid CRs are rejected on a real cluster (REQ-006, REQ-007, REQ-008, REQ-009)",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for webhook test coverage and test patterns (docs/reference/backend/webhook-tests.md)",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_EmptySpec",
+      "story": "Operator applies sensible defaults to minimal Memcached CRs",
+      "expected": "Empty spec CR gets replicas=1, image=memcached:1.6, memcached config defaults, optional sections nil",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_PreservesExplicitValues",
+      "story": "Operator applies sensible defaults to minimal Memcached CRs",
+      "expected": "Explicitly set replicas, image, memcached config are never overwritten",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_ReplicasZeroPreserved",
+      "story": "Operator applies sensible defaults to minimal Memcached CRs",
+      "expected": "replicas=0 pointer value is preserved, not overwritten to 1",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_NilMemcachedConfig",
+      "story": "Operator applies sensible defaults to minimal Memcached CRs",
+      "expected": "Nil memcached section is initialized with maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_PartialMemcachedConfig",
+      "story": "Operator applies sensible defaults to minimal Memcached CRs",
+      "expected": "Partial config (maxMemoryMB=256) preserves set value and defaults the rest",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_MonitoringExporterImage",
+      "story": "Operator defaults optional sub-sections when their parent is present",
+      "expected": "Nil exporterImage defaults to prom/memcached-exporter:v0.15.4 when monitoring section exists",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_NilMonitoringStaysNil",
+      "story": "Operator defaults optional sub-sections when their parent is present",
+      "expected": "Nil monitoring section stays nil — not force-initialized",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_ServiceMonitorDefaults",
+      "story": "Operator defaults optional sub-sections when their parent is present",
+      "expected": "Empty serviceMonitor gets interval=30s and scrapeTimeout=10s",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AntiAffinityPreset",
+      "story": "Operator defaults optional sub-sections when their parent is present",
+      "expected": "Empty HA section gets antiAffinityPreset=soft",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_NilHAStaysNil",
+      "story": "Operator defaults optional sub-sections when their parent is present",
+      "expected": "Nil HA section stays nil — not force-initialized",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateMemoryLimit",
+      "story": "Operator rejects invalid Memcached configurations with clear error messages",
+      "expected": "Table-driven: sufficient (pass), exact boundary (pass), insufficient (fail), no limit (pass), nil resources (pass)",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidatePDB",
+      "story": "Operator rejects invalid Memcached configurations with clear error messages",
+      "expected": "Table-driven: minAvailable only (pass), both set (fail), neither set (fail), minAvailable>=replicas (fail), disabled (pass)",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateSecuritySecretRefs",
+      "story": "Operator rejects invalid Memcached configurations with clear error messages",
+      "expected": "Table-driven: SASL+secret (pass), SASL-no-secret (fail), TLS+secret (pass), TLS-no-secret (fail), both valid (pass)",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateGracefulShutdown",
+      "story": "Operator rejects invalid Memcached configurations with clear error messages",
+      "expected": "Table-driven: valid timing (pass), equal values (fail), grace<preStop (fail), disabled (pass)",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_MultipleErrorsCollected",
+      "story": "Operator collects multiple validation errors in a single response",
+      "expected": "CR with memory, PDB, SASL violations returns all three errors in one response",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateDelete_AlwaysSucceeds",
+      "story": "Operator allows deletion without validation",
+      "expected": "ValidateDelete returns nil error even for invalid CRs",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "internal/controller/memcached_webhook_integration_test.go",
+      "test_function": "Webhook Defaulting via API Server / minimal CR",
+      "story": "Webhook tests run in envtest and verify admission chain behavior",
+      "expected": "After k8sClient.Create and Get, all defaults are visible in the fetched CR",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_webhook_integration_test.go",
+      "test_function": "Webhook Defaulting via API Server / fully specified CR",
+      "story": "Webhook tests run in envtest and verify admission chain behavior",
+      "expected": "Fully specified CR passes through unchanged after round-trip",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Webhook Validation via API Server / rejects insufficient memory limit",
+      "story": "Webhook tests run in envtest and verify admission chain behavior",
+      "expected": "k8sClient.Create returns error containing spec.resources.limits.memory",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Webhook Validation via API Server / rejects update to invalid config",
+      "story": "Webhook tests run in envtest and verify admission chain behavior",
+      "expected": "k8sClient.Update returns error when changing valid CR to invalid config",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "test/e2e/webhook-defaulting/chainsaw-test.yaml",
+      "test_function": "webhook-defaulting",
+      "story": "Webhook tests run in envtest and verify admission chain behavior",
+      "expected": "Minimal CR created on real cluster has all defaults applied",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "test/e2e/webhook-rejection/chainsaw-test.yaml",
+      "test_function": "webhook-rejection",
+      "story": "Operator rejects invalid Memcached configurations with clear error messages",
+      "expected": "All 5 invalid CRs are rejected by the webhook on a real cluster",
+      "requirement_id": "REQ-006"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All unit tests in api/v1alpha1/memcached_webhook_test.go pass with `go test ./api/v1alpha1/ -run TestMemcachedDefaulting -v`",
+    "All unit tests in api/v1alpha1/memcached_validation_webhook_test.go pass with `go test ./api/v1alpha1/ -run 'TestValidate|TestValidation' -v`",
+    "All envtest integration tests pass with `make test` (includes webhook server in suite_test.go)",
+    "All Chainsaw E2E tests pass with `make test-e2e` (webhook-defaulting and webhook-rejection)",
+    "Every defaulting path (nil, zero-value, explicit) has a corresponding unit test",
+    "Every validation rule has tests for: valid input, invalid input, boundary condition, skip condition (nil guards)",
+    "Error messages include specific field paths (e.g. spec.resources.limits.memory) matching Kubernetes StatusError format",
+    "Test code follows existing patterns: standard Go test functions for unit tests, Ginkgo/Gomega for envtest, Chainsaw YAML for E2E",
+    "No modifications to production code (memcached_webhook.go, memcached_validation_webhook.go) — only test files are added/modified",
+    "Documentation in docs/reference/backend/webhook-tests.md catalogs all test functions with requirement IDs"
+  ],
+  "implementation_notes": "This feature is purely about adding test coverage for the existing defaulting and validation webhooks. No production code changes are needed. The webhooks are already fully implemented:\n\n- Defaulting webhook: api/v1alpha1/memcached_webhook.go (MemcachedCustomDefaulter)\n- Validation webhook: api/v1alpha1/memcached_validation_webhook.go (MemcachedCustomValidator)\n\nExisting test files already have substantial coverage:\n- api/v1alpha1/memcached_webhook_test.go: 15 unit tests for defaulting\n- api/v1alpha1/memcached_validation_webhook_test.go: 6 test groups with table-driven tests for validation\n- internal/controller/memcached_webhook_integration_test.go: 2 envtest scenarios for defaulting\n- internal/controller/memcached_validation_webhook_integration_test.go: 8 envtest scenarios for validation\n- test/e2e/webhook-rejection/: 5 Chainsaw E2E rejection tests\n\nGaps to fill:\n1. Chainsaw E2E test for webhook DEFAULTING (test/e2e/webhook-defaulting/) — missing entirely\n2. Additional Chainsaw rejection scenarios (PDB minAvailable >= replicas, PDB neither set)\n3. Documentation cataloging all webhook tests\n\nThe existing unit and envtest tests are comprehensive. The primary deliverables are: (a) the missing Chainsaw defaulting test, (b) additional Chainsaw rejection edge cases, and (c) reference documentation.\n\nTest patterns to follow:\n- Unit tests: standard Go testing.T with table-driven tests in api/v1alpha1/*_test.go\n- Integration tests: Ginkgo/Gomega Describe/Context/It blocks in internal/controller/*_test.go using envtest + webhook server\n- E2E tests: Chainsaw YAML in test/e2e/<scenario>/ with chainsaw-test.yaml + YAML manifests\n- Helper functions: validMemcached(), uniqueName(), int32Ptr() in internal/controller/memcached_crd_validation_test.go",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.430279"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:24:53.470468"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:28:45.429365"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "98b9777d-d708-410c-9205-e10e7124ca6e",
+      "timestamp": "2026-02-20T16:28:45.429391",
+      "total_duration": 228.64549779891968,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 228.64549779891968,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
