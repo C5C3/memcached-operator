@@ -1,0 +1,485 @@
+{
+  "feature_id": "MO-0032",
+  "title": "I001: Add security E2E tests for SASL, TLS and mTLS",
+  "slug": "i001-add-security-e2e-tests-for-sasl-tls-and-mtls",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** testing\n**Priority:** critical\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 3 Chainsaw E2E tests covering the operator's security features:\n\n1. **test/e2e/sasl-authentication/**: Create a Secret with `password-file` key, apply CR with `security.sasl.enabled: true`. Assert Deployment has `sasl-credentials` volume, volumeMount at `/etc/memcached/sasl`, and container args include `-Y /etc/memcached/sasl/password-file`.\n\n2. **test/e2e/tls-encryption/**: Create a cert-manager Certificate resource to generate TLS certs in a Secret, apply CR with `security.tls.enabled: true`. Assert Deployment has `tls-certificates` volume, port 11212, and args include `-Z -o ssl_chain_cert=... -o ssl_key=...`. Assert Service gains `memcached-tls` port.\n\n3. **test/e2e/tls-mtls/**: Same as TLS but with `enableClientCert: true`. Assert args also include `-o ssl_ca_cert=.../ca.crt` and TLS volume includes `ca.crt` key projection.\n\nEach test follows existing Chainsaw patterns: apply resources, wait for reconciliation, assert on Deployment/Service specs. No actual TLS handshake or SASL auth verification (excluded per scope).\n\n**Rationale:** SASL and TLS are critical security features with zero E2E coverage. These are the highest-risk features to ship without positive-path validation — misconfigured volume mounts or missing args would silently break encryption/authentication in production.\n\n**Affected Areas:**\n- test/e2e/sasl-authentication/chainsaw-test.yaml\n- test/e2e/tls-encryption/chainsaw-test.yaml\n- test/e2e/tls-mtls/chainsaw-test.yaml",
+  "stories": [
+    {
+      "title": "Operator validates SASL volume mounts and args in E2E",
+      "role": "operator developer",
+      "want": "an E2E test that creates a Secret with password-file key, applies a CR with security.sasl.enabled: true, and asserts the Deployment has the correct volume, volumeMount, and container args",
+      "so_that": "I can be confident SASL authentication configuration is correctly propagated to the Deployment in a real cluster",
+      "criteria": [
+        "Secret with key 'password-file' is created in the test namespace before the CR is applied",
+        "CR with security.sasl.enabled: true and credentialsSecretRef pointing to the Secret is accepted",
+        "Deployment has volume named 'sasl-credentials' sourced from the Secret with items [{key: password-file, path: password-file}]",
+        "Deployment memcached container has volumeMount at /etc/memcached/sasl (readOnly: true)",
+        "Deployment memcached container args include '-Y' and '/etc/memcached/sasl/password-file'",
+        "Status conditions show Available=True after reconciliation"
+      ]
+    },
+    {
+      "title": "Operator validates TLS volume mounts, args, and ports in E2E",
+      "role": "operator developer",
+      "want": "an E2E test that creates a TLS Secret (via cert-manager Certificate), applies a CR with security.tls.enabled: true, and asserts the Deployment has the correct TLS volume, args, and port 11212",
+      "so_that": "I can be confident TLS encryption configuration is correctly propagated to Deployment and Service in a real cluster",
+      "criteria": [
+        "cert-manager Issuer and Certificate resources are created to generate a TLS Secret with tls.crt and tls.key keys",
+        "CR with security.tls.enabled: true and certificateSecretRef pointing to the cert-manager Secret is accepted",
+        "Deployment has volume named 'tls-certificates' sourced from the Secret with items [{key: tls.crt, path: tls.crt}, {key: tls.key, path: tls.key}]",
+        "Deployment memcached container has volumeMount at /etc/memcached/tls (readOnly: true)",
+        "Deployment memcached container args include '-Z', 'ssl_chain_cert=/etc/memcached/tls/tls.crt', and 'ssl_key=/etc/memcached/tls/tls.key'",
+        "Deployment memcached container has port named 'memcached-tls' on containerPort 11212",
+        "Service has port named 'memcached-tls' on port 11212 targeting 'memcached-tls'",
+        "Status conditions show Available=True after reconciliation"
+      ]
+    },
+    {
+      "title": "Operator validates mTLS adds ca.crt volume projection and ssl_ca_cert arg in E2E",
+      "role": "operator developer",
+      "want": "an E2E test that creates a TLS Secret with ca.crt, applies a CR with security.tls.enabled: true and enableClientCert: true, and asserts the Deployment includes the ca.crt key projection and ssl_ca_cert arg",
+      "so_that": "I can be confident mutual TLS configuration correctly adds client certificate verification to the Deployment",
+      "criteria": [
+        "cert-manager Issuer and Certificate resources are created to generate a TLS Secret with tls.crt, tls.key, and ca.crt keys",
+        "CR with security.tls.enabled: true, enableClientCert: true, and certificateSecretRef is accepted",
+        "Deployment TLS volume items include {key: ca.crt, path: ca.crt} in addition to tls.crt and tls.key",
+        "Deployment memcached container args include 'ssl_ca_cert=/etc/memcached/tls/ca.crt' in addition to -Z, ssl_chain_cert, and ssl_key args",
+        "Deployment memcached container has port named 'memcached-tls' on containerPort 11212",
+        "Service has port named 'memcached-tls' on port 11212"
+      ]
+    },
+    {
+      "title": "E2E tests follow established Chainsaw conventions",
+      "role": "developer",
+      "want": "the new security E2E tests to follow the same Chainsaw YAML structure, timeout conventions, directory layout, and assertion patterns as existing tests",
+      "so_that": "the test suite remains consistent and maintainable",
+      "criteria": [
+        "Each test directory contains chainsaw-test.yaml plus numbered YAML files for apply/assert steps",
+        "Timeout configuration matches existing tests: apply 30s, assert 120s, delete 30s",
+        "Assertion files use partial resource specs (not full specs) for Chainsaw field matching",
+        "CR naming follows test-{testname} convention (e.g., test-sasl, test-tls, test-mtls)",
+        "Labels follow app.kubernetes.io/name, app.kubernetes.io/instance, app.kubernetes.io/managed-by pattern"
+      ]
+    },
+    {
+      "title": "E2E tests do not verify actual TLS handshakes or SASL authentication",
+      "role": "developer",
+      "want": "the tests to be scoped strictly to Kubernetes resource spec assertions, not runtime protocol verification",
+      "so_that": "tests are fast, deterministic, and do not require in-cluster memcached clients",
+      "criteria": [
+        "No test step attempts to connect to memcached via TLS or SASL",
+        "All assertions are on Deployment spec, Service spec, or CR status — never on pod logs or runtime behavior",
+        "Tests pass in a kind cluster without any memcached client tools installed",
+        "Tests complete within the 120s assert timeout including reconciliation time"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The SASL E2E test SHALL create a Secret with a password-file key and verify the Deployment mounts it correctly",
+      "priority": "SHALL",
+      "rationale": "SASL authentication requires the password file to be mounted at the correct path for memcached -Y flag to work",
+      "scenarios": [
+        {
+          "name": "SASL Secret created and CR applied",
+          "when": "a Secret with key 'password-file' exists and a CR with security.sasl.enabled: true references it",
+          "then": "the Deployment has volume 'sasl-credentials' with secretName matching the Secret and items [{key: password-file, path: password-file}]",
+          "and_then": [
+            "the volume is read-only"
+          ]
+        },
+        {
+          "name": "SASL volumeMount at correct path",
+          "when": "the Deployment is reconciled with SASL enabled",
+          "then": "the memcached container has a volumeMount with name 'sasl-credentials' and mountPath '/etc/memcached/sasl'",
+          "and_then": [
+            "readOnly is true"
+          ]
+        },
+        {
+          "name": "SASL container args include -Y flag",
+          "when": "the Deployment is reconciled with SASL enabled",
+          "then": "the memcached container args contain '-Y' followed by '/etc/memcached/sasl/password-file'",
+          "and_then": [
+            "the -Y arg appears after the standard memcached args (-m, -c, -t, -I)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The TLS E2E test SHALL use cert-manager to generate TLS certificates and verify the Deployment mounts them correctly",
+      "priority": "SHALL",
+      "rationale": "TLS requires valid certificate files mounted at the correct path; cert-manager is the standard way to provision certs in Kubernetes",
+      "scenarios": [
+        {
+          "name": "cert-manager generates TLS Secret",
+          "when": "a self-signed Issuer and Certificate resource are created",
+          "then": "cert-manager generates a Secret containing tls.crt and tls.key keys",
+          "and_then": [
+            "the Secret is ready before the Memcached CR is applied"
+          ]
+        },
+        {
+          "name": "TLS volume with correct items",
+          "when": "the Deployment is reconciled with TLS enabled",
+          "then": "the Deployment has volume 'tls-certificates' with secretName matching the cert-manager Secret and items [{key: tls.crt, path: tls.crt}, {key: tls.key, path: tls.key}]",
+          "and_then": []
+        },
+        {
+          "name": "TLS volumeMount at correct path",
+          "when": "the Deployment is reconciled with TLS enabled",
+          "then": "the memcached container has a volumeMount with name 'tls-certificates' and mountPath '/etc/memcached/tls'",
+          "and_then": [
+            "readOnly is true"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The TLS E2E test SHALL verify memcached container args include -Z and ssl_chain_cert/ssl_key options",
+      "priority": "SHALL",
+      "rationale": "Missing TLS args would mean memcached runs unencrypted despite TLS being enabled in the CR — silent security failure",
+      "scenarios": [
+        {
+          "name": "TLS args present in container",
+          "when": "the Deployment is reconciled with TLS enabled",
+          "then": "the memcached container args contain '-Z', '-o', 'ssl_chain_cert=/etc/memcached/tls/tls.crt', '-o', 'ssl_key=/etc/memcached/tls/tls.key'",
+          "and_then": []
+        },
+        {
+          "name": "No ssl_ca_cert arg without enableClientCert",
+          "when": "the Deployment is reconciled with TLS enabled but enableClientCert is false (default)",
+          "then": "the memcached container args do NOT contain 'ssl_ca_cert'",
+          "and_then": []
+        },
+        {
+          "name": "Standard args preserved alongside TLS args",
+          "when": "the Deployment is reconciled with TLS enabled",
+          "then": "the memcached container args still contain the standard args (-m, -c, -t, -I) before the TLS args",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The TLS E2E test SHALL verify port 11212 is added to both Deployment and Service",
+      "priority": "SHALL",
+      "rationale": "TLS connections use a dedicated port (11212) separate from the standard port (11211); missing port config breaks TLS connectivity",
+      "scenarios": [
+        {
+          "name": "Deployment has TLS port",
+          "when": "the Deployment is reconciled with TLS enabled",
+          "then": "the memcached container has port named 'memcached-tls' on containerPort 11212 with protocol TCP",
+          "and_then": [
+            "the standard port 11211 named 'memcached' is also present"
+          ]
+        },
+        {
+          "name": "Service has TLS port",
+          "when": "the Service is reconciled with TLS enabled",
+          "then": "the Service has port named 'memcached-tls' on port 11212 targeting 'memcached-tls' with protocol TCP",
+          "and_then": [
+            "the standard port 11211 named 'memcached' is also present"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The mTLS E2E test SHALL verify enableClientCert adds ssl_ca_cert arg and ca.crt volume projection",
+      "priority": "SHALL",
+      "rationale": "mTLS requires the CA certificate to verify client certs; missing ca.crt projection silently disables client cert verification",
+      "scenarios": [
+        {
+          "name": "mTLS volume includes ca.crt",
+          "when": "the Deployment is reconciled with TLS enabled and enableClientCert: true",
+          "then": "the TLS volume items include {key: ca.crt, path: ca.crt} in addition to tls.crt and tls.key",
+          "and_then": []
+        },
+        {
+          "name": "mTLS args include ssl_ca_cert",
+          "when": "the Deployment is reconciled with TLS enabled and enableClientCert: true",
+          "then": "the memcached container args contain '-o' and 'ssl_ca_cert=/etc/memcached/tls/ca.crt'",
+          "and_then": [
+            "all other TLS args (-Z, ssl_chain_cert, ssl_key) are also present"
+          ]
+        },
+        {
+          "name": "mTLS port configuration matches TLS",
+          "when": "the Deployment is reconciled with mTLS enabled",
+          "then": "port configuration is identical to the TLS-only case (port 11212 on Deployment and Service)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The SASL E2E test SHALL verify status conditions become Available=True after reconciliation",
+      "priority": "SHALL",
+      "rationale": "Status conditions confirm the operator successfully reconciled the SASL-enabled Deployment and it is running",
+      "scenarios": [
+        {
+          "name": "SASL CR reaches Available status",
+          "when": "the SASL-enabled Memcached CR is reconciled and the Deployment rolls out",
+          "then": "the CR status shows Available=True, Progressing=False, Degraded=False",
+          "and_then": [
+            "readyReplicas is 1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The TLS E2E test SHALL verify status conditions become Available=True after reconciliation",
+      "priority": "SHALL",
+      "rationale": "Status conditions confirm the operator successfully reconciled the TLS-enabled Deployment and it is running",
+      "scenarios": [
+        {
+          "name": "TLS CR reaches Available status",
+          "when": "the TLS-enabled Memcached CR is reconciled and the Deployment rolls out",
+          "then": "the CR status shows Available=True, Progressing=False, Degraded=False",
+          "and_then": [
+            "readyReplicas is 1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "All E2E tests SHALL follow existing Chainsaw directory and YAML conventions",
+      "priority": "SHALL",
+      "rationale": "Consistency with the existing 9 E2E tests ensures maintainability and CI compatibility",
+      "scenarios": [
+        {
+          "name": "Directory structure matches convention",
+          "when": "a new E2E test is created",
+          "then": "it lives in test/e2e/{test-name}/ with chainsaw-test.yaml as the main file",
+          "and_then": [
+            "numbered YAML files follow 00-resource.yaml, 01-assert-*.yaml pattern"
+          ]
+        },
+        {
+          "name": "Timeout configuration matches existing tests",
+          "when": "the chainsaw-test.yaml is configured",
+          "then": "timeouts are set to apply: 30s, assert: 120s, delete: 30s",
+          "and_then": []
+        },
+        {
+          "name": "CR naming follows convention",
+          "when": "a test CR is defined",
+          "then": "metadata.name follows test-{testname} pattern (e.g., test-sasl, test-tls, test-mtls)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The TLS E2E tests SHALL wait for the cert-manager Certificate to be ready before applying the Memcached CR",
+      "priority": "SHALL",
+      "rationale": "The Memcached CR references the cert-manager-generated Secret; applying the CR before the Secret exists would cause reconciliation errors",
+      "scenarios": [
+        {
+          "name": "Certificate readiness asserted",
+          "when": "cert-manager Issuer and Certificate are applied",
+          "then": "a Chainsaw assert step verifies the Certificate status.conditions contains Ready=True before proceeding",
+          "and_then": [
+            "the Memcached CR is applied only after the Certificate is ready"
+          ]
+        },
+        {
+          "name": "Secret exists before CR creation",
+          "when": "the Certificate is ready",
+          "then": "the Secret referenced by secretName in the Certificate spec exists with tls.crt and tls.key data keys",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create SASL authentication E2E test — Secret, CR, Deployment volume/mount/args assertions (REQ-001, REQ-006, REQ-008)",
+      "description": "Create test/e2e/sasl-authentication/ directory with:\n- chainsaw-test.yaml: 4 steps (create-secret, create-memcached-cr, assert-deployment-sasl, assert-status-available)\n- 00-sasl-secret.yaml: Secret with stringData.password-file containing dummy SASL password\n- 00-memcached.yaml: Memcached CR named test-sasl with security.sasl.enabled: true, credentialsSecretRef.name: test-sasl-credentials, plus standard spec (replicas: 1, image: memcached:1.6, resources, memcached config)\n- 01-assert-deployment.yaml: Partial Deployment spec asserting volumes contain sasl-credentials volume with secret items [{key: password-file, path: password-file}], containers[0] has volumeMount name=sasl-credentials mountPath=/etc/memcached/sasl readOnly=true, and args include -m 64 -c 1024 -t 4 -I 1m -Y /etc/memcached/sasl/password-file\n- 02-assert-status.yaml: CR status asserting readyReplicas: 1, Available=True, Progressing=False, Degraded=False\nFollow exact patterns from test/e2e/basic-deployment/ and test/e2e/monitoring-toggle/ for YAML structure and timeouts.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-006",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create TLS encryption E2E test — cert-manager Certificate, CR, Deployment volume/mount/args/port and Service port assertions (REQ-002, REQ-003, REQ-004, REQ-007, REQ-008, REQ-009)",
+      "description": "Create test/e2e/tls-encryption/ directory with:\n- chainsaw-test.yaml: 6 steps (create-cert-manager-resources, assert-certificate-ready, create-memcached-cr, assert-deployment-tls, assert-service-tls-port, assert-status-available)\n- 00-cert-manager.yaml: Self-signed Issuer + Certificate resource that generates Secret 'test-tls-certs' with dnsNames [test-tls.${NAMESPACE}.svc]. Use cert-manager.io/v1 API. The Certificate spec should have secretName: test-tls-certs, issuerRef pointing to the self-signed issuer.\n- 00-assert-certificate-ready.yaml: cert-manager.io/v1 Certificate named matching the Certificate, asserting status.conditions with type: Ready, status: 'True'\n- 01-memcached.yaml: Memcached CR named test-tls with security.tls.enabled: true, certificateSecretRef.name: test-tls-certs, plus standard spec\n- 02-assert-deployment.yaml: Partial Deployment spec asserting: volumes contain tls-certificates volume with secret items [{key: tls.crt, path: tls.crt}, {key: tls.key, path: tls.key}], containers[0] has volumeMount name=tls-certificates mountPath=/etc/memcached/tls readOnly=true, args include -m 64 -c 1024 -t 4 -I 1m -Z -o ssl_chain_cert=/etc/memcached/tls/tls.crt -o ssl_key=/etc/memcached/tls/tls.key, and ports include both memcached:11211 and memcached-tls:11212\n- 02-assert-service.yaml: Partial Service spec asserting ports include memcached:11211 and memcached-tls:11212 (targetPort: memcached-tls)\n- 03-assert-status.yaml: CR status asserting readyReplicas: 1, Available=True, Progressing=False, Degraded=False\nFollow cert-manager pattern from config/certmanager/certificate.yaml for Issuer/Certificate resources. cert-manager v1.16.1 is installed in CI per .github/workflows/ci.yml.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create mTLS E2E test — enableClientCert with ca.crt volume projection and ssl_ca_cert arg assertions (REQ-005, REQ-004, REQ-008, REQ-009)",
+      "description": "Create test/e2e/tls-mtls/ directory with:\n- chainsaw-test.yaml: 6 steps (create-cert-manager-resources, assert-certificate-ready, create-memcached-cr, assert-deployment-mtls, assert-service-tls-port, assert-status-available)\n- 00-cert-manager.yaml: Self-signed Issuer + CA Certificate that generates Secret 'test-mtls-certs'. Use same pattern as TLS test but ensure the Certificate generates ca.crt (cert-manager self-signed certs include ca.crt by default).\n- 00-assert-certificate-ready.yaml: cert-manager Certificate asserting Ready=True\n- 01-memcached.yaml: Memcached CR named test-mtls with security.tls.enabled: true, enableClientCert: true, certificateSecretRef.name: test-mtls-certs, plus standard spec\n- 02-assert-deployment.yaml: Partial Deployment spec asserting: volumes contain tls-certificates volume with secret items [{key: tls.crt, path: tls.crt}, {key: tls.key, path: tls.key}, {key: ca.crt, path: ca.crt}], containers[0] has volumeMount name=tls-certificates mountPath=/etc/memcached/tls readOnly=true, args include -m 64 -c 1024 -t 4 -I 1m -Z -o ssl_chain_cert=/etc/memcached/tls/tls.crt -o ssl_key=/etc/memcached/tls/tls.key -o ssl_ca_cert=/etc/memcached/tls/ca.crt, and ports include both memcached:11211 and memcached-tls:11212\n- 02-assert-service.yaml: Partial Service spec asserting ports include memcached:11211 and memcached-tls:11212\n- 03-assert-status.yaml: CR status asserting readyReplicas: 1, Available=True\nKey difference from TLS test: volume items include ca.crt, args include ssl_ca_cert.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-004",
+        "REQ-008",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Write Reference documentation for SASL authentication, TLS encryption, and mTLS E2E tests",
+      "description": "Create docs/reference/testing/security-e2e-tests.md documenting:\n- Overview of the 3 security E2E tests and what each validates\n- Directory structure and file layout for each test\n- CRD security spec fields tested (security.sasl.enabled, security.tls.enabled, enableClientCert)\n- Expected Deployment assertions (volumes, volumeMounts, container args, ports)\n- Expected Service assertions (TLS port)\n- cert-manager prerequisites for TLS tests\n- How to run the tests individually: chainsaw test --test-dir test/e2e/sasl-authentication\nFollow existing docs structure if a docs/ directory exists; otherwise create the minimal reference doc.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "test/e2e/sasl-authentication/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-sasl-volume",
+      "story": "Operator validates SASL volume mounts and args in E2E",
+      "expected": "Deployment has volume 'sasl-credentials' with Secret items [{key: password-file, path: password-file}]",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "test/e2e/sasl-authentication/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-sasl-args",
+      "story": "Operator validates SASL volume mounts and args in E2E",
+      "expected": "Deployment memcached container args include '-Y' and '/etc/memcached/sasl/password-file' and volumeMount at /etc/memcached/sasl",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "test/e2e/sasl-authentication/chainsaw-test.yaml",
+      "test_function": "step: assert-status-available",
+      "story": "Operator validates SASL volume mounts and args in E2E",
+      "expected": "CR status shows Available=True, readyReplicas=1",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "test/e2e/tls-encryption/chainsaw-test.yaml",
+      "test_function": "step: assert-certificate-ready",
+      "story": "Operator validates TLS volume mounts, args, and ports in E2E",
+      "expected": "cert-manager Certificate status.conditions contains Ready=True",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "test/e2e/tls-encryption/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-tls",
+      "story": "Operator validates TLS volume mounts, args, and ports in E2E",
+      "expected": "Deployment has tls-certificates volume, volumeMount at /etc/memcached/tls, args -Z ssl_chain_cert ssl_key, port 11212",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "test/e2e/tls-encryption/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-tls-args",
+      "story": "Operator validates TLS volume mounts, args, and ports in E2E",
+      "expected": "Deployment memcached container args include '-Z', '-o', 'ssl_chain_cert=/etc/memcached/tls/tls.crt', '-o', 'ssl_key=/etc/memcached/tls/tls.key'",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "test/e2e/tls-encryption/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-tls-port",
+      "story": "Operator validates TLS volume mounts, args, and ports in E2E",
+      "expected": "Deployment has port 'memcached-tls' on containerPort 11212",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "test/e2e/tls-encryption/chainsaw-test.yaml",
+      "test_function": "step: assert-service-tls-port",
+      "story": "Operator validates TLS volume mounts, args, and ports in E2E",
+      "expected": "Service has port 'memcached-tls' on port 11212 targeting 'memcached-tls'",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "test/e2e/tls-encryption/chainsaw-test.yaml",
+      "test_function": "step: assert-status-available",
+      "story": "Operator validates TLS volume mounts, args, and ports in E2E",
+      "expected": "CR status shows Available=True, readyReplicas=1",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "test/e2e/tls-mtls/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-mtls-volume",
+      "story": "Operator validates mTLS adds ca.crt volume projection and ssl_ca_cert arg in E2E",
+      "expected": "Deployment TLS volume items include ca.crt in addition to tls.crt and tls.key",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "test/e2e/tls-mtls/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-mtls-args",
+      "story": "Operator validates mTLS adds ca.crt volume projection and ssl_ca_cert arg in E2E",
+      "expected": "Deployment memcached container args include 'ssl_ca_cert=/etc/memcached/tls/ca.crt' alongside -Z, ssl_chain_cert, ssl_key",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "test/e2e/tls-mtls/chainsaw-test.yaml",
+      "test_function": "step: assert-service-tls-port",
+      "story": "Operator validates mTLS adds ca.crt volume projection and ssl_ca_cert arg in E2E",
+      "expected": "Service has port 'memcached-tls' on port 11212 targeting 'memcached-tls'",
+      "requirement_id": "REQ-005"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 3 E2E test directories (sasl-authentication, tls-encryption, tls-mtls) exist under test/e2e/ with chainsaw-test.yaml and assertion YAML files",
+    "SASL test asserts: sasl-credentials volume, /etc/memcached/sasl mount, -Y /etc/memcached/sasl/password-file arg, Available=True status",
+    "TLS test asserts: cert-manager Certificate Ready=True, tls-certificates volume with tls.crt+tls.key items, /etc/memcached/tls mount, -Z and ssl_chain_cert/ssl_key args, memcached-tls port 11212 on Deployment and Service, Available=True status",
+    "mTLS test asserts: same as TLS plus ca.crt volume item and ssl_ca_cert arg with enableClientCert: true",
+    "All tests follow existing Chainsaw conventions: timeout config (apply:30s, assert:120s, delete:30s), numbered YAML files, partial-spec assertions, test-{name} CR naming",
+    "No test attempts actual TLS handshake or SASL authentication — assertions are strictly on Kubernetes resource specs and status conditions",
+    "TLS/mTLS tests properly sequence cert-manager resource creation and Certificate readiness assertion before applying Memcached CR",
+    "YAML files are valid and lint-clean (no trailing whitespace, consistent 2-space indentation, proper document separators)"
+  ],
+  "implementation_notes": "Architecture: Each E2E test is a self-contained Chainsaw test directory with YAML files. No Go code is needed — Chainsaw tests are declarative YAML.\n\nKey patterns to follow:\n- test/e2e/basic-deployment/ for simple apply-and-assert flow\n- test/e2e/monitoring-toggle/ for multi-step lifecycle testing\n- test/e2e/webhook-rejection/ for error assertion pattern\n- config/certmanager/certificate.yaml for cert-manager Issuer/Certificate YAML structure\n\nCert-manager integration:\n- cert-manager v1.16.1 is installed in CI (.github/workflows/ci.yml:149-153)\n- Use self-signed Issuer (simplest approach, no external CA needed)\n- Certificate resources auto-generate Secrets with tls.crt, tls.key, ca.crt keys\n- Must assert Certificate Ready=True before applying Memcached CR to avoid race condition\n\nOperator implementation reference (for understanding what to assert):\n- internal/controller/deployment.go:211-293 — SASL/TLS volume, mount, and arg construction\n- internal/controller/deployment.go:360-373 — TLS port configuration\n- internal/controller/service.go:30-44 — Service TLS port configuration\n- api/v1alpha1/memcached_types.go:163-214 — SecuritySpec, SASLSpec, TLSSpec type definitions\n\nPotential pitfalls:\n- Chainsaw assertion files must match the exact structure of the Kubernetes resource (e.g., args as a flat array, not key-value pairs)\n- cert-manager Certificate Ready condition may take time; the 120s assert timeout should be sufficient\n- The SASL Secret must be created BEFORE the Memcached CR to avoid the webhook rejecting the CR (validation requires credentialsSecretRef.name)\n- Volume items order matters in the assertion for Chainsaw's field matching",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:27:34.053382"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:28:27.358306"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:34:38.097899"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "172baedf-4ee3-43d6-9e1f-a53f4be52d72",
+      "timestamp": "2026-02-20T23:34:38.097926",
+      "total_duration": 365.43022871017456,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 365.43022871017456,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
