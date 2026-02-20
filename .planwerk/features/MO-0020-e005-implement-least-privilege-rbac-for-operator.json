@@ -1,0 +1,521 @@
+{
+  "feature_id": "MO-0020",
+  "title": "E005: Implement least-privilege RBAC for operator",
+  "slug": "e005-implement-least-privilege-rbac-for-operator",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Define ClusterRole and ClusterRoleBinding with minimal permissions: CRUD on Memcached CRs, Deployments, Services, PDBs, ServiceMonitors, NetworkPolicies. Read-only on Secrets (for SASL/TLS). Generate RBAC manifests via kubebuilder markers.",
+  "stories": [
+    {
+      "title": "Operator runs with least-privilege ClusterRole",
+      "role": "cluster administrator",
+      "want": "the memcached-operator to request only the minimum RBAC permissions it needs",
+      "so_that": "the blast radius of a compromised operator pod is minimized",
+      "criteria": [
+        "ClusterRole 'manager-role' contains exactly 10 policy rules — no more, no less",
+        "No wildcard verbs ('*') or wildcard resources ('*') appear in any rule",
+        "Secrets permission is limited to get, list, watch (no create, update, delete)",
+        "Events permission is limited to create, patch (no get, list, watch, delete)"
+      ]
+    },
+    {
+      "title": "Operator has full CRUD on managed resources",
+      "role": "cluster administrator",
+      "want": "the operator to have create, delete, get, list, patch, update, watch permissions on all resources it reconciles",
+      "so_that": "the reconciler can create, update, and clean up owned resources without permission errors",
+      "criteria": [
+        "Deployments (apps) have full CRUD verbs",
+        "Services (core) have full CRUD verbs",
+        "PodDisruptionBudgets (policy) have full CRUD verbs",
+        "NetworkPolicies (networking.k8s.io) have full CRUD verbs",
+        "ServiceMonitors (monitoring.coreos.com) have full CRUD verbs",
+        "Memcacheds (memcached.c5c3.io) have full CRUD verbs"
+      ]
+    },
+    {
+      "title": "Operator reads Secrets for SASL/TLS without write access",
+      "role": "security auditor",
+      "want": "the operator to have read-only access to Secrets",
+      "so_that": "it can mount SASL credentials and TLS certificates but cannot create or modify secrets",
+      "criteria": [
+        "Secrets rule contains only get, list, watch verbs",
+        "No create, update, patch, or delete verbs on secrets",
+        "RBAC test explicitly validates the read-only constraint on secrets"
+      ]
+    },
+    {
+      "title": "RBAC manifests are generated from kubebuilder markers",
+      "role": "developer",
+      "want": "ClusterRole rules to be generated from +kubebuilder:rbac markers on the reconciler",
+      "so_that": "RBAC stays in sync with what the controller code actually needs",
+      "criteria": [
+        "All RBAC markers are defined on the MemcachedReconciler in memcached_controller.go",
+        "'make manifests' regenerates config/rbac/role.yaml from markers",
+        "'make verify-manifests' passes (generated manifests match committed files)",
+        "No hand-edited rules exist in role.yaml outside of what markers generate"
+      ]
+    },
+    {
+      "title": "RBAC test suite validates every permission rule",
+      "role": "developer",
+      "want": "automated tests that verify every rule in the generated ClusterRole",
+      "so_that": "accidental permission changes are caught before merge",
+      "criteria": [
+        "Test loads config/rbac/role.yaml and parses it as a ClusterRole",
+        "Test validates full CRUD verbs on all 5 owned resource types plus Memcached CRs",
+        "Test validates read-only verbs (get, list, watch) on secrets",
+        "Test validates create/patch verbs on events",
+        "Test validates status subresource verbs (get, update, patch)",
+        "Test validates finalizer verbs (update only)"
+      ]
+    },
+    {
+      "title": "RBAC reference documentation is available",
+      "role": "developer",
+      "want": "a reference document describing all RBAC permissions the operator requires",
+      "so_that": "I can review and audit permissions without reading Go source code",
+      "criteria": [
+        "Document lists every ClusterRole rule with API group, resource, and verbs",
+        "Document explains why each permission is needed (which reconciler uses it)",
+        "Document describes the ClusterRoleBinding and ServiceAccount",
+        "Document references how to regenerate manifests via make manifests"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator's ClusterRole SHALL grant full CRUD (create, delete, get, list, patch, update, watch) on Memcached CRs",
+      "priority": "SHALL",
+      "rationale": "The reconciler must watch, create, update, and delete Memcached custom resources",
+      "scenarios": [
+        {
+          "name": "Memcacheds have full CRUD",
+          "when": "the ClusterRole config/rbac/role.yaml is parsed",
+          "then": "the rule for group 'memcached.c5c3.io' resource 'memcacheds' contains verbs create, delete, get, list, patch, update, watch",
+          "and_then": []
+        },
+        {
+          "name": "Status subresource has get/update/patch",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for 'memcacheds/status' contains verbs get, update, patch",
+          "and_then": []
+        },
+        {
+          "name": "Finalizers have update only",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for 'memcacheds/finalizers' contains only the verb update",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator's ClusterRole SHALL grant full CRUD on Deployments (apps group)",
+      "priority": "SHALL",
+      "rationale": "The reconciler creates and manages Deployment resources for Memcached pods",
+      "scenarios": [
+        {
+          "name": "Deployments have full CRUD",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for group 'apps' resource 'deployments' contains verbs create, delete, get, list, patch, update, watch",
+          "and_then": []
+        },
+        {
+          "name": "No extra apps resources",
+          "when": "the ClusterRole is parsed",
+          "then": "no rules exist for group 'apps' with resources other than 'deployments'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator's ClusterRole SHALL grant full CRUD on Services (core group)",
+      "priority": "SHALL",
+      "rationale": "The reconciler creates headless Services for pod discovery",
+      "scenarios": [
+        {
+          "name": "Services have full CRUD",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for group '' resource 'services' contains verbs create, delete, get, list, patch, update, watch",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator's ClusterRole SHALL grant full CRUD on PodDisruptionBudgets (policy group)",
+      "priority": "SHALL",
+      "rationale": "The reconciler creates PDBs when highAvailability.podDisruptionBudget.enabled=true",
+      "scenarios": [
+        {
+          "name": "PDBs have full CRUD",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for group 'policy' resource 'poddisruptionbudgets' contains verbs create, delete, get, list, patch, update, watch",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The operator's ClusterRole SHALL grant full CRUD on ServiceMonitors (monitoring.coreos.com group)",
+      "priority": "SHALL",
+      "rationale": "The reconciler creates ServiceMonitors when monitoring.serviceMonitor is configured",
+      "scenarios": [
+        {
+          "name": "ServiceMonitors have full CRUD",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for group 'monitoring.coreos.com' resource 'servicemonitors' contains verbs create, delete, get, list, patch, update, watch",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator's ClusterRole SHALL grant full CRUD on NetworkPolicies (networking.k8s.io group)",
+      "priority": "SHALL",
+      "rationale": "The reconciler creates NetworkPolicies when security.networkPolicy.enabled=true",
+      "scenarios": [
+        {
+          "name": "NetworkPolicies have full CRUD",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for group 'networking.k8s.io' resource 'networkpolicies' contains verbs create, delete, get, list, patch, update, watch",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator's ClusterRole SHALL grant read-only access (get, list, watch) on Secrets",
+      "priority": "SHALL",
+      "rationale": "The reconciler reads Secrets for SASL credentials and TLS certificates but must not create or modify them",
+      "scenarios": [
+        {
+          "name": "Secrets are read-only",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for group '' resource 'secrets' contains only verbs get, list, watch",
+          "and_then": [
+            "no create, update, patch, or delete verbs exist for secrets"
+          ]
+        },
+        {
+          "name": "No wildcard verbs on secrets",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for secrets does not contain the verb '*'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The operator's ClusterRole SHALL grant create and patch on Events (core group)",
+      "priority": "SHALL",
+      "rationale": "The EventRecorder emits events on Memcached CRs for user visibility into reconciliation progress",
+      "scenarios": [
+        {
+          "name": "Events have create and patch only",
+          "when": "the ClusterRole is parsed",
+          "then": "the rule for group '' resource 'events' contains only verbs create, patch",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The ClusterRole SHALL NOT contain any wildcard permissions",
+      "priority": "SHALL",
+      "rationale": "Least-privilege principle requires explicit enumeration of all permissions",
+      "scenarios": [
+        {
+          "name": "No wildcard verbs",
+          "when": "all rules in the ClusterRole are examined",
+          "then": "no rule contains the verb '*'",
+          "and_then": []
+        },
+        {
+          "name": "No wildcard resources",
+          "when": "all rules in the ClusterRole are examined",
+          "then": "no rule contains the resource '*'",
+          "and_then": []
+        },
+        {
+          "name": "No wildcard API groups",
+          "when": "all rules in the ClusterRole are examined",
+          "then": "no rule contains the apiGroup '*'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The RBAC manifests SHALL be generated from kubebuilder markers via 'make manifests'",
+      "priority": "SHALL",
+      "rationale": "Generated manifests ensure RBAC stays in sync with controller code",
+      "scenarios": [
+        {
+          "name": "Markers generate role.yaml",
+          "when": "'make manifests' is run",
+          "then": "config/rbac/role.yaml is generated from +kubebuilder:rbac markers in memcached_controller.go",
+          "and_then": [
+            "the generated file matches the committed file"
+          ]
+        },
+        {
+          "name": "verify-manifests passes",
+          "when": "'make verify-manifests' is run after 'make manifests'",
+          "then": "git diff shows no changes",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-011",
+      "description": "The ClusterRoleBinding SHALL bind the manager-role to the controller-manager ServiceAccount",
+      "priority": "SHALL",
+      "rationale": "The binding connects the ClusterRole permissions to the operator pod's identity",
+      "scenarios": [
+        {
+          "name": "Binding references correct role",
+          "when": "config/rbac/role_binding.yaml is examined",
+          "then": "roleRef.name is 'manager-role' and roleRef.kind is 'ClusterRole'",
+          "and_then": []
+        },
+        {
+          "name": "Binding references correct subject",
+          "when": "config/rbac/role_binding.yaml is examined",
+          "then": "subjects contains a ServiceAccount named 'controller-manager' in namespace 'system'",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add Secrets read-only permission test to RBAC test suite (REQ-007)",
+      "description": "Add a new test case in internal/controller/memcached_rbac_test.go that validates the Secrets rule contains only get, list, watch verbs. The existing test file already tests all other rules but is missing the Secrets read-only check. Add a Context block 'Secrets permission' with an It block verifying sorted verbs equal ['get', 'list', 'watch']. Follow the exact same pattern as the 'events permission' Context block.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add no-wildcard-permissions test to RBAC test suite (REQ-009)",
+      "description": "Add a new Context block 'least-privilege constraints' in internal/controller/memcached_rbac_test.go with It blocks that iterate all rules and assert: (a) no verb is '*', (b) no resource is '*', (c) no apiGroup is '*'. This validates the no-wildcard requirement REQ-009.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add ClusterRoleBinding verification test (REQ-011)",
+      "description": "Add a new Describe block in internal/controller/memcached_rbac_test.go (or a new test function) that loads config/rbac/role_binding.yaml, parses it as a ClusterRoleBinding, and verifies: roleRef.name='manager-role', roleRef.kind='ClusterRole', subjects contains ServiceAccount 'controller-manager' in namespace 'system'. Reuse the loadRBACRole pattern but for role_binding.yaml.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-011"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Add rule-count test to prevent permission creep (REQ-009)",
+      "description": "Add an It block in the 'ClusterRole metadata' Context of internal/controller/memcached_rbac_test.go that asserts len(role.Rules) == 10. This catches unintended permission additions. If a new rule is legitimately needed, the test must be updated explicitly.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Run 'make manifests' and verify generated RBAC manifests are up-to-date (REQ-010)",
+      "description": "Run 'make manifests' and 'make verify-manifests' to confirm the generated config/rbac/role.yaml matches the kubebuilder markers in memcached_controller.go. Verify no diff exists. This confirms the markers and generated manifests are in sync.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Run all RBAC tests and verify they pass (REQ-001 through REQ-011)",
+      "description": "Run 'go test ./internal/controller/ -run RBAC -v' to execute all RBAC test cases including the newly added Secrets, no-wildcard, ClusterRoleBinding, and rule-count tests. All tests must pass.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010",
+        "REQ-011"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write RBAC reference documentation (REQ-001 through REQ-011)",
+      "description": "Create docs/reference/backend/operator-rbac-least-privilege.md documenting: (1) Complete table of all ClusterRole rules with API group, resource, verbs, and purpose/rationale. (2) ClusterRoleBinding configuration. (3) ServiceAccount details. (4) Leader election Role/RoleBinding. (5) Metrics auth Role/RoleBinding. (6) How RBAC manifests are generated from kubebuilder markers. (7) How to verify with 'make verify-manifests'. Follow the same markdown style as existing docs in docs/reference/backend/.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010",
+        "REQ-011"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / Secrets permission / should grant read-only access on secrets",
+      "story": "Operator reads Secrets for SASL/TLS without write access",
+      "expected": "Secrets rule contains exactly [get, list, watch] verbs, no write verbs",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / least-privilege constraints / should not contain wildcard verbs",
+      "story": "Operator runs with least-privilege ClusterRole",
+      "expected": "No rule in the ClusterRole contains '*' as a verb",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / least-privilege constraints / should not contain wildcard resources",
+      "story": "Operator runs with least-privilege ClusterRole",
+      "expected": "No rule in the ClusterRole contains '*' as a resource",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / least-privilege constraints / should not contain wildcard API groups",
+      "story": "Operator runs with least-privilege ClusterRole",
+      "expected": "No rule in the ClusterRole contains '*' as an API group",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / ClusterRole metadata / should have exactly 10 rules",
+      "story": "Operator runs with least-privilege ClusterRole",
+      "expected": "len(role.Rules) == 10 to prevent unintended permission creep",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC ClusterRoleBinding Verification / should bind manager-role to controller-manager ServiceAccount",
+      "story": "Operator runs with least-privilege ClusterRole",
+      "expected": "ClusterRoleBinding references manager-role and controller-manager SA in system namespace",
+      "requirement_id": "REQ-011"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / Memcached CR permissions / should grant full CRUD on memcacheds",
+      "story": "Operator has full CRUD on managed resources",
+      "expected": "Memcacheds rule contains all 7 CRUD verbs",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / owned resource permissions / Deployments",
+      "story": "Operator has full CRUD on managed resources",
+      "expected": "Deployments rule contains all 7 CRUD verbs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / owned resource permissions / Services",
+      "story": "Operator has full CRUD on managed resources",
+      "expected": "Services rule contains all 7 CRUD verbs",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / owned resource permissions / PodDisruptionBudgets",
+      "story": "Operator has full CRUD on managed resources",
+      "expected": "PDBs rule contains all 7 CRUD verbs",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / owned resource permissions / ServiceMonitors",
+      "story": "Operator has full CRUD on managed resources",
+      "expected": "ServiceMonitors rule contains all 7 CRUD verbs",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / owned resource permissions / NetworkPolicies",
+      "story": "Operator has full CRUD on managed resources",
+      "expected": "NetworkPolicies rule contains all 7 CRUD verbs",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_rbac_test.go",
+      "test_function": "RBAC Manifest Verification / events permission / should grant create and patch on events",
+      "story": "Operator runs with least-privilege ClusterRole",
+      "expected": "Events rule contains exactly [create, patch] verbs",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 10 kubebuilder RBAC markers in internal/controller/memcached_controller.go are present and match the feature description exactly",
+    "config/rbac/role.yaml contains exactly 10 rules with no wildcard verbs, resources, or API groups",
+    "Secrets rule contains only get, list, watch — no write verbs",
+    "All RBAC tests pass: go test ./internal/controller/ -run RBAC -v",
+    "'make verify-manifests' passes with no diff",
+    "RBAC reference documentation at docs/reference/backend/operator-rbac-least-privilege.md lists all rules with rationale",
+    "No unrelated files modified — changes limited to test file and documentation"
+  ],
+  "implementation_notes": "This feature is largely already implemented. The 10 kubebuilder RBAC markers were added incrementally across features MO-0003 through MO-0019 (Deployments, Services, PDBs, ServiceMonitors, NetworkPolicies, Secrets for SASL/TLS, Events). The generated config/rbac/role.yaml is already correct. The ClusterRoleBinding and ServiceAccount were scaffolded by kubebuilder. The remaining work is: (1) Add missing test coverage for Secrets read-only permissions and no-wildcard constraints, (2) Add ClusterRoleBinding verification test, (3) Add rule-count test to prevent permission creep, (4) Write dedicated RBAC reference documentation. Follow the existing test patterns in memcached_rbac_test.go (Ginkgo/Gomega, loadRBACRole helper, findRule helper, sortedVerbs helper). Follow the existing documentation style in docs/reference/backend/ (markdown with tables, code blocks, and rationale sections).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.426925"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T09:03:24.321901"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T09:07:42.535423"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "30546c22-52ad-43f1-8c56-dd900fd98aa1",
+      "timestamp": "2026-02-20T09:07:42.535463",
+      "total_duration": 254.5853853225708,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 254.5853853225708,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
