@@ -152,7 +152,7 @@ func TestValidateMemoryLimit(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name: "nil resources and memcached config",
+			name:      "nil resources and memcached config",
 			mc:        &Memcached{},
 			wantError: false,
 		},
@@ -272,7 +272,7 @@ func TestValidatePDB(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name: "nil HighAvailability",
+			name:      "nil HighAvailability",
 			mc:        &Memcached{},
 			wantError: false,
 		},
@@ -430,7 +430,7 @@ func TestValidateSecuritySecretRefs(t *testing.T) {
 			wantError: true,
 		},
 		{
-			name: "nil security spec",
+			name:      "nil security spec",
 			mc:        &Memcached{},
 			wantError: false,
 		},
