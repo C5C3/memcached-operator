@@ -2,8 +2,8 @@
   "feature_id": "MO-0019",
   "title": "E004: Implement NetworkPolicy reconciliation",
   "slug": "e004-implement-networkpolicy-reconciliation",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Create and reconcile a NetworkPolicy when enabled in the CRD spec. Restrict ingress to Memcached port (11211) and exporter port (9150) from allowed sources. Set owner references for cleanup. The controller watches NetworkPolicy resources for drift detection.",
   "stories": [
@@ -312,6 +312,7 @@
       "description": "Add NetworkPolicySpec struct to SecuritySpec in api/v1alpha1/memcached_types.go. The struct has: Enabled bool, AllowedSources []networkingv1.NetworkPolicyPeer. Add the NetworkPolicy field to SecuritySpec. Run 'make manifests generate' to regenerate CRD YAML and deepcopy. Follow the same pattern as PDBSpec and SASLSpec (nested struct with Enabled bool + optional config).",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -322,6 +323,7 @@
       "description": "Add a Ginkgo test section in internal/controller/memcached_crd_validation_test.go following the existing pattern for SASL/TLS. Test: accept networkPolicy enabled, accept networkPolicy disabled, accept networkPolicy with allowedSources containing namespaceSelector, accept networkPolicy with allowedSources containing podSelector, accept fully populated security spec with networkPolicy. Verify round-trip persistence of allowedSources.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -332,6 +334,7 @@
       "description": "Create internal/controller/networkpolicy.go with: (1) networkPolicyEnabled(mc) bool guard — returns true only when spec.security.networkPolicy.enabled is true (check nil chain: Security, NetworkPolicy, Enabled). Follow pdbEnabled pattern. (2) constructNetworkPolicy(mc, np) pure builder function. Set labels via labelsForMemcached. Set spec.podSelector to labelsForMemcached(mc.Name). Set policyTypes=[Ingress]. Build ingress ports: always include 11211/TCP (memcached). If mc.Spec.Security.TLS.Enabled, add 11212/TCP (memcached-tls). If mc.Spec.Monitoring.Enabled, add 9150/TCP (metrics). Set ingress from peers from mc.Spec.Security.NetworkPolicy.AllowedSources (empty/nil means allow all — use a single IngressRule with ports only and no from). If allowedSources is non-empty, include them as the from field.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -346,6 +349,7 @@
       "description": "Create internal/controller/networkpolicy_test.go with table-driven Go tests following servicemonitor_test.go and pdb_test.go patterns. Tests for networkPolicyEnabled: nil Security, nil NetworkPolicy, enabled=false, enabled=true. Tests for constructNetworkPolicy: (1) basic with only memcached port, (2) with monitoring enabled adds metrics port, (3) with TLS enabled adds TLS port, (4) with both monitoring and TLS, (5) with allowedSources containing namespaceSelector, (6) with allowedSources containing podSelector, (7) empty allowedSources produces no from field, (8) labels set correctly on metadata, (9) podSelector matches labelsForMemcached, (10) instance-scoped selector with different instance names.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -360,6 +364,7 @@
       "description": "Add reconcileNetworkPolicy method to MemcachedReconciler in memcached_controller.go following the reconcilePDB/reconcileServiceMonitor pattern. The method: checks networkPolicyEnabled, creates a networkingv1.NetworkPolicy with name=mc.Name namespace=mc.Namespace, calls r.reconcileResource with constructNetworkPolicy mutate function and 'NetworkPolicy' kind string. Wire this into the Reconcile function after reconcileServiceMonitor and before reconcileStatus. The controller already has Owns(&networkingv1.NetworkPolicy{}) in SetupWithManager and the RBAC marker for networking.k8s.io/networkpolicies is already present.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -372,6 +377,7 @@
       "description": "Create internal/controller/memcached_networkpolicy_reconcile_test.go with Ginkgo/Gomega tests following the memcached_pdb_reconcile_test.go pattern. Add fetchNetworkPolicy helper. Tests: (1) NetworkPolicy created with defaults when enabled — verify ports include 11211, labels, podSelector, policyTypes. (2) Owner reference set correctly. (3) NetworkPolicy includes metrics port 9150 when monitoring is enabled. (4) NetworkPolicy includes TLS port 11212 when TLS is enabled. (5) NetworkPolicy with all ports when monitoring+TLS enabled. (6) NetworkPolicy with allowedSources populates ingress from peers. (7) No NetworkPolicy created when disabled. (8) NetworkPolicy updated when monitoring toggled on. (9) Idempotent — second reconcile does not change resourceVersion. (10) NetworkPolicy ingress from field is empty when allowedSources is nil.",
       "level": 3,
       "estimate_minutes": 30,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -388,6 +394,7 @@
       "description": "Create docs/reference/backend/networkpolicy-reconciliation.md following the docs/reference/backend/pdb-reconciliation.md pattern exactly. Include: Overview, CRD Field Path (spec.security.networkPolicy), field table for NetworkPolicySpec (enabled, allowedSources), NetworkPolicy Construction section, Default Values, Labels, Selector, Reconciliation Method, Skip Logic, Owner Reference, CR Examples (basic enabled, with monitoring, with TLS, with allowedSources, disabled), Runtime Behavior table, Implementation section.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -533,6 +540,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T08:22:39.074843"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T08:25:56.234694"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T09:03:08.488320"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T09:03:08.517083"
     }
   },
   "execution_history": [
@@ -546,6 +565,56 @@
           "name": "prepare",
           "duration": 216.31479668617249,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "270ec81e-c6e8-440a-867f-c40cf6b3e8c0",
+      "timestamp": "2026-02-20T08:47:22.503125",
+      "total_duration": 1169.498792886734,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 296.14171957969666,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 180.04364037513733,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 187.1266634464264,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 84.1473958492279,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0019] Code Review",
+          "duration": 225.9613869190216,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0019] Improvements",
+          "duration": 117.13916325569153,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0019] Simplify",
+          "duration": 78.93882346153259,
+          "type": "simplify",
           "status": "done"
         }
       ]

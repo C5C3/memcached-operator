@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -345,6 +346,81 @@ func TestTLSSpec_EnableClientCertDefaultsFalse(t *testing.T) {
 	}
 }
 
+// --- REQ-008: NetworkPolicySpec ---
+
+func TestNetworkPolicySpec_ZeroValue(t *testing.T) {
+	np := NetworkPolicySpec{}
+	if np.Enabled {
+		t.Error("expected Enabled to be false for zero value")
+	}
+	if np.AllowedSources != nil {
+		t.Error("expected AllowedSources to be nil for zero value")
+	}
+}
+
+func TestNetworkPolicySpec_EnabledOnly(t *testing.T) {
+	np := NetworkPolicySpec{
+		Enabled: true,
+	}
+	if !np.Enabled {
+		t.Error("expected Enabled to be true")
+	}
+	if np.AllowedSources != nil {
+		t.Error("expected AllowedSources to be nil when not set")
+	}
+}
+
+func TestNetworkPolicySpec_WithAllowedSources(t *testing.T) {
+	np := NetworkPolicySpec{
+		Enabled: true,
+		AllowedSources: []networkingv1.NetworkPolicyPeer{
+			{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"env": "prod"},
+				},
+			},
+			{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "keystone"},
+				},
+			},
+		},
+	}
+	if !np.Enabled {
+		t.Error("expected Enabled to be true")
+	}
+	if len(np.AllowedSources) != 2 {
+		t.Fatalf("expected 2 AllowedSources, got %d", len(np.AllowedSources))
+	}
+	if np.AllowedSources[0].NamespaceSelector.MatchLabels["env"] != "prod" {
+		t.Errorf("unexpected NamespaceSelector: %v", np.AllowedSources[0].NamespaceSelector)
+	}
+	if np.AllowedSources[1].PodSelector.MatchLabels["app"] != "keystone" {
+		t.Errorf("unexpected PodSelector: %v", np.AllowedSources[1].PodSelector)
+	}
+}
+
+func TestSecuritySpec_WithNetworkPolicy(t *testing.T) {
+	s := SecuritySpec{
+		NetworkPolicy: &NetworkPolicySpec{
+			Enabled: true,
+		},
+	}
+	if s.NetworkPolicy == nil {
+		t.Fatal("expected NetworkPolicy to be set")
+	}
+	if !s.NetworkPolicy.Enabled {
+		t.Error("expected NetworkPolicy.Enabled to be true")
+	}
+}
+
+func TestSecuritySpec_NilNetworkPolicy(t *testing.T) {
+	s := SecuritySpec{}
+	if s.NetworkPolicy != nil {
+		t.Error("expected NetworkPolicy to be nil for zero value")
+	}
+}
+
 // --- Integration: MemcachedSpec with all nested structs ---
 
 func TestMemcachedSpec_WithAllNestedStructs(t *testing.T) {
@@ -376,6 +452,16 @@ func TestMemcachedSpec_WithAllNestedStructs(t *testing.T) {
 					Name: "tls-secret",
 				},
 			},
+			NetworkPolicy: &NetworkPolicySpec{
+				Enabled: true,
+				AllowedSources: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{"env": "prod"},
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -399,6 +485,12 @@ func TestMemcachedSpec_WithAllNestedStructs(t *testing.T) {
 	}
 	if !spec.Security.TLS.Enabled {
 		t.Error("expected Security.TLS.Enabled to be true")
+	}
+	if !spec.Security.NetworkPolicy.Enabled {
+		t.Error("expected Security.NetworkPolicy.Enabled to be true")
+	}
+	if len(spec.Security.NetworkPolicy.AllowedSources) != 1 {
+		t.Fatalf("expected 1 AllowedSource, got %d", len(spec.Security.NetworkPolicy.AllowedSources))
 	}
 }
 
@@ -540,6 +632,28 @@ func TestSecuritySpec_DeepCopy(t *testing.T) {
 	*s.ContainerSecurityContext.RunAsUser = 2000
 	if *clone.ContainerSecurityContext.RunAsUser != 1000 {
 		t.Error("DeepCopy is not independent: ContainerSecurityContext.RunAsUser was mutated")
+	}
+}
+
+func TestNetworkPolicySpec_DeepCopy(t *testing.T) {
+	np := &NetworkPolicySpec{
+		Enabled: true,
+		AllowedSources: []networkingv1.NetworkPolicyPeer{
+			{
+				NamespaceSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"env": "prod"},
+				},
+			},
+		},
+	}
+	clone := np.DeepCopy()
+	if clone == np {
+		t.Error("DeepCopy returned same pointer")
+	}
+	// Mutate original; clone must be unaffected.
+	np.AllowedSources[0].NamespaceSelector.MatchLabels["env"] = testMutatedValue
+	if clone.AllowedSources[0].NamespaceSelector.MatchLabels["env"] != "prod" {
+		t.Error("DeepCopy is not independent: AllowedSources was mutated")
 	}
 }
 

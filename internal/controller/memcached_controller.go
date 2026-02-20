@@ -95,6 +95,10 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, reconcileErr
 	}
 
+	if reconcileErr = r.reconcileNetworkPolicy(ctx, memcached); reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
+	}
+
 	if reconcileErr = r.reconcileStatus(ctx, memcached); reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
@@ -177,6 +181,27 @@ func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *m
 		constructServiceMonitor(mc, sm)
 		return nil
 	}, "ServiceMonitor")
+	return err
+}
+
+// reconcileNetworkPolicy ensures the NetworkPolicy for the Memcached CR matches the desired state.
+// It skips reconciliation when NetworkPolicy is not enabled in the CR spec.
+func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+	if !networkPolicyEnabled(mc) {
+		return nil
+	}
+
+	np := &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mc.Name,
+			Namespace: mc.Namespace,
+		},
+	}
+
+	_, err := r.reconcileResource(ctx, mc, np, func() error {
+		constructNetworkPolicy(mc, np)
+		return nil
+	}, "NetworkPolicy")
 	return err
 }
 

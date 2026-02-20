@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -640,6 +641,108 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 		})
 	})
 
+	Context("spec.security.networkPolicy", func() {
+		It("should accept networkPolicy enabled", func() {
+			mc := validMemcached(uniqueName("np-on"))
+			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+					Enabled: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+		})
+
+		It("should accept networkPolicy disabled", func() {
+			mc := validMemcached(uniqueName("np-off"))
+			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+					Enabled: false,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+		})
+
+		It("should accept networkPolicy with allowedSources containing namespaceSelector", func() {
+			mc := validMemcached(uniqueName("np-ns"))
+			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+					Enabled: true,
+					AllowedSources: []networkingv1.NetworkPolicyPeer{
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"env": "production"},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			// Verify round-trip: allowedSources persists correctly.
+			fetched := &memcachedv1alpha1.Memcached{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
+			Expect(fetched.Spec.Security.NetworkPolicy).NotTo(BeNil())
+			Expect(fetched.Spec.Security.NetworkPolicy.Enabled).To(BeTrue())
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources).To(HaveLen(1))
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources[0].NamespaceSelector).NotTo(BeNil())
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources[0].NamespaceSelector.MatchLabels).To(
+				HaveKeyWithValue("env", "production"),
+			)
+		})
+
+		It("should accept networkPolicy with allowedSources containing podSelector", func() {
+			mc := validMemcached(uniqueName("np-pod"))
+			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+					Enabled: true,
+					AllowedSources: []networkingv1.NetworkPolicyPeer{
+						{
+							PodSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"app": "keystone"},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			// Verify round-trip.
+			fetched := &memcachedv1alpha1.Memcached{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources).To(HaveLen(1))
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources[0].PodSelector).NotTo(BeNil())
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources[0].PodSelector.MatchLabels).To(
+				HaveKeyWithValue("app", "keystone"),
+			)
+		})
+
+		It("should accept networkPolicy with multiple allowedSources", func() {
+			mc := validMemcached(uniqueName("np-multi"))
+			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+					Enabled: true,
+					AllowedSources: []networkingv1.NetworkPolicyPeer{
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"env": "prod"},
+							},
+						},
+						{
+							PodSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"role": "api"},
+							},
+						},
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			fetched := &memcachedv1alpha1.Memcached{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources).To(HaveLen(2))
+		})
+	})
+
 	Context("spec.security.podSecurityContext and containerSecurityContext", func() {
 		It("should accept pod and container security contexts", func() {
 			mc := validMemcached(uniqueName("sec-ctx"))
@@ -680,6 +783,16 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-cert",
+					},
+				},
+				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+					Enabled: true,
+					AllowedSources: []networkingv1.NetworkPolicyPeer{
+						{
+							NamespaceSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{"env": "prod"},
+							},
+						},
 					},
 				},
 			}
@@ -937,6 +1050,16 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 							Name: "tls-cert",
 						},
 					},
+					NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+						Enabled: true,
+						AllowedSources: []networkingv1.NetworkPolicyPeer{
+							{
+								NamespaceSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{"env": "prod"},
+								},
+							},
+						},
+					},
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -951,6 +1074,9 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			Expect(fetched.Spec.Monitoring.Enabled).To(BeTrue())
 			Expect(fetched.Spec.Security.SASL.Enabled).To(BeTrue())
 			Expect(fetched.Spec.Security.TLS.Enabled).To(BeTrue())
+			Expect(fetched.Spec.Security.NetworkPolicy).NotTo(BeNil())
+			Expect(fetched.Spec.Security.NetworkPolicy.Enabled).To(BeTrue())
+			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources).To(HaveLen(1))
 		})
 	})
 })

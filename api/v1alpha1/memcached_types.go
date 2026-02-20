@@ -3,6 +3,7 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -176,6 +177,10 @@ type SecuritySpec struct {
 	// TLS configures optional TLS encryption.
 	// +optional
 	TLS *TLSSpec `json:"tls,omitempty,omitzero"`
+
+	// NetworkPolicy configures the Kubernetes NetworkPolicy for Memcached pods.
+	// +optional
+	NetworkPolicy *NetworkPolicySpec `json:"networkPolicy,omitempty,omitzero"`
 }
 
 // SASLSpec defines SASL authentication configuration.
@@ -206,6 +211,18 @@ type TLSSpec struct {
 	// The CA certificate in the Secret (ca.crt) will be used to verify client certificates.
 	// +optional
 	EnableClientCert bool `json:"enableClientCert,omitempty"`
+}
+
+// NetworkPolicySpec defines the NetworkPolicy configuration for Memcached.
+type NetworkPolicySpec struct {
+	// Enabled controls whether a NetworkPolicy is created.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// AllowedSources defines the list of peers allowed to access Memcached.
+	// When empty or nil, all sources are allowed.
+	// +optional
+	AllowedSources []networkingv1.NetworkPolicyPeer `json:"allowedSources,omitempty,omitzero"`
 }
 
 // ServiceSpec defines configuration for the headless Service.
