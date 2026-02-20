@@ -1,0 +1,507 @@
+{
+  "feature_id": "MO-0023",
+  "title": "F003: Implement webhook certificate management",
+  "slug": "f003-implement-webhook-certificate-management",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Set up webhook TLS certificate provisioning — either via cert-manager integration or self-signed certificate generation. Configure the webhook server in the operator manager.",
+  "stories": [
+    {
+      "title": "Operator deploys with webhook certificates provisioned by cert-manager",
+      "role": "cluster administrator",
+      "want": "webhook TLS certificates to be automatically provisioned and rotated by cert-manager when deploying the operator",
+      "so_that": "I do not have to manually create or rotate webhook serving certificates and the operator webhooks are always reachable over TLS",
+      "criteria": [
+        "A cert-manager Certificate resource is defined in config/certmanager/ that issues a TLS certificate for the webhook Service DNS name",
+        "A self-signed Issuer resource is defined in config/certmanager/ for the Certificate",
+        "The kustomization in config/default/ includes the cert-manager resources, CA injection patches, and webhook patches",
+        "caBundle fields in MutatingWebhookConfiguration and ValidatingWebhookConfiguration are annotated for cert-manager CA injection"
+      ]
+    },
+    {
+      "title": "Operator webhook server listens on the correct port with TLS certificates",
+      "role": "cluster administrator",
+      "want": "the operator manager to serve webhooks on port 9443 with the TLS certificates provisioned by cert-manager",
+      "so_that": "the Kubernetes API server can reach the webhooks over HTTPS for admission review",
+      "criteria": [
+        "The manager Deployment exposes containerPort 9443 named 'webhook-server'",
+        "The manager Deployment mounts a volume from the cert-manager-provisioned Secret at /tmp/k8s-webhook-server/serving-certs",
+        "The webhook.NewServer in cmd/main.go uses the default CertDir or explicitly sets it to /tmp/k8s-webhook-server/serving-certs",
+        "The webhook Service (config/webhook/service.yaml) routes port 443 to targetPort 9443"
+      ]
+    },
+    {
+      "title": "Operator deploys without cert-manager using Kustomize overlay",
+      "role": "developer running locally or in envtest",
+      "want": "the default Kustomize overlay to support both cert-manager and non-cert-manager deployment modes",
+      "so_that": "I can test locally with envtest (which auto-generates certs) and deploy to production with cert-manager",
+      "criteria": [
+        "The config/default/kustomization.yaml includes cert-manager resources and patches by default",
+        "All cert-manager patches are clearly documented with comments explaining their purpose",
+        "Envtest suite_test.go continues to work by using WebhookInstallOptions for local cert provisioning",
+        "A developer can comment out the cert-manager lines in config/default/kustomization.yaml to disable cert-manager"
+      ]
+    },
+    {
+      "title": "Webhook configurations receive CA bundle injection from cert-manager",
+      "role": "cluster administrator",
+      "want": "cert-manager to automatically inject the CA bundle into the webhook configurations",
+      "so_that": "the Kubernetes API server trusts the webhook server's TLS certificate without manual caBundle management",
+      "criteria": [
+        "MutatingWebhookConfiguration has annotation cert-manager.io/inject-ca-from pointing to the Certificate resource",
+        "ValidatingWebhookConfiguration has annotation cert-manager.io/inject-ca-from pointing to the Certificate resource",
+        "Kustomize patches in config/default/ add these annotations to the generated webhook configurations",
+        "The Certificate resource namespace/name matches the annotation values after Kustomize name/namespace transforms"
+      ]
+    },
+    {
+      "title": "Webhook certificate configuration is documented with reference documentation",
+      "role": "developer or operator",
+      "want": "clear reference documentation describing the webhook certificate management architecture",
+      "so_that": "I understand how certificates are provisioned, how cert-manager integration works, and what files to modify for customization",
+      "criteria": [
+        "Reference doc exists at docs/reference/backend/webhook-certificate-management.md",
+        "Documentation covers the cert-manager Certificate and Issuer resources",
+        "Documentation covers the Kustomize patch mechanism for CA injection",
+        "Documentation covers the manager Deployment volume mount and webhook server configuration"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The system SHALL provide a cert-manager Certificate resource that issues a TLS certificate for the webhook Service DNS name",
+      "priority": "SHALL",
+      "rationale": "Webhook admission requires TLS; cert-manager automates certificate lifecycle management (issuance, renewal, rotation)",
+      "scenarios": [
+        {
+          "name": "Certificate resource targets webhook service DNS",
+          "when": "the cert-manager Certificate resource is applied to the cluster",
+          "then": "it requests a certificate with dnsNames including the webhook Service's cluster DNS name",
+          "and_then": [
+            "the certificate Secret is created in the operator namespace"
+          ]
+        },
+        {
+          "name": "Certificate references self-signed Issuer",
+          "when": "the Certificate resource is created",
+          "then": "it references the self-signed Issuer defined in the same namespace",
+          "and_then": [
+            "cert-manager issues the certificate without external CA dependency"
+          ]
+        },
+        {
+          "name": "Certificate Secret name matches volume mount",
+          "when": "cert-manager creates the certificate Secret",
+          "then": "the Secret name matches the volume source in the manager Deployment",
+          "and_then": [
+            "the manager can mount the certificate files"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The system SHALL provide a self-signed Issuer resource for the webhook Certificate",
+      "priority": "SHALL",
+      "rationale": "A self-signed Issuer provides zero-dependency certificate issuance suitable for webhook serving certificates",
+      "scenarios": [
+        {
+          "name": "Issuer is self-signed type",
+          "when": "the Issuer resource is applied to the cluster",
+          "then": "it is configured as a self-signed issuer (spec.selfSigned: {})",
+          "and_then": [
+            "no external CA infrastructure is required"
+          ]
+        },
+        {
+          "name": "Issuer is namespaced to operator namespace",
+          "when": "Kustomize applies namespace transformations",
+          "then": "the Issuer ends up in the same namespace as the operator",
+          "and_then": [
+            "the Certificate can reference it without cross-namespace issues"
+          ]
+        },
+        {
+          "name": "Issuer name is referenced by Certificate",
+          "when": "the Certificate resource references the Issuer",
+          "then": "the issuerRef.name matches the Issuer resource name after Kustomize transforms",
+          "and_then": [
+            "cert-manager can resolve the issuer and issue the certificate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The system SHALL configure Kustomize patches to inject cert-manager CA bundle annotations into webhook configurations",
+      "priority": "SHALL",
+      "rationale": "The API server needs to trust the webhook TLS certificate; cert-manager CA injector populates caBundle from annotations",
+      "scenarios": [
+        {
+          "name": "MutatingWebhookConfiguration receives CA injection annotation",
+          "when": "Kustomize builds the default overlay",
+          "then": "the MutatingWebhookConfiguration has annotation cert-manager.io/inject-ca-from set to CERTIFICATE_NAMESPACE/CERTIFICATE_NAME",
+          "and_then": [
+            "cert-manager CA injector populates the caBundle field"
+          ]
+        },
+        {
+          "name": "ValidatingWebhookConfiguration receives CA injection annotation",
+          "when": "Kustomize builds the default overlay",
+          "then": "the ValidatingWebhookConfiguration has the same CA injection annotation",
+          "and_then": [
+            "both webhook configurations get CA bundles injected"
+          ]
+        },
+        {
+          "name": "Annotation values use correct namespace/name after Kustomize transforms",
+          "when": "Kustomize applies namePrefix and namespace",
+          "then": "the annotation values resolve to the correct namespace/certificate-name",
+          "and_then": [
+            "CA injection works despite Kustomize name mangling"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The system SHALL configure the manager Deployment to mount webhook TLS certificates from the cert-manager Secret",
+      "priority": "SHALL",
+      "rationale": "The webhook server reads TLS certs from disk; the Deployment must mount the cert-manager Secret as a volume",
+      "scenarios": [
+        {
+          "name": "Deployment has cert volume and mount",
+          "when": "the Kustomize build produces the manager Deployment",
+          "then": "the Deployment has a volume 'cert' from Secret 'webhook-server-cert' mounted at /tmp/k8s-webhook-server/serving-certs",
+          "and_then": [
+            "the webhook server finds tls.crt and tls.key at the expected paths"
+          ]
+        },
+        {
+          "name": "Webhook server port is exposed",
+          "when": "the Deployment is applied",
+          "then": "containerPort 9443 named 'webhook-server' is exposed on the manager container",
+          "and_then": [
+            "the webhook Service can route to the correct port"
+          ]
+        },
+        {
+          "name": "Volume is read-only",
+          "when": "the volume mount is configured",
+          "then": "readOnly is set to true on the volume mount",
+          "and_then": [
+            "the container cannot modify the certificate files"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The system SHALL wire cert-manager, webhook patches, and volume mounts into config/default/kustomization.yaml",
+      "priority": "SHALL",
+      "rationale": "The default Kustomize overlay must produce a fully functional deployment with cert-manager-managed webhook certificates",
+      "scenarios": [
+        {
+          "name": "Kustomize build succeeds",
+          "when": "running 'kustomize build config/default/'",
+          "then": "the build completes without errors",
+          "and_then": [
+            "all patches, resources, and replacements resolve correctly"
+          ]
+        },
+        {
+          "name": "Output includes cert-manager resources",
+          "when": "Kustomize builds config/default/",
+          "then": "the output YAML includes Issuer and Certificate resources",
+          "and_then": [
+            "deploying the output installs cert-manager resources"
+          ]
+        },
+        {
+          "name": "Output includes annotated webhook configurations",
+          "when": "Kustomize builds config/default/",
+          "then": "both MutatingWebhookConfiguration and ValidatingWebhookConfiguration have CA injection annotations",
+          "and_then": [
+            "cert-manager will inject CA bundles at runtime"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The system SHALL ensure the webhook Service correctly routes to the webhook server port",
+      "priority": "SHALL",
+      "rationale": "The Service is the network endpoint the API server uses to reach webhooks",
+      "scenarios": [
+        {
+          "name": "Service port 443 maps to targetPort 9443",
+          "when": "the webhook Service is applied",
+          "then": "port 443 routes to targetPort 9443",
+          "and_then": [
+            "the API server reaches the webhook server"
+          ]
+        },
+        {
+          "name": "Service selector matches manager pods",
+          "when": "the Service is applied",
+          "then": "its selector matches the manager Deployment pod labels",
+          "and_then": [
+            "traffic reaches the correct pods"
+          ]
+        },
+        {
+          "name": "Service is in the operator namespace",
+          "when": "Kustomize applies namespace",
+          "then": "the Service is in memcached-operator-system",
+          "and_then": [
+            "webhook clientConfig.service references resolve"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The system SHOULD ensure existing envtest integration tests continue to pass",
+      "priority": "SHOULD",
+      "rationale": "Envtest provides its own certificate management; production cert changes must not break tests",
+      "scenarios": [
+        {
+          "name": "Envtest uses WebhookInstallOptions for certs",
+          "when": "the envtest suite starts",
+          "then": "it provisions local certificates via WebhookInstallOptions",
+          "and_then": [
+            "no dependency on cert-manager in tests"
+          ]
+        },
+        {
+          "name": "All existing tests pass",
+          "when": "running make test",
+          "then": "all webhook integration tests pass without modification",
+          "and_then": [
+            "no regressions from Kustomize changes"
+          ]
+        },
+        {
+          "name": "Cert-manager patches only apply to config/default/",
+          "when": "envtest reads config/webhook/ directly",
+          "then": "the webhook manifests are unmodified (no cert-manager annotations in base)",
+          "and_then": [
+            "envtest reads clean manifests"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The system SHALL provide reference documentation for the webhook certificate management architecture",
+      "priority": "SHALL",
+      "rationale": "Operators need to understand the certificate provisioning chain and how to customize it",
+      "scenarios": [
+        {
+          "name": "Doc covers cert-manager resources",
+          "when": "a developer reads the reference doc",
+          "then": "they find documentation of the Issuer, Certificate, and CA injection resources",
+          "and_then": [
+            "they understand the provisioning chain"
+          ]
+        },
+        {
+          "name": "Doc covers Kustomize overlay structure",
+          "when": "a developer reads the reference doc",
+          "then": "they find documentation of all patches and replacements in config/default/",
+          "and_then": [
+            "they can customize the deployment"
+          ]
+        },
+        {
+          "name": "Doc covers runtime certificate flow",
+          "when": "a developer reads the reference doc",
+          "then": "they find documentation of volume mount, CertDir, and how the webhook server loads certs",
+          "and_then": [
+            "they understand the runtime behavior"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create cert-manager Issuer and Certificate resources in config/certmanager/ (REQ-001, REQ-002)",
+      "description": "Create config/certmanager/certificate.yaml containing: (1) a self-signed Issuer named 'selfsigned-issuer' with spec.selfSigned: {}, and (2) a Certificate named 'serving-cert' referencing the Issuer, with secretName 'webhook-server-cert', dnsNames for the webhook Service (SERVICE_NAME.SERVICE_NAMESPACE.svc, SERVICE_NAME.SERVICE_NAMESPACE.svc.cluster.local). Create config/certmanager/kustomization.yaml listing certificate.yaml as a resource. Follow standard Kubebuilder cert-manager layout.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create CA injection Kustomize patches for webhook configurations (REQ-003)",
+      "description": "Create config/default/webhookcainjection_patch.yaml containing two patch documents: (1) a patch for MutatingWebhookConfiguration 'mutating-webhook-configuration' adding annotation cert-manager.io/inject-ca-from: CERTIFICATE_NAMESPACE/CERTIFICATE_NAME, and (2) same for ValidatingWebhookConfiguration 'validating-webhook-configuration'. Use Kustomize-friendly metadata so these patches work with the default overlay.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create manager Deployment patch for webhook volume mount and port (REQ-004)",
+      "description": "Create config/default/manager_webhook_patch.yaml as a strategic merge patch for the manager Deployment that adds: (1) a volume 'cert' sourced from Secret 'webhook-server-cert' with defaultMode 420, (2) a volumeMount on the manager container at /tmp/k8s-webhook-server/serving-certs with readOnly: true, (3) containerPort 9443 named 'webhook-server'. This follows the standard Kubebuilder pattern for webhook cert volume mounts.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Update config/default/kustomization.yaml to wire cert-manager resources, patches, and replacements (REQ-005)",
+      "description": "Update config/default/kustomization.yaml to: (1) add ../certmanager to resources, (2) add manager_webhook_patch.yaml and webhookcainjection_patch.yaml to patches, (3) add Kustomize replacements (using the replacements field) to substitute CERTIFICATE_NAMESPACE and CERTIFICATE_NAME in the CA injection annotations with the actual cert-manager Certificate's namespace and name. Ensure namePrefix and namespace transformations propagate correctly. Verify the kustomize build succeeds.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add Kustomize build validation test for config/default/ (REQ-005)",
+      "description": "Write a Go test (or shell-based make target) that runs 'kustomize build config/default/' and verifies: (1) the build succeeds without errors, (2) output contains Issuer and Certificate resources, (3) output contains MutatingWebhookConfiguration with cert-manager.io/inject-ca-from annotation, (4) output contains ValidatingWebhookConfiguration with cert-manager.io/inject-ca-from annotation, (5) manager Deployment has webhook-server port and cert volume mount. This can be a table-driven Go test that parses the kustomize output YAML.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Verify existing tests pass with no regressions (REQ-007)",
+      "description": "Run 'make test' and verify all existing webhook integration tests (memcached_webhook_integration_test.go, memcached_validation_webhook_integration_test.go) continue to pass. The envtest suite_test.go uses WebhookInstallOptions which reads from config/webhook/ (not config/default/), so cert-manager patches should not interfere. Confirm no test modifications are needed.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write reference documentation for webhook certificate management (REQ-008)",
+      "description": "Create docs/reference/backend/webhook-certificate-management.md documenting: (1) Overview of the cert-manager integration architecture, (2) File listing of config/certmanager/ resources (Issuer, Certificate) with field descriptions, (3) Kustomize patches in config/default/ (CA injection annotations, volume mount, port), (4) How cert-manager CA injector populates caBundle at runtime, (5) Manager Deployment webhook server configuration (CertDir, port 9443), (6) How envtest handles certificates differently, (7) How to customize (use different Issuer, external CA, etc.). Follow the style of existing docs like docs/reference/backend/defaulting-webhook.md.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildDefault_IncludesCertManagerResources",
+      "story": "Operator deploys with webhook certificates provisioned by cert-manager",
+      "expected": "Kustomize build of config/default/ should include Issuer and Certificate resources in the output YAML",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildDefault_IssuerIsSelfSigned",
+      "story": "Operator deploys with webhook certificates provisioned by cert-manager",
+      "expected": "The Issuer resource in the kustomize output should have spec.selfSigned: {} and be in the operator namespace",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildDefault_WebhookConfigsHaveCAInjectionAnnotation",
+      "story": "Webhook configurations receive CA bundle injection from cert-manager",
+      "expected": "Both MutatingWebhookConfiguration and ValidatingWebhookConfiguration should have cert-manager.io/inject-ca-from annotation pointing to the correct Certificate",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildDefault_ManagerHasCertVolumeAndWebhookPort",
+      "story": "Operator webhook server listens on the correct port with TLS certificates",
+      "expected": "Manager Deployment should have volume 'cert' from Secret 'webhook-server-cert', volumeMount at /tmp/k8s-webhook-server/serving-certs, and containerPort 9443",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildDefault_SucceedsWithoutErrors",
+      "story": "Operator deploys without cert-manager using Kustomize overlay",
+      "expected": "Running kustomize build config/default/ should complete without errors",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildDefault_WebhookServicePortMapping",
+      "story": "Operator webhook server listens on the correct port with TLS certificates",
+      "expected": "Webhook Service should map port 443 to targetPort 9443 and have selector matching manager pods",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_webhook_integration_test.go",
+      "test_function": "existing tests (no modification needed)",
+      "story": "Operator deploys without cert-manager using Kustomize overlay",
+      "expected": "All existing webhook defaulting integration tests should continue to pass after cert-manager Kustomize changes",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "existing tests (no modification needed)",
+      "story": "Operator deploys without cert-manager using Kustomize overlay",
+      "expected": "All existing webhook validation integration tests should continue to pass after cert-manager Kustomize changes",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "Kustomize build of config/default/ succeeds without errors and produces valid YAML",
+    "Output YAML includes self-signed Issuer and Certificate resources with correct DNS names and secret name",
+    "Both MutatingWebhookConfiguration and ValidatingWebhookConfiguration have cert-manager.io/inject-ca-from annotation with correctly resolved namespace/name",
+    "Manager Deployment has webhook-server containerPort 9443, cert volume from Secret, and volume mount at /tmp/k8s-webhook-server/serving-certs",
+    "All existing tests pass (make test) — no regressions in envtest webhook tests",
+    "Kustomize build test validates the complete deployment manifest structure",
+    "config/webhook/ base manifests remain unmodified (cert-manager annotations only in config/default/ patches)",
+    "Reference documentation covers cert-manager resources, Kustomize patches, runtime behavior, and customization",
+    "All YAML follows Kubebuilder/Kustomize conventions (apiVersion, kind, metadata structure)",
+    "Go vet passes, golangci-lint passes, no type errors in test files"
+  ],
+  "implementation_notes": "This feature follows the standard Kubebuilder pattern for webhook certificate management with cert-manager. The architecture has three layers:\n\n1. **Base webhook manifests** (config/webhook/): Contains the generated MutatingWebhookConfiguration and ValidatingWebhookConfiguration manifests (already exist) and the webhook Service (already exists). These are NOT modified — they remain clean for envtest.\n\n2. **Cert-manager resources** (config/certmanager/): New directory containing a self-signed Issuer and a Certificate that provisions a TLS cert for the webhook Service DNS name. The Certificate's secretName (webhook-server-cert) is what the manager Deployment mounts.\n\n3. **Default overlay patches** (config/default/): Patches that wire everything together — CA injection annotations on webhook configs, volume mount on the manager Deployment, and Kustomize replacements to substitute the correct namespace/name values.\n\nThe webhook server in cmd/main.go already creates a webhook.NewServer with TLS options. Controller-runtime's default CertDir is /tmp/k8s-webhook-server/serving-certs, and the default port is 9443. No changes to Go code are needed — this is purely a Kustomize/manifest change.\n\nKey files to reference:\n- cmd/main.go:63 — webhook server creation (already exists, no changes needed)\n- config/webhook/service.yaml — webhook Service (already maps 443→9443)\n- config/webhook/manifests.yaml — generated webhook configurations (already exist)\n- config/default/kustomization.yaml — main overlay to update\n- internal/controller/suite_test.go — envtest setup (uses WebhookInstallOptions, not affected)\n\nRisks:\n- Kustomize replacement syntax must exactly match the annotation placeholder values; a mismatch causes silent failures where CA injection does not work\n- The namePrefix 'memcached-operator-' must be accounted for in cert-manager resource names and DNS names\n- If cert-manager is not installed on the target cluster, the deployment will create Certificate/Issuer resources that remain pending — this is expected and documented\n\nThe envtest suite reads webhook manifests from config/webhook/ (not config/default/), so cert-manager patches in config/default/ do not affect test execution.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.428372"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T12:19:33.387642"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T12:23:18.808448"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "4a78d326-745c-43a6-8ed4-f5f83cfb587a",
+      "timestamp": "2026-02-20T12:23:18.808474",
+      "total_duration": 221.30298352241516,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 221.30298352241516,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
