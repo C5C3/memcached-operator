@@ -1,0 +1,702 @@
+{
+  "feature_id": "MO-0029",
+  "title": "H002: Add Kustomize deployment manifests",
+  "slug": "h002-add-kustomize-deployment-manifests",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Organize config/ directory with Kustomize overlays: base (CRD, RBAC, Deployment), default (with webhook and cert-manager), samples (example Memcached CRs). Follow Kubebuilder conventions for config/manager, config/rbac, config/crd, config/webhook.",
+  "stories": [
+    {
+      "title": "Cluster admin deploys the operator via kustomize build config/default",
+      "role": "cluster admin",
+      "want": "to deploy the memcached-operator with webhooks and cert-manager by running kustomize build config/default | kubectl apply -f -",
+      "so_that": "the operator, CRDs, RBAC, webhooks, and cert-manager resources are all installed in one command",
+      "criteria": [
+        "kustomize build config/default produces valid YAML with no errors",
+        "Output includes Namespace, Deployment, ServiceAccount, ClusterRole, ClusterRoleBinding, Role, RoleBinding, CRD, MutatingWebhookConfiguration, ValidatingWebhookConfiguration, Service (webhook), Certificate, Issuer",
+        "All resources have namePrefix memcached-operator- applied except those excluded",
+        "All resources are in namespace memcached-operator-system",
+        "Deployment patches (metrics, webhook) are applied correctly"
+      ]
+    },
+    {
+      "title": "Developer installs only CRDs via kustomize build config/crd",
+      "role": "developer",
+      "want": "to install only the Memcached CRD without the operator or webhooks",
+      "so_that": "I can develop against the CRD schema in a local environment without running the full operator",
+      "criteria": [
+        "kustomize build config/crd produces only the CRD YAML",
+        "CRD resource name is memcacheds.memcached.c5c3.io",
+        "No other resources are included in the output"
+      ]
+    },
+    {
+      "title": "Developer applies sample CRs via kustomize build config/samples",
+      "role": "developer",
+      "want": "to apply example Memcached custom resources to test the operator",
+      "so_that": "I can quickly verify the operator works with realistic configurations",
+      "criteria": [
+        "kustomize build config/samples produces valid Memcached CR YAML",
+        "Sample CR includes realistic field values for replicas, memcached config, HA, monitoring, and security",
+        "Sample can be applied to a cluster with the CRD installed without errors"
+      ]
+    },
+    {
+      "title": "CI pipeline builds consolidated install manifest via make build-installer",
+      "role": "CI system",
+      "want": "to generate a single install.yaml containing all operator resources",
+      "so_that": "users can install the operator with a single kubectl apply -f",
+      "criteria": [
+        "make build-installer runs kustomize build config/default successfully",
+        "Output file dist/install.yaml contains all resources needed for deployment",
+        "The image reference is substituted via kustomize edit set image"
+      ]
+    },
+    {
+      "title": "Operator validates kustomize structure follows Kubebuilder conventions",
+      "role": "maintainer",
+      "want": "the config/ directory structure to follow standard Kubebuilder layout",
+      "so_that": "contributors familiar with Kubebuilder can navigate the project without a learning curve",
+      "criteria": [
+        "config/crd/ contains CRD bases and kustomization.yaml",
+        "config/rbac/ contains RBAC manifests and kustomization.yaml",
+        "config/manager/ contains Deployment and kustomization.yaml",
+        "config/webhook/ contains webhook manifests and kustomization.yaml",
+        "config/certmanager/ contains cert-manager resources and kustomization.yaml",
+        "config/default/ aggregates all components with patches",
+        "config/samples/ contains example CRs",
+        "config/prometheus/ contains operator ServiceMonitor",
+        "config/network-policy/ contains operator NetworkPolicy"
+      ]
+    },
+    {
+      "title": "Deployment manifest uses correct image and version labels",
+      "role": "cluster admin",
+      "want": "the operator Deployment to use a configurable image reference with proper labels",
+      "so_that": "I can deploy specific versions and identify running components",
+      "criteria": [
+        "config/manager/manager.yaml uses image: controller:latest as placeholder",
+        "kustomize edit set image controller=<real-image> substitutes the image correctly",
+        "Deployment has app.kubernetes.io/name and app.kubernetes.io/managed-by labels"
+      ]
+    },
+    {
+      "title": "Kustomize manifests reference documentation",
+      "role": "maintainer",
+      "want": "reference documentation describing the config/ directory structure and kustomize overlays",
+      "so_that": "contributors understand how to modify and extend the deployment manifests",
+      "criteria": [
+        "Reference doc explains each config/ subdirectory purpose",
+        "Reference doc describes how config/default aggregates components",
+        "Reference doc lists the kustomize patches applied in config/default"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "config/default/kustomization.yaml SHALL aggregate config/crd, config/rbac, config/manager, config/webhook, and config/certmanager as resources",
+      "priority": "SHALL",
+      "rationale": "The default overlay is the primary deployment target and must include all components needed for a production deployment with webhooks and cert-manager",
+      "scenarios": [
+        {
+          "name": "All base components included",
+          "when": "kustomize build config/default is executed",
+          "then": "output includes resources from crd, rbac, manager, webhook, and certmanager directories",
+          "and_then": [
+            "no missing resource errors occur"
+          ]
+        },
+        {
+          "name": "Namespace applied to all resources",
+          "when": "kustomize build config/default is executed",
+          "then": "all resources have namespace memcached-operator-system",
+          "and_then": [
+            "except cluster-scoped resources like ClusterRole and CRD"
+          ]
+        },
+        {
+          "name": "Name prefix applied",
+          "when": "kustomize build config/default is executed",
+          "then": "all resource names are prefixed with memcached-operator-",
+          "and_then": [
+            "references between resources are updated accordingly"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "config/default/kustomization.yaml SHALL apply Deployment patches for metrics and webhook server configuration",
+      "priority": "SHALL",
+      "rationale": "The operator Deployment needs metrics endpoint args and webhook volume mounts that are layered on via strategic merge patches",
+      "scenarios": [
+        {
+          "name": "Metrics patch applied",
+          "when": "kustomize build config/default is executed",
+          "then": "the manager container has --metrics-bind-address=:8443 and --metrics-secure args",
+          "and_then": [
+            "metrics endpoint is configured securely"
+          ]
+        },
+        {
+          "name": "Webhook patch applied",
+          "when": "kustomize build config/default is executed",
+          "then": "the manager container has port 9443 exposed and cert volume mounted at /tmp/k8s-webhook-server/serving-certs",
+          "and_then": [
+            "webhook-server-cert secret is referenced as volume"
+          ]
+        },
+        {
+          "name": "CA injection patch applied",
+          "when": "kustomize build config/default is executed",
+          "then": "MutatingWebhookConfiguration and ValidatingWebhookConfiguration have cert-manager.io/inject-ca-from annotation",
+          "and_then": [
+            "annotation references the serving-cert Certificate in the correct namespace"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "config/crd/kustomization.yaml SHALL reference the generated CRD base manifest",
+      "priority": "SHALL",
+      "rationale": "The CRD must be independently installable for development and testing without deploying the full operator",
+      "scenarios": [
+        {
+          "name": "CRD builds independently",
+          "when": "kustomize build config/crd is executed",
+          "then": "output contains only the CustomResourceDefinition for memcacheds.memcached.c5c3.io",
+          "and_then": [
+            "no dependency errors occur"
+          ]
+        },
+        {
+          "name": "CRD base generated by controller-gen",
+          "when": "make manifests is run",
+          "then": "config/crd/bases/memcached.c5c3.io_memcacheds.yaml is generated with current type definitions",
+          "and_then": [
+            "kustomization.yaml references this generated file"
+          ]
+        },
+        {
+          "name": "make install uses CRD kustomization",
+          "when": "make install is executed",
+          "then": "kustomize build config/crd is used to install only CRDs",
+          "and_then": [
+            "CRD is applied to the cluster"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "config/rbac/kustomization.yaml SHALL include all RBAC manifests: ClusterRole, ClusterRoleBinding, ServiceAccount, Role, RoleBinding, and metrics auth roles",
+      "priority": "SHALL",
+      "rationale": "The operator needs least-privilege RBAC for managing Memcached CRs and all owned resources",
+      "scenarios": [
+        {
+          "name": "All RBAC resources included",
+          "when": "kustomize build config/rbac is executed",
+          "then": "output includes role.yaml, role_binding.yaml, leader_election_role.yaml, leader_election_role_binding.yaml, service_account.yaml, metrics_auth_role.yaml, metrics_auth_role_binding.yaml, metrics_reader_role.yaml",
+          "and_then": []
+        },
+        {
+          "name": "ClusterRole has correct permissions",
+          "when": "the manager-role ClusterRole is inspected",
+          "then": "it includes CRUD on memcacheds, deployments, services, poddisruptionbudgets, servicemonitors, networkpolicies and read on secrets",
+          "and_then": [
+            "no excessive permissions beyond what the operator needs"
+          ]
+        },
+        {
+          "name": "RBAC generated by controller-gen",
+          "when": "make manifests is run",
+          "then": "config/rbac/role.yaml is regenerated from kubebuilder markers in the controller code",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "config/manager/kustomization.yaml SHALL reference the operator Deployment manifest in manager.yaml",
+      "priority": "SHALL",
+      "rationale": "The manager directory contains the core operator Deployment that runs the controller binary",
+      "scenarios": [
+        {
+          "name": "Manager deployment defined",
+          "when": "kustomize build config/manager is executed",
+          "then": "output includes a Namespace and Deployment resource for the controller-manager",
+          "and_then": [
+            "Deployment uses image: controller:latest as placeholder"
+          ]
+        },
+        {
+          "name": "Deployment has security context",
+          "when": "the controller-manager Deployment is inspected",
+          "then": "pod-level runAsNonRoot: true and seccompProfile RuntimeDefault are set, container drops ALL capabilities",
+          "and_then": []
+        },
+        {
+          "name": "Deployment has health probes",
+          "when": "the controller-manager Deployment is inspected",
+          "then": "liveness probe at /healthz:8081 and readiness probe at /readyz:8081 are configured",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "config/webhook/kustomization.yaml SHALL include webhook manifests and service definition",
+      "priority": "SHALL",
+      "rationale": "Webhooks require MutatingWebhookConfiguration, ValidatingWebhookConfiguration, and a Service to expose the webhook server",
+      "scenarios": [
+        {
+          "name": "Webhook manifests included",
+          "when": "kustomize build config/webhook is executed",
+          "then": "output includes MutatingWebhookConfiguration, ValidatingWebhookConfiguration, and Service",
+          "and_then": [
+            "webhook paths match /mutate-memcached-c5c3-io-v1alpha1-memcached and /validate-memcached-c5c3-io-v1alpha1-memcached"
+          ]
+        },
+        {
+          "name": "Webhook service targets controller-manager",
+          "when": "the webhook-service Service is inspected",
+          "then": "it selects pods with control-plane: controller-manager and maps port 443 to targetPort 9443",
+          "and_then": []
+        },
+        {
+          "name": "Webhook manifests generated by controller-gen",
+          "when": "make manifests is run",
+          "then": "config/webhook/manifests.yaml is regenerated from kubebuilder markers in webhook code",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "config/certmanager/kustomization.yaml SHALL define a self-signed Issuer and Certificate for webhook TLS",
+      "priority": "SHALL",
+      "rationale": "Webhooks require TLS certificates; cert-manager automates certificate provisioning and rotation",
+      "scenarios": [
+        {
+          "name": "Certificate resources defined",
+          "when": "kustomize build config/certmanager is executed",
+          "then": "output includes an Issuer (selfSigned) and a Certificate resource",
+          "and_then": [
+            "Certificate dnsNames use kustomize vars for SERVICE_NAME and SERVICE_NAMESPACE"
+          ]
+        },
+        {
+          "name": "CA injection configured",
+          "when": "config/default is built with certmanager vars",
+          "then": "CERTIFICATE_NAMESPACE and CERTIFICATE_NAME vars substitute into the webhookcainjection_patch.yaml",
+          "and_then": [
+            "cert-manager injects the CA into webhook configurations"
+          ]
+        },
+        {
+          "name": "Certificate secret name matches webhook volume",
+          "when": "the Certificate spec is inspected",
+          "then": "secretName is webhook-server-cert matching the volume in the manager_webhook_patch.yaml",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "config/samples/kustomization.yaml SHALL include example Memcached CR manifests",
+      "priority": "SHALL",
+      "rationale": "Sample CRs demonstrate realistic configurations and serve as templates for users",
+      "scenarios": [
+        {
+          "name": "Sample CR builds successfully",
+          "when": "kustomize build config/samples is executed",
+          "then": "output contains a valid Memcached CR with apiVersion memcached.c5c3.io/v1alpha1",
+          "and_then": []
+        },
+        {
+          "name": "Sample CR has realistic values",
+          "when": "the sample Memcached CR is inspected",
+          "then": "it includes replicas, memcached config (maxMemoryMB, maxConnections, threads, maxItemSize), highAvailability, monitoring, and security settings",
+          "and_then": [
+            "all field values are within CRD validation ranges"
+          ]
+        },
+        {
+          "name": "Sample CR can be applied to cluster with CRD",
+          "when": "the CRD is installed and sample CR is applied",
+          "then": "kubectl apply succeeds without validation errors",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "config/prometheus/ and config/network-policy/ SHALL provide operator-level monitoring and network policy resources",
+      "priority": "SHALL",
+      "rationale": "The operator itself needs a ServiceMonitor for scraping its metrics endpoint and a NetworkPolicy to restrict metrics traffic",
+      "scenarios": [
+        {
+          "name": "Operator ServiceMonitor defined",
+          "when": "kustomize build config/prometheus is executed",
+          "then": "output includes a ServiceMonitor targeting the controller-manager metrics port",
+          "and_then": [
+            "ServiceMonitor uses HTTPS scheme with bearer token auth"
+          ]
+        },
+        {
+          "name": "Operator NetworkPolicy defined",
+          "when": "kustomize build config/network-policy is executed",
+          "then": "output includes a NetworkPolicy allowing ingress on port 8443 to controller-manager pods",
+          "and_then": []
+        },
+        {
+          "name": "Optional inclusion in default",
+          "when": "the default kustomization is inspected",
+          "then": "prometheus and network-policy are NOT included by default but can be uncommented by the user",
+          "and_then": [
+            "this follows Kubebuilder conventions for optional components"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "kustomize build SHALL succeed without errors for config/default, config/crd, config/rbac, config/manager, config/webhook, config/certmanager, config/samples, config/prometheus, and config/network-policy",
+      "priority": "SHALL",
+      "rationale": "All kustomization overlays must be valid and buildable to ensure the operator can be deployed",
+      "scenarios": [
+        {
+          "name": "All overlays build cleanly",
+          "when": "kustomize build is executed for each config/ subdirectory with a kustomization.yaml",
+          "then": "each produces valid YAML output with exit code 0",
+          "and_then": [
+            "no undefined var or missing resource errors"
+          ]
+        },
+        {
+          "name": "Default overlay builds the full stack",
+          "when": "kustomize build config/default is executed",
+          "then": "output contains all expected resource kinds: Namespace, Deployment, ServiceAccount, ClusterRole, ClusterRoleBinding, Role, RoleBinding, CRD, MutatingWebhookConfiguration, ValidatingWebhookConfiguration, Service, Certificate, Issuer",
+          "and_then": []
+        },
+        {
+          "name": "make deploy uses default overlay",
+          "when": "the Makefile deploy target is inspected",
+          "then": "it runs kustomize build config/default",
+          "and_then": [
+            "after substituting the image via kustomize edit set image"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Verify and fix config/crd/kustomization.yaml references CRD base correctly (REQ-003)",
+      "description": "Verify config/crd/kustomization.yaml correctly references bases/memcached.c5c3.io_memcacheds.yaml. Verify kustomize build config/crd succeeds and produces only the CRD. Fix any issues found.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Verify and fix config/rbac/kustomization.yaml includes all RBAC manifests (REQ-004)",
+      "description": "Verify config/rbac/kustomization.yaml lists all 8 RBAC files: role.yaml, role_binding.yaml, leader_election_role.yaml, leader_election_role_binding.yaml, service_account.yaml, metrics_auth_role.yaml, metrics_auth_role_binding.yaml, metrics_reader_role.yaml. Verify kustomize build config/rbac succeeds. Verify role.yaml has correct permissions for all managed resources (memcacheds, deployments, services, PDBs, servicemonitors, networkpolicies, secrets). Fix any issues.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Verify and fix config/manager/kustomization.yaml and manager.yaml (REQ-005)",
+      "description": "Verify config/manager/kustomization.yaml references manager.yaml. Verify manager.yaml defines a Namespace and Deployment for controller-manager with security contexts (runAsNonRoot, seccompProfile, drop ALL capabilities), health probes (/healthz, /readyz on 8081), resource limits, and image: controller:latest placeholder. Verify kustomize build config/manager succeeds. Fix any issues.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Verify and fix config/webhook/kustomization.yaml and manifests (REQ-006)",
+      "description": "Verify config/webhook/kustomization.yaml references manifests.yaml and service.yaml. Verify manifests.yaml defines MutatingWebhookConfiguration and ValidatingWebhookConfiguration with correct paths. Verify service.yaml defines webhook-service on port 443 targeting 9443. Verify kustomize build config/webhook succeeds. Fix any issues.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Verify and fix config/certmanager/ resources (REQ-007)",
+      "description": "Verify config/certmanager/kustomization.yaml references certificate.yaml and kustomizeconfig.yaml. Verify certificate.yaml defines a self-signed Issuer and Certificate with dnsNames using $(SERVICE_NAME) and $(SERVICE_NAMESPACE) vars and secretName: webhook-server-cert. Verify kustomizeconfig.yaml has nameReference and varReference for cert-manager. Fix any issues.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Verify and fix config/samples/kustomization.yaml and sample CR (REQ-008)",
+      "description": "Verify config/samples/kustomization.yaml references memcached_v1alpha1_memcached.yaml. Verify the sample CR has realistic values within CRD validation ranges: replicas, memcached config (maxMemoryMB, maxConnections, threads, maxItemSize), highAvailability (antiAffinityPreset, podDisruptionBudget), monitoring, security contexts. Ensure field names match current CRD types (e.g. serviceMonitor.interval not scrapeInterval). Fix any mismatches with the current CRD schema.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.7",
+      "title": "Verify and fix config/prometheus/ and config/network-policy/ (REQ-009)",
+      "description": "Verify config/prometheus/kustomization.yaml references monitor.yaml. Verify monitor.yaml defines a ServiceMonitor targeting controller-manager on HTTPS metrics port. Verify config/network-policy/kustomization.yaml references allow-metrics-traffic.yaml. Verify allow-metrics-traffic.yaml defines a NetworkPolicy for port 8443. Verify kustomize build succeeds for both. Fix any issues.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Verify and fix config/default/kustomization.yaml aggregation and patches (REQ-001, REQ-002)",
+      "description": "Verify config/default/kustomization.yaml: (1) sets namespace memcached-operator-system, (2) sets namePrefix memcached-operator-, (3) lists resources ../crd, ../rbac, ../manager, ../webhook, ../certmanager, (4) applies patches manager_metrics_patch.yaml, manager_webhook_patch.yaml, webhookcainjection_patch.yaml, (5) defines vars for CERTIFICATE_NAMESPACE, CERTIFICATE_NAME, SERVICE_NAMESPACE, SERVICE_NAME. Verify manager_metrics_patch.yaml adds --metrics-bind-address and --metrics-secure args. Verify manager_webhook_patch.yaml adds webhook port 9443 and cert volume. Verify webhookcainjection_patch.yaml adds cert-manager.io/inject-ca-from annotations. Fix any issues.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Run kustomize build validation for all overlays (REQ-010)",
+      "description": "Run kustomize build for each config/ subdirectory (crd, rbac, manager, webhook, certmanager, samples, prometheus, network-policy, default) and verify each produces valid YAML with exit code 0. For config/default, verify the output contains all expected resource kinds: Namespace, Deployment, ServiceAccount, ClusterRole, ClusterRoleBinding, Role, RoleBinding, CustomResourceDefinition, MutatingWebhookConfiguration, ValidatingWebhookConfiguration, Service, Certificate, Issuer. Fix any build errors found.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Verify Makefile targets use correct kustomize paths (REQ-010)",
+      "description": "Verify Makefile targets: (1) make install uses kustomize build config/crd, (2) make deploy uses kustomize build config/default with kustomize edit set image, (3) make uninstall uses kustomize build config/crd, (4) make undeploy uses kustomize build config/default, (5) make build-installer uses kustomize build config/default. Verify all references are correct and consistent. Fix any issues.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for config/ directory structure and kustomize overlays",
+      "description": "Create docs/reference/backend/kustomize-deployment-manifests.md documenting: (1) config/ directory layout with purpose of each subdirectory (crd, rbac, manager, webhook, certmanager, samples, prometheus, network-policy, default), (2) how config/default aggregates all components, (3) the three patches applied (metrics, webhook, CA injection), (4) kustomize vars for cert-manager integration, (5) how to use kustomize build for different targets (install CRDs only, deploy full stack, apply samples), (6) how to customize the image via kustomize edit set image. Follow existing docs/reference/backend/ conventions.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_crd_succeeds",
+      "story": "Developer installs only CRDs via kustomize build config/crd",
+      "expected": "kustomize build config/crd exits 0 and output contains only CustomResourceDefinition kind",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_crd_contains_correct_crd_name",
+      "story": "Developer installs only CRDs via kustomize build config/crd",
+      "expected": "Output contains name: memcacheds.memcached.c5c3.io",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_rbac_succeeds",
+      "story": "Operator validates kustomize structure follows Kubebuilder conventions",
+      "expected": "kustomize build config/rbac exits 0 and includes ClusterRole, ClusterRoleBinding, Role, RoleBinding, ServiceAccount",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_rbac_has_correct_permissions",
+      "story": "Operator validates kustomize structure follows Kubebuilder conventions",
+      "expected": "manager-role ClusterRole includes rules for memcacheds, deployments, services, poddisruptionbudgets, servicemonitors, networkpolicies",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_manager_succeeds",
+      "story": "Deployment manifest uses correct image and version labels",
+      "expected": "kustomize build config/manager exits 0 and output includes Namespace and Deployment",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_manager_has_security_context",
+      "story": "Deployment manifest uses correct image and version labels",
+      "expected": "Deployment pod spec has runAsNonRoot: true and container drops ALL capabilities",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_webhook_succeeds",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "kustomize build config/webhook exits 0 and includes MutatingWebhookConfiguration, ValidatingWebhookConfiguration, Service",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_webhook_has_correct_paths",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "Webhook paths are /mutate-memcached-c5c3-io-v1alpha1-memcached and /validate-memcached-c5c3-io-v1alpha1-memcached",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_certmanager_succeeds",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "kustomize build config/certmanager exits 0 and includes Issuer and Certificate",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_certmanager_has_correct_secret",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "Certificate spec.secretName is webhook-server-cert",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_samples_succeeds",
+      "story": "Developer applies sample CRs via kustomize build config/samples",
+      "expected": "kustomize build config/samples exits 0 and output contains kind: Memcached with apiVersion: memcached.c5c3.io/v1alpha1",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_samples_has_valid_fields",
+      "story": "Developer applies sample CRs via kustomize build config/samples",
+      "expected": "Sample CR has replicas, memcached config block, highAvailability, monitoring, and security fields with values within validation ranges",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_prometheus_succeeds",
+      "story": "Operator validates kustomize structure follows Kubebuilder conventions",
+      "expected": "kustomize build config/prometheus exits 0 and includes ServiceMonitor",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_network_policy_succeeds",
+      "story": "Operator validates kustomize structure follows Kubebuilder conventions",
+      "expected": "kustomize build config/network-policy exits 0 and includes NetworkPolicy",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_default_succeeds",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "kustomize build config/default exits 0 and output includes Namespace, Deployment, ServiceAccount, ClusterRole, ClusterRoleBinding, Role, RoleBinding, CRD, MutatingWebhookConfiguration, ValidatingWebhookConfiguration, Service, Certificate, Issuer",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_default_has_namespace",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "All namespaced resources have namespace: memcached-operator-system",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_default_has_name_prefix",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "Resource names are prefixed with memcached-operator-",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_default_deployment_has_metrics_args",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "Deployment manager container args include --metrics-bind-address=:8443 and --metrics-secure",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_default_deployment_has_webhook_volume",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "Deployment has cert volume mounted at /tmp/k8s-webhook-server/serving-certs from webhook-server-cert secret",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "kustomize build validation (shell)",
+      "test_function": "kustomize_build_config_default_webhooks_have_ca_injection",
+      "story": "Cluster admin deploys the operator via kustomize build config/default",
+      "expected": "MutatingWebhookConfiguration and ValidatingWebhookConfiguration have cert-manager.io/inject-ca-from annotation",
+      "requirement_id": "REQ-002"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All config/ subdirectories have valid kustomization.yaml files that build without errors via kustomize build",
+    "config/default aggregates crd, rbac, manager, webhook, certmanager and applies all three patches (metrics, webhook, CA injection)",
+    "All generated manifests (CRD, RBAC role, webhook configs) are up-to-date with make manifests output",
+    "Sample CR field names and values match the current CRD schema and pass webhook validation",
+    "Makefile targets (install, deploy, undeploy, uninstall, build-installer) reference correct kustomize paths",
+    "config/ directory structure follows Kubebuilder v4 conventions (crd/, rbac/, manager/, webhook/, certmanager/, samples/, default/)",
+    "Reference documentation in docs/reference/backend/kustomize-deployment-manifests.md covers all config/ subdirectories and usage patterns",
+    "No hardcoded image references in Deployment - controller:latest placeholder is used and substituted via kustomize edit set image"
+  ],
+  "implementation_notes": "This feature is primarily about verifying, fixing, and documenting the existing Kubebuilder-scaffolded config/ directory. The project was scaffolded with operator-sdk init and operator-sdk create api, so the standard Kubebuilder config/ layout already exists. The main work involves: (1) verifying all kustomization.yaml files correctly reference their resources, (2) ensuring the sample CR matches the current CRD schema (field names like serviceMonitor.interval vs scrapeInterval), (3) ensuring kustomize build succeeds for all overlays including config/default with its cert-manager vars, (4) verifying Makefile targets reference correct paths, and (5) writing reference documentation. No new Go code is needed. The config/ directory already has: config/crd/ (CRD bases), config/rbac/ (8 RBAC files), config/manager/ (Deployment + Namespace), config/webhook/ (manifests + service), config/certmanager/ (Issuer + Certificate + kustomizeconfig), config/default/ (aggregation + 3 patches + 4 vars), config/samples/ (example CR), config/prometheus/ (operator ServiceMonitor), config/network-policy/ (operator NetworkPolicy). The thirdparty ServiceMonitor CRD is in config/crd/thirdparty/ for envtest but is NOT included in config/crd/kustomization.yaml (correct behavior - it's only for testing).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.431252"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T17:20:48.677456"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T17:24:21.809898"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "73a56737-c790-431d-82e3-69b00ccf4176",
+      "timestamp": "2026-02-20T17:24:21.809924",
+      "total_duration": 209.5731017589569,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 209.5731017589569,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
