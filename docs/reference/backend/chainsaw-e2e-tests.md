@@ -3,7 +3,8 @@
 Reference documentation for the Kyverno Chainsaw end-to-end test suite that
 validates the Memcached operator against a real kind cluster, covering
 deployment, scaling, configuration changes, monitoring, PDB management,
-graceful rolling updates, webhook validation, and garbage collection.
+graceful rolling updates, webhook validation, garbage collection, SASL
+authentication, TLS encryption, and mutual TLS (mTLS).
 
 **Source**: `test/e2e/`
 
@@ -169,6 +170,28 @@ test/e2e/
 │   ├── 02-error-pdb-gone.yaml
 │   ├── 02-error-servicemonitor-gone.yaml
 │   └── 02-error-cr-gone.yaml
+├── sasl-authentication/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-sasl-secret.yaml         # Opaque Secret with password-file key
+│   ├── 00-memcached.yaml           # CR with security.sasl.enabled: true
+│   ├── 01-assert-deployment.yaml   # SASL volume, mount, and args assertions
+│   └── 02-assert-status.yaml       # Status condition assertions
+├── tls-encryption/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-cert-manager.yaml        # Self-signed Issuer + Certificate
+│   ├── 00-assert-certificate-ready.yaml  # Certificate Ready=True assertion
+│   ├── 01-memcached.yaml           # CR with security.tls.enabled: true
+│   ├── 02-assert-deployment.yaml   # TLS volume, mount, args, port assertions
+│   ├── 02-assert-service.yaml      # Service TLS port assertion
+│   └── 03-assert-status.yaml       # Status condition assertions
+├── tls-mtls/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-cert-manager.yaml        # Self-signed Issuer + Certificate (with CA)
+│   ├── 00-assert-certificate-ready.yaml  # Certificate Ready=True assertion
+│   ├── 01-memcached.yaml           # CR with tls.enabled + enableClientCert
+│   ├── 02-assert-deployment.yaml   # mTLS volume (ca.crt), args (ssl_ca_cert)
+│   ├── 02-assert-service.yaml      # Service TLS port assertion
+│   └── 03-assert-status.yaml       # Status condition assertions
 └── resources/
     ├── memcached-minimal.yaml
     ├── assert-deployment.yaml
@@ -310,6 +333,88 @@ Verifies that deleting a Memcached CR garbage-collects all owned resources.
 The `error` operation asserts that the specified resource does **not** exist —
 the assertion succeeds when the GET returns `NotFound`.
 
+### 9. SASL Authentication (MO-0032 REQ-001, REQ-006, REQ-008)
+
+**Directory**: `test/e2e/sasl-authentication/`
+
+Verifies that enabling SASL authentication creates the correct Secret volume,
+volumeMount, and container args (`-Y <authfile>`) in the Deployment.
+
+| Step                   | Operation                     | Assertion                                                                                              |
+|------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------|
+| create-sasl-secret     | `apply` 00-sasl-secret.yaml   | Opaque Secret with `password-file` key created                                                         |
+| create-memcached-cr    | `apply` 00-memcached.yaml     | CR with `security.sasl.enabled: true`, `credentialsSecretRef.name: test-sasl-credentials`              |
+| assert-deployment-sasl | `assert` 01-assert-deployment | Volume `sasl-credentials` with item `{key: password-file, path: password-file}`, mount at `/etc/memcached/sasl` (readOnly), args include `-Y /etc/memcached/sasl/password-file` |
+| assert-status-available | `assert` 02-assert-status    | readyReplicas: 1, Available=True                                                                       |
+
+The SASL Secret must be created **before** the Memcached CR because the
+validating webhook requires `credentialsSecretRef.name` to reference an existing
+Secret.
+
+**CRD fields tested**:
+- `spec.security.sasl.enabled` — Enables SASL authentication
+- `spec.security.sasl.credentialsSecretRef.name` — References the Secret containing the password file
+
+### 10. TLS Encryption (MO-0032 REQ-002, REQ-003, REQ-004, REQ-007, REQ-008, REQ-009)
+
+**Directory**: `test/e2e/tls-encryption/`
+
+Verifies that enabling TLS encryption creates a cert-manager Certificate, adds
+the TLS volume, volumeMount, `-Z` and `ssl_chain_cert`/`ssl_key` container args,
+and configures port 11212 on the Deployment and Service.
+
+| Step                       | Operation                              | Assertion                                                                                         |
+|----------------------------|----------------------------------------|---------------------------------------------------------------------------------------------------|
+| create-cert-manager-resources | `apply` 00-cert-manager.yaml       | Self-signed Issuer + Certificate (secretName: `test-tls-certs`)                                   |
+| assert-certificate-ready   | `assert` 00-assert-certificate-ready   | Certificate status Ready=True                                                                     |
+| create-memcached-cr        | `apply` 01-memcached.yaml              | CR with `security.tls.enabled: true`, `certificateSecretRef.name: test-tls-certs`                 |
+| assert-deployment-tls      | `assert` 02-assert-deployment          | Volume `tls-certificates` with items `tls.crt`, `tls.key`; mount at `/etc/memcached/tls` (readOnly); args include `-Z -o ssl_chain_cert=... -o ssl_key=...`; port `memcached-tls` on 11212 |
+| assert-service-tls-port    | `assert` 02-assert-service             | Service ports include `memcached-tls` on port 11212 targeting `memcached-tls`                     |
+| assert-status-available    | `assert` 03-assert-status              | readyReplicas: 1, Available=True                                                                  |
+
+The Certificate must reach `Ready=True` before applying the Memcached CR to
+ensure the TLS Secret exists (avoiding a race condition where the operator
+cannot mount the Secret volume).
+
+**CRD fields tested**:
+- `spec.security.tls.enabled` — Enables TLS encryption
+- `spec.security.tls.certificateSecretRef.name` — References the cert-manager Secret
+
+**cert-manager resources**:
+- Self-signed `Issuer` (`test-tls-selfsigned`)
+- `Certificate` (`test-tls-cert`) generating Secret `test-tls-certs` with `tls.crt` and `tls.key`
+
+### 11. Mutual TLS / mTLS (MO-0032 REQ-004, REQ-005, REQ-008, REQ-009)
+
+**Directory**: `test/e2e/tls-mtls/`
+
+Verifies that enabling TLS with `enableClientCert: true` adds the `ca.crt` key
+projection to the TLS volume and the `ssl_ca_cert` arg to the container, in
+addition to the standard TLS configuration.
+
+| Step                       | Operation                              | Assertion                                                                                         |
+|----------------------------|----------------------------------------|---------------------------------------------------------------------------------------------------|
+| create-cert-manager-resources | `apply` 00-cert-manager.yaml       | Self-signed Issuer + Certificate (secretName: `test-mtls-certs`)                                  |
+| assert-certificate-ready   | `assert` 00-assert-certificate-ready   | Certificate status Ready=True                                                                     |
+| create-memcached-cr        | `apply` 01-memcached.yaml              | CR with `tls.enabled: true`, `enableClientCert: true`, `certificateSecretRef.name: test-mtls-certs` |
+| assert-deployment-mtls     | `assert` 02-assert-deployment          | Volume items include `ca.crt` alongside `tls.crt`/`tls.key`; args include `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`; port `memcached-tls` on 11212 |
+| assert-service-tls-port    | `assert` 02-assert-service             | Service ports include `memcached-tls` on port 11212                                               |
+| assert-status-available    | `assert` 03-assert-status              | readyReplicas: 1, Available=True                                                                  |
+
+The mTLS test extends TLS by verifying that `enableClientCert: true` causes the
+operator to project the `ca.crt` key from the Secret and add the
+`ssl_ca_cert=/etc/memcached/tls/ca.crt` arg to enable client certificate
+verification.
+
+**CRD fields tested**:
+- `spec.security.tls.enabled` — Enables TLS encryption
+- `spec.security.tls.enableClientCert` — Enables mutual TLS (client cert verification)
+- `spec.security.tls.certificateSecretRef.name` — References the cert-manager Secret
+
+**Difference from TLS test**: The TLS volume includes three items (`tls.crt`,
+`tls.key`, `ca.crt`) instead of two, and the container args include an
+additional `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`.
+
 ---
 
 ## Test Patterns
@@ -392,6 +497,32 @@ Chainsaw automatically creates a unique namespace for each test and cleans it
 up afterward. Test resources do not specify a namespace — Chainsaw injects it
 at runtime. This provides complete isolation between test cases.
 
+### Prerequisite Resource Ordering (Security Tests)
+
+Security tests require resources to exist before the Memcached CR is applied:
+
+1. **SASL** — The SASL Secret must be created first because the validating
+   webhook checks that `credentialsSecretRef.name` references an existing
+   Secret. Applying the CR before the Secret causes a webhook rejection.
+
+2. **TLS/mTLS** — cert-manager Issuer and Certificate must be created first,
+   and the Certificate must reach `Ready=True` before the CR is applied. This
+   ensures the TLS Secret exists so the operator can mount it as a volume.
+
+This is implemented as separate Chainsaw steps with `apply` followed by
+`assert` (for the Certificate readiness check) before the CR `apply` step.
+
+### Spec-Level Assertions (Security Tests)
+
+Security tests assert exclusively on Kubernetes resource specs — they do not
+verify runtime protocol behavior. This means:
+
+- No test step connects to memcached via TLS or SASL
+- All assertions target Deployment spec (volumes, mounts, args, ports), Service
+  spec (ports), or CR status (conditions)
+- Tests pass in a kind cluster without any memcached client tools
+- Tests complete deterministically within the 120s assert timeout
+
 ---
 
 ## Requirement Coverage Matrix
@@ -409,6 +540,20 @@ at runtime. This provides complete isolation between test cases.
 | REQ-009 | CR deletion: garbage collection                          | cr-deletion             | Deployment, Service, PDB, ServiceMonitor, CR all removed                                                                      |
 | REQ-010 | Makefile integration                                     | All (infrastructure)    | `make test-e2e` runs `chainsaw test`                                                                                          |
 
+### Security E2E Tests (MO-0032)
+
+| REQ-ID      | Requirement                                                    | Test Scenario       | Key Assertions                                                                                                     |
+|-------------|----------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------|
+| MO-0032-001 | SASL Secret and CR configuration propagation                   | sasl-authentication | Secret with `password-file` key, CR with `sasl.enabled: true` and `credentialsSecretRef`                           |
+| MO-0032-002 | SASL Deployment volume, mount, and args                        | sasl-authentication | Volume `sasl-credentials`, mount at `/etc/memcached/sasl`, args `-Y /etc/memcached/sasl/password-file`             |
+| MO-0032-003 | TLS cert-manager Certificate creation                          | tls-encryption      | Self-signed Issuer, Certificate with `Ready=True`, Secret with `tls.crt`/`tls.key`                                |
+| MO-0032-004 | TLS Deployment volume, mount, args, and port                   | tls-encryption      | Volume `tls-certificates`, mount at `/etc/memcached/tls`, args `-Z -o ssl_chain_cert -o ssl_key`, port 11212       |
+| MO-0032-005 | TLS Service port configuration                                 | tls-encryption      | Service port `memcached-tls` on 11212 targeting `memcached-tls`                                                    |
+| MO-0032-006 | mTLS ca.crt volume projection and ssl_ca_cert arg              | tls-mtls            | Volume items include `ca.crt`, args include `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`                             |
+| MO-0032-007 | mTLS preserves standard TLS configuration                      | tls-mtls            | All TLS assertions (volume, mount, args, ports) plus `ca.crt` additions                                           |
+| MO-0032-008 | Security tests follow Chainsaw conventions                     | All security tests  | Numbered YAML files, apply/assert flow, partial object matching, standard timeouts, `test-{name}` CR naming        |
+| MO-0032-009 | Tests are spec-level assertions only (no runtime verification) | All security tests  | Assertions on Deployment spec, Service spec, CR status — no pod logs or protocol connections                       |
+
 ---
 
 ## Known Limitations
@@ -416,9 +561,12 @@ at runtime. This provides complete isolation between test cases.
 | Limitation                  | Impact                                                   | Mitigation                                                             |
 |-----------------------------|----------------------------------------------------------|------------------------------------------------------------------------|
 | Pod scheduling time varies  | Assert timeouts may need adjustment in slow CI           | Global assert timeout set to 120s                                      |
-| cert-manager required       | Webhook tests fail without TLS certificates              | Documented as prerequisite; tests fail clearly with connection refused |
+| cert-manager required       | Webhook and TLS/mTLS tests fail without cert-manager     | Documented as prerequisite; tests fail clearly with connection refused |
 | ServiceMonitor CRD required | monitoring-toggle and cr-deletion tests fail without CRD | Documented as prerequisite; Chainsaw reports clear assertion error     |
 | Sequential execution        | Full suite takes longer than parallel execution          | `parallel: 1` avoids resource contention on small clusters             |
+| No runtime protocol testing | SASL/TLS/mTLS tests verify Deployment spec, not actual memcached protocol | By design: tests are fast, deterministic, and need no memcached client |
+| Certificate issuance delay  | cert-manager may take time to issue certificates in CI   | Explicit `assert-certificate-ready` step waits for Ready=True within 120s |
+| No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw partial matching asserts presence of fields but cannot assert absence; the TLS test does not verify that `ssl_ca_cert` is absent when `enableClientCert` is false | The mTLS test provides the complementary positive assertion that `ssl_ca_cert` is present only when `enableClientCert: true`; combined, the two tests confirm correct conditional behavior |
 
 ---
 
@@ -440,6 +588,29 @@ kubectl wait --for=condition=Available deployment/cert-manager-webhook \
 # Verify certificates are issued
 kubectl get certificates -A
 ```
+
+### TLS/mTLS Certificate not ready
+
+If TLS or mTLS tests fail at the `assert-certificate-ready` step, the
+cert-manager Certificate may not have been issued:
+
+```bash
+# Check Certificate status in the test namespace
+kubectl get certificates -A
+kubectl describe certificate test-tls-cert -n <chainsaw-namespace>
+
+# Check cert-manager logs for issuance errors
+kubectl logs -n cert-manager deployment/cert-manager -c cert-manager --tail=20
+
+# Verify the Issuer is ready
+kubectl get issuers -A
+```
+
+Common causes:
+- cert-manager pods not yet running (check `kubectl get pods -n cert-manager`)
+- cert-manager webhook not ready (self-signed Issuer needs the webhook to validate)
+- Namespace mismatch (Chainsaw auto-injects namespaces; the Issuer and Certificate
+  must be in the same namespace)
 
 ### ServiceMonitor CRD missing
 

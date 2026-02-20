@@ -1,0 +1,39 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tls-encryption
+spec:
+  description: >
+    Verify that enabling TLS encryption creates the correct cert-manager Certificate,
+    TLS volume, volumeMount, container args, and ports in the Deployment and Service
+    (REQ-002, REQ-003, REQ-004, REQ-007, REQ-008, REQ-009).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-cert-manager-resources
+      try:
+        - apply:
+            file: 00-cert-manager.yaml
+    - name: assert-certificate-ready
+      try:
+        - assert:
+            file: 00-assert-certificate-ready.yaml
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 01-memcached.yaml
+    - name: assert-deployment-tls
+      try:
+        - assert:
+            file: 02-assert-deployment.yaml
+    - name: assert-service-tls-port
+      try:
+        - assert:
+            file: 02-assert-service.yaml
+    - name: assert-status-available
+      try:
+        - assert:
+            file: 03-assert-status.yaml

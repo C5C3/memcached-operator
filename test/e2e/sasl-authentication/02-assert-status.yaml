@@ -1,0 +1,17 @@
+---
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-sasl
+status:
+  readyReplicas: 1
+  conditions:
+    - type: Available
+      status: "True"
+      reason: Available
+    - type: Progressing
+      status: "False"
+      reason: ProgressingComplete
+    - type: Degraded
+      status: "False"
+      reason: NotDegraded

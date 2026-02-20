@@ -1,0 +1,43 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: tls-mtls
+spec:
+  # Separate from tls-encryption to maintain test isolation: the TLS test validates
+  # the base TLS configuration without client cert verification, while this test
+  # validates the additional mTLS-specific resources (ca.crt projection, ssl_ca_cert arg).
+  # A single test with a patch step would conflate the two configurations.
+  description: >
+    Verify that enabling TLS with enableClientCert creates the correct cert-manager
+    Certificate, TLS volume with ca.crt, volumeMount, container args including
+    ssl_ca_cert, and ports in the Deployment and Service (REQ-004, REQ-005, REQ-008, REQ-009).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-cert-manager-resources
+      try:
+        - apply:
+            file: 00-cert-manager.yaml
+    - name: assert-certificate-ready
+      try:
+        - assert:
+            file: 00-assert-certificate-ready.yaml
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 01-memcached.yaml
+    - name: assert-deployment-mtls
+      try:
+        - assert:
+            file: 02-assert-deployment.yaml
+    - name: assert-service-tls-port
+      try:
+        - assert:
+            file: 02-assert-service.yaml
+    - name: assert-status-available
+      try:
+        - assert:
+            file: 03-assert-status.yaml

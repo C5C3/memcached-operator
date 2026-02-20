@@ -1,0 +1,41 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-sasl
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-sasl
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  replicas: 1
+  template:
+    spec:
+      volumes:
+        - name: sasl-credentials
+          secret:
+            secretName: test-sasl-credentials
+            items:
+              - key: password-file
+                path: password-file
+      containers:
+        - name: memcached
+          args:
+            - "-m"
+            - "64"
+            - "-c"
+            - "1024"
+            - "-t"
+            - "4"
+            - "-I"
+            - "1m"
+            - "-Y"
+            - "/etc/memcached/sasl/password-file"
+          ports:
+            - name: memcached
+              containerPort: 11211
+              protocol: TCP
+          volumeMounts:
+            - name: sasl-credentials
+              mountPath: /etc/memcached/sasl
+              readOnly: true

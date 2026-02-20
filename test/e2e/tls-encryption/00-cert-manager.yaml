@@ -1,0 +1,19 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: test-tls-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: test-tls-cert
+spec:
+  secretName: test-tls-certs
+  issuerRef:
+    name: test-tls-selfsigned
+    kind: Issuer
+  dnsNames:
+    - test-tls

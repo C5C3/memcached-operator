@@ -2,8 +2,8 @@
   "feature_id": "MO-0032",
   "title": "I001: Add security E2E tests for SASL, TLS and mTLS",
   "slug": "i001-add-security-e2e-tests-for-sasl-tls-and-mtls",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** testing\n**Priority:** critical\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 3 Chainsaw E2E tests covering the operator's security features:\n\n1. **test/e2e/sasl-authentication/**: Create a Secret with `password-file` key, apply CR with `security.sasl.enabled: true`. Assert Deployment has `sasl-credentials` volume, volumeMount at `/etc/memcached/sasl`, and container args include `-Y /etc/memcached/sasl/password-file`.\n\n2. **test/e2e/tls-encryption/**: Create a cert-manager Certificate resource to generate TLS certs in a Secret, apply CR with `security.tls.enabled: true`. Assert Deployment has `tls-certificates` volume, port 11212, and args include `-Z -o ssl_chain_cert=... -o ssl_key=...`. Assert Service gains `memcached-tls` port.\n\n3. **test/e2e/tls-mtls/**: Same as TLS but with `enableClientCert: true`. Assert args also include `-o ssl_ca_cert=.../ca.crt` and TLS volume includes `ca.crt` key projection.\n\nEach test follows existing Chainsaw patterns: apply resources, wait for reconciliation, assert on Deployment/Service specs. No actual TLS handshake or SASL auth verification (excluded per scope).\n\n**Rationale:** SASL and TLS are critical security features with zero E2E coverage. These are the highest-risk features to ship without positive-path validation — misconfigured volume mounts or missing args would silently break encryption/authentication in production.\n\n**Affected Areas:**\n- test/e2e/sasl-authentication/chainsaw-test.yaml\n- test/e2e/tls-encryption/chainsaw-test.yaml\n- test/e2e/tls-mtls/chainsaw-test.yaml",
   "stories": [
@@ -308,6 +308,7 @@
       "description": "Create test/e2e/sasl-authentication/ directory with:\n- chainsaw-test.yaml: 4 steps (create-secret, create-memcached-cr, assert-deployment-sasl, assert-status-available)\n- 00-sasl-secret.yaml: Secret with stringData.password-file containing dummy SASL password\n- 00-memcached.yaml: Memcached CR named test-sasl with security.sasl.enabled: true, credentialsSecretRef.name: test-sasl-credentials, plus standard spec (replicas: 1, image: memcached:1.6, resources, memcached config)\n- 01-assert-deployment.yaml: Partial Deployment spec asserting volumes contain sasl-credentials volume with secret items [{key: password-file, path: password-file}], containers[0] has volumeMount name=sasl-credentials mountPath=/etc/memcached/sasl readOnly=true, and args include -m 64 -c 1024 -t 4 -I 1m -Y /etc/memcached/sasl/password-file\n- 02-assert-status.yaml: CR status asserting readyReplicas: 1, Available=True, Progressing=False, Degraded=False\nFollow exact patterns from test/e2e/basic-deployment/ and test/e2e/monitoring-toggle/ for YAML structure and timeouts.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-006",
@@ -320,6 +321,7 @@
       "description": "Create test/e2e/tls-encryption/ directory with:\n- chainsaw-test.yaml: 6 steps (create-cert-manager-resources, assert-certificate-ready, create-memcached-cr, assert-deployment-tls, assert-service-tls-port, assert-status-available)\n- 00-cert-manager.yaml: Self-signed Issuer + Certificate resource that generates Secret 'test-tls-certs' with dnsNames [test-tls.${NAMESPACE}.svc]. Use cert-manager.io/v1 API. The Certificate spec should have secretName: test-tls-certs, issuerRef pointing to the self-signed issuer.\n- 00-assert-certificate-ready.yaml: cert-manager.io/v1 Certificate named matching the Certificate, asserting status.conditions with type: Ready, status: 'True'\n- 01-memcached.yaml: Memcached CR named test-tls with security.tls.enabled: true, certificateSecretRef.name: test-tls-certs, plus standard spec\n- 02-assert-deployment.yaml: Partial Deployment spec asserting: volumes contain tls-certificates volume with secret items [{key: tls.crt, path: tls.crt}, {key: tls.key, path: tls.key}], containers[0] has volumeMount name=tls-certificates mountPath=/etc/memcached/tls readOnly=true, args include -m 64 -c 1024 -t 4 -I 1m -Z -o ssl_chain_cert=/etc/memcached/tls/tls.crt -o ssl_key=/etc/memcached/tls/tls.key, and ports include both memcached:11211 and memcached-tls:11212\n- 02-assert-service.yaml: Partial Service spec asserting ports include memcached:11211 and memcached-tls:11212 (targetPort: memcached-tls)\n- 03-assert-status.yaml: CR status asserting readyReplicas: 1, Available=True, Progressing=False, Degraded=False\nFollow cert-manager pattern from config/certmanager/certificate.yaml for Issuer/Certificate resources. cert-manager v1.16.1 is installed in CI per .github/workflows/ci.yml.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -335,6 +337,7 @@
       "description": "Create test/e2e/tls-mtls/ directory with:\n- chainsaw-test.yaml: 6 steps (create-cert-manager-resources, assert-certificate-ready, create-memcached-cr, assert-deployment-mtls, assert-service-tls-port, assert-status-available)\n- 00-cert-manager.yaml: Self-signed Issuer + CA Certificate that generates Secret 'test-mtls-certs'. Use same pattern as TLS test but ensure the Certificate generates ca.crt (cert-manager self-signed certs include ca.crt by default).\n- 00-assert-certificate-ready.yaml: cert-manager Certificate asserting Ready=True\n- 01-memcached.yaml: Memcached CR named test-mtls with security.tls.enabled: true, enableClientCert: true, certificateSecretRef.name: test-mtls-certs, plus standard spec\n- 02-assert-deployment.yaml: Partial Deployment spec asserting: volumes contain tls-certificates volume with secret items [{key: tls.crt, path: tls.crt}, {key: tls.key, path: tls.key}, {key: ca.crt, path: ca.crt}], containers[0] has volumeMount name=tls-certificates mountPath=/etc/memcached/tls readOnly=true, args include -m 64 -c 1024 -t 4 -I 1m -Z -o ssl_chain_cert=/etc/memcached/tls/tls.crt -o ssl_key=/etc/memcached/tls/tls.key -o ssl_ca_cert=/etc/memcached/tls/ca.crt, and ports include both memcached:11211 and memcached-tls:11212\n- 02-assert-service.yaml: Partial Service spec asserting ports include memcached:11211 and memcached-tls:11212\n- 03-assert-status.yaml: CR status asserting readyReplicas: 1, Available=True\nKey difference from TLS test: volume items include ca.crt, args include ssl_ca_cert.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-004",
@@ -348,6 +351,7 @@
       "description": "Create docs/reference/testing/security-e2e-tests.md documenting:\n- Overview of the 3 security E2E tests and what each validates\n- Directory structure and file layout for each test\n- CRD security spec fields tested (security.sasl.enabled, security.tls.enabled, enableClientCert)\n- Expected Deployment assertions (volumes, volumeMounts, container args, ports)\n- Expected Service assertions (TLS port)\n- cert-manager prerequisites for TLS tests\n- How to run the tests individually: chainsaw test --test-dir test/e2e/sasl-authentication\nFollow existing docs structure if a docs/ directory exists; otherwise create the minimal reference doc.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -464,6 +468,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T23:34:38.097899"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:37:05.471942"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:55:06.912864"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:55:06.934340"
     }
   },
   "execution_history": [
@@ -477,6 +493,44 @@
           "name": "prepare",
           "duration": 365.43022871017456,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "e0d28c84-3d4d-45db-af11-cb549bfc73ec",
+      "timestamp": "2026-02-20T23:52:15.651312",
+      "total_duration": 786.4221043586731,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 224.33096837997437,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 269.8396773338318,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0032] Code Review",
+          "duration": 160.46418976783752,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0032] Improvements",
+          "duration": 39.73879671096802,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0032] Simplify",
+          "duration": 92.0484721660614,
+          "type": "simplify",
           "status": "done"
         }
       ]

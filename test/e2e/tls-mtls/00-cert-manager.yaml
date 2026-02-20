@@ -1,0 +1,19 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: test-mtls-selfsigned
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: test-mtls-cert
+spec:
+  secretName: test-mtls-certs
+  issuerRef:
+    name: test-mtls-selfsigned
+    kind: Issuer
+  dnsNames:
+    - test-mtls

@@ -1,0 +1,49 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-tls
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-tls
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  replicas: 1
+  template:
+    spec:
+      volumes:
+        - name: tls-certificates
+          secret:
+            secretName: test-tls-certs
+            items:
+              - key: tls.crt
+                path: tls.crt
+              - key: tls.key
+                path: tls.key
+      containers:
+        - name: memcached
+          args:
+            - "-m"
+            - "64"
+            - "-c"
+            - "1024"
+            - "-t"
+            - "4"
+            - "-I"
+            - "1m"
+            - "-Z"
+            - "-o"
+            - "ssl_chain_cert=/etc/memcached/tls/tls.crt"
+            - "-o"
+            - "ssl_key=/etc/memcached/tls/tls.key"
+          ports:
+            - name: memcached
+              containerPort: 11211
+              protocol: TCP
+            - name: memcached-tls
+              containerPort: 11212
+              protocol: TCP
+          volumeMounts:
+            - name: tls-certificates
+              mountPath: /etc/memcached/tls
+              readOnly: true

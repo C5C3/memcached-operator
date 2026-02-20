@@ -1,0 +1,73 @@
+{
+  "feature_id": "MO-0032",
+  "title": "I001: Add security E2E tests for SASL, TLS and mTLS",
+  "date": "2026-02-20",
+  "verdict": "APPROVED",
+  "summary": "Three Chainsaw E2E tests (sasl-authentication, tls-encryption, tls-mtls) added under test/e2e/ with 19 new YAML files. Each test validates Kubernetes resource spec assertions (volumes, volumeMounts, container args, ports, status conditions) against the operator's security reconciliation logic. Documentation updated in docs/reference/backend/chainsaw-e2e-tests.md with test descriptions, requirement coverage matrix, troubleshooting, and known limitations. All assertions verified against internal/controller/deployment.go and internal/controller/service.go — exact match on volume names, mount paths, arg flags, port numbers, and conditional mTLS logic.",
+  "review_steps": {
+    "1_intent": "Plan specifies 3 E2E tests for SASL, TLS, mTLS security features plus reference documentation. Tests assert Deployment/Service specs and status conditions, not runtime protocol behavior.",
+    "2_scope": "Changes limited to test/e2e/{sasl-authentication,tls-encryption,tls-mtls}/ (19 new YAML files), docs/reference/backend/chainsaw-e2e-tests.md (updated, not new), and .planwerk progress file. No operator code modified. No scope creep.",
+    "3_verification": "All 19 YAML files pass python3 yaml.safe_load_all validation. No trailing whitespace. Consistent 2-space indentation. Proper --- document separators. No Go code to typecheck/lint — tests are declarative YAML only.",
+    "4_patterns": "Timeouts (apply:30s, assert:120s, delete:30s) match basic-deployment and all existing tests. Directory layout follows test/e2e/{name}/chainsaw-test.yaml convention. Numbered files (00-, 01-, 02-, 03-) follow existing pattern. CR naming follows test-{name} convention. Labels use standard app.kubernetes.io/* keys.",
+    "5_tests": "Tests cover: SASL volume/mount/args/status, TLS cert-manager readiness/volume/mount/args/ports/service/status, mTLS ca.crt projection/ssl_ca_cert arg/ports/service/status. All assertions verified against actual Go controller code (deployment.go:211-293, 360-373; service.go:27-43).",
+    "6_security": "No secrets with real credentials (test uses dummy 'testuser:testpassword'). No runtime protocol testing. Self-signed certs only. No hardcoded sensitive data beyond test fixtures.",
+    "7_complexity": "Minimal — each test is a linear sequence of apply/assert YAML steps. No over-engineering. mTLS test correctly extends TLS test pattern with only the ca.crt and ssl_ca_cert additions.",
+    "8_completeness": "All 4 tasks (1.1, 1.2, 1.3, 2.1) implemented. All 9 requirements (REQ-001 through REQ-009) covered. Documentation consolidated into existing chainsaw-e2e-tests.md rather than creating redundant file — better approach than planned."
+  },
+  "tests_checklist": [
+    {"item": "SASL test directory exists with chainsaw-test.yaml and 4 YAML files", "checked": true},
+    {"item": "TLS test directory exists with chainsaw-test.yaml and 6 YAML files", "checked": true},
+    {"item": "mTLS test directory exists with chainsaw-test.yaml and 6 YAML files", "checked": true},
+    {"item": "SASL asserts: sasl-credentials volume, /etc/memcached/sasl mount, -Y arg", "checked": true},
+    {"item": "TLS asserts: cert-manager Certificate Ready, tls-certificates volume, -Z and ssl args, port 11212", "checked": true},
+    {"item": "mTLS asserts: ca.crt volume item, ssl_ca_cert arg, enableClientCert: true", "checked": true},
+    {"item": "All tests assert Available=True status with readyReplicas: 1", "checked": true},
+    {"item": "TLS/mTLS tests sequence cert-manager readiness before CR creation", "checked": true},
+    {"item": "No test attempts TLS handshake or SASL authentication (spec-level only)", "checked": true},
+    {"item": "All YAML files are syntactically valid", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing Chainsaw test directory layout", "checked": true},
+    {"item": "Timeouts match existing tests (apply:30s, assert:120s, delete:30s)", "checked": true},
+    {"item": "CR naming follows test-{name} convention", "checked": true},
+    {"item": "Labels use standard app.kubernetes.io/* pattern", "checked": true},
+    {"item": "No code duplication beyond intentional test-per-feature separation", "checked": true},
+    {"item": "Consistent 2-space YAML indentation throughout", "checked": true},
+    {"item": "No trailing whitespace in any file", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No real credentials in test fixtures", "checked": true},
+    {"item": "Self-signed certs only (no external CA dependencies)", "checked": true},
+    {"item": "No secrets exposed in logs or errors", "checked": true},
+    {"item": "volumeMount readOnly: true on all security volumes", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Tests assert resource specs, not runtime behavior", "checked": true},
+    {"item": "Assertions match exact operator implementation in deployment.go and service.go", "checked": true},
+    {"item": "Documentation consolidated into existing file instead of creating redundant new file", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No unnecessary abstraction — each test is self-contained YAML", "checked": true},
+    {"item": "mTLS correctly extends TLS pattern with minimal additions (ca.crt + ssl_ca_cert only)", "checked": true},
+    {"item": "No over-testing — assertions target exactly what the operator produces", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "cert-manager Certificate readiness checked before CR apply (prevents secret-not-found race)", "checked": true},
+    {"item": "SASL Secret created before CR (prevents webhook rejection)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All tests use Chainsaw namespace isolation (auto-cleanup)", "checked": true},
+    {"item": "120s assert timeout accounts for slow CI environments", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "Minor (D2): Consider adding a brief inline comment in the mTLS chainsaw-test.yaml description noting why the TLS test and mTLS test are separate (rather than one test with a patch step to enable enableClientCert). The current separation is correct for test isolation, but the rationale could be documented.",
+    "Minor (TE2): The TLS encryption test does not explicitly assert the ABSENCE of ssl_ca_cert in the args (REQ-003 scenario 'No ssl_ca_cert arg without enableClientCert'). Chainsaw partial matching cannot assert absence, so this is a known limitation rather than a gap — the mTLS test provides the complementary positive assertion."
+  ],
+  "next_steps": [
+    "Merge to main — all blocking and major checks pass",
+    "Run full E2E suite in CI to confirm tests pass against a real kind cluster with cert-manager v1.16.1"
+  ]
+}
