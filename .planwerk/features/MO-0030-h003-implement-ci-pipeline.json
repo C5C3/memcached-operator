@@ -1,0 +1,539 @@
+{
+  "feature_id": "MO-0030",
+  "title": "H003: Implement CI pipeline",
+  "slug": "h003-implement-ci-pipeline",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Set up CI (GitHub Actions) with: lint (golangci-lint), unit tests, envtest integration tests, Docker image build, CRD schema validation. Run on PRs and main branch pushes.",
+  "stories": [
+    {
+      "title": "Developer gets automated feedback on PRs",
+      "role": "developer",
+      "want": "CI to automatically run lint, unit tests, integration tests, Docker build, and CRD validation on every pull request",
+      "so_that": "I get fast feedback on code quality and correctness before merging",
+      "criteria": [
+        "Opening a PR triggers the CI workflow within 30 seconds",
+        "golangci-lint v2 runs with the project's .golangci.yml config and fails the build on lint errors",
+        "Unit tests (go test excluding e2e) run with race detector enabled and report results",
+        "envtest integration tests run with KUBEBUILDER_ASSETS configured correctly",
+        "Test coverage report is generated as cover.out and uploaded as artifact",
+        "CI status checks are visible on the PR page with per-job granularity"
+      ]
+    },
+    {
+      "title": "Developer gets CI validation on main branch pushes",
+      "role": "developer",
+      "want": "CI to run the full pipeline on every push to main",
+      "so_that": "the main branch is always in a known-good state",
+      "criteria": [
+        "Push to main triggers the same lint, test, build, and validate jobs",
+        "Docker image builds successfully on main branch pushes",
+        "Failures on main branch are immediately visible in the repo's Actions tab"
+      ]
+    },
+    {
+      "title": "Developer verifies Docker image builds correctly",
+      "role": "developer",
+      "want": "CI to build the Docker image using the existing multi-stage Dockerfile",
+      "so_that": "I know the operator binary compiles and packages correctly in the container",
+      "criteria": [
+        "Docker build uses the existing Dockerfile with VERSION, GIT_COMMIT, BUILD_DATE build args",
+        "Build uses docker/build-push-action with caching for faster subsequent builds",
+        "Image is not pushed to a registry (build-only verification for now)",
+        "Build matrix covers linux/amd64 architecture"
+      ]
+    },
+    {
+      "title": "Developer verifies CRD manifests are up-to-date",
+      "role": "developer",
+      "want": "CI to validate that CRD manifests and generated code match the Go types",
+      "so_that": "PRs never merge with stale generated files that could break deployments",
+      "criteria": [
+        "CI runs 'make manifests generate' and checks for git diff",
+        "If generated files are out of date, the job fails with a clear error message instructing the developer to run 'make manifests generate'",
+        "Validates both config/crd/ and api/v1alpha1/zz_generated.deepcopy.go"
+      ]
+    },
+    {
+      "title": "Developer sees efficient CI with caching and parallelism",
+      "role": "developer",
+      "want": "CI to use Go module caching and parallel jobs to minimize feedback time",
+      "so_that": "I don't wait unnecessarily for CI results",
+      "criteria": [
+        "Go module cache is persisted across workflow runs via actions/setup-go caching",
+        "Lint, test, Docker build, and CRD validation jobs run in parallel where possible",
+        "The full CI pipeline completes within 10 minutes for typical changes"
+      ]
+    },
+    {
+      "title": "Operator has CI reference documentation",
+      "role": "developer",
+      "want": "reference documentation describing the CI pipeline structure, jobs, and configuration",
+      "so_that": "I understand how CI works and can troubleshoot failures",
+      "criteria": [
+        "Reference doc describes each CI job (lint, test, build, validate)",
+        "Reference doc lists the trigger events (PR, push to main)",
+        "Reference doc explains how to reproduce CI checks locally using Makefile targets"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The CI workflow SHALL trigger on pull requests targeting the main branch and on pushes to the main branch",
+      "priority": "SHALL",
+      "rationale": "Ensures all code changes are validated before and after merging",
+      "scenarios": [
+        {
+          "name": "PR triggers CI",
+          "when": "a pull request is opened or updated targeting the main branch",
+          "then": "the CI workflow runs all configured jobs (lint, test, build, validate)",
+          "and_then": [
+            "status checks are reported back to the PR"
+          ]
+        },
+        {
+          "name": "Push to main triggers CI",
+          "when": "code is pushed directly to the main branch",
+          "then": "the CI workflow runs all configured jobs",
+          "and_then": [
+            "results are visible in the Actions tab"
+          ]
+        },
+        {
+          "name": "Non-main branches do not trigger CI on push",
+          "when": "code is pushed to a feature branch without an open PR",
+          "then": "the CI workflow does not run",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The CI workflow SHALL run golangci-lint v2 using the project's .golangci.yml configuration",
+      "priority": "SHALL",
+      "rationale": "Enforces consistent code quality and catches common Go errors",
+      "scenarios": [
+        {
+          "name": "Clean code passes lint",
+          "when": "all Go code conforms to the linting rules in .golangci.yml",
+          "then": "the lint job succeeds with exit code 0",
+          "and_then": [
+            "no lint warnings or errors are reported"
+          ]
+        },
+        {
+          "name": "Lint violation fails the build",
+          "when": "Go code contains a linting violation (e.g., unused variable, style issue)",
+          "then": "the lint job fails with a non-zero exit code",
+          "and_then": [
+            "the specific violation is reported in the job output with file and line number"
+          ]
+        },
+        {
+          "name": "Lint uses project config",
+          "when": "the lint job runs",
+          "then": "it uses the .golangci.yml at the repository root",
+          "and_then": [
+            "the golangci-lint version matches GOLANGCI_LINT_VERSION in Makefile (v2.10.1)"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The CI workflow SHALL run unit and envtest integration tests with race detection and coverage reporting",
+      "priority": "SHALL",
+      "rationale": "Validates correctness of reconciliation logic and catches race conditions",
+      "scenarios": [
+        {
+          "name": "All tests pass",
+          "when": "all unit and integration tests pass",
+          "then": "the test job succeeds with exit code 0",
+          "and_then": [
+            "coverage report (cover.out) is generated and uploaded as an artifact"
+          ]
+        },
+        {
+          "name": "Test failure fails the build",
+          "when": "any test fails",
+          "then": "the test job fails with a non-zero exit code",
+          "and_then": [
+            "the failing test name and error message are visible in the job output"
+          ]
+        },
+        {
+          "name": "envtest assets are configured",
+          "when": "integration tests requiring envtest run",
+          "then": "KUBEBUILDER_ASSETS is set correctly via setup-envtest for K8s version 1.32.0",
+          "and_then": [
+            "the envtest binary is cached for faster subsequent runs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The CI workflow SHALL build the Docker image using the existing multi-stage Dockerfile without pushing",
+      "priority": "SHALL",
+      "rationale": "Validates the Docker build succeeds but avoids pushing to a registry without release automation",
+      "scenarios": [
+        {
+          "name": "Docker build succeeds",
+          "when": "the Dockerfile builds with the current source code",
+          "then": "the build job succeeds and produces a valid image",
+          "and_then": [
+            "VERSION, GIT_COMMIT, and BUILD_DATE build args are passed correctly"
+          ]
+        },
+        {
+          "name": "Docker build failure fails CI",
+          "when": "the Dockerfile fails to build (compile error, missing file)",
+          "then": "the build job fails with a non-zero exit code",
+          "and_then": [
+            "the build error is visible in the job output"
+          ]
+        },
+        {
+          "name": "Docker build uses layer caching",
+          "when": "the Docker build runs on a subsequent CI run with unchanged dependencies",
+          "then": "cached layers are reused via GitHub Actions cache",
+          "and_then": [
+            "build time is reduced compared to a clean build"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The CI workflow SHALL validate that generated CRD manifests and DeepCopy code are up-to-date",
+      "priority": "SHALL",
+      "rationale": "Prevents merging PRs with stale generated files that would cause runtime failures",
+      "scenarios": [
+        {
+          "name": "Generated files are up-to-date",
+          "when": "running 'make manifests generate' produces no git diff",
+          "then": "the validate job succeeds",
+          "and_then": []
+        },
+        {
+          "name": "Stale generated files fail validation",
+          "when": "a developer changes types in api/v1alpha1/ without regenerating",
+          "then": "the validate job fails with a clear error message",
+          "and_then": [
+            "the error message instructs the developer to run 'make manifests generate' and commit the result"
+          ]
+        },
+        {
+          "name": "go vet runs as part of validation",
+          "when": "the validate job runs",
+          "then": "go vet is executed against all packages",
+          "and_then": [
+            "vet failures cause the job to fail"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The CI workflow SHALL use Go module caching to minimize build times",
+      "priority": "SHALL",
+      "rationale": "Reduces CI feedback time by avoiding redundant dependency downloads",
+      "scenarios": [
+        {
+          "name": "Cache hit on unchanged dependencies",
+          "when": "go.sum has not changed since the last CI run",
+          "then": "Go modules are restored from cache",
+          "and_then": [
+            "no network downloads occur for cached modules"
+          ]
+        },
+        {
+          "name": "Cache miss triggers download",
+          "when": "go.sum has changed (new dependency added)",
+          "then": "Go modules are downloaded and the cache is updated",
+          "and_then": [
+            "subsequent runs benefit from the updated cache"
+          ]
+        },
+        {
+          "name": "Each job benefits from caching",
+          "when": "any job that runs Go commands executes",
+          "then": "it uses actions/setup-go with built-in caching",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The CI workflow SHALL run jobs in parallel where there are no dependencies between them",
+      "priority": "SHALL",
+      "rationale": "Reduces total pipeline time by executing independent checks concurrently",
+      "scenarios": [
+        {
+          "name": "Independent jobs run in parallel",
+          "when": "the CI workflow is triggered",
+          "then": "lint, test, build, and validate jobs start simultaneously",
+          "and_then": [
+            "total pipeline time is bounded by the slowest job, not the sum"
+          ]
+        },
+        {
+          "name": "Job failures are independent",
+          "when": "the lint job fails but test job passes",
+          "then": "both results are reported independently on the PR",
+          "and_then": [
+            "the developer sees which specific check failed"
+          ]
+        },
+        {
+          "name": "All jobs must pass for CI to be green",
+          "when": "any one job fails",
+          "then": "the overall CI status is reported as failed",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The CI workflow SHALL use pinned versions for all GitHub Actions and tools",
+      "priority": "SHALL",
+      "rationale": "Ensures reproducible builds and prevents supply-chain attacks via unpinned action versions",
+      "scenarios": [
+        {
+          "name": "Actions use specific versions",
+          "when": "the workflow file references GitHub Actions",
+          "then": "each action is pinned to a specific major version tag (e.g., actions/checkout@v4)",
+          "and_then": []
+        },
+        {
+          "name": "Go version matches go.mod",
+          "when": "the workflow sets up Go",
+          "then": "the Go version is read from go.mod (1.25) or specified as stable",
+          "and_then": [
+            "all jobs use the same Go version"
+          ]
+        },
+        {
+          "name": "golangci-lint version matches project config",
+          "when": "the lint job runs golangci-lint",
+          "then": "the version used is v2.10.1 matching GOLANGCI_LINT_VERSION in the Makefile",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create GitHub Actions CI workflow file with lint job (REQ-001, REQ-002, REQ-006, REQ-008)",
+      "description": "Create `.github/workflows/ci.yml` with:\n- Trigger: `on: pull_request` (branches: [main]) and `on: push` (branches: [main])\n- Job `lint`: runs-on ubuntu-latest, steps: checkout@v4, setup-go@v5 (go-version-file: go.mod, cache: true), run golangci-lint via golangci/golangci-lint-action@v7 with version v2.10.1\n- Use `concurrency` to cancel stale workflow runs for the same PR",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-006",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add test job to CI workflow with envtest and coverage (REQ-003, REQ-006, REQ-008)",
+      "description": "Add job `test` to `.github/workflows/ci.yml`:\n- Steps: checkout@v4, setup-go@v5 (go-version-file: go.mod, cache: true)\n- Run `make test` which internally runs fmt, vet, envtest setup, and go test with coverage\n- Upload cover.out as an artifact via actions/upload-artifact@v4\n- Ensure KUBEBUILDER_ASSETS is set by the Makefile's envtest target",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-006",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add Docker build job to CI workflow (REQ-004, REQ-008)",
+      "description": "Add job `build` to `.github/workflows/ci.yml`:\n- Steps: checkout@v4, docker/setup-buildx-action@v3, docker/build-push-action@v6 with push: false, context: ., file: ./Dockerfile, build-args for VERSION/GIT_COMMIT/BUILD_DATE, cache-from: type=gha, cache-to: type=gha,mode=max\n- VERSION derived from `git describe --tags --always --dirty`, GIT_COMMIT from github.sha, BUILD_DATE from current UTC timestamp",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Add CRD manifest validation job to CI workflow (REQ-005, REQ-006, REQ-008)",
+      "description": "Add job `validate` to `.github/workflows/ci.yml`:\n- Steps: checkout@v4, setup-go@v5 (go-version-file: go.mod, cache: true)\n- Run `make verify-manifests` which internally runs `make manifests generate` and checks `git diff --exit-code -- config/crd/ api/v1alpha1/zz_generated.deepcopy.go`\n- The existing Makefile target already provides a clear error message on failure",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005",
+        "REQ-006",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Add concurrency and permissions settings to CI workflow (REQ-001, REQ-007)",
+      "description": "Add to `.github/workflows/ci.yml`:\n- `concurrency: group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true` to cancel stale runs\n- `permissions: contents: read` for least-privilege\n- Verify all 4 jobs (lint, test, build, validate) have no `needs:` dependencies so they run in parallel (REQ-007)",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Validate CI workflow YAML syntax and structure locally (REQ-001 through REQ-008)",
+      "description": "Validate the complete `.github/workflows/ci.yml` file:\n- Parse YAML to verify no syntax errors\n- Verify all 4 jobs are defined: lint, test, build, validate\n- Verify trigger events: pull_request (branches: [main]), push (branches: [main])\n- Verify each job uses actions/checkout@v4 and setup-go@v5 (where applicable)\n- Verify golangci-lint version matches v2.10.1\n- Verify concurrency group is set\n- Verify permissions are set to contents: read\n- Run `make lint` locally to ensure linting still works",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Write reference documentation for CI pipeline (REQ-001 through REQ-008)",
+      "description": "Create `docs/reference/backend/ci-pipeline.md` following existing doc conventions in docs/reference/backend/:\n- Document workflow trigger events (PR to main, push to main)\n- Document each job: lint (golangci-lint v2.10.1), test (envtest + coverage), build (Docker multi-stage), validate (CRD schema)\n- Document how to reproduce each check locally using Makefile targets: `make lint`, `make test`, `make docker-build`, `make verify-manifests`\n- Document caching strategy (Go modules via setup-go, Docker layers via GHA cache)\n- Document concurrency behavior (cancel-in-progress for stale PR runs)",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "YAML structure validation",
+      "story": "Developer gets automated feedback on PRs",
+      "expected": "Workflow file should be valid YAML with correct GitHub Actions schema",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "lint job uses golangci-lint v2.10.1",
+      "story": "Developer gets automated feedback on PRs",
+      "expected": "lint job should use golangci/golangci-lint-action with version matching Makefile GOLANGCI_LINT_VERSION",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "test job runs make test with coverage",
+      "story": "Developer gets automated feedback on PRs",
+      "expected": "test job should run 'make test' and upload cover.out as artifact",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "build job builds Docker image without push",
+      "story": "Developer verifies Docker image builds correctly",
+      "expected": "build job should use docker/build-push-action with push: false and correct build-args",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "validate job runs make verify-manifests",
+      "story": "Developer verifies CRD manifests are up-to-date",
+      "expected": "validate job should run 'make verify-manifests' to check generated files are current",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "all Go jobs use setup-go with cache",
+      "story": "Developer sees efficient CI with caching and parallelism",
+      "expected": "lint, test, and validate jobs should use actions/setup-go with cache: true and go-version-file: go.mod",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "jobs run in parallel (no needs dependencies)",
+      "story": "Developer sees efficient CI with caching and parallelism",
+      "expected": "None of the 4 jobs should have 'needs:' keys, enabling parallel execution",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "concurrency group cancels stale runs",
+      "story": "Developer sees efficient CI with caching and parallelism",
+      "expected": "Workflow should have concurrency group with cancel-in-progress: true",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "docs/reference/backend/ci-pipeline.md",
+      "test_function": "CI reference doc covers all jobs",
+      "story": "Operator has CI reference documentation",
+      "expected": "Reference doc should describe lint, test, build, and validate jobs with local reproduction commands",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "permissions are restrictive",
+      "story": "Developer gets automated feedback on PRs",
+      "expected": "Workflow should set permissions: contents: read for least-privilege",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "CI workflow triggers on both pull_request (main) and push (main) events",
+    "All 4 jobs (lint, test, build, validate) are defined and run in parallel (no `needs:` dependencies between them)",
+    "golangci-lint version (v2.10.1) matches the GOLANGCI_LINT_VERSION in the Makefile",
+    "Go version is read from go.mod via go-version-file parameter in all Go-based jobs",
+    "Docker build uses build-push-action with push: false and GHA layer caching",
+    "CRD validation uses the existing `make verify-manifests` target",
+    "Workflow uses concurrency groups to cancel stale PR runs",
+    "Workflow permissions are set to `contents: read` (least-privilege)",
+    "All GitHub Actions are pinned to specific major version tags (checkout@v4, setup-go@v5, etc.)",
+    "Reference documentation in docs/reference/backend/ci-pipeline.md describes all jobs and local reproduction"
+  ],
+  "implementation_notes": "This feature creates a single GitHub Actions workflow file at `.github/workflows/ci.yml`. The workflow leverages the existing Makefile targets (`make lint`, `make test`, `make verify-manifests`, Docker build args) rather than reimplementing commands inline. Key design decisions:\n\n1. **Single workflow, parallel jobs**: One workflow with 4 independent jobs (lint, test, build, validate) instead of 4 separate workflows. This simplifies management while allowing parallel execution.\n\n2. **Reuse Makefile targets**: The `test` job runs `make test` which handles envtest setup, fmt, vet, and coverage. The `validate` job runs `make verify-manifests` which runs manifests+generate and checks git diff. This avoids duplicating logic.\n\n3. **Docker build without push**: The build job validates the Dockerfile compiles correctly but does not push to a registry. Registry push should be added in a future release automation feature.\n\n4. **Caching strategy**: Go modules cached via `actions/setup-go` (keyed on go.sum). Docker layers cached via GitHub Actions cache backend (`cache-from: type=gha`).\n\n5. **Concurrency**: Uses `concurrency` to cancel in-progress runs when new commits are pushed to the same PR, saving CI resources.\n\n6. **golangci-lint**: Uses the official `golangci/golangci-lint-action` which handles installation and caching. Version pinned to v2.10.1 matching the Makefile.\n\n7. **Go version**: Read from `go.mod` via `go-version-file` parameter to avoid version drift between local dev and CI.\n\nKey files to reference:\n- `Makefile` - existing `test`, `lint`, `verify-manifests`, `docker-build` targets\n- `.golangci.yml` - golangci-lint v2 configuration\n- `Dockerfile` - multi-stage build with VERSION/GIT_COMMIT/BUILD_DATE build args\n- `go.mod` - Go 1.25 version specification\n- `docs/reference/backend/` - existing reference doc pattern to follow",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.431737"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:00:28.156766"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:03:05.211783"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "670de8fb-fffe-44fa-b05f-80b878ca43e0",
+      "timestamp": "2026-02-20T18:03:05.211810",
+      "total_duration": 152.98171544075012,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 152.98171544075012,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
