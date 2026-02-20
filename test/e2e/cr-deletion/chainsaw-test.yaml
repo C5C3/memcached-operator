@@ -1,0 +1,47 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: cr-deletion
+spec:
+  description: >
+    Verify that deleting a Memcached CR triggers garbage collection of all
+    owned resources: Deployment, Service, PDB, and ServiceMonitor (REQ-009).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 60s
+    error: 30s
+  steps:
+    - name: create-memcached-with-all-resources
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-all-resources-exist
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+        - assert:
+            file: 01-assert-service.yaml
+        - assert:
+            file: 01-assert-pdb.yaml
+        - assert:
+            file: 01-assert-servicemonitor.yaml
+    - name: delete-memcached-cr
+      try:
+        - delete:
+            ref:
+              apiVersion: memcached.c5c3.io/v1alpha1
+              kind: Memcached
+              name: test-deletion
+    - name: assert-all-resources-garbage-collected
+      try:
+        - error:
+            file: 02-error-deployment-gone.yaml
+        - error:
+            file: 02-error-service-gone.yaml
+        - error:
+            file: 02-error-pdb-gone.yaml
+        - error:
+            file: 02-error-servicemonitor-gone.yaml
+        - error:
+            file: 02-error-cr-gone.yaml

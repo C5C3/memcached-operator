@@ -1,0 +1,30 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: graceful-rolling-update
+spec:
+  description: >
+    Verify that enabling graceful shutdown configures preStop lifecycle hooks
+    and terminationGracePeriodSeconds on the Deployment, and that rolling
+    updates use maxSurge=1, maxUnavailable=0 (REQ-007).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-graceful-shutdown
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-graceful-shutdown-config
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: trigger-rolling-update
+      try:
+        - patch:
+            file: 02-patch-update-image.yaml
+    - name: assert-rolling-update-strategy
+      try:
+        - assert:
+            file: 03-assert-rolling-update.yaml

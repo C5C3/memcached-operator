@@ -1,0 +1,29 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: configuration-changes
+spec:
+  description: >
+    Verify that updating Memcached configuration parameters (maxMemoryMB, threads,
+    maxItemSize) propagates to the Deployment container args (REQ-004).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-initial-args
+      try:
+        - assert:
+            file: 01-assert-initial-args.yaml
+    - name: update-configuration
+      try:
+        - patch:
+            file: 02-patch-config.yaml
+    - name: assert-updated-args
+      try:
+        - assert:
+            file: 03-assert-updated-args.yaml

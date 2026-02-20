@@ -1,0 +1,6 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-graceful
+spec:
+  image: "memcached:1.6-alpine"

@@ -1,0 +1,51 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: monitoring-toggle
+spec:
+  description: >
+    Verify that enabling monitoring injects the exporter sidecar container
+    and adds a metrics port to the Service, and that disabling monitoring
+    removes the sidecar and deletes the ServiceMonitor (REQ-005).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+    error: 30s
+  steps:
+    - name: create-memcached-without-monitoring
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-no-exporter-sidecar
+      try:
+        - assert:
+            file: 01-assert-no-exporter.yaml
+    - name: enable-monitoring
+      try:
+        - patch:
+            file: 02-patch-enable-monitoring.yaml
+    - name: assert-exporter-sidecar-injected
+      try:
+        - assert:
+            file: 03-assert-exporter.yaml
+    - name: assert-service-metrics-port
+      try:
+        - assert:
+            file: 03-assert-service-metrics.yaml
+    - name: assert-servicemonitor-created
+      try:
+        - assert:
+            file: 03-assert-servicemonitor.yaml
+    - name: disable-monitoring
+      try:
+        - patch:
+            file: 04-patch-disable-monitoring.yaml
+    - name: assert-exporter-sidecar-removed
+      try:
+        - assert:
+            file: 05-assert-no-exporter.yaml
+    - name: assert-servicemonitor-deleted
+      try:
+        - error:
+            file: 05-error-servicemonitor-gone.yaml

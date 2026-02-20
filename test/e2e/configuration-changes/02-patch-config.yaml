@@ -1,0 +1,16 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-config
+spec:
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "256Mi"
+    limits:
+      cpu: "200m"
+      memory: "512Mi"
+  memcached:
+    maxMemoryMB: 256
+    threads: 8
+    maxItemSize: "2m"

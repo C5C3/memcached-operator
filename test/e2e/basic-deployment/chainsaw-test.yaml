@@ -1,0 +1,29 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: basic-deployment
+spec:
+  description: >
+    Verify that creating a minimal Memcached CR produces the expected Deployment,
+    headless Service, and status conditions (REQ-002).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-deployment-created
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: assert-service-created
+      try:
+        - assert:
+            file: 01-assert-service.yaml
+    - name: assert-status-available
+      try:
+        - assert:
+            file: 02-assert-status.yaml

@@ -1,0 +1,41 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: scaling
+spec:
+  description: >
+    Verify that updating spec.replicas on a Memcached CR scales the Deployment
+    and updates status.readyReplicas accordingly (REQ-003).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-initial-deployment
+      try:
+        - assert:
+            file: 01-assert-one-replica.yaml
+    - name: scale-up-to-3
+      try:
+        - patch:
+            file: 02-patch-scale-up.yaml
+    - name: assert-scaled-deployment
+      try:
+        - assert:
+            file: 03-assert-three-replicas.yaml
+    - name: assert-scaled-status
+      try:
+        - assert:
+            file: 03-assert-status-scaled.yaml
+    - name: scale-down-to-1
+      try:
+        - patch:
+            file: 04-patch-scale-down.yaml
+    - name: assert-scaled-down
+      try:
+        - assert:
+            file: 05-assert-one-replica.yaml

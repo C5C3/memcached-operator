@@ -1,0 +1,18 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-invalid-memory
+spec:
+  replicas: 1
+  image: "memcached:1.6"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "32Mi"
+    limits:
+      cpu: "100m"
+      # 32Mi is less than maxMemoryMB (64Mi) + 32Mi overhead = 96Mi
+      memory: "32Mi"
+  memcached:
+    maxMemoryMB: 64
+    threads: 4

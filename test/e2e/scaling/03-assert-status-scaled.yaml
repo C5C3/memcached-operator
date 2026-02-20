@@ -1,0 +1,9 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-scaling
+status:
+  readyReplicas: 3
+  conditions:
+    - type: Available
+      status: "True"

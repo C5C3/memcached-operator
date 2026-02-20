@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-pdb
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-pdb
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memcached
+      app.kubernetes.io/instance: test-pdb
+      app.kubernetes.io/managed-by: memcached-operator

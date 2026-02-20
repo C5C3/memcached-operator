@@ -2,8 +2,8 @@
   "feature_id": "MO-0026",
   "title": "G003: Add KUTTL/Chainsaw E2E tests",
   "slug": "g003-add-kuttl-chainsaw-e2e-tests",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Write end-to-end tests using KUTTL or Chainsaw that run against a real (kind) cluster. Test scenarios: basic deployment, scaling, configuration changes, monitoring toggle, PDB creation, graceful rolling update, webhook rejection of invalid CRs.",
   "stories": [
@@ -395,6 +395,7 @@
       "description": "Create `.chainsaw.yaml` configuration file at project root with v1alpha2 API, timeouts (apply=30s, assert=120s, cleanup=60s, delete=30s), failFast=true, test discovery pointing to `test/e2e/`. Update `Makefile` to replace the existing `test-e2e` target: add a `chainsaw` binary download target (similar to existing golangci-lint pattern) and update `test-e2e` to run `$(CHAINSAW) test test/e2e/`. Create the `test/e2e/` directory structure.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-010"
@@ -406,6 +407,7 @@
       "description": "Create reusable YAML fixture files in `test/e2e/resources/`: (1) `memcached-minimal.yaml` - minimal Memcached CR with replicas=1, image=memcached:1.6, maxMemoryMB=64. (2) `assert-deployment.yaml` - partial Deployment assert checking labels, replicas, container name/image/args. (3) `assert-service.yaml` - partial Service assert checking clusterIP=None, port 11211, selector labels. These will be referenced by individual test cases.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -416,6 +418,7 @@
       "description": "Create `test/e2e/basic-deployment/chainsaw-test.yaml` with steps: (1) Apply minimal Memcached CR. (2) Assert Deployment exists with replicas=1, correct labels (app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<name>, app.kubernetes.io/managed-by=memcached-operator), container args containing '-m 64', liveness/readiness probes. (3) Assert headless Service with clusterIP=None, port 11211. (4) Assert Memcached status has condition Available=True. (5) Assert ownerReferences on Deployment and Service.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -426,6 +429,7 @@
       "description": "Create `test/e2e/scaling/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with replicas=1, wait for Available=True. (2) Update CR to replicas=3. (3) Assert Deployment has replicas=3. (4) Assert Memcached status has readyReplicas=3. (5) Update CR to replicas=1. (6) Assert Deployment has replicas=1, status.readyReplicas=1. Include intermediate YAML files for the update patches and assertion files.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -436,6 +440,7 @@
       "description": "Create `test/e2e/config-change/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with maxMemoryMB=64, threads=4. (2) Assert initial pod args contain '-m 64 -t 4'. (3) Update CR to maxMemoryMB=128, threads=8, maxItemSize=2m. (4) Assert updated Deployment has container args '-m 128 -t 8 -I 2m'. (5) Assert pods reach Ready after rolling update. Include YAML files for the initial CR, update patch, and assertions.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -446,6 +451,7 @@
       "description": "Create `test/e2e/monitoring-toggle/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with monitoring.enabled=true. (2) Assert Deployment has 2 containers (memcached + exporter). (3) Assert exporter container has port 9150. (4) Assert ServiceMonitor exists with correct labels and endpoints. (5) Update CR to monitoring.enabled=false. (6) Assert Deployment has 1 container. (7) Assert ServiceMonitor does not exist (use Chainsaw error assertion). Note: requires ServiceMonitor CRD to be installed in the kind cluster.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -456,6 +462,7 @@
       "description": "Create `test/e2e/pdb-creation/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with replicas=3 and PDB enabled, minAvailable=1. (2) Assert PDB exists with minAvailable=1 and correct label selector. (3) Assert PDB has ownerReference to the Memcached CR. (4) Update CR to disable PDB. (5) Assert PDB does not exist (use Chainsaw error assertion to verify absence).",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -466,6 +473,7 @@
       "description": "Create `test/e2e/graceful-rolling-update/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with gracefulShutdown enabled (preStopDelaySeconds=5, terminationGracePeriodSeconds=30). (2) Assert Deployment strategy is RollingUpdate with maxSurge=1, maxUnavailable=0. (3) Assert pod template has preStop lifecycle hook with 'sleep 5' and terminationGracePeriodSeconds=30. (4) Update the image to trigger a rolling update. (5) Assert all pods are running the new image after the update completes. (6) Assert Available condition remains True throughout.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -476,6 +484,7 @@
       "description": "Create `test/e2e/webhook-rejection/chainsaw-test.yaml` with steps using Chainsaw's `error` operation to verify rejection: (1) Apply CR with replicas=-1, assert creation fails (CRD validation). (2) Apply CR with maxMemoryMB=128 and resources.limits.memory=100Mi, assert creation fails (webhook: memory limit too low). (3) Apply CR with replicas=2, PDB enabled, minAvailable=2, assert creation fails (webhook: minAvailable >= replicas). (4) Apply CR with sasl.enabled=true and empty credentialsSecretRef.name, assert creation fails (webhook: missing secret ref). Each invalid CR in a separate YAML file under the test directory.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -486,6 +495,7 @@
       "description": "Create `test/e2e/deletion-cleanup/chainsaw-test.yaml` with steps: (1) Apply Memcached CR with monitoring enabled and PDB enabled. (2) Assert all resources exist (Deployment, Service, PDB, ServiceMonitor). (3) Delete the Memcached CR. (4) Assert Deployment does not exist (error assertion). (5) Assert Service does not exist. (6) Assert PDB does not exist. (7) Assert ServiceMonitor does not exist. (8) Assert no pods with the Memcached labels remain.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -496,6 +506,7 @@
       "description": "Create `docs/reference/backend/e2e-tests-chainsaw.md` documenting: (1) Prerequisites (kind cluster, operator deployed, cert-manager, ServiceMonitor CRD). (2) How to run tests (`make test-e2e`). (3) Test directory structure and naming conventions. (4) How to add new test cases. (5) Chainsaw configuration reference. (6) List of all test scenarios covered. (7) Troubleshooting common test failures.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-010"
@@ -655,6 +666,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T14:56:01.160561"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:56:13.019573"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:24:43.134274"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:24:43.169210"
     }
   },
   "execution_history": [
@@ -668,6 +691,50 @@
           "name": "prepare",
           "duration": 279.37387895584106,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "f9cad6e7-85ba-4eae-8fe2-dad3a18f1aaa",
+      "timestamp": "2026-02-20T16:04:36.668013",
+      "total_duration": 1407.1050760746002,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 289.19791984558105,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (8 tasks)",
+          "duration": 212.31312894821167,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 198.97873520851135,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0026] Code Review",
+          "duration": 248.1157681941986,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0026] Improvements",
+          "duration": 335.00669384002686,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0026] Simplify",
+          "duration": 123.49283003807068,
+          "type": "simplify",
           "status": "done"
         }
       ]

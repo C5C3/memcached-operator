@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-graceful
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: memcached
+          image: "memcached:1.6-alpine"
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sleep
+                  - "10"

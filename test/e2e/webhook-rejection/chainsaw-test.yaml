@@ -1,0 +1,49 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: webhook-rejection
+spec:
+  description: >
+    Verify that the validating webhook rejects invalid Memcached CRs:
+    memory limit too low, PDB with both minAvailable and maxUnavailable,
+    and graceful shutdown with invalid terminationGracePeriodSeconds (REQ-008).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: reject-insufficient-memory-limit
+      try:
+        - apply:
+            file: 00-invalid-memory-limit.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-pdb-mutual-exclusivity
+      try:
+        - apply:
+            file: 01-invalid-pdb-both.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-graceful-shutdown-invalid-period
+      try:
+        - apply:
+            file: 02-invalid-graceful-shutdown.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-sasl-without-secret-ref
+      try:
+        - apply:
+            file: 03-invalid-sasl-no-secret.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-tls-without-secret-ref
+      try:
+        - apply:
+            file: 04-invalid-tls-no-secret.yaml
+            expect:
+              - check:
+                  ($error != null): true

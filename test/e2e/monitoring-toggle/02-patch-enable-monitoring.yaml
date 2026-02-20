@@ -1,0 +1,12 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-monitoring
+spec:
+  monitoring:
+    enabled: true
+    serviceMonitor:
+      additionalLabels:
+        release: prometheus
+      interval: "30s"
+      scrapeTimeout: "10s"

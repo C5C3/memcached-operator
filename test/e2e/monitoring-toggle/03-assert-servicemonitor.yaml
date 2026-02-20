@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: test-monitoring
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-monitoring
+    app.kubernetes.io/managed-by: memcached-operator
+    release: prometheus
+spec:
+  endpoints:
+    - port: metrics
+      interval: "30s"
+      scrapeTimeout: "10s"
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memcached
+      app.kubernetes.io/instance: test-monitoring
