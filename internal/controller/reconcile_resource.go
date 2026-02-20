@@ -76,6 +76,21 @@ func (r *MemcachedReconciler) reconcileResource(
 	)
 }
 
+// deleteOwnedResource deletes a resource if it exists, ignoring NotFound errors.
+// This is used to clean up optional resources (PDB, ServiceMonitor, NetworkPolicy)
+// when their feature is disabled in the CR spec.
+func (r *MemcachedReconciler) deleteOwnedResource(ctx context.Context, obj client.Object, resourceKind string) error {
+	logger := log.FromContext(ctx)
+	if err := r.Delete(ctx, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("deleting %s: %w", resourceKind, err)
+	}
+	logger.Info(resourceKind+" deleted", "name", obj.GetName())
+	return nil
+}
+
 // emitEventForResult emits a Kubernetes event on the Memcached CR for resource
 // creation or update operations. No event is emitted for unchanged resources.
 func (r *MemcachedReconciler) emitEventForResult(

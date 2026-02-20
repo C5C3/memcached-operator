@@ -15,6 +15,3 @@ spec:
   execution:
     failFast: true
     parallel: 1
-  discovery:
-    testDirs:
-      - test/e2e

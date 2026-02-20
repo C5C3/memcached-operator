@@ -125,3 +125,86 @@ jobs:
 
       - name: Verify manifests are up-to-date
         run: make verify-manifests
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: kind
+
+      - name: Install cert-manager
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.1/cert-manager.yaml
+          kubectl wait --for=condition=Available deployment/cert-manager-webhook \
+            -n cert-manager --timeout=120s
+
+      - name: Install ServiceMonitor CRD
+        run: kubectl apply -f config/crd/thirdparty/monitoring.coreos.com_servicemonitors.yaml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build operator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: controller:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load image into kind
+        run: kind load docker-image controller:ci
+
+      - name: Deploy operator
+        run: make deploy IMG=controller:ci
+
+      - name: Wait for operator ready
+        run: |
+          kubectl wait --for=condition=Ready certificate/memcached-operator-serving-cert \
+            -n memcached-operator-system --timeout=120s
+          kubectl rollout status deployment/memcached-operator-controller-manager \
+            -n memcached-operator-system --timeout=120s
+
+      - name: Wait for webhook readiness
+        run: |
+          for i in $(seq 1 30); do
+            if kubectl apply --dry-run=server -f test/e2e/resources/memcached-minimal.yaml \
+                 -n default 2>/dev/null; then
+              echo "Webhook is ready"
+              exit 0
+            fi
+            echo "Waiting for webhook... ($i/30)"
+            sleep 2
+          done
+          echo "Webhook did not become ready in time"
+          exit 1
+
+      - name: Run e2e tests
+        run: make test-e2e
+
+      - name: Debug failure
+        if: failure()
+        run: |
+          echo "=== Operator Logs ==="
+          kubectl logs deployment/memcached-operator-controller-manager \
+            -n memcached-operator-system --all-containers --tail=100 || true
+          echo "=== Operator Pod Status ==="
+          kubectl get pods -n memcached-operator-system -o wide || true
+          echo "=== Events ==="
+          kubectl get events -n memcached-operator-system --sort-by='.lastTimestamp' || true

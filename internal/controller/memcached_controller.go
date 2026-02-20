@@ -40,6 +40,7 @@ type MemcachedReconciler struct {
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
 
 // Reconcile handles a reconciliation request for a Memcached resource.
 func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -143,10 +144,12 @@ func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcache
 }
 
 // reconcilePDB ensures the PodDisruptionBudget for the Memcached CR matches the desired state.
-// It skips reconciliation when PDB is not enabled in the CR spec.
+// When PDB is disabled, it deletes any existing PDB owned by the CR.
 func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
 	if !pdbEnabled(mc) {
-		return nil
+		return r.deleteOwnedResource(ctx, &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
+		}, "PodDisruptionBudget")
 	}
 
 	pdb := &policyv1.PodDisruptionBudget{
@@ -164,10 +167,12 @@ func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1a
 }
 
 // reconcileServiceMonitor ensures the ServiceMonitor for the Memcached CR matches the desired state.
-// It skips reconciliation when monitoring is not enabled in the CR spec.
+// When monitoring is disabled, it deletes any existing ServiceMonitor owned by the CR.
 func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
 	if !serviceMonitorEnabled(mc) {
-		return nil
+		return r.deleteOwnedResource(ctx, &monitoringv1.ServiceMonitor{
+			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
+		}, "ServiceMonitor")
 	}
 
 	sm := &monitoringv1.ServiceMonitor{
@@ -185,10 +190,12 @@ func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *m
 }
 
 // reconcileNetworkPolicy ensures the NetworkPolicy for the Memcached CR matches the desired state.
-// It skips reconciliation when NetworkPolicy is not enabled in the CR spec.
+// When NetworkPolicy is disabled, it deletes any existing NetworkPolicy owned by the CR.
 func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
 	if !networkPolicyEnabled(mc) {
-		return nil
+		return r.deleteOwnedResource(ctx, &networkingv1.NetworkPolicy{
+			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
+		}, "NetworkPolicy")
 	}
 
 	np := &networkingv1.NetworkPolicy{

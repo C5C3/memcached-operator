@@ -57,7 +57,7 @@ test: manifests generate fmt vet envtest ## Run tests.
 
 .PHONY: test-e2e
 test-e2e: chainsaw ## Run end-to-end tests against a kind cluster using Chainsaw.
-	$(CHAINSAW) test
+	$(CHAINSAW) test test/e2e
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter.

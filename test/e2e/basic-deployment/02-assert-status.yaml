@@ -8,3 +8,10 @@ status:
   conditions:
     - type: Available
       status: "True"
+      reason: Available
+    - type: Progressing
+      status: "False"
+      reason: ProgressingComplete
+    - type: Degraded
+      status: "False"
+      reason: NotDegraded
