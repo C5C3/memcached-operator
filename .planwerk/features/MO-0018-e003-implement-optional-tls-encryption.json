@@ -1,0 +1,583 @@
+{
+  "feature_id": "MO-0018",
+  "title": "E003: Implement optional TLS encryption",
+  "slug": "e003-implement-optional-tls-encryption",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Support optional TLS encryption for Memcached connections. When enabled, configure Memcached with TLS flags, mount TLS certificates from referenced Secrets or cert-manager Certificate resources. Configure port 11212 for TLS alongside or instead of 11211.",
+  "stories": [
+    {
+      "title": "Operator configures TLS encryption on Memcached pods when enabled in the CR",
+      "role": "cluster operator",
+      "want": "to enable TLS encryption for Memcached connections by setting spec.security.tls.enabled=true and referencing a TLS certificate Secret",
+      "so_that": "Memcached traffic is encrypted in transit, meeting security compliance requirements",
+      "criteria": [
+        "Memcached container args include -Z (enable TLS), -o ssl_chain_cert=/path/tls.crt, -o ssl_key=/path/tls.key when TLS is enabled",
+        "TLS certificate Secret is mounted as a volume in the pod at /etc/memcached/tls",
+        "Container port 11212 named 'memcached-tls' is exposed on the Deployment alongside or instead of 11211",
+        "When spec.security.tls.enabled=false or absent, no TLS flags, volumes, or TLS port are configured"
+      ]
+    },
+    {
+      "title": "Service exposes TLS port when TLS is enabled",
+      "role": "cluster operator",
+      "want": "the headless Service to expose port 11212 for TLS connections when TLS is enabled in the CR",
+      "so_that": "clients can discover and connect to Memcached pods via the TLS port",
+      "criteria": [
+        "Service includes port 11212/TCP named 'memcached-tls' targeting container port 'memcached-tls' when TLS is enabled",
+        "Original port 11211 named 'memcached' remains when TLS is enabled (both ports exposed)",
+        "When TLS is disabled, only port 11211 is present on the Service",
+        "Metrics port 9150 continues to be included when monitoring is enabled alongside TLS"
+      ]
+    },
+    {
+      "title": "Operator mounts CA certificate when provided",
+      "role": "cluster operator",
+      "want": "to optionally provide a CA certificate for TLS client verification",
+      "so_that": "Memcached can verify client certificates for mutual TLS",
+      "criteria": [
+        "When the referenced Secret contains a 'ca.crt' key, -o ssl_ca_cert=/etc/memcached/tls/ca.crt is appended to container args",
+        "When 'ca.crt' is not referenced, the ssl_ca_cert flag is omitted from args",
+        "The Secret volume mount includes all three keys: tls.crt, tls.key, and optionally ca.crt"
+      ]
+    },
+    {
+      "title": "TLS configuration is removed when disabled",
+      "role": "cluster operator",
+      "want": "to disable TLS by setting spec.security.tls.enabled=false and have all TLS artifacts removed from the Deployment and Service",
+      "so_that": "I can revert to plaintext connections without leftover TLS configuration",
+      "criteria": [
+        "Deployment container args do not contain -Z, ssl_chain_cert, ssl_key, or ssl_ca_cert flags",
+        "No TLS volume or volume mount is present on the pod",
+        "Container port 11212 is not exposed",
+        "Service port 11212 is removed",
+        "Reconciliation is idempotent after disabling TLS"
+      ]
+    },
+    {
+      "title": "TLS works alongside SASL authentication",
+      "role": "cluster operator",
+      "want": "to enable both TLS and SASL simultaneously",
+      "so_that": "I can have encrypted and authenticated Memcached connections",
+      "criteria": [
+        "Both SASL (-Y) and TLS (-Z, ssl_chain_cert, ssl_key) flags appear in container args",
+        "Both SASL credentials volume and TLS certificates volume are mounted",
+        "Both volume mounts are present on the memcached container",
+        "Container exposes both port 11211 and port 11212"
+      ]
+    },
+    {
+      "title": "Reference documentation for TLS encryption",
+      "role": "developer",
+      "want": "reference documentation covering the TLS CRD fields, helper functions, deployment mapping, and CR examples",
+      "so_that": "I can understand the TLS implementation without reading source code",
+      "criteria": [
+        "Document covers CRD field path spec.security.tls with field table",
+        "Document lists all helper functions (buildTLSVolume, buildTLSVolumeMount, TLS args) with signatures",
+        "Document includes CR examples for TLS enabled, TLS with CA cert, TLS with SASL, TLS disabled",
+        "Document describes runtime behavior table (enable, disable, change secret, idempotency)"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL append TLS flags (-Z, -o ssl_chain_cert, -o ssl_key) to the Memcached container args when spec.security.tls.enabled is true",
+      "priority": "SHALL",
+      "rationale": "Memcached requires specific command-line flags to enable TLS encryption at the process level",
+      "scenarios": [
+        {
+          "name": "TLS enabled adds TLS flags to container args",
+          "when": "spec.security.tls.enabled is true and certificateSecretRef references a valid Secret",
+          "then": "the memcached container args include -Z, '-o', 'ssl_chain_cert=/etc/memcached/tls/tls.crt', '-o', 'ssl_key=/etc/memcached/tls/tls.key'",
+          "and_then": [
+            "TLS flags appear after SASL flags (if present) and before extraArgs"
+          ]
+        },
+        {
+          "name": "TLS disabled produces no TLS flags",
+          "when": "spec.security.tls.enabled is false",
+          "then": "the container args do not contain -Z, ssl_chain_cert, or ssl_key flags",
+          "and_then": []
+        },
+        {
+          "name": "TLS nil produces no TLS flags",
+          "when": "spec.security.tls is nil or spec.security is nil",
+          "then": "the container args do not contain any TLS flags",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL optionally append -o ssl_ca_cert flag when spec.security.tls.enableClientCert is true",
+      "priority": "SHALL",
+      "rationale": "Mutual TLS requires a CA certificate to verify client certificates",
+      "scenarios": [
+        {
+          "name": "CA cert flag added when enableClientCert is true",
+          "when": "spec.security.tls.enabled is true and spec.security.tls.enableClientCert is true",
+          "then": "the container args include '-o', 'ssl_ca_cert=/etc/memcached/tls/ca.crt'",
+          "and_then": [
+            "the ssl_ca_cert flag appears after ssl_key"
+          ]
+        },
+        {
+          "name": "CA cert flag omitted when enableClientCert is false",
+          "when": "spec.security.tls.enabled is true and spec.security.tls.enableClientCert is false or not set",
+          "then": "the container args do not contain ssl_ca_cert",
+          "and_then": []
+        },
+        {
+          "name": "enableClientCert ignored when TLS is disabled",
+          "when": "spec.security.tls.enabled is false and spec.security.tls.enableClientCert is true",
+          "then": "no TLS flags are added including ssl_ca_cert",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL mount the TLS certificate Secret as a read-only volume at /etc/memcached/tls when TLS is enabled",
+      "priority": "SHALL",
+      "rationale": "Memcached needs access to certificate files on the filesystem to enable TLS",
+      "scenarios": [
+        {
+          "name": "TLS volume and mount created when enabled",
+          "when": "spec.security.tls.enabled is true",
+          "then": "a Secret volume named 'tls-certificates' is added to the pod, referencing the Secret in spec.security.tls.certificateSecretRef, and a read-only VolumeMount at /etc/memcached/tls is added to the memcached container",
+          "and_then": [
+            "the Secret volume projects 'tls.crt' and 'tls.key' items"
+          ]
+        },
+        {
+          "name": "TLS volume includes ca.crt when enableClientCert is true",
+          "when": "spec.security.tls.enabled is true and spec.security.tls.enableClientCert is true",
+          "then": "the Secret volume projects 'tls.crt', 'tls.key', and 'ca.crt' items",
+          "and_then": []
+        },
+        {
+          "name": "No TLS volume when disabled",
+          "when": "spec.security.tls is nil or enabled is false",
+          "then": "no 'tls-certificates' volume or volume mount is present",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL expose container port 11212 named 'memcached-tls' on the Deployment when TLS is enabled",
+      "priority": "SHALL",
+      "rationale": "Memcached TLS conventionally uses port 11212 to differentiate from plaintext port 11211",
+      "scenarios": [
+        {
+          "name": "TLS port added alongside plaintext port",
+          "when": "spec.security.tls.enabled is true",
+          "then": "the memcached container has two ports: 11211/TCP named 'memcached' and 11212/TCP named 'memcached-tls'",
+          "and_then": [
+            "probes continue to use the 'memcached' port name (11211)"
+          ]
+        },
+        {
+          "name": "No TLS port when disabled",
+          "when": "spec.security.tls.enabled is false or nil",
+          "then": "the memcached container has only port 11211/TCP named 'memcached'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The operator SHALL add port 11212 named 'memcached-tls' to the headless Service when TLS is enabled",
+      "priority": "SHALL",
+      "rationale": "Clients discover Memcached pods via the headless Service and need the TLS port exposed",
+      "scenarios": [
+        {
+          "name": "Service includes TLS port when enabled",
+          "when": "spec.security.tls.enabled is true",
+          "then": "the Service has a port entry: name='memcached-tls', port=11212, targetPort='memcached-tls', protocol=TCP",
+          "and_then": [
+            "the original 'memcached' port 11211 remains present"
+          ]
+        },
+        {
+          "name": "Service includes TLS port alongside metrics port",
+          "when": "spec.security.tls.enabled is true and spec.monitoring.enabled is true",
+          "then": "the Service has three ports: memcached (11211), memcached-tls (11212), and metrics (9150)",
+          "and_then": []
+        },
+        {
+          "name": "Service has no TLS port when disabled",
+          "when": "spec.security.tls.enabled is false or nil",
+          "then": "the Service does not include port 11212",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL correctly combine TLS with SASL authentication when both are enabled",
+      "priority": "SHALL",
+      "rationale": "TLS and SASL are independent security features that must coexist without interference",
+      "scenarios": [
+        {
+          "name": "Both TLS and SASL flags present in args",
+          "when": "spec.security.tls.enabled is true and spec.security.sasl.enabled is true",
+          "then": "the container args include both -Y (SASL) and -Z, ssl_chain_cert, ssl_key (TLS) flags",
+          "and_then": [
+            "SASL -Y flag appears before TLS -Z flag in the args list"
+          ]
+        },
+        {
+          "name": "Both volumes mounted",
+          "when": "both TLS and SASL are enabled",
+          "then": "the pod has both 'sasl-credentials' and 'tls-certificates' volumes, and the memcached container has both volume mounts",
+          "and_then": []
+        },
+        {
+          "name": "TLS only does not include SASL artifacts",
+          "when": "spec.security.tls.enabled is true and spec.security.sasl is nil",
+          "then": "only TLS volume and flags are present, no SASL artifacts",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator SHALL update the Deployment and Service when TLS configuration changes and remain idempotent when unchanged",
+      "priority": "SHALL",
+      "rationale": "Level-triggered reconciliation must detect drift and converge to the desired state",
+      "scenarios": [
+        {
+          "name": "Enabling TLS updates Deployment and Service",
+          "when": "TLS is enabled on an existing CR that previously had TLS disabled",
+          "then": "the Deployment is updated with TLS flags, volume, volume mount, TLS port; the Service gains port 11212",
+          "and_then": []
+        },
+        {
+          "name": "Disabling TLS removes TLS artifacts",
+          "when": "TLS is disabled on an existing CR that previously had TLS enabled",
+          "then": "the Deployment is updated to remove TLS flags, volume, volume mount, TLS port; the Service loses port 11212",
+          "and_then": []
+        },
+        {
+          "name": "No update when TLS config is unchanged",
+          "when": "a reconciliation occurs with no changes to the TLS configuration",
+          "then": "the Deployment and Service resource versions do not change",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The CRD TLSSpec type SHALL include an enableClientCert boolean field for optional mutual TLS support",
+      "priority": "SHALL",
+      "rationale": "Mutual TLS is an optional extension; the CRD must model this separately to control ca.crt projection and ssl_ca_cert flag",
+      "scenarios": [
+        {
+          "name": "TLSSpec accepts enableClientCert field",
+          "when": "a Memcached CR is created with spec.security.tls.enableClientCert=true",
+          "then": "the CR is accepted by the API server",
+          "and_then": []
+        },
+        {
+          "name": "TLSSpec defaults enableClientCert to false",
+          "when": "a Memcached CR is created with spec.security.tls without enableClientCert",
+          "then": "enableClientCert defaults to false (omitempty zero value)",
+          "and_then": []
+        },
+        {
+          "name": "Existing CRD validation for TLS fields continues to work",
+          "when": "a Memcached CR is created with spec.security.tls.enabled=true and certificateSecretRef",
+          "then": "the CR is accepted; the TLS fields round-trip through the API server correctly",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add enableClientCert field to TLSSpec in CRD types and regenerate manifests (REQ-008)",
+      "description": "Add `EnableClientCert bool` field with json tag and kubebuilder optional marker to the existing TLSSpec struct in api/v1alpha1/memcached_types.go. Run `make manifests generate` to regenerate CRD YAML and deepcopy. The TLSSpec struct already exists with Enabled and CertificateSecretRef fields.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add CRD validation integration tests for the new enableClientCert field (REQ-008)",
+      "description": "Add Ginkgo integration tests in internal/controller/memcached_crd_validation_test.go under the existing 'spec.security.tls' Context. Test that TLS with enableClientCert=true is accepted and that the field round-trips correctly.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Implement buildTLSVolume and buildTLSVolumeMount helper functions with unit tests (REQ-003)",
+      "description": "Add buildTLSVolume(mc) and buildTLSVolumeMount(mc) functions in internal/controller/deployment.go following the exact same pattern as buildSASLVolume and buildSASLVolumeMount. Volume name: 'tls-certificates', mount path: '/etc/memcached/tls', read-only. The Secret volume projects 'tls.crt' and 'tls.key' items, plus 'ca.crt' when enableClientCert is true. Add corresponding unit tests in deployment_test.go: TestBuildTLSVolume_Enabled, TestBuildTLSVolume_ReturnsNil, TestBuildTLSVolume_WithClientCert, TestBuildTLSVolumeMount_Enabled, TestBuildTLSVolumeMount_ReturnsNil.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Extend buildMemcachedArgs to accept TLS spec and append TLS flags, with unit tests (REQ-001, REQ-002)",
+      "description": "Modify buildMemcachedArgs in internal/controller/deployment.go to accept a *TLSSpec parameter (like it already accepts *SASLSpec). When TLS is enabled, append: '-Z', '-o', 'ssl_chain_cert=/etc/memcached/tls/tls.crt', '-o', 'ssl_key=/etc/memcached/tls/tls.key'. When enableClientCert is true, also append '-o', 'ssl_ca_cert=/etc/memcached/tls/ca.crt'. TLS flags go after SASL flags but before extraArgs. Add unit tests: TestBuildMemcachedArgs_TLSEnabled, TestBuildMemcachedArgs_TLSDisabled, TestBuildMemcachedArgs_TLSNil, TestBuildMemcachedArgs_TLSWithClientCert, TestBuildMemcachedArgs_TLSWithSASL, TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs. Update the existing call site in constructDeployment.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Integrate TLS into constructDeployment: volume, mount, port, args, with unit tests (REQ-001, REQ-003, REQ-004, REQ-006)",
+      "description": "Update constructDeployment in internal/controller/deployment.go to: (1) call buildTLSVolumeMount and append to volumeMounts, (2) call buildTLSVolume and append to volumes, (3) add port 11212 named 'memcached-tls' to memcached container ports when TLS enabled, (4) pass TLS spec to buildMemcachedArgs. Add unit tests: TestConstructDeployment_TLSEnabled (full check of args, volume, mount, port), TestConstructDeployment_TLSDisabled (no TLS artifacts), TestConstructDeployment_TLSWithSASL (both features), TestConstructDeployment_TLSPort (port 11212 present), TestConstructDeployment_TLSWithMonitoringAndSecurityContexts.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Add TLS port to constructService when TLS is enabled, with unit tests (REQ-005)",
+      "description": "Update constructService in internal/controller/service.go to add port 11212 named 'memcached-tls' (targetPort 'memcached-tls', TCP) when spec.security.tls.enabled is true. Add this port after the memcached port and before the metrics port. Add unit tests in service_test.go: TestConstructService_TLSEnabled, TestConstructService_TLSDisabled, TestConstructService_TLSWithMonitoring (three ports), TestConstructService_TLSNilSecurity.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add Deployment reconciliation integration tests for TLS enable/disable/idempotency (REQ-007)",
+      "description": "Add Ginkgo integration tests in internal/controller/memcached_deployment_reconcile_test.go in a new 'TLS encryption' Context. Tests: (1) create CR with TLS enabled, verify Deployment has TLS port, args, volume, mount; (2) enable TLS on existing CR, verify Deployment updated; (3) disable TLS, verify Deployment loses TLS artifacts; (4) idempotent reconcile with TLS enabled; (5) TLS with SASL both enabled. Follow the existing reconcileOnce/fetchDeployment pattern.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add Service reconciliation integration tests for TLS port (REQ-005, REQ-007)",
+      "description": "Add Ginkgo integration tests in internal/controller/memcached_service_reconcile_test.go in a new 'TLS port' Context. Tests: (1) Service has port 11212 when TLS enabled; (2) Service has only port 11211 when TLS disabled; (3) Service has three ports when TLS and monitoring enabled; (4) enable then disable TLS, verify port 11212 is removed. Follow existing fetchService helper pattern.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for TLS encryption (REQ-001 through REQ-008)",
+      "description": "Create docs/reference/backend/tls-encryption.md following the exact format of docs/reference/backend/pod-security-contexts.md. Include: Overview, CRD Field Path (spec.security.tls with field table for enabled, certificateSecretRef, enableClientCert), Helper Functions (buildTLSVolume, buildTLSVolumeMount, TLS args logic), Deployment Mapping table, Service Mapping, CR Examples (TLS enabled, TLS with mTLS, TLS with SASL, TLS disabled), Runtime Behavior table, Implementation section.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTLSVolume_Enabled",
+      "story": "Operator configures TLS encryption on Memcached pods when enabled in the CR",
+      "expected": "Should return a Secret volume named 'tls-certificates' referencing the correct Secret with tls.crt and tls.key items",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTLSVolume_ReturnsNil",
+      "story": "TLS configuration is removed when disabled",
+      "expected": "Should return nil when TLS is disabled, nil, or security is nil",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTLSVolume_WithClientCert",
+      "story": "Operator mounts CA certificate when provided",
+      "expected": "Should include ca.crt in Secret volume items when enableClientCert is true",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTLSVolumeMount_Enabled",
+      "story": "Operator configures TLS encryption on Memcached pods when enabled in the CR",
+      "expected": "Should return a read-only VolumeMount at /etc/memcached/tls named 'tls-certificates'",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildTLSVolumeMount_ReturnsNil",
+      "story": "TLS configuration is removed when disabled",
+      "expected": "Should return nil when TLS is disabled or nil",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_TLSEnabled",
+      "story": "Operator configures TLS encryption on Memcached pods when enabled in the CR",
+      "expected": "Should include -Z, -o ssl_chain_cert, -o ssl_key flags in args when TLS enabled",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_TLSDisabled",
+      "story": "TLS configuration is removed when disabled",
+      "expected": "Should not include any TLS flags when TLS disabled",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_TLSWithClientCert",
+      "story": "Operator mounts CA certificate when provided",
+      "expected": "Should include ssl_ca_cert flag when enableClientCert is true",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestBuildMemcachedArgs_TLSWithSASL",
+      "story": "TLS works alongside SASL authentication",
+      "expected": "Should include both SASL (-Y) and TLS (-Z, ssl_chain_cert, ssl_key) flags in correct order",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_TLSEnabled",
+      "story": "Operator configures TLS encryption on Memcached pods when enabled in the CR",
+      "expected": "Deployment has TLS flags in args, tls-certificates volume, volume mount, and port 11212",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_TLSDisabled",
+      "story": "TLS configuration is removed when disabled",
+      "expected": "Deployment has no TLS artifacts when TLS disabled",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_TLSWithSASL",
+      "story": "TLS works alongside SASL authentication",
+      "expected": "Both SASL and TLS volumes, mounts, and args present on Deployment",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_TLSPort",
+      "story": "Operator configures TLS encryption on Memcached pods when enabled in the CR",
+      "expected": "Container has both port 11211 (memcached) and port 11212 (memcached-tls)",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_TLSEnabled",
+      "story": "Service exposes TLS port when TLS is enabled",
+      "expected": "Service has port 11211 (memcached) and port 11212 (memcached-tls)",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_TLSDisabled",
+      "story": "TLS configuration is removed when disabled",
+      "expected": "Service has only port 11211 when TLS disabled",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_TLSWithMonitoring",
+      "story": "Service exposes TLS port when TLS is enabled",
+      "expected": "Service has three ports: memcached (11211), memcached-tls (11212), metrics (9150)",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "TLS CRD validation: enableClientCert field",
+      "story": "Operator mounts CA certificate when provided",
+      "expected": "CR with enableClientCert=true is accepted by the API server",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "TLS Deployment Reconciliation: enable, disable, idempotent",
+      "story": "TLS configuration is removed when disabled",
+      "expected": "Enabling TLS updates Deployment; disabling removes TLS artifacts; unchanged config is idempotent",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "TLS Service Reconciliation: enable and disable TLS port",
+      "story": "Service exposes TLS port when TLS is enabled",
+      "expected": "Enabling TLS adds port 11212 to Service; disabling removes it",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All unit tests pass: buildTLSVolume, buildTLSVolumeMount, buildMemcachedArgs with TLS, constructDeployment with TLS, constructService with TLS",
+    "All integration tests pass: CRD validation for enableClientCert, Deployment reconciliation with TLS, Service reconciliation with TLS",
+    "TLS flags match memcached documentation: -Z enables TLS, -o ssl_chain_cert=<path>, -o ssl_key=<path>, -o ssl_ca_cert=<path>",
+    "TLS implementation follows SASL pattern exactly: volume/mount helpers, args builder parameter, constructDeployment integration",
+    "make manifests generate produces updated CRD YAML with enableClientCert field",
+    "make lint passes (golangci-lint v2) with no errors on all modified files",
+    "make vet passes with no errors",
+    "Idempotency verified: reconciling twice with same TLS config does not change Deployment or Service resource version",
+    "TLS and SASL coexistence verified: both features enabled simultaneously produce correct volumes, mounts, and args without interference",
+    "Reference documentation in docs/reference/backend/tls-encryption.md follows existing doc pattern and covers all CRD fields, helper functions, and CR examples"
+  ],
+  "implementation_notes": "Architecture: TLS follows the exact same pattern as SASL authentication (MO-0017). SASL established the pattern of: (1) pure builder helper functions for volume/mount, (2) extending buildMemcachedArgs with an additional spec parameter, (3) integrating into constructDeployment. TLS replicates this pattern with its own volume name ('tls-certificates'), mount path ('/etc/memcached/tls'), and memcached flags (-Z, -o ssl_chain_cert, -o ssl_key, optionally -o ssl_ca_cert).\n\nCRD Change: The only CRD type change is adding EnableClientCert bool to the existing TLSSpec struct. The TLSSpec already has Enabled and CertificateSecretRef fields from the initial types definition. After adding the field, run `make manifests generate` to update zz_generated.deepcopy.go and CRD YAML.\n\nMemcached TLS flags: Memcached uses -Z (--enable-ssl) to enable TLS. Certificate paths are passed via extended options: -o ssl_chain_cert=<path>, -o ssl_key=<path>, -o ssl_ca_cert=<path>. The conventional TLS port is 11212.\n\nPort strategy: When TLS is enabled, both port 11211 (plaintext) and 11212 (TLS) are exposed. This allows gradual migration. Probes continue to use port 11211 ('memcached' named port) for simplicity.\n\nKey files to modify: api/v1alpha1/memcached_types.go (add EnableClientCert), internal/controller/deployment.go (add TLS helpers, extend buildMemcachedArgs, update constructDeployment), internal/controller/service.go (add TLS port), internal/controller/deployment_test.go (unit tests), internal/controller/service_test.go (unit tests), internal/controller/memcached_crd_validation_test.go (CRD validation tests), internal/controller/memcached_deployment_reconcile_test.go (integration tests), internal/controller/memcached_service_reconcile_test.go (integration tests).\n\nRisks: (1) Existing SASL tests must continue to pass since buildMemcachedArgs signature changes (add tls parameter). (2) The generated deepcopy must be regenerated. (3) Port 11212 must use a distinct name ('memcached-tls') to avoid conflicts with 'memcached'.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.426015"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T07:39:54.501329"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T07:43:55.192707"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "e28e932b-fc5e-4ea3-88f8-39bd537da3b7",
+      "timestamp": "2026-02-20T07:43:55.192737",
+      "total_duration": 237.1060175895691,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 237.1060175895691,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
