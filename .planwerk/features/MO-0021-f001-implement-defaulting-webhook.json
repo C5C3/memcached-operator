@@ -1,0 +1,575 @@
+{
+  "feature_id": "MO-0021",
+  "title": "F001: Implement defaulting webhook",
+  "slug": "f001-implement-defaulting-webhook",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Implement a mutating admission webhook that sets sensible defaults for omitted fields: replicas=1, image=memcached:1.6, maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, monitoring.exporterImage=prom/memcached-exporter:v0.15.4, antiAffinityPreset=soft, etc.",
+  "stories": [
+    {
+      "title": "Operator sets sensible defaults on minimal Memcached CR",
+      "role": "cluster operator",
+      "want": "to create a Memcached CR with only metadata and have all spec fields populated with sensible defaults by the webhook",
+      "so_that": "I don't need to specify every field for a basic deployment",
+      "criteria": [
+        "Creating a Memcached CR with empty spec results in spec.replicas=1, spec.image=memcached:1.6",
+        "spec.memcached fields are defaulted: maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, verbosity=0",
+        "spec.monitoring.exporterImage defaults to prom/memcached-exporter:v0.15.4 when monitoring section exists",
+        "spec.highAvailability.antiAffinityPreset defaults to soft when highAvailability section exists"
+      ]
+    },
+    {
+      "title": "Operator preserves user-specified values during defaulting",
+      "role": "cluster operator",
+      "want": "my explicitly set field values to be preserved and not overwritten by the defaulting webhook",
+      "so_that": "I can customize my Memcached deployment while relying on defaults for unspecified fields",
+      "criteria": [
+        "Setting spec.replicas=3 is preserved after webhook; other omitted fields still get defaults",
+        "Setting spec.memcached.maxMemoryMB=256 is preserved; other memcached config fields get defaults",
+        "Setting spec.image=memcached:1.6.28 is preserved and not overwritten to memcached:1.6",
+        "A fully specified CR passes through the webhook with no changes"
+      ]
+    },
+    {
+      "title": "Webhook integrates with the operator manager lifecycle",
+      "role": "platform engineer",
+      "want": "the defaulting webhook to be registered with the operator manager and served via the webhook server",
+      "so_that": "the webhook is active when the operator starts and handles admission requests",
+      "criteria": [
+        "Webhook is registered in cmd/main.go with mgr.GetWebhookServer()",
+        "The Memcached type implements the admission.CustomDefaulter interface",
+        "Webhook path follows Kubebuilder convention: /mutate-memcached-c5c3-io-v1alpha1-memcached",
+        "Webhook configuration manifest is generated via controller-gen markers"
+      ]
+    },
+    {
+      "title": "Defaulting webhook handles nested struct initialization",
+      "role": "cluster operator",
+      "want": "the webhook to properly initialize nil nested structs before applying defaults to their fields",
+      "so_that": "I can omit entire sections (e.g. memcached, monitoring) and still get correct defaults",
+      "criteria": [
+        "When spec.memcached is nil, the webhook creates the struct and sets all defaults",
+        "When spec.highAvailability is nil, no defaults are forced (section remains nil since it's optional)",
+        "When spec.monitoring is nil, no defaults are forced (section remains nil since it's optional)",
+        "When spec.monitoring exists but exporterImage is nil, exporterImage defaults to prom/memcached-exporter:v0.15.4"
+      ]
+    },
+    {
+      "title": "Defaulting webhook is tested at unit and integration levels",
+      "role": "developer",
+      "want": "comprehensive tests covering all defaulting scenarios including edge cases",
+      "so_that": "changes to the webhook logic don't introduce regressions",
+      "criteria": [
+        "Unit tests verify each field's default value when omitted",
+        "Unit tests verify user-specified values are not overwritten",
+        "Unit tests cover nil nested struct initialization",
+        "Integration tests (envtest) verify the webhook intercepts CR creation and applies defaults"
+      ]
+    },
+    {
+      "title": "Defaulting webhook has reference documentation",
+      "role": "developer",
+      "want": "a reference doc listing all defaulted fields, their values, and the webhook path",
+      "so_that": "I can look up the exact defaults without reading source code",
+      "criteria": [
+        "Doc lists every field that is defaulted with its default value",
+        "Doc describes the webhook path and admission type (mutating)",
+        "Doc explains the defaulting precedence (user values > webhook defaults > CRD defaults)"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The defaulting webhook SHALL set spec.replicas to 1 when omitted or nil",
+      "priority": "SHALL",
+      "rationale": "A single replica is the simplest valid deployment and matches the kubebuilder default marker",
+      "scenarios": [
+        {
+          "name": "Replicas nil gets defaulted",
+          "when": "a Memcached CR is created with spec.replicas omitted (nil)",
+          "then": "the webhook sets spec.replicas to pointer-to-1",
+          "and_then": [
+            "the CR stored in etcd has replicas=1"
+          ]
+        },
+        {
+          "name": "Replicas explicitly set is preserved",
+          "when": "a Memcached CR is created with spec.replicas=3",
+          "then": "the webhook does not modify spec.replicas",
+          "and_then": [
+            "the CR stored in etcd has replicas=3"
+          ]
+        },
+        {
+          "name": "Replicas zero is preserved",
+          "when": "a Memcached CR is created with spec.replicas=0",
+          "then": "the webhook does not modify spec.replicas (0 is a valid explicit value)",
+          "and_then": [
+            "the CR stored in etcd has replicas=0"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The defaulting webhook SHALL set spec.image to 'memcached:1.6' when omitted or nil",
+      "priority": "SHALL",
+      "rationale": "Ensures a known-good Memcached image is used when the operator does not specify one",
+      "scenarios": [
+        {
+          "name": "Image nil gets defaulted",
+          "when": "a Memcached CR is created with spec.image omitted (nil)",
+          "then": "the webhook sets spec.image to pointer-to-'memcached:1.6'",
+          "and_then": [
+            "the CR stored in etcd has image=memcached:1.6"
+          ]
+        },
+        {
+          "name": "Image explicitly set is preserved",
+          "when": "a Memcached CR is created with spec.image='memcached:1.6.28'",
+          "then": "the webhook does not modify spec.image",
+          "and_then": [
+            "the CR stored in etcd has image=memcached:1.6.28"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The defaulting webhook SHALL set spec.memcached config fields (maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, verbosity=0) when the memcached section is present but fields are zero-valued",
+      "priority": "SHALL",
+      "rationale": "These are the standard operational defaults documented in PLAN.md and the CRD kubebuilder markers",
+      "scenarios": [
+        {
+          "name": "Nil memcached section gets initialized with all defaults",
+          "when": "a Memcached CR is created with spec.memcached=nil",
+          "then": "the webhook initializes spec.memcached and sets maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, verbosity=0",
+          "and_then": [
+            "all memcached config fields have their documented defaults"
+          ]
+        },
+        {
+          "name": "Partial memcached section gets remaining defaults",
+          "when": "a Memcached CR is created with spec.memcached.maxMemoryMB=256 and other fields omitted",
+          "then": "the webhook preserves maxMemoryMB=256 and defaults the remaining fields",
+          "and_then": [
+            "maxConnections=1024, threads=4, maxItemSize=1m, verbosity=0"
+          ]
+        },
+        {
+          "name": "Fully specified memcached section is untouched",
+          "when": "a Memcached CR is created with all memcached config fields explicitly set",
+          "then": "the webhook does not modify any memcached config field",
+          "and_then": [
+            "all user-specified values are preserved"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The defaulting webhook SHALL set spec.monitoring.exporterImage to 'prom/memcached-exporter:v0.15.4' when the monitoring section exists but exporterImage is nil",
+      "priority": "SHALL",
+      "rationale": "Ensures a known-good exporter image is used when monitoring is enabled without specifying an image",
+      "scenarios": [
+        {
+          "name": "ExporterImage nil gets defaulted when monitoring exists",
+          "when": "a Memcached CR is created with spec.monitoring.enabled=true and exporterImage omitted",
+          "then": "the webhook sets spec.monitoring.exporterImage to pointer-to-'prom/memcached-exporter:v0.15.4'",
+          "and_then": [
+            "the exporter sidecar uses the default image"
+          ]
+        },
+        {
+          "name": "ExporterImage explicitly set is preserved",
+          "when": "a Memcached CR is created with spec.monitoring.exporterImage='custom/exporter:v1.0'",
+          "then": "the webhook does not modify exporterImage",
+          "and_then": [
+            "the CR stored in etcd has the custom exporter image"
+          ]
+        },
+        {
+          "name": "Nil monitoring section is not initialized",
+          "when": "a Memcached CR is created with spec.monitoring=nil",
+          "then": "the webhook does not create the monitoring section",
+          "and_then": [
+            "spec.monitoring remains nil since monitoring is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The defaulting webhook SHALL set spec.highAvailability.antiAffinityPreset to 'soft' when the highAvailability section exists but antiAffinityPreset is nil",
+      "priority": "SHALL",
+      "rationale": "Soft anti-affinity provides best-effort pod spreading without blocking scheduling",
+      "scenarios": [
+        {
+          "name": "AntiAffinityPreset nil gets defaulted when HA exists",
+          "when": "a Memcached CR is created with spec.highAvailability set but antiAffinityPreset omitted",
+          "then": "the webhook sets spec.highAvailability.antiAffinityPreset to pointer-to-'soft'",
+          "and_then": [
+            "pods will have preferred anti-affinity scheduling"
+          ]
+        },
+        {
+          "name": "AntiAffinityPreset explicitly set to hard is preserved",
+          "when": "a Memcached CR is created with spec.highAvailability.antiAffinityPreset='hard'",
+          "then": "the webhook does not modify antiAffinityPreset",
+          "and_then": [
+            "the CR stored in etcd has antiAffinityPreset=hard"
+          ]
+        },
+        {
+          "name": "Nil highAvailability section is not initialized",
+          "when": "a Memcached CR is created with spec.highAvailability=nil",
+          "then": "the webhook does not create the highAvailability section",
+          "and_then": [
+            "spec.highAvailability remains nil since HA is opt-in"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The defaulting webhook SHALL implement the admission.CustomDefaulter interface from controller-runtime",
+      "priority": "SHALL",
+      "rationale": "This is the standard Kubebuilder pattern for mutating webhooks in controller-runtime v0.19+",
+      "scenarios": [
+        {
+          "name": "CustomDefaulter interface is satisfied",
+          "when": "the webhook type is compiled",
+          "then": "it satisfies the admission.CustomDefaulter interface with a Default(ctx, obj) method",
+          "and_then": [
+            "the webhook can be registered via SetupWebhookWithManager"
+          ]
+        },
+        {
+          "name": "Webhook handles CREATE operations",
+          "when": "a new Memcached CR is submitted to the API server",
+          "then": "the webhook's Default method is called and defaults are applied",
+          "and_then": [
+            "the mutated CR is persisted to etcd"
+          ]
+        },
+        {
+          "name": "Webhook handles UPDATE operations",
+          "when": "an existing Memcached CR is updated with omitted fields",
+          "then": "the webhook's Default method is called and defaults are applied to the updated object",
+          "and_then": [
+            "previously defaulted fields maintain their values"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The defaulting webhook SHALL be registered with the operator manager in cmd/main.go",
+      "priority": "SHALL",
+      "rationale": "The webhook must be wired into the operator lifecycle to intercept admission requests",
+      "scenarios": [
+        {
+          "name": "Webhook registered at startup",
+          "when": "the operator manager starts",
+          "then": "SetupMemcachedWebhookWithManager is called to register the defaulting webhook",
+          "and_then": [
+            "the webhook server serves the mutating admission endpoint"
+          ]
+        },
+        {
+          "name": "Registration failure stops startup",
+          "when": "webhook registration returns an error",
+          "then": "the operator logs the error and exits with non-zero code",
+          "and_then": [
+            "the operator does not start in a broken state"
+          ]
+        },
+        {
+          "name": "Webhook path is correctly configured",
+          "when": "the webhook is registered",
+          "then": "it serves on path /mutate-memcached-c5c3-io-v1alpha1-memcached",
+          "and_then": [
+            "the MutatingWebhookConfiguration references this path"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The defaulting webhook SHALL have unit and integration test coverage for all defaulted fields",
+      "priority": "SHALL",
+      "rationale": "Webhook logic is critical admission infrastructure; regressions can break all CR operations",
+      "scenarios": [
+        {
+          "name": "Unit tests cover all default values",
+          "when": "unit tests run",
+          "then": "every defaulted field has at least one test verifying the default is applied when omitted",
+          "and_then": [
+            "tests also verify explicit values are preserved"
+          ]
+        },
+        {
+          "name": "Unit tests cover nil nested structs",
+          "when": "unit tests run with nil parent sections",
+          "then": "tests verify that optional sections (monitoring, highAvailability) are not force-initialized",
+          "and_then": [
+            "tests verify that always-defaulted sections (memcached) are initialized"
+          ]
+        },
+        {
+          "name": "Integration tests verify webhook intercepts admission",
+          "when": "envtest integration tests create a Memcached CR with empty spec",
+          "then": "the stored CR has all expected defaults applied",
+          "and_then": [
+            "the webhook path is served and the mutation is confirmed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The defaulting webhook SHALL set spec.monitoring.serviceMonitor defaults (interval=30s, scrapeTimeout=10s) when the serviceMonitor section exists but fields are zero-valued",
+      "priority": "SHALL",
+      "rationale": "ServiceMonitor fields have documented defaults that should be consistently applied",
+      "scenarios": [
+        {
+          "name": "ServiceMonitor interval and scrapeTimeout get defaults",
+          "when": "a Memcached CR is created with spec.monitoring.serviceMonitor set but interval and scrapeTimeout omitted",
+          "then": "the webhook sets interval=30s and scrapeTimeout=10s",
+          "and_then": [
+            "the ServiceMonitor uses standard scrape settings"
+          ]
+        },
+        {
+          "name": "ServiceMonitor explicit values preserved",
+          "when": "a Memcached CR is created with spec.monitoring.serviceMonitor.interval=15s",
+          "then": "the webhook preserves interval=15s and defaults scrapeTimeout=10s",
+          "and_then": [
+            "custom scrape interval is used"
+          ]
+        },
+        {
+          "name": "Nil serviceMonitor section is not initialized",
+          "when": "a Memcached CR is created with spec.monitoring set but spec.monitoring.serviceMonitor=nil",
+          "then": "the webhook does not create the serviceMonitor section",
+          "and_then": [
+            "spec.monitoring.serviceMonitor remains nil"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create defaulting webhook file with CustomDefaulter implementation and Default method (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-009)",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Write unit tests for the defaulting webhook covering all fields and edge cases (REQ-008)",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-008",
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Register the defaulting webhook in cmd/main.go (REQ-007)",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Generate webhook configuration manifests via controller-gen (REQ-007)",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write envtest integration tests for defaulting webhook admission (REQ-008)",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for the defaulting webhook (REQ-009 doc)",
+      "level": 4,
+      "estimate_minutes": 15
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_EmptySpec",
+      "story": "Operator sets sensible defaults on minimal Memcached CR",
+      "expected": "Empty spec should get replicas=1, image=memcached:1.6, and memcached config defaults",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_PreservesExplicitValues",
+      "story": "Operator preserves user-specified values during defaulting",
+      "expected": "Explicitly set replicas=3 and image=memcached:1.6.28 should not be overwritten",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_NilMemcachedConfig",
+      "story": "Defaulting webhook handles nested struct initialization",
+      "expected": "Nil spec.memcached should be initialized with all default values",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_PartialMemcachedConfig",
+      "story": "Operator preserves user-specified values during defaulting",
+      "expected": "Partial memcached config should get remaining defaults while preserving set values",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_MonitoringExporterImage",
+      "story": "Defaulting webhook handles nested struct initialization",
+      "expected": "Nil exporterImage with monitoring enabled should default to prom/memcached-exporter:v0.15.4",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_NilMonitoringStaysNil",
+      "story": "Defaulting webhook handles nested struct initialization",
+      "expected": "Nil monitoring section should not be force-initialized",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AntiAffinityPreset",
+      "story": "Defaulting webhook handles nested struct initialization",
+      "expected": "Nil antiAffinityPreset with HA enabled should default to soft",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_NilHAStaysNil",
+      "story": "Defaulting webhook handles nested struct initialization",
+      "expected": "Nil highAvailability section should not be force-initialized",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_ServiceMonitorDefaults",
+      "story": "Operator sets sensible defaults on minimal Memcached CR",
+      "expected": "ServiceMonitor with empty interval/scrapeTimeout should get 30s/10s defaults",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_ReplicasZeroPreserved",
+      "story": "Operator preserves user-specified values during defaulting",
+      "expected": "Replicas explicitly set to 0 should not be overwritten to 1",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_FullySpecifiedCRUnchanged",
+      "story": "Operator preserves user-specified values during defaulting",
+      "expected": "A CR with all fields explicitly set should pass through with no modifications",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestSetupMemcachedWebhookWithManager_InterfaceCompliance",
+      "story": "Webhook integrates with the operator manager lifecycle",
+      "expected": "MemcachedCustomDefaulter should satisfy admission.CustomDefaulter at compile time",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_webhook_integration_test.go",
+      "test_function": "TestWebhookDefaulting_ViaAPIServer_MinimalCR",
+      "story": "Defaulting webhook is tested at unit and integration levels",
+      "expected": "Creating a minimal CR via envtest API server should return the CR with all defaults applied",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_webhook_integration_test.go",
+      "test_function": "TestWebhookDefaulting_ViaAPIServer_FullySpecified",
+      "story": "Defaulting webhook is tested at unit and integration levels",
+      "expected": "Creating a fully specified CR via envtest API server should return it unchanged",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "MemcachedCustomDefaulter implements admission.CustomDefaulter interface (compile-time check via var _ admission.CustomDefaulter = ...)",
+    "All defaulted fields match PLAN.md documented values: replicas=1, image=memcached:1.6, maxMemoryMB=64, maxConnections=1024, threads=4, maxItemSize=1m, exporterImage=prom/memcached-exporter:v0.15.4, antiAffinityPreset=soft, serviceMonitor.interval=30s, serviceMonitor.scrapeTimeout=10s",
+    "User-specified values are never overwritten: nil check before every default assignment",
+    "Optional sections (monitoring, highAvailability, security) are NOT force-initialized when nil — only sections that always have defaults (memcached, replicas, image) are defaulted unconditionally",
+    "All unit tests pass: go test ./api/v1alpha1/ -run TestMemcachedDefaulting",
+    "All integration tests pass: make test (envtest suite)",
+    "go vet ./... passes with no errors",
+    "golangci-lint run passes with no errors",
+    "Webhook registration in cmd/main.go follows the existing error handling pattern (setupLog.Error + os.Exit(1))",
+    "make manifests generates valid MutatingWebhookConfiguration YAML in config/webhook/",
+    "Reference documentation exists at docs/reference/backend/defaulting-webhook.md"
+  ],
+  "implementation_notes": "Architecture: Use the Kubebuilder CustomDefaulter pattern (controller-runtime v0.19+). Create a MemcachedCustomDefaulter struct in api/v1alpha1/memcached_webhook.go that implements admission.CustomDefaulter. The Default(ctx, obj) method performs type assertion to *Memcached and applies defaults. Use a SetupMemcachedWebhookWithManager(mgr) function to register via builder.WebhookManagedBy(mgr).For(&Memcached{}).WithDefaulter(&MemcachedCustomDefaulter{}).Complete().\n\nDefaulting strategy: Always default replicas, image, and memcached config (these are core fields). For optional nested sections (monitoring, highAvailability, security), only apply sub-field defaults when the parent section is already non-nil. This respects the opt-in nature of these features.\n\nKey files to follow:\n- api/v1alpha1/memcached_types.go — existing type definitions with kubebuilder markers\n- api/v1alpha1/groupversion_info.go — scheme registration\n- cmd/main.go — operator entrypoint where webhook registration goes\n- internal/controller/deployment.go — existing defaulting logic in buildMemcachedArgs (same defaults must match)\n- internal/controller/suite_test.go — envtest setup pattern for integration tests\n\nPotential pitfall: The existing constructDeployment() in deployment.go already applies in-code defaults for nil/zero values. The webhook defaults should align exactly with those values. Once the webhook is active, the reconciler defaults become redundant for admission-time fields but should remain for backward compatibility (CRs created before webhooks were enabled).\n\nNote on zero-value detection for int32 fields: Since Go int32 zero value is 0 and 0 might be a valid value for some fields (e.g. verbosity=0), the webhook should only default fields where 0 is NOT a valid user-specified value (maxMemoryMB, maxConnections, threads) or use the pointer pattern. For verbosity, 0 IS the default so no action needed. For replicas, the field is already a pointer (*int32) so nil detection works correctly.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.427440"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T09:34:37.595725"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T09:37:30.128996"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "32fba0c9-f85a-4af6-883b-c9bfad10113d",
+      "timestamp": "2026-02-20T09:37:30.129022",
+      "total_duration": 169.29371643066406,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 169.29371643066406,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
