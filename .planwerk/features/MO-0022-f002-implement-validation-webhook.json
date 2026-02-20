@@ -1,0 +1,643 @@
+{
+  "feature_id": "MO-0022",
+  "title": "F002: Implement validation webhook",
+  "slug": "f002-implement-validation-webhook",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Implement a validating admission webhook that rejects invalid CRD configurations: replicas >= 0, maxMemoryMB > 0, threads > 0, valid maxItemSize format, valid antiAffinityPreset values (soft/hard), consistent resource limits (memory limit >= maxMemoryMB + overhead), valid verbosity range (0-2).",
+  "stories": [
+    {
+      "title": "Cluster operator gets clear rejection when submitting invalid Memcached CR",
+      "role": "cluster operator",
+      "want": "the API server to reject my Memcached CR with clear error messages when I specify invalid field values",
+      "so_that": "I can fix configuration errors before they cause runtime failures like OOMKill or broken PDBs",
+      "criteria": [
+        "kubectl apply returns a 403/422 error with a human-readable message identifying the invalid field",
+        "Error messages include the field path (e.g. spec.memcached.maxMemoryMB) and the violated constraint",
+        "Valid CRs continue to be accepted without any change in behavior",
+        "Validation runs on both CREATE and UPDATE operations"
+      ]
+    },
+    {
+      "title": "Cluster operator cannot set memory limit below maxMemoryMB plus overhead",
+      "role": "cluster operator",
+      "want": "the webhook to reject my CR when spec.resources.limits.memory is less than spec.memcached.maxMemoryMB plus operational overhead",
+      "so_that": "my Memcached pods do not get OOMKilled because the container memory limit is too low for the configured cache size",
+      "criteria": [
+        "CR is rejected when resources.limits.memory < maxMemoryMB + 32Mi overhead (converted to bytes)",
+        "CR is accepted when resources.limits.memory >= maxMemoryMB + 32Mi overhead",
+        "CR is accepted when resources or resources.limits.memory is not specified (no cross-field constraint)",
+        "Error message explains the minimum required memory limit"
+      ]
+    },
+    {
+      "title": "Cluster operator cannot configure PDB minAvailable >= replicas",
+      "role": "cluster operator",
+      "want": "the webhook to reject my CR when PDB minAvailable is greater than or equal to replicas",
+      "so_that": "voluntary disruptions are not permanently blocked by an impossible PDB constraint",
+      "criteria": [
+        "CR is rejected when PDB minAvailable (integer) >= replicas",
+        "CR is accepted when PDB minAvailable < replicas",
+        "CR is accepted when PDB is not configured or minAvailable is nil",
+        "CR is rejected when both minAvailable and maxUnavailable are set (mutual exclusivity)"
+      ]
+    },
+    {
+      "title": "Cluster operator cannot enable SASL or TLS without required secret references",
+      "role": "cluster operator",
+      "want": "the webhook to reject my CR when SASL or TLS is enabled but the required secret reference is missing",
+      "so_that": "the operator does not fail at runtime trying to mount a non-existent secret",
+      "criteria": [
+        "CR is rejected when security.sasl.enabled=true and credentialsSecretRef.name is empty",
+        "CR is accepted when security.sasl.enabled=true and credentialsSecretRef.name is provided",
+        "CR is rejected when security.tls.enabled=true and certificateSecretRef.name is empty",
+        "CR is accepted when security.tls.enabled=true and certificateSecretRef.name is provided",
+        "CR is accepted when SASL/TLS sections are nil or enabled=false"
+      ]
+    },
+    {
+      "title": "Cluster operator cannot configure terminationGracePeriodSeconds <= preStopDelaySeconds",
+      "role": "cluster operator",
+      "want": "the webhook to reject my CR when terminationGracePeriodSeconds does not exceed preStopDelaySeconds",
+      "so_that": "the preStop hook has time to complete before the pod receives SIGKILL",
+      "criteria": [
+        "CR is rejected when terminationGracePeriodSeconds <= preStopDelaySeconds",
+        "CR is accepted when terminationGracePeriodSeconds > preStopDelaySeconds",
+        "CR is accepted when gracefulShutdown section is nil or not enabled",
+        "Error message explains that terminationGracePeriodSeconds must exceed preStopDelaySeconds"
+      ]
+    },
+    {
+      "title": "Validation webhook integrates with existing defaulting webhook",
+      "role": "platform engineer",
+      "want": "the validation webhook to run after the defaulting webhook in the admission chain",
+      "so_that": "validation sees the fully-defaulted CR and users benefit from both defaulting and validation",
+      "criteria": [
+        "Both defaulting and validation webhooks are registered on the same builder",
+        "Validation runs on the post-defaulting state of the CR",
+        "A minimal CR (empty spec) passes validation after defaulting fills required fields",
+        "make manifests generates both MutatingWebhookConfiguration and ValidatingWebhookConfiguration"
+      ]
+    },
+    {
+      "title": "Validation webhook has reference documentation",
+      "role": "platform engineer",
+      "want": "reference documentation describing all validation rules, error messages, and examples",
+      "so_that": "I can understand what the webhook validates and diagnose rejection errors",
+      "criteria": [
+        "Documentation lists all validation rules with field paths and constraints",
+        "Documentation includes example CRs that are rejected and accepted",
+        "Documentation describes the webhook path, failure policy, and admission type",
+        "Documentation is placed in docs/reference/backend/validation-webhook.md"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The webhook SHALL validate that spec.resources.limits.memory (when specified) is >= spec.memcached.maxMemoryMB converted to bytes plus 32Mi overhead",
+      "priority": "SHALL",
+      "rationale": "Prevents OOMKill by ensuring the container memory limit accommodates the Memcached cache size plus operational overhead for connections, threads, and internal data structures",
+      "scenarios": [
+        {
+          "name": "Memory limit sufficient",
+          "when": "spec.resources.limits.memory is 128Mi and maxMemoryMB is 64",
+          "then": "the CR is accepted (128Mi >= 64Mi + 32Mi overhead)",
+          "and_then": []
+        },
+        {
+          "name": "Memory limit insufficient",
+          "when": "spec.resources.limits.memory is 64Mi and maxMemoryMB is 64",
+          "then": "the CR is rejected with error indicating minimum required is 96Mi (64Mi + 32Mi overhead)",
+          "and_then": [
+            "error message includes spec.resources.limits.memory field path"
+          ]
+        },
+        {
+          "name": "No resource limits specified",
+          "when": "spec.resources is nil or spec.resources.limits.memory is not set",
+          "then": "validation passes (no cross-field constraint to check)",
+          "and_then": []
+        },
+        {
+          "name": "Memory limit exactly at boundary",
+          "when": "spec.resources.limits.memory is 96Mi and maxMemoryMB is 64",
+          "then": "the CR is accepted (96Mi == 64Mi + 32Mi, boundary is inclusive)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The webhook SHALL validate that PDB minAvailable (integer, when specified) is strictly less than spec.replicas",
+      "priority": "SHALL",
+      "rationale": "A PDB with minAvailable >= replicas blocks all voluntary disruptions including rolling updates and node drains",
+      "scenarios": [
+        {
+          "name": "minAvailable less than replicas",
+          "when": "spec.replicas is 3 and PDB minAvailable is 2",
+          "then": "the CR is accepted",
+          "and_then": []
+        },
+        {
+          "name": "minAvailable equals replicas",
+          "when": "spec.replicas is 3 and PDB minAvailable is 3",
+          "then": "the CR is rejected with error indicating minAvailable must be less than replicas",
+          "and_then": [
+            "error message includes both field paths"
+          ]
+        },
+        {
+          "name": "minAvailable exceeds replicas",
+          "when": "spec.replicas is 2 and PDB minAvailable is 3",
+          "then": "the CR is rejected",
+          "and_then": []
+        },
+        {
+          "name": "PDB not configured",
+          "when": "spec.highAvailability.podDisruptionBudget is nil",
+          "then": "validation passes",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The webhook SHALL validate that both minAvailable and maxUnavailable are NOT set simultaneously on the PDB",
+      "priority": "SHALL",
+      "rationale": "Kubernetes PDB API rejects resources with both fields set; catching this early provides a better error message",
+      "scenarios": [
+        {
+          "name": "Only minAvailable set",
+          "when": "PDB has minAvailable=1 and maxUnavailable is nil",
+          "then": "validation passes",
+          "and_then": []
+        },
+        {
+          "name": "Only maxUnavailable set",
+          "when": "PDB has maxUnavailable=1 and minAvailable is nil",
+          "then": "validation passes",
+          "and_then": []
+        },
+        {
+          "name": "Both set",
+          "when": "PDB has both minAvailable=1 and maxUnavailable=1",
+          "then": "the CR is rejected with error indicating mutual exclusivity",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The webhook SHALL validate that SASL credentialsSecretRef.name is non-empty when security.sasl.enabled is true",
+      "priority": "SHALL",
+      "rationale": "Without a valid secret reference, the operator cannot mount SASL credentials, causing runtime failure",
+      "scenarios": [
+        {
+          "name": "SASL enabled with valid secret ref",
+          "when": "security.sasl.enabled=true and credentialsSecretRef.name='my-sasl-secret'",
+          "then": "validation passes",
+          "and_then": []
+        },
+        {
+          "name": "SASL enabled without secret ref",
+          "when": "security.sasl.enabled=true and credentialsSecretRef.name is empty",
+          "then": "the CR is rejected with error indicating credentialsSecretRef.name is required when SASL is enabled",
+          "and_then": []
+        },
+        {
+          "name": "SASL disabled",
+          "when": "security.sasl.enabled=false or security.sasl is nil",
+          "then": "validation passes regardless of credentialsSecretRef",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The webhook SHALL validate that TLS certificateSecretRef.name is non-empty when security.tls.enabled is true",
+      "priority": "SHALL",
+      "rationale": "Without a valid certificate secret reference, the operator cannot configure TLS, causing runtime failure",
+      "scenarios": [
+        {
+          "name": "TLS enabled with valid secret ref",
+          "when": "security.tls.enabled=true and certificateSecretRef.name='my-tls-secret'",
+          "then": "validation passes",
+          "and_then": []
+        },
+        {
+          "name": "TLS enabled without secret ref",
+          "when": "security.tls.enabled=true and certificateSecretRef.name is empty",
+          "then": "the CR is rejected with error indicating certificateSecretRef.name is required when TLS is enabled",
+          "and_then": []
+        },
+        {
+          "name": "TLS disabled",
+          "when": "security.tls.enabled=false or security.tls is nil",
+          "then": "validation passes regardless of certificateSecretRef",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The webhook SHALL validate that terminationGracePeriodSeconds > preStopDelaySeconds when graceful shutdown is enabled",
+      "priority": "SHALL",
+      "rationale": "If terminationGracePeriodSeconds <= preStopDelaySeconds, the pod receives SIGKILL before the preStop hook completes, negating graceful shutdown",
+      "scenarios": [
+        {
+          "name": "Grace period exceeds delay",
+          "when": "gracefulShutdown.enabled=true, preStopDelaySeconds=10, terminationGracePeriodSeconds=30",
+          "then": "validation passes",
+          "and_then": []
+        },
+        {
+          "name": "Grace period equals delay",
+          "when": "gracefulShutdown.enabled=true, preStopDelaySeconds=30, terminationGracePeriodSeconds=30",
+          "then": "the CR is rejected",
+          "and_then": [
+            "error message explains terminationGracePeriodSeconds must exceed preStopDelaySeconds"
+          ]
+        },
+        {
+          "name": "Grace period less than delay",
+          "when": "gracefulShutdown.enabled=true, preStopDelaySeconds=30, terminationGracePeriodSeconds=10",
+          "then": "the CR is rejected",
+          "and_then": []
+        },
+        {
+          "name": "Graceful shutdown disabled or nil",
+          "when": "gracefulShutdown is nil or enabled=false",
+          "then": "validation passes regardless of timing values",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The webhook SHALL be registered as a ValidatingWebhookConfiguration via kubebuilder marker and chained with the existing defaulting webhook builder",
+      "priority": "SHALL",
+      "rationale": "The validation webhook must integrate into the existing admission infrastructure without disrupting the defaulting webhook",
+      "scenarios": [
+        {
+          "name": "Webhook registration",
+          "when": "make manifests is run",
+          "then": "config/webhook/manifests.yaml contains both MutatingWebhookConfiguration and ValidatingWebhookConfiguration",
+          "and_then": [
+            "ValidatingWebhookConfiguration has path /validate-memcached-c5c3-io-v1alpha1-memcached"
+          ]
+        },
+        {
+          "name": "Builder chain",
+          "when": "SetupMemcachedWebhookWithManager is called",
+          "then": "both WithDefaulter and WithValidator are chained on the same builder",
+          "and_then": [
+            "no changes to cmd/main.go are required"
+          ]
+        },
+        {
+          "name": "Admission ordering",
+          "when": "a Memcached CR is submitted",
+          "then": "defaulting runs first, then validation runs on the defaulted resource",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The webhook SHALL collect all validation errors using field.ErrorList and return them in a single aggregate apierrors.StatusError response",
+      "priority": "SHALL",
+      "rationale": "Returning all errors at once allows the operator to fix all issues in a single iteration rather than discovering them one at a time",
+      "scenarios": [
+        {
+          "name": "Multiple errors collected",
+          "when": "a CR has both insufficient memory limit AND minAvailable >= replicas",
+          "then": "the rejection response contains both error messages",
+          "and_then": []
+        },
+        {
+          "name": "Single error",
+          "when": "a CR has only one validation error",
+          "then": "the rejection response contains exactly one error message",
+          "and_then": []
+        },
+        {
+          "name": "No errors",
+          "when": "a CR passes all validations",
+          "then": "the CR is accepted with no warnings",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The webhook SHALL allow deletion of Memcached CRs without validation",
+      "priority": "SHALL",
+      "rationale": "Delete operations should never be blocked by validation — operators must always be able to clean up resources",
+      "scenarios": [
+        {
+          "name": "Delete always allowed",
+          "when": "a DELETE request is received for a Memcached CR",
+          "then": "ValidateDelete returns nil (allowed) without checking any fields",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The webhook SHALL apply the same validation rules for both CREATE and UPDATE operations",
+      "priority": "SHALL",
+      "rationale": "Invalid configurations should be rejected regardless of whether the CR is being created or updated",
+      "scenarios": [
+        {
+          "name": "Create with invalid config rejected",
+          "when": "a CREATE request contains an invalid configuration",
+          "then": "the request is rejected with appropriate error messages",
+          "and_then": []
+        },
+        {
+          "name": "Update to invalid config rejected",
+          "when": "an UPDATE request changes a valid CR to an invalid configuration",
+          "then": "the request is rejected with appropriate error messages",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Implement MemcachedCustomValidator struct and core validation logic with unit tests (REQ-001, REQ-006, REQ-008, REQ-009, REQ-010)",
+      "description": "Create api/v1alpha1/memcached_validation_webhook.go with: (1) MemcachedCustomValidator struct implementing admission.Validator[*Memcached], (2) kubebuilder webhook marker for path=/validate-memcached-c5c3-io-v1alpha1-memcached, (3) internal validateMemcached(mc *Memcached) field.ErrorList helper that collects all errors, (4) ValidateCreate calling validateMemcached, (5) ValidateUpdate calling validateMemcached on the new object, (6) ValidateDelete returning nil always. Implement two validation rules in this task: memory limit consistency (REQ-001: spec.resources.limits.memory >= maxMemoryMB*1Mi + 32Mi when both are specified) and graceful shutdown timing (REQ-006: terminationGracePeriodSeconds > preStopDelaySeconds when enabled). Use field.Invalid/field.Required with proper field paths. Create api/v1alpha1/memcached_validation_webhook_test.go with unit tests covering: memory limit sufficient/insufficient/boundary/nil, graceful shutdown timing valid/invalid/disabled/nil, delete always allowed, valid CR accepted, error aggregation. Follow the existing test pattern from memcached_webhook_test.go (standard Go testing, same package).",
+      "level": 1,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-001",
+        "REQ-006",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add PDB validation rules with unit tests (REQ-002, REQ-003)",
+      "description": "Add to the validateMemcached function in api/v1alpha1/memcached_validation_webhook.go: (1) PDB mutual exclusivity check — reject when both minAvailable and maxUnavailable are set (REQ-003), (2) PDB minAvailable vs replicas check — when PDB is enabled, minAvailable is an integer, and replicas is set, reject if minAvailable >= replicas (REQ-002). Handle IntOrString type for minAvailable by only validating integer values (percentage values cannot be compared without runtime pod count). Add unit tests to memcached_validation_webhook_test.go: minAvailable < replicas (pass), minAvailable == replicas (reject), minAvailable > replicas (reject), both fields set (reject), only maxUnavailable (pass), PDB nil (pass), PDB disabled (pass), percentage minAvailable (skip validation, pass).",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add security secret reference validation rules with unit tests (REQ-004, REQ-005)",
+      "description": "Add to the validateMemcached function in api/v1alpha1/memcached_validation_webhook.go: (1) SASL secret check — when security.sasl.enabled=true, credentialsSecretRef.name must be non-empty (REQ-004), (2) TLS secret check — when security.tls.enabled=true, certificateSecretRef.name must be non-empty (REQ-005). Add unit tests to memcached_validation_webhook_test.go: SASL enabled with secret (pass), SASL enabled without secret (reject), SASL disabled (pass), SASL nil (pass), TLS enabled with secret (pass), TLS enabled without secret (reject), TLS disabled (pass), TLS nil (pass), security section nil (pass).",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Register validator with webhook builder and regenerate manifests (REQ-007)",
+      "description": "Modify SetupMemcachedWebhookWithManager in api/v1alpha1/memcached_webhook.go to chain .WithValidator(&MemcachedCustomValidator{}) after .WithDefaulter(&MemcachedCustomDefaulter{}). Add compile-time check: var _ admission.Validator[*Memcached] = &MemcachedCustomValidator{}. Run make manifests to regenerate config/webhook/manifests.yaml — verify it now contains both MutatingWebhookConfiguration and ValidatingWebhookConfiguration. Run make generate to regenerate deepcopy if needed. Run make vet to ensure no issues.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Integration tests for validation webhook rejection scenarios (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-010)",
+      "description": "Create internal/controller/memcached_validation_webhook_integration_test.go with Ginkgo/Gomega tests using envtest (package controller_test, using existing k8sClient and ctx from suite_test.go). Test scenarios via k8sClient.Create/Update: (1) reject insufficient memory limit (64Mi limit, 64 maxMemoryMB), (2) reject minAvailable >= replicas, (3) reject both minAvailable and maxUnavailable set, (4) reject SASL enabled without secret, (5) reject TLS enabled without secret, (6) reject terminationGracePeriodSeconds <= preStopDelaySeconds, (7) accept minimal CR (validates defaulting + validation integration), (8) accept fully-specified valid CR with all optional sections, (9) reject update from valid to invalid config, (10) accept valid update. Use existing test helpers: validMemcached(), uniqueName(), int32Ptr(), strPtr(). Verify error messages contain expected field paths using Expect(err.Error()).To(ContainSubstring(...)).",
+      "level": 3,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Reference documentation for validation webhook (REQ-001 through REQ-010)",
+      "description": "Create docs/reference/backend/validation-webhook.md following the structure of the existing docs/reference/backend/defaulting-webhook.md. Include: (1) Overview section with webhook path (/validate-memcached-c5c3-io-v1alpha1-memcached), admission type (Validating), failure policy (Fail), side effects (None), (2) Validation rules table listing all cross-field rules with field paths, constraints, and error messages, (3) Example rejected CRs (memory limit too low, PDB misconfigured, SASL without secret, timing mismatch), (4) Example accepted CRs (minimal, fully-specified valid), (5) Admission chain explanation (defaulting runs first, then validation), (6) Error format explanation (aggregated field.ErrorList via StatusError).",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_MemoryLimitSufficient",
+      "story": "Cluster operator cannot set memory limit below maxMemoryMB plus overhead",
+      "expected": "CR with resources.limits.memory=128Mi and maxMemoryMB=64 should pass validation",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_MemoryLimitInsufficient",
+      "story": "Cluster operator cannot set memory limit below maxMemoryMB plus overhead",
+      "expected": "CR with resources.limits.memory=64Mi and maxMemoryMB=64 should be rejected",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_MemoryLimitNotSpecified",
+      "story": "Cluster operator cannot set memory limit below maxMemoryMB plus overhead",
+      "expected": "CR without resources.limits.memory should pass validation",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_PDBMinAvailableValid",
+      "story": "Cluster operator cannot configure PDB minAvailable >= replicas",
+      "expected": "CR with replicas=3 and minAvailable=2 should pass validation",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_PDBMinAvailableEqualsReplicas",
+      "story": "Cluster operator cannot configure PDB minAvailable >= replicas",
+      "expected": "CR with replicas=3 and minAvailable=3 should be rejected",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_PDBBothFieldsSet",
+      "story": "Cluster operator cannot configure PDB minAvailable >= replicas",
+      "expected": "CR with both minAvailable and maxUnavailable set should be rejected",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_SASLEnabledWithoutSecret",
+      "story": "Cluster operator cannot enable SASL or TLS without required secret references",
+      "expected": "CR with sasl.enabled=true and empty credentialsSecretRef should be rejected",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_SASLEnabledWithSecret",
+      "story": "Cluster operator cannot enable SASL or TLS without required secret references",
+      "expected": "CR with sasl.enabled=true and valid credentialsSecretRef should pass validation",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_TLSEnabledWithoutSecret",
+      "story": "Cluster operator cannot enable SASL or TLS without required secret references",
+      "expected": "CR with tls.enabled=true and empty certificateSecretRef should be rejected",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_TLSEnabledWithSecret",
+      "story": "Cluster operator cannot enable SASL or TLS without required secret references",
+      "expected": "CR with tls.enabled=true and valid certificateSecretRef should pass validation",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_GracefulShutdownTimingValid",
+      "story": "Cluster operator cannot configure terminationGracePeriodSeconds <= preStopDelaySeconds",
+      "expected": "CR with terminationGracePeriodSeconds=30 and preStopDelaySeconds=10 should pass",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_GracefulShutdownTimingInvalid",
+      "story": "Cluster operator cannot configure terminationGracePeriodSeconds <= preStopDelaySeconds",
+      "expected": "CR with terminationGracePeriodSeconds=10 and preStopDelaySeconds=10 should be rejected",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_MultipleErrorsCollected",
+      "story": "Cluster operator gets clear rejection when submitting invalid Memcached CR",
+      "expected": "CR with multiple violations should return all errors, not just the first",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_DeleteAlwaysAllowed",
+      "story": "Cluster operator gets clear rejection when submitting invalid Memcached CR",
+      "expected": "ValidateDelete should always return nil",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_ValidCRAccepted",
+      "story": "Cluster operator gets clear rejection when submitting invalid Memcached CR",
+      "expected": "A fully valid CR should pass validation with no errors",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Describe: Webhook Validation via API Server - rejects insufficient memory limit",
+      "story": "Cluster operator cannot set memory limit below maxMemoryMB plus overhead",
+      "expected": "k8sClient.Create should fail for a CR with insufficient memory limit",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Describe: Webhook Validation via API Server - rejects PDB minAvailable >= replicas",
+      "story": "Cluster operator cannot configure PDB minAvailable >= replicas",
+      "expected": "k8sClient.Create should fail for a CR with minAvailable >= replicas",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Describe: Webhook Validation via API Server - rejects SASL without secret",
+      "story": "Cluster operator cannot enable SASL or TLS without required secret references",
+      "expected": "k8sClient.Create should fail for a CR with SASL enabled but no secret",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Describe: Webhook Validation via API Server - accepts valid CR with all features",
+      "story": "Validation webhook integrates with existing defaulting webhook",
+      "expected": "k8sClient.Create should succeed for a fully valid CR with all optional sections",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Describe: Webhook Validation via API Server - minimal CR passes after defaulting",
+      "story": "Validation webhook integrates with existing defaulting webhook",
+      "expected": "k8sClient.Create should succeed for a minimal empty-spec CR (defaulting fills required values)",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Describe: Webhook Validation via API Server - rejects update to invalid config",
+      "story": "Cluster operator gets clear rejection when submitting invalid Memcached CR",
+      "expected": "k8sClient.Update should fail when changing a valid CR to an invalid configuration",
+      "requirement_id": "REQ-010"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 6 cross-field validation rules (REQ-001 through REQ-006) are implemented and have passing unit tests",
+    "Validator is registered via the builder chain (.WithValidator) and make manifests generates ValidatingWebhookConfiguration in config/webhook/manifests.yaml",
+    "ValidateCreate and ValidateUpdate apply identical validation logic; ValidateDelete always returns nil",
+    "Multiple validation errors are aggregated using field.ErrorList and returned as a single apierrors.StatusError (REQ-008)",
+    "Integration tests verify rejection via envtest k8sClient.Create for all 6 validation rules plus acceptance of valid CRs",
+    "Existing defaulting webhook tests (api/v1alpha1/memcached_webhook_test.go and internal/controller/memcached_webhook_integration_test.go) continue to pass without modification",
+    "make lint, make vet, and make test pass cleanly with no new warnings",
+    "Reference documentation exists at docs/reference/backend/validation-webhook.md with all validation rules, examples, and webhook metadata"
+  ],
+  "implementation_notes": "Architecture: The MemcachedCustomValidator implements admission.Validator[*Memcached] (the typed generic interface from controller-runtime v0.23.1). An internal validateMemcached(*Memcached) function collects all errors into a field.ErrorList, enabling aggregate error reporting. ValidateCreate and ValidateUpdate both call validateMemcached; ValidateDelete returns nil. The validator is registered by chaining .WithValidator(&MemcachedCustomValidator{}) on the existing builder in SetupMemcachedWebhookWithManager, requiring no changes to cmd/main.go. The kubebuilder webhook marker generates the ValidatingWebhookConfiguration automatically via make manifests.\n\nKey patterns to follow: (1) Same file organization as the defaulting webhook — new file memcached_validation_webhook.go in api/v1alpha1/, (2) Same test pattern — standard Go testing for unit tests, Ginkgo/Gomega for integration tests, (3) Use k8s.io/apimachinery/pkg/util/validation/field for structured field path errors, (4) Use apierrors.NewInvalid() to wrap field.ErrorList into StatusError for proper API server error formatting.\n\nPitfalls: (1) IntOrString for PDB minAvailable — only validate integer values, skip percentage values as they cannot be compared statically against replicas, (2) Memory overhead constant (32Mi) should be a named constant for clarity and future adjustment, (3) The validation webhook path must follow the kubebuilder convention: /validate-{group}-{version}-{kind}, (4) Nil pointer checks are critical — spec.resources, spec.highAvailability, spec.security, and their sub-fields can all be nil.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.427911"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T10:22:10.199856"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T10:28:51.058249"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "f58e9114-0ec9-4489-81c6-7494f777ebf6",
+      "timestamp": "2026-02-20T10:28:51.058274",
+      "total_duration": 395.045569896698,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 395.045569896698,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
