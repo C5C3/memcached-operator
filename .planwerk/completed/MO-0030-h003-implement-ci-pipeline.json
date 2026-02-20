@@ -2,8 +2,8 @@
   "feature_id": "MO-0030",
   "title": "H003: Implement CI pipeline",
   "slug": "h003-implement-ci-pipeline",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Set up CI (GitHub Actions) with: lint (golangci-lint), unit tests, envtest integration tests, Docker image build, CRD schema validation. Run on PRs and main branch pushes.",
   "stories": [
@@ -331,6 +331,7 @@
       "description": "Create `.github/workflows/ci.yml` with:\n- Trigger: `on: pull_request` (branches: [main]) and `on: push` (branches: [main])\n- Job `lint`: runs-on ubuntu-latest, steps: checkout@v4, setup-go@v5 (go-version-file: go.mod, cache: true), run golangci-lint via golangci/golangci-lint-action@v7 with version v2.10.1\n- Use `concurrency` to cancel stale workflow runs for the same PR",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -344,6 +345,7 @@
       "description": "Add job `test` to `.github/workflows/ci.yml`:\n- Steps: checkout@v4, setup-go@v5 (go-version-file: go.mod, cache: true)\n- Run `make test` which internally runs fmt, vet, envtest setup, and go test with coverage\n- Upload cover.out as an artifact via actions/upload-artifact@v4\n- Ensure KUBEBUILDER_ASSETS is set by the Makefile's envtest target",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-006",
@@ -356,6 +358,7 @@
       "description": "Add job `build` to `.github/workflows/ci.yml`:\n- Steps: checkout@v4, docker/setup-buildx-action@v3, docker/build-push-action@v6 with push: false, context: ., file: ./Dockerfile, build-args for VERSION/GIT_COMMIT/BUILD_DATE, cache-from: type=gha, cache-to: type=gha,mode=max\n- VERSION derived from `git describe --tags --always --dirty`, GIT_COMMIT from github.sha, BUILD_DATE from current UTC timestamp",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-008"
@@ -367,6 +370,7 @@
       "description": "Add job `validate` to `.github/workflows/ci.yml`:\n- Steps: checkout@v4, setup-go@v5 (go-version-file: go.mod, cache: true)\n- Run `make verify-manifests` which internally runs `make manifests generate` and checks `git diff --exit-code -- config/crd/ api/v1alpha1/zz_generated.deepcopy.go`\n- The existing Makefile target already provides a clear error message on failure",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006",
@@ -379,6 +383,7 @@
       "description": "Add to `.github/workflows/ci.yml`:\n- `concurrency: group: ${{ github.workflow }}-${{ github.ref }}, cancel-in-progress: true` to cancel stale runs\n- `permissions: contents: read` for least-privilege\n- Verify all 4 jobs (lint, test, build, validate) have no `needs:` dependencies so they run in parallel (REQ-007)",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-007"
@@ -390,6 +395,7 @@
       "description": "Validate the complete `.github/workflows/ci.yml` file:\n- Parse YAML to verify no syntax errors\n- Verify all 4 jobs are defined: lint, test, build, validate\n- Verify trigger events: pull_request (branches: [main]), push (branches: [main])\n- Verify each job uses actions/checkout@v4 and setup-go@v5 (where applicable)\n- Verify golangci-lint version matches v2.10.1\n- Verify concurrency group is set\n- Verify permissions are set to contents: read\n- Run `make lint` locally to ensure linting still works",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -407,6 +413,7 @@
       "description": "Create `docs/reference/backend/ci-pipeline.md` following existing doc conventions in docs/reference/backend/:\n- Document workflow trigger events (PR to main, push to main)\n- Document each job: lint (golangci-lint v2.10.1), test (envtest + coverage), build (Docker multi-stage), validate (CRD schema)\n- Document how to reproduce each check locally using Makefile targets: `make lint`, `make test`, `make docker-build`, `make verify-manifests`\n- Document caching strategy (Go modules via setup-go, Docker layers via GHA cache)\n- Document concurrency behavior (cancel-in-progress for stale PR runs)",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -518,6 +525,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T18:03:05.211783"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:05:13.293259"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:23:05.668121"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:23:05.686143"
     }
   },
   "execution_history": [
@@ -531,6 +550,44 @@
           "name": "prepare",
           "duration": 152.98171544075012,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "5a07e249-a2be-4e2b-80c5-a74c63a14748",
+      "timestamp": "2026-02-20T18:17:00.928801",
+      "total_duration": 580.838018655777,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (5 tasks)",
+          "duration": 141.40376687049866,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 157.0964548587799,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0030] Code Review",
+          "duration": 161.9343888759613,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0030] Improvements",
+          "duration": 43.085134744644165,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0030] Simplify",
+          "duration": 77.31827330589294,
+          "type": "simplify",
           "status": "done"
         }
       ]
