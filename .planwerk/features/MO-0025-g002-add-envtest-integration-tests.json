@@ -1,0 +1,605 @@
+{
+  "feature_id": "MO-0025",
+  "title": "G002: Add envtest integration tests",
+  "slug": "g002-add-envtest-integration-tests",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Write integration tests using controller-runtime's envtest framework. Test the full reconciliation loop against a real API server: CR creation triggers Deployment + Service creation, spec updates propagate correctly, deletion cleans up owned resources, status conditions are set correctly.",
+  "stories": [
+    {
+      "title": "Operator creates all owned resources on CR creation",
+      "role": "operator",
+      "want": "a single reconciliation cycle to create all required resources (Deployment, Service, and conditionally PDB, ServiceMonitor, NetworkPolicy) when a Memcached CR is created",
+      "so_that": "the Memcached cluster is fully operational after one reconcile",
+      "criteria": [
+        "Deployment exists with correct spec after reconcileOnce",
+        "Headless Service exists with clusterIP=None after reconcileOnce",
+        "PDB exists when spec.highAvailability.podDisruptionBudget.enabled=true",
+        "ServiceMonitor exists when spec.monitoring.enabled=true and spec.monitoring.serviceMonitor is set",
+        "NetworkPolicy exists when spec.security.networkPolicy.enabled=true",
+        "All resources have owner references pointing to the Memcached CR",
+        "All resources share consistent standard labels (app.kubernetes.io/name, instance, managed-by)"
+      ]
+    },
+    {
+      "title": "Operator propagates spec updates across all owned resources",
+      "role": "operator",
+      "want": "changes to the Memcached CR spec to propagate to all affected owned resources in a single reconcile cycle",
+      "so_that": "the cluster converges to the desired state after any spec change",
+      "criteria": [
+        "Changing spec.replicas updates Deployment.spec.replicas",
+        "Changing spec.image updates Deployment container image",
+        "Enabling monitoring adds exporter sidecar to Deployment, metrics port to Service, and creates ServiceMonitor",
+        "Changing spec.monitoring.serviceMonitor.interval updates ServiceMonitor endpoint interval",
+        "Status observedGeneration matches metadata.generation after reconcile"
+      ]
+    },
+    {
+      "title": "Operator cleans up owned resources on CR deletion",
+      "role": "operator",
+      "want": "all owned resources to be garbage collected when the Memcached CR is deleted",
+      "so_that": "no orphaned resources remain in the cluster",
+      "criteria": [
+        "After CR deletion, Deployment is eventually garbage collected (NotFound)",
+        "After CR deletion, Service is eventually garbage collected (NotFound)",
+        "After CR deletion, PDB is eventually garbage collected when it existed",
+        "After CR deletion, ServiceMonitor is eventually garbage collected when it existed",
+        "After CR deletion, NetworkPolicy is eventually garbage collected when it existed",
+        "Reconcile returns empty result and no error for deleted CR"
+      ]
+    },
+    {
+      "title": "Operator sets status conditions correctly through lifecycle",
+      "role": "operator",
+      "want": "status conditions (Available, Progressing, Degraded) to accurately reflect the cluster state at each lifecycle stage",
+      "so_that": "users can monitor rollout progress and health via kubectl",
+      "criteria": [
+        "After initial reconcile: Available=False, Progressing=True, Degraded=True (0/N replicas ready in envtest)",
+        "After scaling to 0 replicas: Available=True, Progressing=False, Degraded=False",
+        "ObservedGeneration increments after spec changes",
+        "ReadyReplicas mirrors Deployment status readyReplicas",
+        "All three conditions always present with non-empty messages and reasons"
+      ]
+    },
+    {
+      "title": "Operator handles optional resource enable/disable lifecycle",
+      "role": "operator",
+      "want": "optional resources (PDB, ServiceMonitor, NetworkPolicy) to be created when their feature is enabled and to not be created (or be orphaned for GC) when disabled",
+      "so_that": "the operator respects feature toggles in the CR spec",
+      "criteria": [
+        "PDB is not created when spec.highAvailability.podDisruptionBudget.enabled is false or nil",
+        "ServiceMonitor is not created when spec.monitoring.enabled is false or spec.monitoring.serviceMonitor is nil",
+        "NetworkPolicy is not created when spec.security.networkPolicy.enabled is false or nil",
+        "Enabling a previously disabled feature creates the resource on next reconcile",
+        "Disabling a previously enabled feature: reconciler skips the resource (GC handles cleanup)"
+      ]
+    },
+    {
+      "title": "Multiple Memcached instances are isolated",
+      "role": "operator",
+      "want": "multiple Memcached CR instances in the same namespace to create independent sets of owned resources without interference",
+      "so_that": "multi-tenant deployments are safe",
+      "criteria": [
+        "Two CRs create separate Deployments with different names",
+        "Two CRs create separate Services with different names",
+        "Owner references point to their respective CRs",
+        "Deleting one CR does not affect the other CR's resources",
+        "Labels include instance-specific app.kubernetes.io/instance"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The reconciler SHALL create a Deployment and headless Service for every Memcached CR, and conditionally create PDB, ServiceMonitor, and NetworkPolicy based on spec toggles",
+      "priority": "SHALL",
+      "rationale": "Core reconciliation loop must produce all required child resources in a single cycle",
+      "scenarios": [
+        {
+          "name": "Minimal CR creates Deployment and Service",
+          "when": "a Memcached CR with empty spec is created and reconciled once",
+          "then": "a Deployment and a headless Service exist with the same name/namespace as the CR",
+          "and_then": [
+            "PDB, ServiceMonitor, and NetworkPolicy do NOT exist"
+          ]
+        },
+        {
+          "name": "Full-featured CR creates all resources",
+          "when": "a Memcached CR with PDB enabled, monitoring+serviceMonitor enabled, and networkPolicy enabled is created and reconciled",
+          "then": "Deployment, Service, PDB, ServiceMonitor, and NetworkPolicy all exist",
+          "and_then": [
+            "each resource has an owner reference to the CR"
+          ]
+        },
+        {
+          "name": "All resources have consistent labels",
+          "when": "any Memcached CR is reconciled",
+          "then": "all owned resources have labels app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<CR name>, app.kubernetes.io/managed-by=memcached-operator",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The reconciler SHALL set owner references on all owned resources with controller=true and blockOwnerDeletion=true",
+      "priority": "SHALL",
+      "rationale": "Owner references enable Kubernetes garbage collection to clean up resources when the CR is deleted",
+      "scenarios": [
+        {
+          "name": "Deployment has correct owner reference",
+          "when": "a Memcached CR is reconciled",
+          "then": "the Deployment has exactly one owner reference with apiVersion=memcached.c5c3.io/v1alpha1, kind=Memcached, name=<CR name>, controller=true, blockOwnerDeletion=true",
+          "and_then": []
+        },
+        {
+          "name": "All conditional resources have correct owner references",
+          "when": "a Memcached CR with all features enabled is reconciled",
+          "then": "PDB, ServiceMonitor, and NetworkPolicy each have exactly one owner reference pointing to the CR",
+          "and_then": []
+        },
+        {
+          "name": "Owner reference UID matches CR UID",
+          "when": "a Memcached CR is reconciled",
+          "then": "all owner reference UIDs match the CR's metadata.uid",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The reconciler SHALL propagate spec changes to all affected owned resources in a single reconcile cycle",
+      "priority": "SHALL",
+      "rationale": "Level-triggered reconciliation must converge all resources to the desired state",
+      "scenarios": [
+        {
+          "name": "Replica count update propagates to Deployment",
+          "when": "spec.replicas is changed from 1 to 3 and reconciled",
+          "then": "Deployment.spec.replicas equals 3",
+          "and_then": [
+            "status.observedGeneration matches the new metadata.generation"
+          ]
+        },
+        {
+          "name": "Monitoring toggle propagates to Deployment, Service, and ServiceMonitor",
+          "when": "monitoring is enabled on a previously minimal CR and reconciled",
+          "then": "Deployment gains exporter sidecar container, Service gains metrics port 9150, ServiceMonitor is created",
+          "and_then": []
+        },
+        {
+          "name": "Image update propagates to Deployment container",
+          "when": "spec.image is changed from memcached:1.6 to memcached:1.6.29 and reconciled",
+          "then": "Deployment container image equals memcached:1.6.29",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The reconciler SHALL handle CR deletion gracefully, returning empty result and no error",
+      "priority": "SHALL",
+      "rationale": "Deletion must not cause reconciler errors; cleanup is handled by Kubernetes GC via owner references",
+      "scenarios": [
+        {
+          "name": "Reconcile after CR deletion returns success",
+          "when": "a Memcached CR is deleted and then reconciled",
+          "then": "the reconciler returns ctrl.Result{} and nil error",
+          "and_then": []
+        },
+        {
+          "name": "Owned resources are garbage collected after CR deletion",
+          "when": "a Memcached CR with all features enabled is deleted",
+          "then": "Deployment, Service, PDB, ServiceMonitor, and NetworkPolicy are eventually NotFound",
+          "and_then": []
+        },
+        {
+          "name": "Deletion with concurrent reconcile",
+          "when": "a CR is deleted between event delivery and reconciliation",
+          "then": "the reconciler returns empty result and no error",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The reconciler SHALL set all three status conditions (Available, Progressing, Degraded) with correct values after every reconcile",
+      "priority": "SHALL",
+      "rationale": "Status conditions are the primary interface for users to monitor CR health",
+      "scenarios": [
+        {
+          "name": "Initial reconcile with 1 replica in envtest",
+          "when": "a Memcached CR with 1 replica is reconciled (envtest has no kubelet so readyReplicas=0)",
+          "then": "Available=False, Progressing=True, Degraded=True, readyReplicas=0, observedGeneration=metadata.generation",
+          "and_then": [
+            "all conditions have non-empty Message and Reason"
+          ]
+        },
+        {
+          "name": "Zero replica scaling",
+          "when": "spec.replicas is set to 0 and reconciled",
+          "then": "Available=True, Progressing=False, Degraded=False",
+          "and_then": []
+        },
+        {
+          "name": "ObservedGeneration tracks spec changes",
+          "when": "spec is changed twice and reconciled after each change",
+          "then": "observedGeneration matches metadata.generation after each reconcile",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The reconciler SHALL be idempotent: repeated reconciles without spec changes SHOULD NOT update owned resources",
+      "priority": "SHALL",
+      "rationale": "Idempotency prevents unnecessary updates and resource version churn",
+      "scenarios": [
+        {
+          "name": "Full-featured CR idempotency",
+          "when": "a CR with all features enabled is reconciled three times without spec changes",
+          "then": "all resource versions remain unchanged after the first reconcile",
+          "and_then": []
+        },
+        {
+          "name": "Minimal CR idempotency",
+          "when": "a minimal CR is reconciled twice without spec changes",
+          "then": "Deployment and Service resource versions are unchanged on the second reconcile",
+          "and_then": []
+        },
+        {
+          "name": "Post-update idempotency",
+          "when": "spec is changed, reconciled, then reconciled again without further changes",
+          "then": "the second reconcile does not update any resource versions",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The reconciler SHALL recreate owned resources that are deleted externally",
+      "priority": "SHALL",
+      "rationale": "Drift correction ensures the cluster always converges to the desired state",
+      "scenarios": [
+        {
+          "name": "Deleted Deployment is recreated",
+          "when": "a Deployment owned by a Memcached CR is deleted externally and reconciled",
+          "then": "a new Deployment is created with the correct spec and owner reference",
+          "and_then": []
+        },
+        {
+          "name": "Deleted Service is recreated",
+          "when": "a Service owned by a Memcached CR is deleted externally and reconciled",
+          "then": "a new Service is created with clusterIP=None",
+          "and_then": []
+        },
+        {
+          "name": "Deleted PDB is recreated",
+          "when": "a PDB owned by a Memcached CR is deleted externally and reconciled",
+          "then": "a new PDB is created with the correct minAvailable",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "Multiple Memcached CR instances in the same namespace SHALL create independent owned resources without interference",
+      "priority": "SHALL",
+      "rationale": "Multi-tenant isolation is critical for shared namespaces",
+      "scenarios": [
+        {
+          "name": "Two CRs create independent Deployments",
+          "when": "two Memcached CRs are created in the same namespace and reconciled",
+          "then": "each has its own Deployment with distinct names and correct owner references",
+          "and_then": []
+        },
+        {
+          "name": "Deleting one CR does not affect the other",
+          "when": "one of two Memcached CRs is deleted",
+          "then": "the other CR's Deployment and Service remain unchanged",
+          "and_then": []
+        },
+        {
+          "name": "Labels are instance-scoped",
+          "when": "two CRs are reconciled",
+          "then": "each resource has app.kubernetes.io/instance matching its own CR name, not the other CR",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create full reconciliation loop test for minimal CR: verify Deployment + Service creation, no optional resources, correct owner references and labels (REQ-001, REQ-002)",
+      "description": "Create file internal/controller/memcached_full_reconcile_test.go. Write a Ginkgo Describe block 'Full Reconciliation Loop'. Test Context 'minimal CR with empty spec': create validMemcached, reconcileOnce, verify Deployment exists with 1 replica and default image, Service exists with clusterIP=None, PDB/ServiceMonitor/NetworkPolicy are NotFound. Verify all resources have correct owner references (apiVersion, kind, name, uid, controller=true, blockOwnerDeletion=true) and consistent standard labels.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add full reconciliation loop test for full-featured CR: verify all five owned resources created in single reconcile (REQ-001, REQ-002)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'full-featured CR with all optional resources enabled'. Create CR with PDB enabled, monitoring+serviceMonitor enabled, networkPolicy enabled, 3 replicas, soft anti-affinity. reconcileOnce and verify: Deployment has 2 containers (memcached + exporter), Service has memcached+metrics ports, PDB has minAvailable=1, ServiceMonitor has default interval, NetworkPolicy has memcached+metrics ports. Verify all five resources have correct owner references and labels.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add spec update propagation tests: replicas, image, and monitoring enable affecting multiple resources (REQ-003, REQ-005)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'spec update propagation'. Test 1: Change replicas from 1 to 3, reconcile, verify Deployment replicas=3 and status.observedGeneration updated. Test 2: Change image, reconcile, verify Deployment container image updated. Test 3: Enable monitoring on a minimal CR, reconcile, verify Deployment gains exporter sidecar (2 containers), Service gains metrics port (2 ports), ServiceMonitor is created. Verify status conditions after each update.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-003",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Add optional resource enable/disable lifecycle tests: PDB, ServiceMonitor, NetworkPolicy toggle (REQ-001, REQ-003)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'optional resource lifecycle'. Test 1: Create minimal CR (no PDB), reconcile, verify no PDB. Enable PDB, reconcile, verify PDB created. Test 2: Create CR with monitoring+serviceMonitor, reconcile, verify ServiceMonitor exists. Disable monitoring, reconcile, verify reconciler does not error. Test 3: Create CR with networkPolicy enabled, reconcile, verify NetworkPolicy exists. Then verify enabling networkPolicy on a previously-disabled CR creates it.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Add full idempotency tests: three consecutive reconciles on full-featured CR without resource version changes (REQ-006)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'full idempotency'. Create full-featured CR (all optional resources enabled), reconcileOnce, capture resource versions of all five resources. ReconcileOnce two more times, verify all resource versions unchanged. Also test post-update idempotency: update spec, reconcile, capture RVs, reconcile again, verify RVs unchanged.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Add status conditions lifecycle tests: initial → spec change → zero scale within full reconcile context (REQ-005)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'status conditions lifecycle'. Test complete lifecycle: (1) Create 3-replica CR, reconcile, verify Available=False, Progressing=True, Degraded=True, readyReplicas=0, observedGeneration matches. (2) Update replicas to 0, reconcile, verify Available=True, Progressing=False, Degraded=False. (3) Update replicas back to 2, reconcile, verify Degraded=True again. Verify all conditions always have non-empty Message, Reason, LastTransitionTime.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create CR deletion and GC cleanup test: verify all owned resources are garbage collected (REQ-004)",
+      "description": "Create file internal/controller/memcached_deletion_test.go. Write Describe 'CR Deletion and Cleanup'. Test 1: Create full-featured CR, reconcile, verify all resources exist. Delete CR. Use Eventually to wait for GC to clean up all five resources (Deployment, Service, PDB, ServiceMonitor, NetworkPolicy) returning NotFound. Test 2: Reconcile after CR deletion returns ctrl.Result{} and nil error. Test 3: Create minimal CR, reconcile, delete CR, verify only Deployment and Service are GC'd.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add owned resource recreation tests: externally deleted resources are recreated on next reconcile (REQ-007)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'drift correction on deleted resources'. Create full-featured CR, reconcile. Externally delete Deployment, reconcile, verify Deployment recreated with correct spec and owner ref. Repeat for PDB: delete PDB externally, reconcile, verify PDB recreated. Repeat for Service: delete Service, reconcile, verify Service recreated with clusterIP=None.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Create multi-instance isolation tests: two CRs in same namespace with independent resources (REQ-008)",
+      "description": "Create file internal/controller/memcached_multi_instance_test.go. Write Describe 'Multi-Instance Isolation'. Test 1: Create two Memcached CRs (mc-a, mc-b) in default namespace, reconcile both. Verify each has its own Deployment and Service with correct names. Verify owner references point to their respective CRs (different UIDs). Verify labels have distinct app.kubernetes.io/instance values. Test 2: Delete mc-a, verify mc-b's resources still exist and unchanged. Test 3: Both CRs have monitoring enabled, verify separate ServiceMonitors with correct selectors.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add cross-resource consistency test: enabling monitoring updates Deployment (sidecar), Service (metrics port), and NetworkPolicy (metrics port) in one reconcile (REQ-003)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'cross-resource consistency on monitoring toggle'. Create CR with networkPolicy enabled but monitoring disabled. Reconcile, verify NetworkPolicy has only port 11211. Enable monitoring with serviceMonitor, reconcile. Verify in one check: Deployment has 2 containers, Service has 2 ports (memcached + metrics), ServiceMonitor is created, NetworkPolicy now has 2 ports (11211 + 9150). This verifies cross-resource consistency in a single reconcile.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add full create-update-delete lifecycle integration test (REQ-001, REQ-003, REQ-004, REQ-005)",
+      "description": "In memcached_full_reconcile_test.go, add Context 'complete create-update-delete lifecycle'. Single test that exercises the full lifecycle: (1) Create minimal CR, reconcile, verify Deployment+Service exist, status conditions set. (2) Update to 3 replicas with monitoring, reconcile, verify Deployment updated, ServiceMonitor created, status observedGeneration incremented. (3) Update to enable PDB, reconcile, verify PDB created. (4) Delete CR, verify reconcile returns success, verify all resources eventually GC'd.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write Reference documentation for envtest integration test patterns and conventions (docs/reference/backend/envtest-integration-tests.md)",
+      "description": "Create docs/reference/backend/envtest-integration-tests.md. Document: test file organization (full reconcile, deletion, multi-instance), helper functions (validMemcached, uniqueName, reconcileOnce, fetch* helpers), envtest setup in suite_test.go, test patterns (Context/BeforeEach/It blocks, Eventually for GC), requirement coverage matrix mapping REQ-IDs to test files/functions. Include examples of how to add new integration test scenarios.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should create Deployment and Service for minimal CR",
+      "story": "Operator creates all owned resources on CR creation",
+      "expected": "reconcileOnce on a minimal CR creates a Deployment with 1 replica and default image, and a headless Service with clusterIP=None",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should create all five resources for full-featured CR",
+      "story": "Operator creates all owned resources on CR creation",
+      "expected": "reconcileOnce on a CR with PDB, monitoring+serviceMonitor, and networkPolicy all enabled creates Deployment, Service, PDB, ServiceMonitor, and NetworkPolicy",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should set correct owner references on all owned resources",
+      "story": "Operator creates all owned resources on CR creation",
+      "expected": "All owned resources have exactly one owner reference with correct apiVersion, kind, name, uid, controller=true, blockOwnerDeletion=true",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should set consistent standard labels on all owned resources",
+      "story": "Operator creates all owned resources on CR creation",
+      "expected": "All resources have app.kubernetes.io/name=memcached, instance=<name>, managed-by=memcached-operator",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should propagate replicas change to Deployment and update status",
+      "story": "Operator propagates spec updates across all owned resources",
+      "expected": "Changing spec.replicas from 1 to 3 updates Deployment.spec.replicas and status.observedGeneration",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should propagate monitoring enable to Deployment, Service, and ServiceMonitor",
+      "story": "Operator propagates spec updates across all owned resources",
+      "expected": "Enabling monitoring adds exporter sidecar, metrics port to Service, creates ServiceMonitor",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should not create optional resources when features are disabled",
+      "story": "Operator handles optional resource enable/disable lifecycle",
+      "expected": "Minimal CR: PDB, ServiceMonitor, NetworkPolicy are all NotFound",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should enable PDB after initial creation without PDB",
+      "story": "Operator handles optional resource enable/disable lifecycle",
+      "expected": "Updating CR to enable PDB creates PDB on next reconcile",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_deletion_test.go",
+      "test_function": "should return empty result for deleted CR",
+      "story": "Operator cleans up owned resources on CR deletion",
+      "expected": "Reconciling a deleted CR returns ctrl.Result{} and nil error",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_deletion_test.go",
+      "test_function": "should garbage collect all owned resources after CR deletion",
+      "story": "Operator cleans up owned resources on CR deletion",
+      "expected": "After deleting a full-featured CR, all five resource types return NotFound",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should set correct status conditions after initial reconcile",
+      "story": "Operator sets status conditions correctly through lifecycle",
+      "expected": "Available=False, Progressing=True, Degraded=True after first reconcile in envtest",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should update status conditions after scaling to zero",
+      "story": "Operator sets status conditions correctly through lifecycle",
+      "expected": "Available=True, Progressing=False, Degraded=False after scaling to 0 replicas",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should be idempotent with full-featured CR",
+      "story": "Operator creates all owned resources on CR creation",
+      "expected": "Three consecutive reconciles on unchanged full-featured CR do not change any resource versions after the first",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_full_reconcile_test.go",
+      "test_function": "should recreate deleted Deployment and PDB",
+      "story": "Operator creates all owned resources on CR creation",
+      "expected": "Externally deleting Deployment and PDB, then reconciling, recreates both with correct specs",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_multi_instance_test.go",
+      "test_function": "should create independent resources for two CRs",
+      "story": "Multiple Memcached instances are isolated",
+      "expected": "Two CRs in the same namespace each have their own Deployment, Service with distinct names and owner refs",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_multi_instance_test.go",
+      "test_function": "should not affect other CR when one is deleted",
+      "story": "Multiple Memcached instances are isolated",
+      "expected": "Deleting CR-A does not affect CR-B's Deployment or Service",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All test files compile and pass with 'make test' (go test with envtest)",
+    "Tests follow existing Ginkgo/Gomega patterns: Describe/Context/BeforeEach/It structure",
+    "All tests use uniqueName() for resource isolation and validMemcached() for CR creation",
+    "Every REQ-ID has at least 2 test specifications and corresponding implemented tests",
+    "No test modifies shared state: each test creates its own CR with unique name",
+    "golangci-lint passes with no errors on new test files",
+    "go vet passes on all new test files",
+    "Tests verify both positive cases (resource exists) and negative cases (resource NotFound when disabled)",
+    "Owner reference assertions check all fields: apiVersion, kind, name, uid, controller, blockOwnerDeletion",
+    "Documentation covers test file organization, helper usage, and how to add new test scenarios"
+  ],
+  "implementation_notes": "Architecture: Three new test files in internal/controller/ alongside existing tests, sharing the same envtest suite_test.go bootstrap and helper functions (uniqueName, validMemcached, reconcileOnce, fetchDeployment, fetchService, fetchPDB, fetchNetworkPolicy, fetchServiceMonitor, findCondition, int32Ptr, strPtr). All tests run in the same 'Controller Suite' Ginkgo suite.\n\nKey patterns to follow:\n- Use reconcileOnce(mc) for single reconcile cycles (defined in memcached_deployment_reconcile_test.go)\n- Use fetch* helpers for resource retrieval (defined across *_reconcile_test.go files)\n- Use findCondition for status condition assertions (defined in memcached_status_reconcile_test.go)\n- Use k8sClient (envtest client from suite_test.go) for all API operations\n- Use apierrors.IsNotFound(err) to verify resource absence\n- Use Eventually() with timeout for garbage collection assertions (GC requires background controller manager)\n\nPitfalls:\n- envtest has no kubelet, so readyReplicas always remains 0 in Deployment status. Tests must account for this.\n- Garbage collection requires the controller manager to be running (started in suite_test.go). Use Eventually() with reasonable timeout.\n- The webhook server is configured in suite_test.go, so CRD validation is active during all tests.\n- Resource names must be unique per test to avoid conflicts; always use uniqueName().\n- The reconciler does not delete optional resources when features are disabled (only skips creating/updating them). GC via owner references handles cleanup only when the CR itself is deleted.\n\nKey files to reference:\n- internal/controller/suite_test.go - envtest bootstrap, k8sClient, ctx, testEnv variables\n- internal/controller/memcached_crd_validation_test.go - uniqueName(), validMemcached(), int32Ptr(), strPtr()\n- internal/controller/memcached_deployment_reconcile_test.go - reconcileOnce(), fetchDeployment(), zoneSpreadConstraint()\n- internal/controller/memcached_service_reconcile_test.go - fetchService()\n- internal/controller/memcached_pdb_reconcile_test.go - fetchPDB()\n- internal/controller/memcached_networkpolicy_reconcile_test.go - fetchNetworkPolicy()\n- internal/controller/memcached_servicemonitor_reconcile_test.go - fetchServiceMonitor()\n- internal/controller/memcached_status_reconcile_test.go - findCondition()",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.429326"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:11:27.018048"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:18:12.224135"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "836639c8-c71e-400a-9ad0-0325149c3f16",
+      "timestamp": "2026-02-20T14:18:12.224178",
+      "total_duration": 400.14429903030396,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 400.14429903030396,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
