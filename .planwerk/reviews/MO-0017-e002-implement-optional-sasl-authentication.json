@@ -1,0 +1,97 @@
+{
+  "feature_id": "MO-0017",
+  "title": "E002: Implement optional SASL authentication",
+  "date": "2026-02-19",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "SASL authentication is correctly implemented with buildSASLVolume, buildSASLVolumeMount, and buildMemcachedArgs SASL support. RBAC, sample CR, and documentation are complete. Two explicitly planned coexistence tests are missing, and the Secret volume does not use Items key projection as specified in the plan.",
+  "tests_checklist": [
+    {"item": "All unit tests pass (go test)", "checked": true},
+    {"item": "buildSASLVolume enabled/nil cases tested", "checked": true},
+    {"item": "buildSASLVolumeMount enabled/nil cases tested", "checked": true},
+    {"item": "buildMemcachedArgs SASL enabled/disabled/nil tested", "checked": true},
+    {"item": "buildMemcachedArgs SASL ordering with verbosity+extraArgs tested", "checked": true},
+    {"item": "constructDeployment SASL enabled integration tested", "checked": true},
+    {"item": "constructDeployment SASL disabled (no volumes/mounts/-Y) tested", "checked": true},
+    {"item": "constructDeployment SASL+monitoring exporter isolation tested", "checked": true},
+    {"item": "constructDeployment SASLWithGracefulShutdown coexistence tested", "checked": false},
+    {"item": "constructDeployment SASLWithSecurityContexts coexistence tested", "checked": false},
+    {"item": "Existing tests pass unchanged (backward compat)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows established nil-check → return nil builder pattern", "checked": true},
+    {"item": "Named constants for volume name and mount path (no magic strings)", "checked": true},
+    {"item": "Functions are small and single-responsibility", "checked": true},
+    {"item": "Clear naming (buildSASLVolume, buildSASLVolumeMount)", "checked": true},
+    {"item": "No code duplication", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "RBAC is read-only for secrets (get/list/watch only)", "checked": true},
+    {"item": "Volume mount is read-only", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No path traversal (mount path is a constant)", "checked": true},
+    {"item": "No sensitive data exposed in logs", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal and follows existing patterns", "checked": true},
+    {"item": "SASL volume mount only on memcached container (not exporter)", "checked": true},
+    {"item": "Args ordering preserved: standard → verbosity → SASL → extraArgs", "checked": true},
+    {"item": "No scope creep beyond SASL authentication", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "No future-proofing beyond requirements", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil checks at function entry return early", "checked": true},
+    {"item": "SASL disabled returns nil immediately", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All nil paths handled (nil Security, nil SASL, SASL disabled)", "checked": true},
+    {"item": "Volume mount path uses constant, not user input", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [
+    {
+      "severity": "LOW",
+      "description": "buildSASLVolume does not use Items key projection to project only the 'password-file' key from the Secret. The plan specified 'projecting the password-file key'. Without Items, all keys in the Secret are mounted as files. Functionally correct but deviates from plan specification.",
+      "location": "internal/controller/deployment.go:210-217",
+      "fix": "Add Items field to SecretVolumeSource: Items: []corev1.KeyToPath{{Key: \"password-file\", Path: \"password-file\"}}"
+    }
+  ],
+  "issues_found": [
+    {
+      "id": "FC1-1",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "Plan task 2.1 explicitly lists TestConstructDeployment_SASLWithGracefulShutdown (SASL + graceful shutdown -> container has both lifecycle and volume mount) but this test is not implemented.",
+      "location": "internal/controller/deployment_test.go",
+      "fix": "Add test that creates a Memcached CR with both SASL enabled and graceful shutdown enabled, then verifies the container has both Lifecycle.PreStop and VolumeMounts for SASL."
+    },
+    {
+      "id": "FC1-2",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "Plan task 2.1 explicitly lists TestConstructDeployment_SASLWithSecurityContexts (SASL + both security contexts -> all coexist) but this test is not implemented.",
+      "location": "internal/controller/deployment_test.go",
+      "fix": "Add test that creates a Memcached CR with SASL enabled, podSecurityContext, and containerSecurityContext, then verifies all three are present on the resulting Deployment."
+    },
+    {
+      "id": "C1-1",
+      "severity": "minor",
+      "check_id": "C1",
+      "description": "Plan task 1.1 specifies buildSASLVolume should use Items key projection ('projecting the password-file key') to mount only the password-file key from the Secret. Current implementation mounts the entire Secret. Functionally correct but deviates from plan.",
+      "location": "internal/controller/deployment.go:210-217",
+      "fix": "Add Items: []corev1.KeyToPath{{Key: \"password-file\", Path: \"password-file\"}} to SecretVolumeSource. Update TestBuildSASLVolume_Enabled to verify Items field."
+    }
+  ],
+  "suggested_improvements": [
+    "Add Items key projection to SecretVolumeSource for defense-in-depth (only mount the specific key needed, not the entire Secret)"
+  ],
+  "next_steps": [
+    "Add TestConstructDeployment_SASLWithGracefulShutdown test",
+    "Add TestConstructDeployment_SASLWithSecurityContexts test",
+    "Consider adding Items key projection to buildSASLVolume (optional, functionally correct without it)"
+  ]
+}

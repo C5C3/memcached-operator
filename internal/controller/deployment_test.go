@@ -171,7 +171,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildMemcachedArgs(tt.config)
+			got := buildMemcachedArgs(tt.config, nil)
 
 			if len(got) != len(tt.expected) {
 				t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
@@ -1561,5 +1561,534 @@ func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 	}
 	if expSC.ReadOnlyRootFilesystem == nil || !*expSC.ReadOnlyRootFilesystem {
 		t.Error("expected exporter ReadOnlyRootFilesystem=true")
+	}
+}
+
+// --- SASL Authentication Tests ---
+
+func TestBuildSASLVolume_Enabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-vol", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "my-sasl-secret",
+					},
+				},
+			},
+		},
+	}
+
+	vol := buildSASLVolume(mc)
+
+	if vol == nil {
+		t.Fatal("expected non-nil Volume")
+	}
+	if vol.Name != "sasl-credentials" {
+		t.Errorf("volume name = %q, want %q", vol.Name, "sasl-credentials")
+	}
+	if vol.Secret == nil {
+		t.Fatal("expected Secret volume source")
+	}
+	if vol.Secret.SecretName != "my-sasl-secret" {
+		t.Errorf("secretName = %q, want %q", vol.Secret.SecretName, "my-sasl-secret")
+	}
+	if len(vol.Secret.Items) != 1 {
+		t.Fatalf("expected 1 Items entry, got %d", len(vol.Secret.Items))
+	}
+	if vol.Secret.Items[0].Key != "password-file" {
+		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, "password-file")
+	}
+	if vol.Secret.Items[0].Path != "password-file" {
+		t.Errorf("Items[0].Path = %q, want %q", vol.Secret.Items[0].Path, "password-file")
+	}
+}
+
+func TestBuildSASLVolume_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name     string
+		security *memcachedv1alpha1.SecuritySpec
+	}{
+		{name: "nil Security", security: nil},
+		{name: "nil SASL", security: &memcachedv1alpha1.SecuritySpec{}},
+		{
+			name: "SASL disabled",
+			security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{Enabled: false},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			}
+
+			if vol := buildSASLVolume(mc); vol != nil {
+				t.Errorf("expected nil Volume, got %+v", vol)
+			}
+		})
+	}
+}
+
+func TestBuildSASLVolumeMount_Enabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mount", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "my-sasl-secret",
+					},
+				},
+			},
+		},
+	}
+
+	vm := buildSASLVolumeMount(mc)
+
+	if vm == nil {
+		t.Fatal("expected non-nil VolumeMount")
+	}
+	if vm.Name != "sasl-credentials" {
+		t.Errorf("volumeMount name = %q, want %q", vm.Name, "sasl-credentials")
+	}
+	if vm.MountPath != "/etc/memcached/sasl" {
+		t.Errorf("mountPath = %q, want %q", vm.MountPath, "/etc/memcached/sasl")
+	}
+	if !vm.ReadOnly {
+		t.Error("expected readOnly=true")
+	}
+}
+
+func TestBuildSASLVolumeMount_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name     string
+		security *memcachedv1alpha1.SecuritySpec
+	}{
+		{name: "nil Security", security: nil},
+		{name: "nil SASL", security: &memcachedv1alpha1.SecuritySpec{}},
+		{
+			name: "SASL disabled",
+			security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{Enabled: false},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			}
+
+			if vm := buildSASLVolumeMount(mc); vm != nil {
+				t.Errorf("expected nil VolumeMount, got %+v", vm)
+			}
+		})
+	}
+}
+
+func TestBuildMemcachedArgs_SASLEnabled(t *testing.T) {
+	sasl := &memcachedv1alpha1.SASLSpec{
+		Enabled: true,
+		CredentialsSecretRef: corev1.LocalObjectReference{
+			Name: "my-sasl-secret",
+		},
+	}
+
+	got := buildMemcachedArgs(nil, sasl)
+
+	// Should contain -Y /etc/memcached/sasl/password-file after standard flags.
+	expected := []string{
+		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-Y", "/etc/memcached/sasl/password-file",
+	}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q\ngot:  %v\nwant: %v",
+				i, got[i], expected[i], got, expected)
+		}
+	}
+}
+
+func TestBuildMemcachedArgs_SASLDisabled(t *testing.T) {
+	sasl := &memcachedv1alpha1.SASLSpec{
+		Enabled: false,
+	}
+
+	got := buildMemcachedArgs(nil, sasl)
+
+	// Should NOT contain -Y flag.
+	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q", i, got[i], expected[i])
+		}
+	}
+}
+
+func TestBuildMemcachedArgs_SASLNil(t *testing.T) {
+	got := buildMemcachedArgs(nil, nil)
+
+	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+}
+
+func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
+	config := &memcachedv1alpha1.MemcachedConfig{
+		Verbosity: 1,
+		ExtraArgs: []string{"-o", "modern"},
+	}
+	sasl := &memcachedv1alpha1.SASLSpec{
+		Enabled: true,
+		CredentialsSecretRef: corev1.LocalObjectReference{
+			Name: "my-sasl-secret",
+		},
+	}
+
+	got := buildMemcachedArgs(config, sasl)
+
+	// Order: standard flags, verbosity, -Y flag, extra args.
+	expected := []string{
+		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-v",
+		"-Y", "/etc/memcached/sasl/password-file",
+		"-o", "modern",
+	}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q\ngot:  %v\nwant: %v",
+				i, got[i], expected[i], got, expected)
+		}
+	}
+}
+
+func TestConstructDeployment_SASLEnabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-dep", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "my-sasl-secret",
+					},
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	// Verify -Y flag in args.
+	container := dep.Spec.Template.Spec.Containers[0]
+	foundY := false
+	for i, arg := range container.Args {
+		if arg == "-Y" {
+			foundY = true
+			if i+1 >= len(container.Args) {
+				t.Fatal("-Y flag has no value")
+			}
+			if container.Args[i+1] != "/etc/memcached/sasl/password-file" {
+				t.Errorf("-Y value = %q, want %q", container.Args[i+1], "/etc/memcached/sasl/password-file")
+			}
+			break
+		}
+	}
+	if !foundY {
+		t.Errorf("expected -Y flag in args, got %v", container.Args)
+	}
+
+	// Verify volume mount on container.
+	if len(container.VolumeMounts) != 1 {
+		t.Fatalf("expected 1 volumeMount, got %d", len(container.VolumeMounts))
+	}
+	vm := container.VolumeMounts[0]
+	if vm.Name != "sasl-credentials" {
+		t.Errorf("volumeMount name = %q, want %q", vm.Name, "sasl-credentials")
+	}
+	if vm.MountPath != "/etc/memcached/sasl" {
+		t.Errorf("volumeMount mountPath = %q, want %q", vm.MountPath, "/etc/memcached/sasl")
+	}
+	if !vm.ReadOnly {
+		t.Error("expected volumeMount readOnly=true")
+	}
+
+	// Verify volume on pod spec.
+	volumes := dep.Spec.Template.Spec.Volumes
+	if len(volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(volumes))
+	}
+	vol := volumes[0]
+	if vol.Name != "sasl-credentials" {
+		t.Errorf("volume name = %q, want %q", vol.Name, "sasl-credentials")
+	}
+	if vol.Secret == nil {
+		t.Fatal("expected Secret volume source")
+	}
+	if vol.Secret.SecretName != "my-sasl-secret" {
+		t.Errorf("volume secretName = %q, want %q", vol.Secret.SecretName, "my-sasl-secret")
+	}
+	if len(vol.Secret.Items) != 1 {
+		t.Fatalf("expected 1 Items entry, got %d", len(vol.Secret.Items))
+	}
+	if vol.Secret.Items[0].Key != "password-file" {
+		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, "password-file")
+	}
+}
+
+func TestConstructDeployment_SASLDisabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-off", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	// No -Y flag.
+	for _, arg := range container.Args {
+		if arg == "-Y" {
+			t.Error("unexpected -Y flag when SASL is not enabled")
+		}
+	}
+
+	// No volume mounts.
+	if len(container.VolumeMounts) != 0 {
+		t.Errorf("expected 0 volumeMounts, got %d: %v", len(container.VolumeMounts), container.VolumeMounts)
+	}
+
+	// No volumes.
+	if len(dep.Spec.Template.Spec.Volumes) != 0 {
+		t.Errorf("expected 0 volumes, got %d: %v", len(dep.Spec.Template.Spec.Volumes), dep.Spec.Template.Spec.Volumes)
+	}
+}
+
+func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mon", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "sasl-creds",
+					},
+				},
+			},
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	// 2 containers: memcached + exporter.
+	if len(dep.Spec.Template.Spec.Containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(dep.Spec.Template.Spec.Containers))
+	}
+
+	// Memcached container has SASL volume mount.
+	mcContainer := dep.Spec.Template.Spec.Containers[0]
+	if len(mcContainer.VolumeMounts) != 1 {
+		t.Fatalf("expected 1 volumeMount on memcached, got %d", len(mcContainer.VolumeMounts))
+	}
+	if mcContainer.VolumeMounts[0].Name != "sasl-credentials" {
+		t.Errorf("memcached volumeMount name = %q, want %q", mcContainer.VolumeMounts[0].Name, "sasl-credentials")
+	}
+
+	// Pod has SASL volume.
+	if len(dep.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	}
+	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-creds" {
+		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-creds")
+	}
+}
+
+func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-gs", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "sasl-secret",
+					},
+				},
+			},
+			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           10,
+					TerminationGracePeriodSeconds: 30,
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	// SASL: container has volume mount.
+	if len(container.VolumeMounts) != 1 {
+		t.Fatalf("expected 1 volumeMount, got %d", len(container.VolumeMounts))
+	}
+	if container.VolumeMounts[0].Name != "sasl-credentials" {
+		t.Errorf("volumeMount name = %q, want %q", container.VolumeMounts[0].Name, "sasl-credentials")
+	}
+
+	// SASL: -Y flag in args.
+	foundY := false
+	for _, arg := range container.Args {
+		if arg == "-Y" {
+			foundY = true
+			break
+		}
+	}
+	if !foundY {
+		t.Errorf("expected -Y flag in args, got %v", container.Args)
+	}
+
+	// Graceful shutdown: container has lifecycle preStop hook.
+	if container.Lifecycle == nil {
+		t.Fatal("expected Lifecycle on container")
+	}
+	if container.Lifecycle.PreStop == nil {
+		t.Fatal("expected PreStop on Lifecycle")
+	}
+	expectedCmd := []string{"sleep", "10"}
+	if len(container.Lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
+		t.Fatalf("expected command %v, got %v", expectedCmd, container.Lifecycle.PreStop.Exec.Command)
+	}
+	for i, cmd := range expectedCmd {
+		if container.Lifecycle.PreStop.Exec.Command[i] != cmd {
+			t.Errorf("command[%d] = %q, want %q", i, container.Lifecycle.PreStop.Exec.Command[i], cmd)
+		}
+	}
+
+	// Graceful shutdown: pod has TerminationGracePeriodSeconds.
+	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	if tgps == nil {
+		t.Fatal("expected TerminationGracePeriodSeconds on pod spec")
+	}
+	if *tgps != 30 {
+		t.Errorf("TerminationGracePeriodSeconds = %d, want 30", *tgps)
+	}
+
+	// SASL: pod has volume.
+	if len(dep.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	}
+	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-secret" {
+		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-secret")
+	}
+}
+
+func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
+	runAsNonRoot := true
+	runAsUser := int64(1000)
+	readOnly := true
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-sec", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "sasl-secret",
+					},
+				},
+				PodSecurityContext: &corev1.PodSecurityContext{
+					RunAsNonRoot: &runAsNonRoot,
+				},
+				ContainerSecurityContext: &corev1.SecurityContext{
+					RunAsUser:              &runAsUser,
+					ReadOnlyRootFilesystem: &readOnly,
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	// SASL: container has volume mount.
+	if len(container.VolumeMounts) != 1 {
+		t.Fatalf("expected 1 volumeMount, got %d", len(container.VolumeMounts))
+	}
+	if container.VolumeMounts[0].Name != "sasl-credentials" {
+		t.Errorf("volumeMount name = %q, want %q", container.VolumeMounts[0].Name, "sasl-credentials")
+	}
+
+	// SASL: -Y flag in args.
+	foundY := false
+	for _, arg := range container.Args {
+		if arg == "-Y" {
+			foundY = true
+			break
+		}
+	}
+	if !foundY {
+		t.Errorf("expected -Y flag in args, got %v", container.Args)
+	}
+
+	// Pod security context.
+	podSC := dep.Spec.Template.Spec.SecurityContext
+	if podSC == nil {
+		t.Fatal("expected non-nil pod SecurityContext")
+	}
+	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
+		t.Error("expected pod RunAsNonRoot=true")
+	}
+
+	// Container security context.
+	containerSC := container.SecurityContext
+	if containerSC == nil {
+		t.Fatal("expected non-nil container SecurityContext")
+	}
+	if containerSC.RunAsUser == nil || *containerSC.RunAsUser != 1000 {
+		t.Errorf("expected container RunAsUser=1000, got %v", containerSC.RunAsUser)
+	}
+	if containerSC.ReadOnlyRootFilesystem == nil || !*containerSC.ReadOnlyRootFilesystem {
+		t.Error("expected container ReadOnlyRootFilesystem=true")
+	}
+
+	// SASL: pod has volume.
+	if len(dep.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	}
+	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-secret" {
+		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-secret")
 	}
 }

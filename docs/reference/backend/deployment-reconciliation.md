@@ -44,8 +44,10 @@ pod template `metadata.labels`, ensuring the Deployment manages the correct pods
 
 ## Memcached CLI Arguments
 
-`buildMemcachedArgs(config *MemcachedConfig)` translates the CRD's
-`spec.memcached` fields into memcached command-line flags.
+`buildMemcachedArgs(config *MemcachedConfig, sasl *SASLSpec)` translates the
+CRD's `spec.memcached` fields into memcached command-line flags. When `sasl` is
+non-nil and enabled, the `-Y` flag is appended pointing to the SASL password
+file mount path.
 
 ### Flag Mapping
 
@@ -56,6 +58,7 @@ pod template `metadata.labels`, ensuring the Deployment manages the correct pods
 | `threads`            | `-t`  | `4`     | `["-t", "8"]`               |
 | `maxItemSize`        | `-I`  | `"1m"`  | `["-I", "2m"]`              |
 | `verbosity`          | `-v`  | `0`     | `0`: none, `1`: `-v`, `2`: `-vv` |
+| SASL enabled         | `-Y`  | —       | `/etc/memcached/sasl/password-file` (see [SASL Authentication](#sasl-authentication)) |
 | `extraArgs`          | —     | `[]`    | Appended after all flags    |
 
 ### Default Arguments
@@ -75,9 +78,18 @@ argument list is:
 | `1`                        | `"-v"`         |
 | `2`                        | `"-vv"`        |
 
+### Argument Ordering
+
+Arguments are appended in a fixed order:
+
+1. Standard flags (`-m`, `-c`, `-t`, `-I`)
+2. Verbosity (`-v` or `-vv`)
+3. SASL flag (`-Y /etc/memcached/sasl/password-file`) — only when SASL is enabled
+4. Extra arguments (`spec.memcached.extraArgs`)
+
 ### Extra Arguments
 
-`spec.memcached.extraArgs` are appended **after** all standard flags, preserving
+`spec.memcached.extraArgs` are appended **after** all other flags, preserving
 order. This allows passing arbitrary memcached flags not covered by typed fields:
 
 ```yaml
@@ -117,6 +129,7 @@ The Deployment contains a single container:
 | `args`            | Built by `buildMemcachedArgs`                                  |
 | `resources`       | From `spec.Resources` (empty if nil)                           |
 | `ports`           | `memcached`: 11211/TCP                                         |
+| `volumeMounts`    | SASL credentials mount (when enabled, see [SASL Authentication](#sasl-authentication)) |
 
 ### Container Port
 
@@ -161,6 +174,92 @@ appsv1.DeploymentStrategy{
 | `maxUnavailable` | `0`   | No existing pods are terminated until new pods ready  |
 
 This ensures zero-downtime rolling updates for cache availability.
+
+---
+
+## SASL Authentication
+
+When `spec.security.sasl.enabled` is `true`, the operator configures memcached
+for SASL authentication by mounting a credentials Secret and adding the `-Y`
+flag to the container arguments.
+
+### Configuration
+
+```yaml
+spec:
+  security:
+    sasl:
+      enabled: true
+      credentialsSecretRef:
+        name: memcached-sasl-credentials
+```
+
+The referenced Secret must contain a `password-file` key with the SASL password
+file content (username:password pairs in memcached's expected format).
+
+### Helper Functions
+
+**`buildSASLVolume(mc *Memcached) *corev1.Volume`** — Returns a Volume named
+`sasl-credentials` that references the Secret from
+`spec.security.sasl.credentialsSecretRef.name`, or `nil` when SASL is not
+enabled (security is nil, SASL is nil, or `enabled` is `false`).
+
+**`buildSASLVolumeMount(mc *Memcached) *corev1.VolumeMount`** — Returns a
+read-only VolumeMount named `sasl-credentials` at `/etc/memcached/sasl/`, or
+`nil` when SASL is not enabled.
+
+### Volume and Mount Details
+
+| Property        | Value                                   |
+|-----------------|-----------------------------------------|
+| Volume name     | `sasl-credentials`                      |
+| Volume source   | `Secret` (from `credentialsSecretRef`)  |
+| Mount path      | `/etc/memcached/sasl/`                  |
+| Read-only       | `true`                                  |
+| Secret key      | `password-file`                         |
+
+### Container Args
+
+When SASL is enabled, `buildMemcachedArgs` appends `-Y /etc/memcached/sasl/password-file`
+after verbosity flags and before `extraArgs`:
+
+```
+["-m", "64", "-c", "1024", "-t", "4", "-I", "1m", "-Y", "/etc/memcached/sasl/password-file"]
+```
+
+### Integration with constructDeployment
+
+The SASL volume mount is added **only** to the `memcached` container. When
+monitoring is enabled, the `exporter` sidecar does **not** receive the SASL
+volume mount. SASL coexists with all other features:
+
+| Feature                   | Interaction                                                    |
+|---------------------------|----------------------------------------------------------------|
+| Pod security context      | SASL volume/mount added alongside pod-level security settings  |
+| Container security context| SASL mount present on the same container with security context |
+| Monitoring sidecar        | Exporter container does **not** get the SASL volume mount      |
+| Graceful shutdown         | Lifecycle preStop hook coexists with SASL volume mount         |
+| Extra args                | `-Y` flag appears before `extraArgs` in argument list          |
+
+### Disabled Behavior
+
+When SASL is not enabled (`spec.security` is nil, `spec.security.sasl` is nil,
+or `spec.security.sasl.enabled` is `false`):
+
+- No `-Y` flag in container args
+- No `sasl-credentials` volume on the pod
+- No SASL volume mount on any container
+- Existing Memcached instances continue to work unchanged
+
+### RBAC
+
+The operator's ClusterRole includes `get`, `list`, `watch` permissions for
+`core/v1` Secrets to support reading the SASL credentials Secret. This is
+generated from the RBAC marker on the controller:
+
+```go
+//+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+```
 
 ---
 
@@ -304,6 +403,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
   │  ├─ Port: 11211/TCP        │
   │  ├─ Probes: TCP socket     │
   │  ├─ Strategy: RollingUpdate│
+  │  ├─ Volumes: SASL (if on)  │
+  │  ├─ VolumeMounts: SASL     │
   │  └─ OwnerRef → Memcached CR│
   └─────────────────────────────┘
 ```
@@ -412,6 +513,54 @@ spec:
               port: memcached
             initialDelaySeconds: 5
             periodSeconds: 5
+```
+
+### SASL-Enabled CR Example
+
+```yaml
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: my-cache
+  namespace: default
+spec:
+  replicas: 3
+  image: "memcached:1.6.29"
+  security:
+    sasl:
+      enabled: true
+      credentialsSecretRef:
+        name: memcached-sasl-credentials
+```
+
+Produces a Deployment with SASL volume and mount on the memcached container:
+
+```yaml
+spec:
+  template:
+    spec:
+      volumes:
+        - name: sasl-credentials
+          secret:
+            secretName: memcached-sasl-credentials
+      containers:
+        - name: memcached
+          image: "memcached:1.6.29"
+          args:
+            - "-m"
+            - "64"
+            - "-c"
+            - "1024"
+            - "-t"
+            - "4"
+            - "-I"
+            - "1m"
+            - "-Y"
+            - "/etc/memcached/sasl/password-file"
+          volumeMounts:
+            - name: sasl-credentials
+              mountPath: /etc/memcached/sasl
+              readOnly: true
 ```
 
 ### Minimal CR Example

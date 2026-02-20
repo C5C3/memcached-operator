@@ -22,8 +22,10 @@ func labelsForMemcached(name string) map[string]string {
 }
 
 // buildMemcachedArgs constructs the command-line arguments for a memcached process
-// based on the provided configuration. If config is nil, defaults are used.
-func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig) []string {
+// based on the provided configuration and optional SASL spec.
+// If config is nil, defaults are used. When SASL is enabled, the -Y flag is
+// appended pointing to the mounted password file.
+func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig, sasl *memcachedv1alpha1.SASLSpec) []string {
 	// Apply defaults when config is nil.
 	if config == nil {
 		config = &memcachedv1alpha1.MemcachedConfig{}
@@ -62,6 +64,11 @@ func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig) []string {
 		args = append(args, "-v")
 	case 2:
 		args = append(args, "-vv")
+	}
+
+	// SASL authentication: -Y <password-file>.
+	if sasl != nil && sasl.Enabled {
+		args = append(args, "-Y", saslMountPath+"/password-file")
 	}
 
 	// Append extra args at the end.
@@ -188,6 +195,44 @@ func buildExporterContainer(mc *memcachedv1alpha1.Memcached) *corev1.Container {
 	}
 }
 
+// saslVolumeName is the name used for the SASL credentials volume.
+const saslVolumeName = "sasl-credentials"
+
+// saslMountPath is the path where SASL credentials are mounted in the container.
+const saslMountPath = "/etc/memcached/sasl"
+
+// buildSASLVolume returns a Volume that projects the SASL credentials Secret,
+// or nil if SASL is not enabled.
+func buildSASLVolume(mc *memcachedv1alpha1.Memcached) *corev1.Volume {
+	if mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled {
+		return nil
+	}
+	return &corev1.Volume{
+		Name: saslVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: mc.Spec.Security.SASL.CredentialsSecretRef.Name,
+				Items: []corev1.KeyToPath{
+					{Key: "password-file", Path: "password-file"},
+				},
+			},
+		},
+	}
+}
+
+// buildSASLVolumeMount returns a VolumeMount for the SASL credentials,
+// or nil if SASL is not enabled.
+func buildSASLVolumeMount(mc *memcachedv1alpha1.Memcached) *corev1.VolumeMount {
+	if mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled {
+		return nil
+	}
+	return &corev1.VolumeMount{
+		Name:      saslVolumeName,
+		MountPath: saslMountPath,
+		ReadOnly:  true,
+	}
+}
+
 // buildPodSecurityContext returns the PodSecurityContext from the Memcached CR,
 // or nil if no pod security context is configured.
 func buildPodSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.PodSecurityContext {
@@ -221,7 +266,13 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 		image = *mc.Spec.Image
 	}
 
-	args := buildMemcachedArgs(mc.Spec.Memcached)
+	// Resolve SASL spec for args and volume/mount helpers.
+	var saslSpec *memcachedv1alpha1.SASLSpec
+	if mc.Spec.Security != nil {
+		saslSpec = mc.Spec.Security.SASL
+	}
+
+	args := buildMemcachedArgs(mc.Spec.Memcached, saslSpec)
 
 	var resources corev1.ResourceRequirements
 	if mc.Spec.Resources != nil {
@@ -237,6 +288,11 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 	podSecurityContext := buildPodSecurityContext(mc)
 	containerSecurityContext := buildContainerSecurityContext(mc)
 
+	var volumeMounts []corev1.VolumeMount
+	if vm := buildSASLVolumeMount(mc); vm != nil {
+		volumeMounts = append(volumeMounts, *vm)
+	}
+
 	memcachedContainer := corev1.Container{
 		Name:            "memcached",
 		Image:           image,
@@ -244,6 +300,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 		Resources:       resources,
 		Lifecycle:       lifecycle,
 		SecurityContext: containerSecurityContext,
+		VolumeMounts:    volumeMounts,
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "memcached",
@@ -277,6 +334,11 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 		containers = append(containers, *exporterContainer)
 	}
 
+	var volumes []corev1.Volume
+	if v := buildSASLVolume(mc); v != nil {
+		volumes = append(volumes, *v)
+	}
+
 	dep.Labels = labels
 	dep.Spec = appsv1.DeploymentSpec{
 		Replicas: &replicas,
@@ -300,6 +362,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 				TerminationGracePeriodSeconds: terminationGracePeriodSeconds,
 				SecurityContext:               podSecurityContext,
 				Containers:                    containers,
+				Volumes:                       volumes,
 			},
 		},
 	}

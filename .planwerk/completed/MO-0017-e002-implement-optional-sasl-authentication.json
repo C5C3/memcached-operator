@@ -2,8 +2,8 @@
   "feature_id": "MO-0017",
   "title": "E002: Implement optional SASL authentication",
   "slug": "e002-implement-optional-sasl-authentication",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Support optional SASL authentication for Memcached. When enabled in the CRD spec, configure Memcached with -Y flag and mount credentials from a referenced Secret. Clients must provide SASL credentials to connect.",
   "stories": [
@@ -330,6 +330,7 @@
       "description": "Create two new helper functions in internal/controller/deployment.go following the established pattern of buildExporterContainer, buildPodSecurityContext, etc.:\n\n1. `buildSASLVolume(mc *Memcached) *corev1.Volume` - Returns a Volume named 'sasl-credentials' with SecretVolumeSource referencing mc.Spec.Security.SASL.CredentialsSecretRef.Name, projecting the 'password-file' key. Returns nil when SASL is not enabled.\n\n2. `buildSASLVolumeMount(mc *Memcached) *corev1.VolumeMount` - Returns a VolumeMount with Name='sasl-credentials', MountPath='/etc/memcached/sasl/', ReadOnly=true. Returns nil when SASL is not enabled.\n\nBoth functions check: mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled → return nil.\n\nAdd table-driven unit tests in internal/controller/deployment_test.go following the TestBuildPodSecurityContext_*/TestBuildExporterContainer_* patterns:\n- TestBuildSASLVolume_Enabled: verify volume name, secret name, items key/path\n- TestBuildSASLVolume_ReturnsNil: nil security, nil SASL, enabled=false\n- TestBuildSASLVolumeMount_Enabled: verify mount path, name, readOnly\n- TestBuildSASLVolumeMount_ReturnsNil: nil security, nil SASL, enabled=false",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-006"
@@ -341,6 +342,7 @@
       "description": "Modify the buildMemcachedArgs function in internal/controller/deployment.go:\n\n1. Change the signature from `buildMemcachedArgs(config *MemcachedConfig) []string` to `buildMemcachedArgs(config *MemcachedConfig, sasl *SASLSpec) []string`.\n\n2. After the verbosity switch (line 65) and before the extraArgs append (line 68), add:\n```go\nif sasl != nil && sasl.Enabled {\n    args = append(args, \"-Y\", \"/etc/memcached/sasl/password-file\")\n}\n```\n\n3. Update the single call site in constructDeployment (line 224) to extract the SASL spec and pass it:\n```go\nvar sasl *SASLSpec\nif mc.Spec.Security != nil {\n    sasl = mc.Spec.Security.SASL\n}\nargs := buildMemcachedArgs(mc.Spec.Memcached, sasl)\n```\n\n4. Update ALL existing TestBuildMemcachedArgs test cases to pass `nil` as the second argument (SASL spec).\n\n5. Add new test cases:\n- 'SASL enabled adds -Y flag': config=default, sasl=enabled → args include '-Y', '/etc/memcached/sasl/password-file'\n- 'SASL disabled omits -Y flag': config=default, sasl=enabled=false → no -Y flag\n- 'nil SASL omits -Y flag': config=default, sasl=nil → no -Y flag\n- 'SASL with verbosity and extraArgs': verify ordering: standard → verbosity → -Y → extraArgs",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-007"
@@ -352,6 +354,7 @@
       "description": "Update constructDeployment in internal/controller/deployment.go to use the new SASL helpers:\n\n1. After buildContainerSecurityContext (line 238), call:\n```go\nsaslVolume := buildSASLVolume(mc)\nsaslVolumeMount := buildSASLVolumeMount(mc)\n```\n\n2. Add the volume mount to the memcachedContainer (after SecurityContext, before Ports):\n```go\nvar volumeMounts []corev1.VolumeMount\nif saslVolumeMount != nil {\n    volumeMounts = append(volumeMounts, *saslVolumeMount)\n}\n```\nSet `memcachedContainer.VolumeMounts = volumeMounts`.\n\n3. Add volumes to the PodSpec (after SecurityContext, before Containers):\n```go\nvar volumes []corev1.Volume\nif saslVolume != nil {\n    volumes = append(volumes, *saslVolume)\n}\n```\nSet `Volumes: volumes` on the PodSpec.\n\n4. Add/update unit tests in deployment_test.go:\n- TestConstructDeployment_SASLEnabled: verify pod has 1 volume ('sasl-credentials'), memcached container has 1 volume mount at /etc/memcached/sasl/, readOnly=true, and args include -Y\n- TestConstructDeployment_SASLDisabled: verify pod has no volumes, memcached container has no volume mounts, no -Y in args\n- TestConstructDeployment_SASLWithMonitoring: SASL + monitoring enabled → memcached container has volume mount, exporter does NOT\n- TestConstructDeployment_SASLWithGracefulShutdown: SASL + graceful shutdown → container has both lifecycle and volume mount\n- TestConstructDeployment_SASLWithSecurityContexts: SASL + both security contexts → all coexist\n- TestConstructDeployment_MinimalSpec still passes (backward compat, no volumes, no mounts)",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-004",
@@ -364,6 +367,7 @@
       "description": "Add a kubebuilder RBAC marker to internal/controller/memcached_controller.go:\n\n1. Add the following marker comment before the Reconcile function (after the existing RBAC markers around line 41):\n```go\n// +kubebuilder:rbac:groups=\"\",resources=secrets,verbs=get;list;watch\n```\n\n2. Run `make manifests` to regenerate config/rbac/role.yaml.\n\n3. Verify the generated role.yaml now includes:\n```yaml\n- apiGroups:\n  - \"\"\n  resources:\n  - secrets\n  verbs:\n  - get\n  - list\n  - watch\n```\n\nThe Secrets permission is needed because the operator mounts a Secret as a volume in the Deployment; the kubelet will need to read the Secret, and the operator may need to validate Secret existence in future.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -374,6 +378,7 @@
       "description": "Update config/samples/memcached_v1alpha1_memcached.yaml to add a commented-out SASL example under the existing spec.security section.\n\nAfter the existing containerSecurityContext block (around line 44), add:\n```yaml\n    # SASL authentication (optional).\n    # Requires a Secret with a 'password-file' key containing the SASL password file.\n    # sasl:\n    #   enabled: true\n    #   credentialsSecretRef:\n    #     name: memcached-sasl-credentials\n```\n\nThis provides a clear example for users without activating SASL by default.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -384,6 +389,7 @@
       "description": "Add a new 'SASL Authentication' section to docs/reference/backend/deployment-reconciliation.md after the existing Security Contexts section.\n\nThe section should document:\n1. Overview: When spec.security.sasl.enabled=true, memcached is configured with SASL authentication\n2. CLI Flag: The -Y flag and the password file path (/etc/memcached/sasl/password-file)\n3. Volume: The 'sasl-credentials' volume sourced from the referenced Secret with 'password-file' key projection\n4. Volume Mount: Read-only mount at /etc/memcached/sasl/ on the memcached container only (not the exporter sidecar)\n5. Secret Requirements: The Secret must contain a 'password-file' key with the SASL password file content\n6. Example: Show a minimal Memcached CR snippet with SASL enabled and the corresponding Deployment volume/mount structure\n\nFollow the existing documentation style and heading levels in the file.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -509,6 +515,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-19T22:19:55.558401"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-19T22:20:15.897788"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T07:39:45.874873"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T07:39:45.891079"
     }
   },
   "execution_history": [
@@ -522,6 +540,50 @@
           "name": "prepare",
           "duration": 330.3717939853668,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "1b4794ec-1381-40c0-ab99-021bf6c31ca3",
+      "timestamp": "2026-02-19T22:35:12.180284",
+      "total_duration": 786.6986131668091,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 193.71390390396118,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 84.46103644371033,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 128.24460625648499,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0017] Code Review",
+          "duration": 118.94825434684753,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0017] Improvements",
+          "duration": 170.48298692703247,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0017] Simplify",
+          "duration": 90.84782528877258,
+          "type": "simplify",
           "status": "done"
         }
       ]

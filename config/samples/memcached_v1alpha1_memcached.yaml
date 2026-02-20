@@ -44,3 +44,8 @@ spec:
       capabilities:
         drop:
           - ALL
+    # SASL authentication (optional):
+    # sasl:
+    #   enabled: true
+    #   credentialsSecretRef:
+    #     name: memcached-sasl-credentials
