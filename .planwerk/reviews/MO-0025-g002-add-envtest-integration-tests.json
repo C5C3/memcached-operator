@@ -1,0 +1,111 @@
+{
+  "feature_id": "MO-0025",
+  "title": "G002: Add envtest integration tests",
+  "date": "2026-02-20",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Comprehensive envtest integration test suite with 47 test specs across 11 Describe blocks covering all 8 requirements (REQ-001 through REQ-008). Tests follow existing Ginkgo/Gomega patterns, use uniqueName() for isolation and validMemcached() for CR creation, verify both positive and negative cases. All 328 Ginkgo specs pass (3 pre-existing non-Ginkgo test failures unrelated to this branch). go vet passes cleanly. Documentation is thorough and accurate. Two major issues: owner reference assertions missing apiVersion field (review criteria requirement), and plan specified separate test files for deletion/multi-instance tests but all were merged into one file (minor deviation, acceptable).",
+  "tests_checklist": [
+    {"item": "All 328 Ginkgo specs pass (328 Passed, 0 Failed)", "checked": true},
+    {"item": "47 integration test specs implemented across 11 Describe blocks", "checked": true},
+    {"item": "All tests use uniqueName() for resource isolation", "checked": true},
+    {"item": "All tests use validMemcached() for CR creation", "checked": true},
+    {"item": "REQ-001 has >= 2 test specs (minimal CR, full CR, optional toggle, lifecycle)", "checked": true},
+    {"item": "REQ-002 has >= 2 test specs (minimal CR owner refs, full CR owner refs, GC owner refs)", "checked": true},
+    {"item": "REQ-003 has >= 2 test specs (replicas, image, monitoring, cross-resource)", "checked": true},
+    {"item": "REQ-004 has >= 2 test specs (GC owner refs, reconcile deleted CR, lifecycle)", "checked": true},
+    {"item": "REQ-005 has >= 2 test specs (initial status, gen update, zero replicas, transitions, full status)", "checked": true},
+    {"item": "REQ-006 has >= 2 test specs (full-featured 3x, minimal 3x, post-update)", "checked": true},
+    {"item": "REQ-007 has >= 2 test specs (Deployment, Service, PDB, SM, NP, multi-delete)", "checked": true},
+    {"item": "REQ-008 has >= 2 test specs (minimal 2-CR, full 2-CR, deletion isolation)", "checked": true},
+    {"item": "Tests verify positive cases (resource exists with correct spec)", "checked": true},
+    {"item": "Tests verify negative cases (resource NotFound when disabled)", "checked": true},
+    {"item": "No test modifies shared state (each creates own CR with unique name)", "checked": true},
+    {"item": "Owner reference assertions check apiVersion field", "checked": false},
+    {"item": "Owner reference assertions check kind, name, uid, controller, blockOwnerDeletion", "checked": true},
+    {"item": "Edge cases covered (zero replicas, simultaneous multi-delete, cross-resource consistency)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing Ginkgo/Gomega Describe/Context/BeforeEach/It structure", "checked": true},
+    {"item": "Reuses existing helpers (validMemcached, uniqueName, reconcileOnce, fetch*, findCondition)", "checked": true},
+    {"item": "No new helper functions defined (all reused from existing test files)", "checked": true},
+    {"item": "Clear naming with descriptive Context/It descriptions", "checked": true},
+    {"item": "Consistent re-fetch pattern before k8sClient.Update()", "checked": true},
+    {"item": "No code duplication beyond acceptable test setup boilerplate", "checked": true},
+    {"item": "go vet passes cleanly", "checked": true},
+    {"item": "golangci-lint blocked by Go version mismatch (pre-existing infra issue, not branch-specific)", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No hardcoded secrets or credentials", "checked": true},
+    {"item": "No sensitive data in test assertions or logs", "checked": true},
+    {"item": "Test file is test-only (no production code)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Single test file for all integration tests (clean, matches docs)", "checked": true},
+    {"item": "Tests organized by concern (creation, update, deletion, status, isolation)", "checked": true},
+    {"item": "Tests share envtest infrastructure from suite_test.go", "checked": true},
+    {"item": "No new dependencies introduced", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated helper functions", "checked": true},
+    {"item": "No over-engineered test infrastructure", "checked": true},
+    {"item": "Tests cover exactly what was specified in the plan", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Tests use Expect() which fails immediately on assertion failure", "checked": true},
+    {"item": "BeforeEach blocks fail fast if CR creation or initial reconcile fails", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All k8sClient operations checked with Expect/Succeed", "checked": true},
+    {"item": "Re-fetch before update to avoid resourceVersion conflicts", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "TE7-1",
+      "severity": "major",
+      "check_id": "TE7",
+      "file": "internal/controller/memcached_envtest_integration_test.go",
+      "lines": "842-849",
+      "description": "Owner reference assertions do not check the apiVersion field. The review criteria explicitly requires: 'Owner reference assertions check all fields: apiVersion, kind, name, uid, controller, blockOwnerDeletion'. The apiVersion field is never asserted in any owner reference check across all 3 assertion sites (lines 842-849, 880-886, 1449-1455).",
+      "fix": "Add `Expect(refs[0].APIVersion).To(Equal(\"cache.example.com/v1alpha1\"))` to each owner reference assertion block (lines 845, 883, 1452)."
+    },
+    {
+      "id": "TE7-2",
+      "severity": "minor",
+      "check_id": "TE7",
+      "file": "internal/controller/memcached_envtest_integration_test.go",
+      "lines": "1449-1455",
+      "description": "Lifecycle test (Task 3.2) owner reference loop at line 1449 checks fewer fields than the GC test at line 842. Missing: Kind, BlockOwnerDeletion assertions.",
+      "fix": "Add `Expect(refs[0].Kind).To(Equal(\"Memcached\"))` and `Expect(*refs[0].BlockOwnerDeletion).To(BeTrue())` to the loop at line 1449."
+    },
+    {
+      "id": "TE7-3",
+      "severity": "minor",
+      "check_id": "TE7",
+      "file": "internal/controller/memcached_envtest_integration_test.go",
+      "lines": "880-886",
+      "description": "Minimal CR GC test owner reference assertions (line 880) check fewer fields than the full-featured CR GC test (line 842). Missing: Kind assertion.",
+      "fix": "Add `Expect(refs[0].Kind).To(Equal(\"Memcached\"))` at line 884."
+    },
+    {
+      "id": "C1-1",
+      "severity": "minor",
+      "check_id": "C1",
+      "file": "internal/controller/memcached_envtest_integration_test.go",
+      "lines": "N/A",
+      "description": "Plan specified creating 3 separate test files (memcached_full_reconcile_test.go, memcached_deletion_test.go, memcached_multi_instance_test.go) but all tests were consolidated into a single file. This is actually cleaner and the docs reflect this decision accurately. No action needed.",
+      "fix": "No fix required — single file is acceptable and documented."
+    }
+  ],
+  "suggested_improvements": [
+    "Add apiVersion assertion to all owner reference checks to satisfy review criteria requirement",
+    "Consider extracting the owner reference assertion block into a reusable helper (e.g., expectOwnerRef(obj, mc)) to reduce assertion inconsistency across the 3 sites",
+    "The Service recreation test (line 942) does not verify clusterIP=None on the recreated Service, while the plan (Task 2.2) mentions it explicitly"
+  ],
+  "next_steps": [
+    "Add apiVersion assertion to owner reference checks at lines 845, 883, and 1452",
+    "Add Kind and BlockOwnerDeletion assertions to the lifecycle test owner ref loop (line 1449) and minimal CR GC test (line 880) for consistency with the full GC test (line 842)"
+  ]
+}

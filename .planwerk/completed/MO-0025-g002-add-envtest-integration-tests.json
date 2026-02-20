@@ -2,8 +2,8 @@
   "feature_id": "MO-0025",
   "title": "G002: Add envtest integration tests",
   "slug": "g002-add-envtest-integration-tests",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Write integration tests using controller-runtime's envtest framework. Test the full reconciliation loop against a real API server: CR creation triggers Deployment + Service creation, spec updates propagate correctly, deletion cleans up owned resources, status conditions are set correctly.",
   "stories": [
@@ -314,6 +314,7 @@
       "description": "Create file internal/controller/memcached_full_reconcile_test.go. Write a Ginkgo Describe block 'Full Reconciliation Loop'. Test Context 'minimal CR with empty spec': create validMemcached, reconcileOnce, verify Deployment exists with 1 replica and default image, Service exists with clusterIP=None, PDB/ServiceMonitor/NetworkPolicy are NotFound. Verify all resources have correct owner references (apiVersion, kind, name, uid, controller=true, blockOwnerDeletion=true) and consistent standard labels.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -325,6 +326,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'full-featured CR with all optional resources enabled'. Create CR with PDB enabled, monitoring+serviceMonitor enabled, networkPolicy enabled, 3 replicas, soft anti-affinity. reconcileOnce and verify: Deployment has 2 containers (memcached + exporter), Service has memcached+metrics ports, PDB has minAvailable=1, ServiceMonitor has default interval, NetworkPolicy has memcached+metrics ports. Verify all five resources have correct owner references and labels.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -336,6 +338,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'spec update propagation'. Test 1: Change replicas from 1 to 3, reconcile, verify Deployment replicas=3 and status.observedGeneration updated. Test 2: Change image, reconcile, verify Deployment container image updated. Test 3: Enable monitoring on a minimal CR, reconcile, verify Deployment gains exporter sidecar (2 containers), Service gains metrics port (2 ports), ServiceMonitor is created. Verify status conditions after each update.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-005"
@@ -347,6 +350,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'optional resource lifecycle'. Test 1: Create minimal CR (no PDB), reconcile, verify no PDB. Enable PDB, reconcile, verify PDB created. Test 2: Create CR with monitoring+serviceMonitor, reconcile, verify ServiceMonitor exists. Disable monitoring, reconcile, verify reconciler does not error. Test 3: Create CR with networkPolicy enabled, reconcile, verify NetworkPolicy exists. Then verify enabling networkPolicy on a previously-disabled CR creates it.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-003"
@@ -358,6 +362,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'full idempotency'. Create full-featured CR (all optional resources enabled), reconcileOnce, capture resource versions of all five resources. ReconcileOnce two more times, verify all resource versions unchanged. Also test post-update idempotency: update spec, reconcile, capture RVs, reconcile again, verify RVs unchanged.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -368,6 +373,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'status conditions lifecycle'. Test complete lifecycle: (1) Create 3-replica CR, reconcile, verify Available=False, Progressing=True, Degraded=True, readyReplicas=0, observedGeneration matches. (2) Update replicas to 0, reconcile, verify Available=True, Progressing=False, Degraded=False. (3) Update replicas back to 2, reconcile, verify Degraded=True again. Verify all conditions always have non-empty Message, Reason, LastTransitionTime.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -378,6 +384,7 @@
       "description": "Create file internal/controller/memcached_deletion_test.go. Write Describe 'CR Deletion and Cleanup'. Test 1: Create full-featured CR, reconcile, verify all resources exist. Delete CR. Use Eventually to wait for GC to clean up all five resources (Deployment, Service, PDB, ServiceMonitor, NetworkPolicy) returning NotFound. Test 2: Reconcile after CR deletion returns ctrl.Result{} and nil error. Test 3: Create minimal CR, reconcile, delete CR, verify only Deployment and Service are GC'd.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -388,6 +395,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'drift correction on deleted resources'. Create full-featured CR, reconcile. Externally delete Deployment, reconcile, verify Deployment recreated with correct spec and owner ref. Repeat for PDB: delete PDB externally, reconcile, verify PDB recreated. Repeat for Service: delete Service, reconcile, verify Service recreated with clusterIP=None.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -398,6 +406,7 @@
       "description": "Create file internal/controller/memcached_multi_instance_test.go. Write Describe 'Multi-Instance Isolation'. Test 1: Create two Memcached CRs (mc-a, mc-b) in default namespace, reconcile both. Verify each has its own Deployment and Service with correct names. Verify owner references point to their respective CRs (different UIDs). Verify labels have distinct app.kubernetes.io/instance values. Test 2: Delete mc-a, verify mc-b's resources still exist and unchanged. Test 3: Both CRs have monitoring enabled, verify separate ServiceMonitors with correct selectors.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -408,6 +417,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'cross-resource consistency on monitoring toggle'. Create CR with networkPolicy enabled but monitoring disabled. Reconcile, verify NetworkPolicy has only port 11211. Enable monitoring with serviceMonitor, reconcile. Verify in one check: Deployment has 2 containers, Service has 2 ports (memcached + metrics), ServiceMonitor is created, NetworkPolicy now has 2 ports (11211 + 9150). This verifies cross-resource consistency in a single reconcile.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -418,6 +428,7 @@
       "description": "In memcached_full_reconcile_test.go, add Context 'complete create-update-delete lifecycle'. Single test that exercises the full lifecycle: (1) Create minimal CR, reconcile, verify Deployment+Service exist, status conditions set. (2) Update to 3 replicas with monitoring, reconcile, verify Deployment updated, ServiceMonitor created, status observedGeneration incremented. (3) Update to enable PDB, reconcile, verify PDB created. (4) Delete CR, verify reconcile returns success, verify all resources eventually GC'd.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-003",
@@ -431,6 +442,7 @@
       "description": "Create docs/reference/backend/envtest-integration-tests.md. Document: test file organization (full reconcile, deletion, multi-instance), helper functions (validMemcached, uniqueName, reconcileOnce, fetch* helpers), envtest setup in suite_test.go, test patterns (Context/BeforeEach/It blocks, Eventually for GC), requirement coverage matrix mapping REQ-IDs to test files/functions. Include examples of how to add new integration test scenarios.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -584,6 +596,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T14:18:12.224135"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:24:32.146081"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:51:09.785694"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T14:51:09.810791"
     }
   },
   "execution_history": [
@@ -597,6 +621,56 @@
           "name": "prepare",
           "duration": 400.14429903030396,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "de5f1326-47b4-48fb-916c-970b2309a5cd",
+      "timestamp": "2026-02-20T14:48:43.836558",
+      "total_duration": 1313.8589942455292,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (6 tasks)",
+          "duration": 238.44472932815552,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 299.52632331848145,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 155.65147638320923,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 103.61063814163208,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0025] Code Review",
+          "duration": 221.94130063056946,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0025] Improvements",
+          "duration": 124.51276588439941,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0025] Simplify",
+          "duration": 170.17176055908203,
+          "type": "simplify",
           "status": "done"
         }
       ]
