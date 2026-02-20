@@ -1,0 +1,65 @@
+{
+  "feature_id": "MO-0020",
+  "title": "E005: Implement least-privilege RBAC for operator",
+  "date": "2026-02-20",
+  "verdict": "APPROVED",
+  "summary": "Implementation adds 4 new test blocks (Secrets read-only, no-wildcard constraints, ClusterRoleBinding verification, rule-count guard) to the existing RBAC test suite and a comprehensive reference document. All 17 RBAC Ginkgo specs pass. The 10 kubebuilder markers match the generated role.yaml with no diff. Secrets are correctly limited to get/list/watch. No wildcard permissions exist. No unrelated files were modified.",
+  "tests_checklist": [
+    {"item": "All 17 RBAC Ginkgo specs pass (go test --ginkgo.focus=RBAC)", "checked": true},
+    {"item": "Secrets read-only test validates get, list, watch only (REQ-007)", "checked": true},
+    {"item": "No-wildcard verbs test iterates all rules (REQ-009)", "checked": true},
+    {"item": "No-wildcard resources test iterates all rules (REQ-009)", "checked": true},
+    {"item": "No-wildcard API groups test iterates all rules (REQ-009)", "checked": true},
+    {"item": "Rule-count test asserts exactly 10 rules (REQ-009)", "checked": true},
+    {"item": "ClusterRoleBinding test validates roleRef and subjects (REQ-011)", "checked": true},
+    {"item": "Edge cases covered: wildcard checks cover all rules exhaustively", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing Ginkgo/Gomega test patterns in the project", "checked": true},
+    {"item": "Reuses loadRBACRole helper; adds loadRBACRoleBinding following same pattern", "checked": true},
+    {"item": "Uses DescribeTable for owned resources (DRY)", "checked": true},
+    {"item": "Helper functions are small, single-purpose, and well-named", "checked": true},
+    {"item": "No dead code or unused functions", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "Secrets rule enforces read-only (get, list, watch) — no write verbs", "checked": true},
+    {"item": "No wildcard permissions in any rule", "checked": true},
+    {"item": "Rule count (10) guards against permission creep", "checked": true},
+    {"item": "Events limited to create/patch only", "checked": true},
+    {"item": "No hardcoded secrets in test or doc files", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal: only test additions and documentation", "checked": true},
+    {"item": "Tests validate generated YAML manifests directly (no mocking)", "checked": true},
+    {"item": "Documentation accurately reflects the 10 rules in role.yaml", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code — DescribeTable used for similar owned-resource checks", "checked": true},
+    {"item": "loadRBACRoleBinding reuses the pattern from loadRBACRole", "checked": true},
+    {"item": "No speculative code or future-proofing", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "BeforeEach fails fast if role.yaml cannot be loaded", "checked": true},
+    {"item": "Rule-count test catches unexpected permission additions immediately", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "loadRBACRole/loadRBACRoleBinding validate Caller and ReadFile errors", "checked": true},
+    {"item": "findRule handles missing rules gracefully (returns nil, tests assert NotNil)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "D4-1",
+      "severity": "minor",
+      "check_id": "D4",
+      "description": "Documentation filename mismatch: review criteria specifies 'docs/reference/backend/operator-rbac-least-privilege.md' but actual file is 'docs/reference/backend/rbac-least-privilege.md'. Content is complete and accurate.",
+      "location": "docs/reference/backend/rbac-least-privilege.md",
+      "fix": "Either rename file to operator-rbac-least-privilege.md to match the review criteria, or update the review criteria to reflect the actual filename. The content itself requires no changes."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider renaming docs/reference/backend/rbac-least-privilege.md to operator-rbac-least-privilege.md to match the naming convention referenced in review criteria"
+  ],
+  "next_steps": []
+}
