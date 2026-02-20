@@ -1,0 +1,591 @@
+{
+  "feature_id": "MO-0031",
+  "title": "H004: Add project documentation",
+  "slug": "h004-add-project-documentation",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Write operator documentation: installation guide, CRD reference with all fields documented, upgrade guide, troubleshooting, architecture overview. Include example CRs for common use cases (minimal, HA, monitoring-enabled, TLS-enabled).",
+  "stories": [
+    {
+      "title": "Operator user can install the operator following an installation guide",
+      "role": "operator user",
+      "want": "a step-by-step installation guide covering prerequisites, CRD installation, operator deployment, and verification",
+      "so_that": "I can deploy the memcached-operator to my Kubernetes cluster without guessing at commands or configuration",
+      "criteria": [
+        "Guide lists all prerequisites: Go 1.25+, Docker, kubectl, Kubernetes cluster, Operator SDK v1.42+, cert-manager (for webhooks)",
+        "Guide includes commands for CRD-only installation (`make install`) and full deployment (`make deploy IMG=...`)",
+        "Guide includes verification steps: `kubectl get crd memcacheds.memcached.c5c3.io`, `kubectl get pods -n memcached-operator-system`",
+        "Guide covers local development mode (`make run`) and cluster deployment mode",
+        "Guide documents image build and push steps (`make docker-build`, `make docker-push`)"
+      ]
+    },
+    {
+      "title": "Operator user can look up any CRD field in a comprehensive reference",
+      "role": "operator user",
+      "want": "a complete CRD field reference documenting every spec and status field with types, defaults, validation, and descriptions",
+      "so_that": "I can configure Memcached CRs correctly without reading Go source code",
+      "criteria": [
+        "Every MemcachedSpec field is documented with type, default, validation constraints, and description",
+        "Every nested struct (MemcachedConfig, HighAvailabilitySpec, MonitoringSpec, SecuritySpec, etc.) has its own section",
+        "Status fields and conditions (Available, Progressing, Degraded) are documented",
+        "Webhook validation rules and defaulting behavior are described",
+        "Parameter-to-memcached-flag mapping table is included (maxMemoryMB → -m, etc.)"
+      ]
+    },
+    {
+      "title": "Operator user can upgrade the operator using an upgrade guide",
+      "role": "operator user",
+      "want": "an upgrade guide covering version-to-version migration, CRD updates, and rolling upgrade procedure",
+      "so_that": "I can upgrade the operator safely without downtime or data loss in managed Memcached instances",
+      "criteria": [
+        "Guide documents the upgrade sequence: CRDs first, then operator Deployment",
+        "Guide explains backward compatibility guarantees of v1alpha1 API",
+        "Guide includes pre-upgrade checklist: backup CRs, check operator logs, verify cluster health",
+        "Guide documents rollback procedure if upgrade fails",
+        "Guide covers `make deploy IMG=<new-version>` workflow"
+      ]
+    },
+    {
+      "title": "Operator user can diagnose common issues using a troubleshooting guide",
+      "role": "operator user",
+      "want": "a troubleshooting guide with symptom-based sections covering common failure modes",
+      "so_that": "I can quickly resolve operational issues without escalating to the operator developers",
+      "criteria": [
+        "Guide covers: CR stuck in Progressing, pods CrashLooping, ServiceMonitor not created, webhook admission errors, operator not reconciling, metrics not available",
+        "Each section follows Symptom → Diagnosis (commands) → Common Causes → Fix pattern",
+        "All diagnostic commands use kubectl and are copy-pasteable",
+        "Guide references operator log locations and how to increase log verbosity",
+        "Guide covers RBAC troubleshooting with `kubectl auth can-i`"
+      ]
+    },
+    {
+      "title": "Operator user can understand the architecture from a visual overview",
+      "role": "operator user",
+      "want": "an architecture overview document explaining the operator's design, reconciliation flow, managed resources, and design principles",
+      "so_that": "I can understand how the operator works and predict its behavior",
+      "criteria": [
+        "Document includes ASCII or Mermaid diagram of the operator architecture showing Manager, Reconciler, Webhook Server, Metrics Server, and managed resources",
+        "Document explains the reconciliation flow from CR creation to resource creation",
+        "Document lists all managed resources (Deployment, Service, PDB, ServiceMonitor, NetworkPolicy) and their purpose",
+        "Document explains design principles: declarative, idempotent, level-triggered, Kubernetes-native",
+        "Document describes watch setup and owner reference garbage collection"
+      ]
+    },
+    {
+      "title": "Operator user can deploy common configurations using example CRs",
+      "role": "operator user",
+      "want": "a set of annotated example CRs for common use cases: minimal, HA, monitoring-enabled, TLS-enabled, production",
+      "so_that": "I can quickly deploy Memcached clusters tailored to my environment without writing CRs from scratch",
+      "criteria": [
+        "Minimal example: single replica with defaults, includes inline comments",
+        "HA example: 3 replicas, anti-affinity, topology spread, PDB, resource limits",
+        "Monitoring example: exporter sidecar, ServiceMonitor with custom labels",
+        "TLS example: TLS enabled with certificateSecretRef, optional mTLS",
+        "Production example: combines HA + monitoring + security contexts + node selectors + tolerations"
+      ]
+    },
+    {
+      "title": "Developer can navigate documentation from a central index",
+      "role": "developer",
+      "want": "a documentation index page that links to all documentation sections (installation, CRD reference, architecture, upgrade, troubleshooting, examples)",
+      "so_that": "I can find any documentation quickly without searching through the file tree",
+      "criteria": [
+        "Index page exists at docs/index.md or equivalent location",
+        "All documentation sections are linked with brief descriptions",
+        "Documentation is organized by Diataxis quadrant: reference, how-to, explanation",
+        "Index includes links to existing reference docs in docs/reference/backend/"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The documentation SHALL include a step-by-step installation guide covering prerequisites, CRD installation, local development mode, cluster deployment, and verification",
+      "priority": "SHALL",
+      "rationale": "Users need clear instructions to deploy the operator; without an installation guide, adoption is blocked",
+      "scenarios": [
+        {
+          "name": "Guide covers prerequisites",
+          "when": "a user reads the installation guide",
+          "then": "all required tools and versions are listed: Go 1.25+, Docker, kubectl, Kubernetes cluster, cert-manager",
+          "and_then": [
+            "links to installation instructions for each prerequisite are provided"
+          ]
+        },
+        {
+          "name": "Guide covers local development",
+          "when": "a user follows the local development section",
+          "then": "the guide includes `make install` and `make run` commands with expected output",
+          "and_then": [
+            "a sample CR apply and verification step is included"
+          ]
+        },
+        {
+          "name": "Guide covers cluster deployment",
+          "when": "a user follows the cluster deployment section",
+          "then": "the guide includes `make docker-build`, `make docker-push`, `make deploy` commands with IMG parameter",
+          "and_then": [
+            "verification commands check CRD, operator pod, and sample CR creation"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The documentation SHALL include a comprehensive CRD reference documenting every spec field, status field, nested struct, defaults, validation constraints, and webhook behavior",
+      "priority": "SHALL",
+      "rationale": "The CRD reference is the primary API documentation; incomplete field documentation leads to misconfiguration",
+      "scenarios": [
+        {
+          "name": "All spec fields documented",
+          "when": "a user looks up any MemcachedSpec field",
+          "then": "the field is documented with Go type, JSON key, default value, validation constraints, and description",
+          "and_then": [
+            "nested structs have their own sections with the same level of detail"
+          ]
+        },
+        {
+          "name": "Status fields documented",
+          "when": "a user looks up status fields",
+          "then": "conditions (Available, Progressing, Degraded) are documented with their meanings and transitions",
+          "and_then": [
+            "readyReplicas and observedGeneration are described"
+          ]
+        },
+        {
+          "name": "Webhook behavior documented",
+          "when": "a user reads the webhook section",
+          "then": "defaulting rules and validation rules are listed with specific constraints",
+          "and_then": [
+            "examples of rejected configurations are provided"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The documentation SHALL include an upgrade guide with pre-upgrade checklist, upgrade procedure, post-upgrade verification, and rollback instructions",
+      "priority": "SHALL",
+      "rationale": "Operators in production need safe upgrade paths; missing upgrade docs risk downtime",
+      "scenarios": [
+        {
+          "name": "Pre-upgrade checklist",
+          "when": "a user plans an upgrade",
+          "then": "the guide provides a checklist: export current CRs, check operator health, review release notes",
+          "and_then": []
+        },
+        {
+          "name": "Upgrade procedure",
+          "when": "a user performs the upgrade",
+          "then": "the guide documents: update CRDs first (`make install`), then deploy new operator version (`make deploy IMG=...`)",
+          "and_then": [
+            "verification commands confirm the new version is running and reconciling"
+          ]
+        },
+        {
+          "name": "Rollback procedure",
+          "when": "an upgrade fails",
+          "then": "the guide documents how to revert: redeploy previous operator image and verify CR status",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The documentation SHALL include a troubleshooting guide covering at least 6 common failure scenarios with symptom, diagnosis, causes, and fix for each",
+      "priority": "SHALL",
+      "rationale": "Operational issues are inevitable; a troubleshooting guide reduces MTTR and support burden",
+      "scenarios": [
+        {
+          "name": "Each scenario has diagnostic commands",
+          "when": "a user encounters a listed symptom",
+          "then": "copy-pasteable kubectl commands are provided for diagnosis",
+          "and_then": [
+            "expected output patterns are described"
+          ]
+        },
+        {
+          "name": "Common causes are listed",
+          "when": "a user runs the diagnostic commands",
+          "then": "the guide lists 2-4 common causes per scenario with specific fixes",
+          "and_then": []
+        },
+        {
+          "name": "All major failure modes covered",
+          "when": "a user reviews the troubleshooting guide",
+          "then": "at least these scenarios are covered: stuck Progressing, CrashLoopBackOff, ServiceMonitor missing, webhook errors, operator not reconciling, metrics unavailable",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The documentation SHALL include an architecture overview with visual diagrams, reconciliation flow, managed resources, design principles, and watch/ownership model",
+      "priority": "SHALL",
+      "rationale": "Understanding the operator architecture is essential for debugging, contributing, and trusting the operator in production",
+      "scenarios": [
+        {
+          "name": "Architecture diagram present",
+          "when": "a user reads the architecture overview",
+          "then": "a visual diagram shows the Operator Manager, MemcachedReconciler, Webhook Server, Metrics Server, and all managed resources",
+          "and_then": []
+        },
+        {
+          "name": "Reconciliation flow documented",
+          "when": "a user reads the reconciliation section",
+          "then": "the step-by-step flow is documented: fetch CR → reconcile Deployment → reconcile Service → reconcile PDB → reconcile ServiceMonitor → reconcile NetworkPolicy → update Status",
+          "and_then": [
+            "requeue strategy is explained: 10s when not ready, 60s when fully reconciled"
+          ]
+        },
+        {
+          "name": "Design principles explained",
+          "when": "a user reads the design principles section",
+          "then": "declarative, idempotent, level-triggered, and Kubernetes-native principles are explained with examples",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The documentation SHALL include annotated example CRs for at least 4 use cases: minimal, high-availability, monitoring-enabled, and TLS-enabled",
+      "priority": "SHALL",
+      "rationale": "Example CRs are the fastest onboarding path; annotated examples teach users the API by example",
+      "scenarios": [
+        {
+          "name": "Minimal example",
+          "when": "a user reads the minimal example",
+          "then": "a CR with only `replicas: 1` is shown with comments explaining which defaults apply",
+          "and_then": []
+        },
+        {
+          "name": "HA example",
+          "when": "a user reads the HA example",
+          "then": "a CR with 3 replicas, antiAffinityPreset, topologySpreadConstraints, PDB, and resources is shown with annotations",
+          "and_then": []
+        },
+        {
+          "name": "Monitoring example",
+          "when": "a user reads the monitoring example",
+          "then": "a CR with monitoring.enabled, exporterImage, exporterResources, and serviceMonitor config is shown",
+          "and_then": []
+        },
+        {
+          "name": "TLS example",
+          "when": "a user reads the TLS example",
+          "then": "a CR with security.tls.enabled, certificateSecretRef, and optional enableClientCert is shown",
+          "and_then": [
+            "prerequisite Secret creation commands are included"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The documentation SHALL provide a documentation index page linking to all sections organized by Diataxis quadrant",
+      "priority": "SHALL",
+      "rationale": "Without a navigation index, users cannot discover available documentation",
+      "scenarios": [
+        {
+          "name": "Index links all sections",
+          "when": "a user opens the documentation index",
+          "then": "links to installation guide, CRD reference, architecture, upgrade guide, troubleshooting, and examples are present",
+          "and_then": []
+        },
+        {
+          "name": "Index organized by quadrant",
+          "when": "a user reviews the index structure",
+          "then": "sections are grouped under Reference, How-to, and Explanation headings",
+          "and_then": []
+        },
+        {
+          "name": "Existing reference docs linked",
+          "when": "a user looks for backend reference docs",
+          "then": "the index includes links to all existing docs in docs/reference/backend/",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "All documentation SHOULD use consistent formatting: Markdown with tables for field references, code blocks for YAML/commands, and follow existing docs/reference/backend/ conventions",
+      "priority": "SHOULD",
+      "rationale": "Consistent formatting improves readability and maintains professional documentation quality",
+      "scenarios": [
+        {
+          "name": "Field tables use consistent format",
+          "when": "documentation includes field reference tables",
+          "then": "tables use columns: Field, Type, Required, Default, Validation, Description — matching existing CRD docs pattern",
+          "and_then": []
+        },
+        {
+          "name": "Commands in code blocks",
+          "when": "documentation includes shell commands",
+          "then": "commands are in ```bash code blocks and are copy-pasteable",
+          "and_then": []
+        },
+        {
+          "name": "YAML examples annotated",
+          "when": "documentation includes YAML examples",
+          "then": "examples are in ```yaml code blocks with inline comments explaining key fields",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "Example CR YAML files SHALL be valid against the current CRD schema and deployable on a cluster with the operator installed",
+      "priority": "SHALL",
+      "rationale": "Invalid examples erode trust and waste user time debugging documentation errors",
+      "scenarios": [
+        {
+          "name": "Examples use correct apiVersion and kind",
+          "when": "any example CR is applied to a cluster",
+          "then": "the apiVersion is memcached.c5c3.io/v1alpha1 and kind is Memcached",
+          "and_then": []
+        },
+        {
+          "name": "Examples pass webhook validation",
+          "when": "any example CR is submitted with webhooks enabled",
+          "then": "the CR passes both defaulting and validation webhooks without errors",
+          "and_then": []
+        },
+        {
+          "name": "Field names match CRD types.go",
+          "when": "any example CR is reviewed",
+          "then": "all field names in YAML match the json tags in api/v1alpha1/memcached_types.go exactly",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create documentation index page at docs/index.md linking all sections and existing reference docs (REQ-007)",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Write architecture overview at docs/explanation/architecture-overview.md with diagrams, reconciliation flow, managed resources, design principles, and watch model (REQ-005)",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Write comprehensive CRD field reference at docs/reference/crd-reference.md documenting all spec/status fields, nested structs, defaults, validation, and webhook behavior (REQ-002, REQ-008)",
+      "level": 1,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-002",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Write installation guide at docs/how-to/installation.md covering prerequisites, CRD install, local dev, cluster deployment, and verification (REQ-001, REQ-008)",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Write upgrade guide at docs/how-to/upgrade.md covering pre-upgrade checklist, CRD update, operator deployment, verification, and rollback (REQ-003, REQ-008)",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Write troubleshooting guide at docs/how-to/troubleshooting.md covering 6+ failure scenarios with symptom/diagnosis/causes/fix pattern (REQ-004, REQ-008)",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-004",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.7",
+      "title": "Write example CRs document at docs/how-to/examples.md with annotated minimal, HA, monitoring, TLS, and production examples (REQ-006, REQ-009)",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-006",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create example CR YAML files in config/samples/: minimal.yaml, ha.yaml, monitoring.yaml, tls.yaml, production.yaml matching the examples doc (REQ-006, REQ-009)",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Update config/samples/kustomization.yaml to include all new example CR files (REQ-006)",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Update docs/index.md to cross-reference all new docs and verify all links resolve correctly (REQ-007)",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write test that validates all example CR YAML files in config/samples/ parse as valid Memcached objects and pass webhook validation (REQ-009)",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Write test that validates all YAML code blocks in docs/how-to/examples.md parse as valid Memcached CRs with correct apiVersion/kind/field names (REQ-009)",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Write test that validates all internal links in documentation files resolve to existing files or anchors (REQ-007)",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-007"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/sample_cr_validation_test.go",
+      "test_function": "TestSampleCRsAreValidMemcachedObjects",
+      "story": "Operator user can deploy common configurations using example CRs",
+      "expected": "All YAML files in config/samples/ should deserialize into valid Memcached objects with correct apiVersion and kind",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/sample_cr_validation_test.go",
+      "test_function": "TestSampleCRsPassWebhookValidation",
+      "story": "Operator user can deploy common configurations using example CRs",
+      "expected": "All sample CRs should pass the validation webhook logic (ValidateCreate) without errors",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/doc_examples_validation_test.go",
+      "test_function": "TestDocExampleCRsAreValid",
+      "story": "Operator user can look up any CRD field in a comprehensive reference",
+      "expected": "All YAML code blocks in docs/how-to/examples.md that have apiVersion memcached.c5c3.io/v1alpha1 should deserialize into valid Memcached objects",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/doc_examples_validation_test.go",
+      "test_function": "TestDocExampleCRsPassWebhookValidation",
+      "story": "Operator user can deploy common configurations using example CRs",
+      "expected": "All doc example CRs should pass validation webhook logic without errors",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/doc_links_test.go",
+      "test_function": "TestDocumentationLinksResolve",
+      "story": "Developer can navigate documentation from a central index",
+      "expected": "All relative Markdown links in docs/ files should resolve to existing files",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/doc_links_test.go",
+      "test_function": "TestIndexPageLinksAllDocs",
+      "story": "Developer can navigate documentation from a central index",
+      "expected": "docs/index.md should contain links to all documentation files in docs/ subdirectories",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/sample_cr_validation_test.go",
+      "test_function": "TestSampleCRFieldNamesMatchTypes",
+      "story": "Operator user can deploy common configurations using example CRs",
+      "expected": "All field names in sample CR YAML files should match json tags in memcached_types.go — no unknown fields",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "internal/controller/sample_cr_validation_test.go",
+      "test_function": "TestMinimalSampleUsesDefaults",
+      "story": "Operator user can deploy common configurations using example CRs",
+      "expected": "The minimal sample CR should specify only metadata.name and spec.replicas, relying on defaults for everything else",
+      "requirement_id": "REQ-006"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 7 documentation files exist at their specified paths: docs/index.md, docs/explanation/architecture-overview.md, docs/reference/crd-reference.md, docs/how-to/installation.md, docs/how-to/upgrade.md, docs/how-to/troubleshooting.md, docs/how-to/examples.md",
+    "CRD reference covers every field in api/v1alpha1/memcached_types.go including all nested structs (MemcachedConfig, HighAvailabilitySpec, GracefulShutdownSpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec, NetworkPolicySpec, ServiceSpec)",
+    "All 5 example CR YAML files exist in config/samples/ (minimal, ha, monitoring, tls, production) and parse without errors",
+    "All example CRs use correct apiVersion memcached.c5c3.io/v1alpha1 and pass validation webhook logic",
+    "Installation guide includes both local dev (make install + make run) and cluster deployment (docker-build + deploy) workflows with verification steps",
+    "Troubleshooting guide covers at least 6 scenarios: stuck Progressing, CrashLoopBackOff, ServiceMonitor missing, webhook errors, operator not reconciling, metrics unavailable",
+    "Architecture overview includes a visual diagram (ASCII art or Mermaid) showing operator components and managed resources",
+    "All tests pass: sample CR validation, doc example validation, and documentation link resolution tests",
+    "Documentation uses consistent formatting matching existing docs/reference/backend/ patterns (Markdown tables, code blocks, Source header)",
+    "docs/index.md links to all documentation sections and all existing docs in docs/reference/backend/"
+  ],
+  "implementation_notes": "This feature is documentation-only — no Go source code changes to the operator itself. However, it includes Go test files that validate documentation accuracy against the actual CRD types.\n\n**File organization:**\n- `docs/index.md` — Central navigation page organized by Diataxis quadrants\n- `docs/explanation/architecture-overview.md` — Architecture explanation\n- `docs/reference/crd-reference.md` — Comprehensive CRD field reference (separate from the existing per-component reference docs in docs/reference/backend/)\n- `docs/how-to/installation.md` — Installation how-to guide\n- `docs/how-to/upgrade.md` — Upgrade how-to guide\n- `docs/how-to/troubleshooting.md` — Troubleshooting how-to guide\n- `docs/how-to/examples.md` — Annotated example CRs how-to guide\n- `config/samples/memcached_v1alpha1_minimal.yaml` — Minimal example CR\n- `config/samples/memcached_v1alpha1_ha.yaml` — HA example CR\n- `config/samples/memcached_v1alpha1_monitoring.yaml` — Monitoring example CR\n- `config/samples/memcached_v1alpha1_tls.yaml` — TLS example CR\n- `config/samples/memcached_v1alpha1_production.yaml` — Production example CR\n\n**Existing docs to reference but NOT duplicate:**\nThe `docs/reference/backend/` directory already contains 28 detailed reference docs for individual components (deployment-reconciliation.md, memcached-crd-types.md, tls-encryption.md, etc.). The new `docs/reference/crd-reference.md` provides a unified user-facing CRD field reference, while the existing docs serve as developer-facing implementation references. The index page should link to both.\n\n**Key patterns to follow:**\n- Match the format of `docs/reference/backend/memcached-crd-types.md` for field reference tables (columns: Field, Type, Required, Default, Validation, Description)\n- Use `**Source**: file paths` header convention from existing docs\n- YAML examples should match the CRD types exactly — use the actual Go types in api/v1alpha1/memcached_types.go as the source of truth\n- Example CRs should be consistent with config/samples/memcached_v1alpha1_memcached.yaml patterns\n\n**Test strategy:**\n- Tests validate that documentation stays in sync with code — if CRD types change, tests will fail until docs are updated\n- Sample CR validation uses the actual Kubernetes scheme and webhook validation functions\n- Doc example extraction parses YAML blocks from Markdown files\n- Link validation checks relative paths resolve to real files\n\n**Risks:**\n- CRD reference could become stale if types.go changes without updating docs — mitigated by validation tests\n- YAML examples could use incorrect field names — mitigated by deserialization tests with strict unknown field rejection\n- Links could break as docs structure evolves — mitigated by link validation test",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.432214"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:23:15.690193"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:26:20.904930"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "b9c1f08e-9638-4d43-97fa-2b3d0ba1e0a8",
+      "timestamp": "2026-02-20T18:26:20.904971",
+      "total_duration": 181.32498741149902,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 181.32498741149902,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
