@@ -3,11 +3,14 @@ package v1alpha1
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -92,7 +95,7 @@ func TestValidateCreate_FullyPopulatedValidCR(t *testing.T) {
 	}
 }
 
-// --- REQ-001: Memory limit validation ---
+// --- REQ-001: Memory limit validation (REQ-006) ---
 
 func TestValidateMemoryLimit(t *testing.T) {
 	tests := []struct {
@@ -156,6 +159,89 @@ func TestValidateMemoryLimit(t *testing.T) {
 			mc:        &Memcached{},
 			wantError: false,
 		},
+		// Task 1.3 additions: boundary conditions for memory limit.
+		{
+			name: "one byte below boundary rejected (95Mi for 64MB max)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							// 95Mi = 99614720 bytes; required = 64Mi + 32Mi = 96Mi = 100663296 bytes.
+							corev1.ResourceMemory: resource.MustParse("95Mi"),
+						},
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "large maxMemoryMB with sufficient limit",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Memcached: &MemcachedConfig{MaxMemoryMB: 4096},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("4200Mi"),
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "large maxMemoryMB with insufficient limit",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Memcached: &MemcachedConfig{MaxMemoryMB: 4096},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("4096Mi"),
+						},
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "resources with CPU limit only (no memory limit)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("500m"),
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "nil memcached config with resources set",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("64Mi"),
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "resources with empty limits map",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{},
+					},
+				},
+			},
+			wantError: false,
+		},
 	}
 
 	v := &MemcachedCustomValidator{}
@@ -166,6 +252,31 @@ func TestValidateMemoryLimit(t *testing.T) {
 				t.Errorf("wantError=%v, got err=%v", tt.wantError, err)
 			}
 		})
+	}
+}
+
+func TestValidateMemoryLimit_ErrorMessage(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+			Resources: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+		},
+	}
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), mc)
+	if err == nil {
+		t.Fatal("expected error for insufficient memory limit")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "memory") {
+		t.Errorf("expected error to reference memory, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "96Mi") {
+		t.Errorf("expected error to include required minimum (96Mi), got: %s", errMsg)
 	}
 }
 
@@ -306,6 +417,65 @@ func TestValidatePDB(t *testing.T) {
 			},
 			wantError: true,
 		},
+		// Task 1.4 additions: PDB edge cases.
+		{
+			name: "minAvailable exceeds replicas",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Replicas: &replicas3,
+					HighAvailability: &HighAvailabilitySpec{
+						PodDisruptionBudget: &PDBSpec{
+							Enabled:      true,
+							MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 5},
+						},
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "minAvailable percentage skips replicas check",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Replicas: &replicas3,
+					HighAvailability: &HighAvailabilitySpec{
+						PodDisruptionBudget: &PDBSpec{
+							Enabled:      true,
+							MinAvailable: &intstr.IntOrString{Type: intstr.String, StrVal: "100%"},
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "minAvailable with nil replicas skips replicas check",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					HighAvailability: &HighAvailabilitySpec{
+						PodDisruptionBudget: &PDBSpec{
+							Enabled:      true,
+							MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 5},
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "maxUnavailable integer value valid",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					HighAvailability: &HighAvailabilitySpec{
+						PodDisruptionBudget: &PDBSpec{
+							Enabled:        true,
+							MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
 	}
 
 	v := &MemcachedCustomValidator{}
@@ -317,6 +487,55 @@ func TestValidatePDB(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidatePDB_ErrorMessages(t *testing.T) {
+	replicas3 := int32(3)
+
+	t.Run("mutual exclusivity error message", func(t *testing.T) {
+		mc := &Memcached{
+			Spec: MemcachedSpec{
+				HighAvailability: &HighAvailabilitySpec{
+					PodDisruptionBudget: &PDBSpec{
+						Enabled:        true,
+						MinAvailable:   &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+						MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+					},
+				},
+			},
+		}
+		v := &MemcachedCustomValidator{}
+		_, err := v.ValidateCreate(context.Background(), mc)
+		if err == nil {
+			t.Fatal("expected error for mutual exclusivity")
+		}
+		if !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Errorf("expected error to mention 'mutually exclusive', got: %s", err.Error())
+		}
+	})
+
+	t.Run("minAvailable >= replicas error includes both values", func(t *testing.T) {
+		mc := &Memcached{
+			Spec: MemcachedSpec{
+				Replicas: &replicas3,
+				HighAvailability: &HighAvailabilitySpec{
+					PodDisruptionBudget: &PDBSpec{
+						Enabled:      true,
+						MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 3},
+					},
+				},
+			},
+		}
+		v := &MemcachedCustomValidator{}
+		_, err := v.ValidateCreate(context.Background(), mc)
+		if err == nil {
+			t.Fatal("expected error for minAvailable >= replicas")
+		}
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "3") {
+			t.Errorf("expected error to include both values, got: %s", errMsg)
+		}
+	})
 }
 
 // --- REQ-004, REQ-005: Security secret reference validation ---
@@ -494,6 +713,68 @@ func TestValidateGracefulShutdown(t *testing.T) {
 			},
 			wantError: true,
 		},
+		// Task 1.5 additions: graceful shutdown edge cases.
+		{
+			name: "invalid timing (terminationGrace < preStop)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					HighAvailability: &HighAvailabilitySpec{
+						GracefulShutdown: &GracefulShutdownSpec{
+							Enabled:                       true,
+							PreStopDelaySeconds:           30,
+							TerminationGracePeriodSeconds: 10,
+						},
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "disabled graceful shutdown bypasses timing validation",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					HighAvailability: &HighAvailabilitySpec{
+						GracefulShutdown: &GracefulShutdownSpec{
+							Enabled:                       false,
+							PreStopDelaySeconds:           30,
+							TerminationGracePeriodSeconds: 10,
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "nil graceful shutdown spec",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					HighAvailability: &HighAvailabilitySpec{
+						GracefulShutdown: nil,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name:      "nil highAvailability skips graceful shutdown validation",
+			mc:        &Memcached{},
+			wantError: false,
+		},
+		{
+			name: "valid timing with minimal margin (grace = preStop + 1)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					HighAvailability: &HighAvailabilitySpec{
+						GracefulShutdown: &GracefulShutdownSpec{
+							Enabled:                       true,
+							PreStopDelaySeconds:           10,
+							TerminationGracePeriodSeconds: 11,
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
 	}
 
 	v := &MemcachedCustomValidator{}
@@ -505,6 +786,67 @@ func TestValidateGracefulShutdown(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateGracefulShutdown_ErrorMessage(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			HighAvailability: &HighAvailabilitySpec{
+				GracefulShutdown: &GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           30,
+					TerminationGracePeriodSeconds: 10,
+				},
+			},
+		},
+	}
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), mc)
+	if err == nil {
+		t.Fatal("expected error for invalid graceful shutdown timing")
+	}
+	errMsg := err.Error()
+	if !strings.Contains(errMsg, "terminationGracePeriodSeconds") {
+		t.Errorf("expected error to reference terminationGracePeriodSeconds, got: %s", errMsg)
+	}
+}
+
+func TestValidateSecuritySecretRefs_ErrorMessages(t *testing.T) {
+	t.Run("SASL error includes field path", func(t *testing.T) {
+		mc := &Memcached{
+			Spec: MemcachedSpec{
+				Security: &SecuritySpec{
+					SASL: &SASLSpec{Enabled: true},
+				},
+			},
+		}
+		v := &MemcachedCustomValidator{}
+		_, err := v.ValidateCreate(context.Background(), mc)
+		if err == nil {
+			t.Fatal("expected error for SASL without secret")
+		}
+		if !strings.Contains(err.Error(), "credentialsSecretRef") {
+			t.Errorf("expected error to reference credentialsSecretRef, got: %s", err.Error())
+		}
+	})
+
+	t.Run("TLS error includes field path", func(t *testing.T) {
+		mc := &Memcached{
+			Spec: MemcachedSpec{
+				Security: &SecuritySpec{
+					TLS: &TLSSpec{Enabled: true},
+				},
+			},
+		}
+		v := &MemcachedCustomValidator{}
+		_, err := v.ValidateCreate(context.Background(), mc)
+		if err == nil {
+			t.Fatal("expected error for TLS without secret")
+		}
+		if !strings.Contains(err.Error(), "certificateSecretRef") {
+			t.Errorf("expected error to reference certificateSecretRef, got: %s", err.Error())
+		}
+	})
 }
 
 // --- REQ-008: Multiple errors collected ---
@@ -539,11 +881,18 @@ func TestValidation_MultipleErrorsCollected(t *testing.T) {
 	}
 	errMsg := err.Error()
 	// Verify multiple errors are present, not just the first one.
-	containsMemory := strings.Contains(errMsg, "resources.limits.memory") || strings.Contains(errMsg, "memory")
-	containsPDB := strings.Contains(errMsg, "minAvailable") || strings.Contains(errMsg, "podDisruptionBudget")
-	containsSASL := strings.Contains(errMsg, "sasl") || strings.Contains(errMsg, "credentialsSecretRef")
-	if !containsMemory || !containsPDB || !containsSASL {
-		t.Errorf("expected error to contain all three violations (memory, PDB, SASL), got: %v", err)
+	checks := []struct {
+		desc   string
+		needle string
+	}{
+		{"memory limit", "memory"},
+		{"PDB minAvailable", "minAvailable"},
+		{"SASL secret", "credentialsSecretRef"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(errMsg, c.needle) {
+			t.Errorf("expected error to contain %s (%q), got: %s", c.desc, c.needle, errMsg)
+		}
 	}
 }
 
@@ -563,5 +912,185 @@ func TestValidateUpdate_PropagatesErrors(t *testing.T) {
 	_, err := v.ValidateUpdate(context.Background(), old, mc)
 	if err == nil {
 		t.Error("expected error on update with invalid config")
+	}
+}
+
+// --- Task 1.6: Error aggregation, delete bypass, and update propagation (REQ-010) ---
+
+func TestValidation_FourSimultaneousViolations(t *testing.T) {
+	replicas := int32(3)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas:  &replicas,
+			Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+			Resources: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+			HighAvailability: &HighAvailabilitySpec{
+				PodDisruptionBudget: &PDBSpec{
+					Enabled:      true,
+					MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 3},
+				},
+				GracefulShutdown: &GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           30,
+					TerminationGracePeriodSeconds: 10,
+				},
+			},
+			Security: &SecuritySpec{
+				SASL: &SASLSpec{Enabled: true},
+			},
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), mc)
+	if err == nil {
+		t.Fatal("expected error for four simultaneous violations")
+	}
+	errMsg := err.Error()
+
+	// Verify all four errors are present.
+	checks := []struct {
+		desc   string
+		needle string
+	}{
+		{"memory limit", "memory"},
+		{"PDB minAvailable", "minAvailable"},
+		{"graceful shutdown", "terminationGracePeriodSeconds"},
+		{"SASL secret", "credentialsSecretRef"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(errMsg, c.needle) {
+			t.Errorf("expected error to contain %s (%q), got: %s", c.desc, c.needle, errMsg)
+		}
+	}
+}
+
+func TestValidation_StatusErrorFormat(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Security: &SecuritySpec{
+				SASL: &SASLSpec{Enabled: true},
+			},
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), mc)
+	if err == nil {
+		t.Fatal("expected error for SASL without secret")
+	}
+
+	// Verify the error is a Kubernetes StatusError (apierrors.StatusError).
+	var statusErr *apierrors.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("expected *apierrors.StatusError, got %T", err)
+	}
+	if statusErr.Status().Status != metav1.StatusFailure {
+		t.Errorf("expected Status=Failure, got %s", statusErr.Status().Status)
+	}
+	if statusErr.Status().Reason != metav1.StatusReasonInvalid {
+		t.Errorf("expected Reason=Invalid, got %s", statusErr.Status().Reason)
+	}
+}
+
+func TestValidateUpdate_ValidToInvalid(t *testing.T) {
+	replicas := int32(3)
+	image := "memcached:1.6"
+
+	old := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas: &replicas,
+			Image:    &image,
+		},
+	}
+	newObj := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas:  &replicas,
+			Image:     &image,
+			Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+			Resources: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateUpdate(context.Background(), old, newObj)
+	if err == nil {
+		t.Error("expected error when updating from valid to invalid config")
+	}
+	if !strings.Contains(err.Error(), "memory") {
+		t.Errorf("expected error to reference memory limit, got: %s", err.Error())
+	}
+}
+
+func TestValidateUpdate_ValidCRAccepted(t *testing.T) {
+	replicas := int32(3)
+	image := "memcached:1.6"
+
+	old := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas: &replicas,
+			Image:    &image,
+		},
+	}
+	newObj := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas:  &replicas,
+			Image:     &image,
+			Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+			Resources: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("128Mi"),
+				},
+			},
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateUpdate(context.Background(), old, newObj)
+	if err != nil {
+		t.Errorf("expected no error for valid update, got: %v", err)
+	}
+}
+
+func TestValidateDelete_InvalidCRStillDeletes(t *testing.T) {
+	// Verify that a CR with multiple violations can still be deleted.
+	replicas := int32(3)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas:  &replicas,
+			Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+			Resources: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("32Mi"),
+				},
+			},
+			HighAvailability: &HighAvailabilitySpec{
+				PodDisruptionBudget: &PDBSpec{
+					Enabled:      true,
+					MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 3},
+				},
+			},
+			Security: &SecuritySpec{
+				SASL: &SASLSpec{Enabled: true},
+				TLS:  &TLSSpec{Enabled: true},
+			},
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	warnings, err := v.ValidateDelete(context.Background(), mc)
+	if err != nil {
+		t.Errorf("expected no error for delete, got: %v", err)
+	}
+	if warnings != nil {
+		t.Errorf("expected no warnings for delete, got: %v", warnings)
 	}
 }

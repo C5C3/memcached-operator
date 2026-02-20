@@ -432,3 +432,234 @@ func TestMemcachedDefaulting_FullySpecifiedCRUnchanged(t *testing.T) {
 		t.Errorf("expected antiAffinityPreset=hard, got %s", *mc.Spec.HighAvailability.AntiAffinityPreset)
 	}
 }
+
+// --- Task 1.1: Additional defaulting edge cases (REQ-001, REQ-002, REQ-003) ---
+
+func TestMemcachedDefaulting_Idempotent(t *testing.T) {
+	mc := &Memcached{}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("first Default call: unexpected error: %v", err)
+	}
+
+	// Capture state after first call.
+	replicas := *mc.Spec.Replicas
+	image := *mc.Spec.Image
+	maxMem := mc.Spec.Memcached.MaxMemoryMB
+	maxConn := mc.Spec.Memcached.MaxConnections
+	threads := mc.Spec.Memcached.Threads
+	maxItem := mc.Spec.Memcached.MaxItemSize
+
+	// Apply defaults a second time.
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("second Default call: unexpected error: %v", err)
+	}
+
+	if *mc.Spec.Replicas != replicas {
+		t.Errorf("idempotency: replicas changed from %d to %d", replicas, *mc.Spec.Replicas)
+	}
+	if *mc.Spec.Image != image {
+		t.Errorf("idempotency: image changed from %s to %s", image, *mc.Spec.Image)
+	}
+	if mc.Spec.Memcached.MaxMemoryMB != maxMem {
+		t.Errorf("idempotency: maxMemoryMB changed from %d to %d", maxMem, mc.Spec.Memcached.MaxMemoryMB)
+	}
+	if mc.Spec.Memcached.MaxConnections != maxConn {
+		t.Errorf("idempotency: maxConnections changed from %d to %d", maxConn, mc.Spec.Memcached.MaxConnections)
+	}
+	if mc.Spec.Memcached.Threads != threads {
+		t.Errorf("idempotency: threads changed from %d to %d", threads, mc.Spec.Memcached.Threads)
+	}
+	if mc.Spec.Memcached.MaxItemSize != maxItem {
+		t.Errorf("idempotency: maxItemSize changed from %s to %s", maxItem, mc.Spec.Memcached.MaxItemSize)
+	}
+}
+
+func TestMemcachedDefaulting_EmptyStringImagePreserved(t *testing.T) {
+	emptyImage := ""
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Image: &emptyImage,
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The webhook only defaults nil image, not empty string; the pointer is non-nil.
+	if mc.Spec.Image == nil {
+		t.Fatal("expected image pointer to remain non-nil")
+	}
+	if *mc.Spec.Image != "" {
+		t.Errorf("expected empty-string image preserved, got %q", *mc.Spec.Image)
+	}
+}
+
+func TestMemcachedDefaulting_VerbosityZeroExplicit(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Memcached: &MemcachedConfig{
+				MaxMemoryMB: 128,
+				Verbosity:   0,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verbosity 0 is the Go zero value and also a valid configuration.
+	if mc.Spec.Memcached.Verbosity != 0 {
+		t.Errorf("expected verbosity=0 preserved, got %d", mc.Spec.Memcached.Verbosity)
+	}
+	// Other zero-value fields should be defaulted.
+	if mc.Spec.Memcached.MaxConnections != DefaultMaxConnections {
+		t.Errorf("expected maxConnections=%d, got %d", DefaultMaxConnections, mc.Spec.Memcached.MaxConnections)
+	}
+	if mc.Spec.Memcached.Threads != DefaultThreads {
+		t.Errorf("expected threads=%d, got %d", DefaultThreads, mc.Spec.Memcached.Threads)
+	}
+}
+
+func TestMemcachedDefaulting_ExtraArgsPreserved(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Memcached: &MemcachedConfig{
+				ExtraArgs: []string{"-o", "modern", "-B", "binary"},
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mc.Spec.Memcached.ExtraArgs) != 4 {
+		t.Errorf("expected 4 extraArgs preserved, got %d", len(mc.Spec.Memcached.ExtraArgs))
+	}
+	if mc.Spec.Memcached.ExtraArgs[0] != "-o" || mc.Spec.Memcached.ExtraArgs[1] != "modern" {
+		t.Errorf("expected first two extraArgs=[-o, modern], got %v", mc.Spec.Memcached.ExtraArgs[:2])
+	}
+}
+
+// --- Task 1.2: Additional monitoring and HA sub-section defaults (REQ-004, REQ-005) ---
+
+func TestMemcachedDefaulting_MonitoringDisabledStillDefaults(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Monitoring: &MonitoringSpec{
+				Enabled: false,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Even when monitoring is disabled, the webhook defaults sub-fields because
+	// the section is non-nil (opt-in).
+	if mc.Spec.Monitoring.ExporterImage == nil {
+		t.Fatal("expected exporterImage to be defaulted even when monitoring.enabled=false")
+	}
+	if *mc.Spec.Monitoring.ExporterImage != DefaultExporterImage {
+		t.Errorf("expected exporterImage=%s, got %s", DefaultExporterImage, *mc.Spec.Monitoring.ExporterImage)
+	}
+}
+
+func TestMemcachedDefaulting_ServiceMonitorFullySpecifiedPreserved(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Monitoring: &MonitoringSpec{
+				Enabled: true,
+				ServiceMonitor: &ServiceMonitorSpec{
+					Interval:         "15s",
+					ScrapeTimeout:    "5s",
+					AdditionalLabels: map[string]string{"team": "platform"},
+				},
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mc.Spec.Monitoring.ServiceMonitor.Interval != "15s" {
+		t.Errorf("expected interval=15s, got %s", mc.Spec.Monitoring.ServiceMonitor.Interval)
+	}
+	if mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout != "5s" {
+		t.Errorf("expected scrapeTimeout=5s, got %s", mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout)
+	}
+	if mc.Spec.Monitoring.ServiceMonitor.AdditionalLabels["team"] != "platform" {
+		t.Errorf("expected additionalLabels preserved, got %v", mc.Spec.Monitoring.ServiceMonitor.AdditionalLabels)
+	}
+}
+
+func TestMemcachedDefaulting_HAWithPDBStillDefaultsPreset(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			HighAvailability: &HighAvailabilitySpec{
+				PodDisruptionBudget: &PDBSpec{
+					Enabled: true,
+				},
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// AntiAffinityPreset should be defaulted to "soft" even when other HA fields are set.
+	if mc.Spec.HighAvailability.AntiAffinityPreset == nil {
+		t.Fatal("expected antiAffinityPreset to be defaulted")
+	}
+	if *mc.Spec.HighAvailability.AntiAffinityPreset != AntiAffinityPresetSoft {
+		t.Errorf("expected antiAffinityPreset=soft, got %s", *mc.Spec.HighAvailability.AntiAffinityPreset)
+	}
+}
+
+func TestMemcachedDefaulting_IdempotentWithMonitoringAndHA(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Monitoring: &MonitoringSpec{
+				Enabled:        true,
+				ServiceMonitor: &ServiceMonitorSpec{},
+			},
+			HighAvailability: &HighAvailabilitySpec{},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("first Default call: unexpected error: %v", err)
+	}
+
+	exporterImage := *mc.Spec.Monitoring.ExporterImage
+	interval := mc.Spec.Monitoring.ServiceMonitor.Interval
+	preset := *mc.Spec.HighAvailability.AntiAffinityPreset
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("second Default call: unexpected error: %v", err)
+	}
+
+	if *mc.Spec.Monitoring.ExporterImage != exporterImage {
+		t.Errorf("idempotency: exporterImage changed")
+	}
+	if mc.Spec.Monitoring.ServiceMonitor.Interval != interval {
+		t.Errorf("idempotency: interval changed")
+	}
+	if *mc.Spec.HighAvailability.AntiAffinityPreset != preset {
+		t.Errorf("idempotency: antiAffinityPreset changed")
+	}
+}

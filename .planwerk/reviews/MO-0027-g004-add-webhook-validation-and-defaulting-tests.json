@@ -1,0 +1,86 @@
+{
+  "summary": "Comprehensive webhook test suite adding 8 new defaulting unit tests, 17 new validation unit tests (with table-driven boundary cases), 2 new Chainsaw E2E scenarios (webhook-defaulting + 2 additional rejection cases), and reference documentation. All 22 defaulting unit tests pass, all validation unit tests pass, all 328 envtest integration tests pass. No production code modified. go vet clean. Minor go fmt alignment issue in the committed validation test file.",
+  "verdict": "NEEDS_CHANGES",
+  "tests_checklist": [
+    {"item": "V1: All unit tests pass (go test ./api/v1alpha1/ -run TestMemcachedDefaulting -v: 22 PASS)", "checked": true},
+    {"item": "V1: All validation unit tests pass (go test ./api/v1alpha1/ -run 'TestValidate|TestValidation' -v: all PASS)", "checked": true},
+    {"item": "V1: All envtest integration tests pass (328 of 328 Specs PASS)", "checked": true},
+    {"item": "V2: go vet ./api/v1alpha1/ passes with no errors", "checked": true},
+    {"item": "V3: go fmt produces alignment changes not committed — file needs reformatting", "checked": false},
+    {"item": "TE1: Happy path tested with realistic data (valid CRs, fully populated CRs)", "checked": true},
+    {"item": "TE2: Edge cases tested (nil guards, zero values, empty strings, boundary conditions)", "checked": true},
+    {"item": "TE3: Error cases tested (insufficient memory, mutual exclusivity, missing secrets, timing violations)", "checked": true},
+    {"item": "TE4: Tests independent (no shared mutable state between test functions)", "checked": true},
+    {"item": "TE5: Test names follow pattern TestMemcachedDefaulting_X / TestValidate_X", "checked": true},
+    {"item": "TE6: No mocking — tests call webhook functions directly (appropriate for unit tests)", "checked": true},
+    {"item": "TE7: Assertions specific (exact values checked, error messages verified for field paths)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "P1: Follows existing patterns — standard Go testing.T for unit tests, Ginkgo/Gomega for envtest, Chainsaw YAML for E2E", "checked": true},
+    {"item": "P2: Uses existing utilities (validMemcached, uniqueName, int32Ptr for envtest)", "checked": true},
+    {"item": "P5: File locations match project structure conventions", "checked": true},
+    {"item": "Q1: Each test function tests ONE logical behavior", "checked": true},
+    {"item": "Q3: Table-driven tests reduce duplication effectively", "checked": true},
+    {"item": "Q4: Clear naming — test names describe what is being verified", "checked": true},
+    {"item": "Q7: No dead code or commented-out code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "S3: No hardcoded secrets in test data (uses placeholder names like 'sasl-secret', 'tls-cert')", "checked": true},
+    {"item": "S5: No sensitive data exposed in test assertions or error messages", "checked": true},
+    {"item": "No production code modified — only test files added/changed", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible — pure test additions, no abstractions or helpers beyond what exists", "checked": true},
+    {"item": "Three-tier test pyramid maintained (unit -> envtest -> E2E)", "checked": true},
+    {"item": "Test files correctly placed in their respective packages", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated test logic — table-driven tests consolidate similar cases", "checked": true},
+    {"item": "No unnecessary test utilities created", "checked": true},
+    {"item": "Tests cover only planned requirements — no scope creep", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Tests use t.Fatalf for precondition failures (e.g., unexpected error in Default())", "checked": true},
+    {"item": "Table-driven tests use t.Run for isolated subtests", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil guard tests present for all optional sections (monitoring, HA, security, resources, memcached)", "checked": true},
+    {"item": "Boundary condition tests present (exact boundary 96Mi, 1-byte-below, equal values, minimal margin)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "V3-1",
+      "severity": "minor",
+      "check_id": "V3",
+      "description": "go fmt produces 2 alignment changes in the committed file. The struct literal in TestValidation_FourSimultaneousViolations (line ~950) has extra padding on `desc` and `needle` fields, and TestValidateUpdate_ValidCRAccepted (line ~1035) has misaligned `Replicas`/`Image` fields. Running `make test` auto-reformats the file, leaving unstaged changes.",
+      "location": "api/v1alpha1/memcached_validation_webhook_test.go:950,1035",
+      "fix": "Run `go fmt ./api/v1alpha1/memcached_validation_webhook_test.go` and commit the result."
+    }
+  ],
+  "suggested_improvements": [
+    "Run go fmt on the validation test file before committing to ensure the file passes `make test` without generating unstaged formatting changes"
+  ],
+  "next_steps": [
+    "Fix go fmt alignment in api/v1alpha1/memcached_validation_webhook_test.go (2 struct literal alignment issues)",
+    "Re-run `make test` to confirm no formatting diff remains after fix"
+  ],
+  "metadata": {
+    "feature_id": "MO-0027",
+    "title": "G004: Add webhook validation and defaulting tests",
+    "date": "2026-02-20",
+    "verdict": "NEEDS_CHANGES"
+  },
+  "review_details": {
+    "step_1_intent": "Add comprehensive test coverage for existing defaulting and validation webhooks at unit, envtest, and E2E levels. No production code changes.",
+    "step_2_scope": "Changes are strictly within test files (api/v1alpha1/*_test.go), E2E test manifests (test/e2e/), and documentation (docs/reference/backend/webhook-tests.md). No production code modified — confirmed via git diff. No scope creep.",
+    "step_3_verification": "Unit tests: 22 defaulting tests PASS, all validation tests PASS. Envtest: 328/328 PASS. go vet: clean. go fmt: 2 minor alignment mismatches in committed code.",
+    "step_4_patterns": "Unit tests use standard Go testing.T with table-driven patterns matching existing tests. Envtest uses Ginkgo/Gomega with validMemcached() helper matching existing integration tests. E2E uses Chainsaw YAML with expect error checks matching existing webhook-rejection tests.",
+    "step_5_tests": "Comprehensive coverage: every defaulting path tested (nil, zero, explicit, partial, idempotent). Every validation rule tested with valid/invalid/boundary/skip cases. Error messages verified for field paths. StatusError format verified. Error aggregation tested with 3 and 4 simultaneous violations. Delete bypass verified with maximally invalid CR.",
+    "step_6_security": "No security concerns — purely test code with placeholder secret names.",
+    "step_7_complexity": "Minimal complexity — straightforward test additions following established patterns.",
+    "step_8_completeness": "All 11 tasks marked done. All REQ-001 through REQ-010 have coverage at unit level. REQ-001–003, 006–009 have E2E coverage. REQ-001–010 have envtest coverage. Documentation catalogs all test functions with requirement IDs. Only gap: go fmt formatting issue.",
+    "pre_existing_failures": "3 failing tests in internal/controller (TestReconcileResource_IncrementsMetric*) are pre-existing on main branch — not introduced by this feature."
+  }
+}

@@ -1,0 +1,22 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: webhook-defaulting
+spec:
+  description: >
+    Verify that the defaulting webhook populates omitted fields with sensible
+    defaults: replicas=1, image=memcached:1.6, and all memcached config sub-fields
+    (REQ-001, REQ-002, REQ-003).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-minimal-cr
+      try:
+        - apply:
+            file: 00-memcached-minimal.yaml
+    - name: assert-defaults-applied
+      try:
+        - assert:
+            file: 01-assert-defaults-applied.yaml

@@ -1,0 +1,15 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-webhook-defaults
+spec:
+  # REQ-001: replicas defaults to 1
+  replicas: 1
+  # REQ-002: image defaults to memcached:1.6
+  image: "memcached:1.6"
+  # REQ-003: memcached config defaults
+  memcached:
+    maxMemoryMB: 64
+    maxConnections: 1024
+    threads: 4
+    maxItemSize: "1m"

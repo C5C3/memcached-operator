@@ -2,8 +2,8 @@
   "feature_id": "MO-0027",
   "title": "G004: Add webhook validation and defaulting tests",
   "slug": "g004-add-webhook-validation-and-defaulting-tests",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Test defaulting and validation webhooks: verify defaults are applied for omitted fields, verify invalid configurations are rejected with clear error messages, verify edge cases in validation logic.",
   "stories": [
@@ -370,6 +370,7 @@
       "title": "Add unit tests for defaulting webhook edge cases: replicas=0 preserved, fully specified CR unchanged, nil-to-initialized memcached config (REQ-001, REQ-002, REQ-003)",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -381,6 +382,7 @@
       "title": "Add unit tests for defaulting webhook monitoring and HA sub-section defaults (REQ-004, REQ-005)",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-005"
@@ -391,6 +393,7 @@
       "title": "Add unit tests for validation webhook memory limit rule with boundary conditions (REQ-006)",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -400,6 +403,7 @@
       "title": "Add unit tests for validation webhook PDB rules: mutual exclusivity, replicas boundary, disabled bypass (REQ-007)",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -409,6 +413,7 @@
       "title": "Add unit tests for validation webhook security secret refs and graceful shutdown timing (REQ-008, REQ-009)",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-009"
@@ -419,6 +424,7 @@
       "title": "Add unit tests for validation webhook error aggregation, delete bypass, and update propagation (REQ-010)",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -428,6 +434,7 @@
       "title": "Add envtest integration tests for defaulting webhook: minimal CR, fully specified CR, defaults visible after round-trip (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -441,6 +448,7 @@
       "title": "Add envtest integration tests for validation webhook: rejection scenarios via API server (REQ-006, REQ-007, REQ-008, REQ-009, REQ-010)",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007",
@@ -454,6 +462,7 @@
       "title": "Add Chainsaw E2E test for webhook defaulting: verify defaults applied on a real cluster (REQ-001, REQ-002, REQ-003)",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -465,6 +474,7 @@
       "title": "Add Chainsaw E2E test for webhook validation rejections: verify invalid CRs are rejected on a real cluster (REQ-006, REQ-007, REQ-008, REQ-009)",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007",
@@ -477,6 +487,7 @@
       "title": "Write reference documentation for webhook test coverage and test patterns (docs/reference/backend/webhook-tests.md)",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -674,6 +685,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T16:28:45.429365"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:30:36.068797"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:53:15.536355"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:53:15.556050"
     }
   },
   "execution_history": [
@@ -687,6 +710,56 @@
           "name": "prepare",
           "duration": 228.64549779891968,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "df98ebec-f835-486b-a2fa-66508a5ef44b",
+      "timestamp": "2026-02-20T16:51:05.776206",
+      "total_duration": 1091.9612712860107,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (6 tasks)",
+          "duration": 307.2345781326294,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 162.29516458511353,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 229.33150386810303,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 148.08441019058228,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0027] Code Review",
+          "duration": 127.87652111053467,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0027] Improvements",
+          "duration": 45.78926467895508,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0027] Simplify",
+          "duration": 71.34982872009277,
+          "type": "simplify",
           "status": "done"
         }
       ]

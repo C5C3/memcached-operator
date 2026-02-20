@@ -5,8 +5,9 @@ metadata:
 spec:
   description: >
     Verify that the validating webhook rejects invalid Memcached CRs:
-    memory limit too low, PDB with both minAvailable and maxUnavailable,
-    and graceful shutdown with invalid terminationGracePeriodSeconds (REQ-008).
+    memory limit too low, PDB with both/neither minAvailable and maxUnavailable,
+    PDB minAvailable >= replicas, graceful shutdown with invalid timing,
+    and security features without secret refs (REQ-006, REQ-007, REQ-008, REQ-009).
   timeouts:
     apply: 30s
     assert: 120s
@@ -44,6 +45,20 @@ spec:
       try:
         - apply:
             file: 04-invalid-tls-no-secret.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-pdb-neither-set
+      try:
+        - apply:
+            file: 05-invalid-pdb-neither.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-pdb-min-available-ge-replicas
+      try:
+        - apply:
+            file: 06-invalid-pdb-min-ge-replicas.yaml
             expect:
               - check:
                   ($error != null): true
