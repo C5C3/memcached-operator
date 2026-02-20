@@ -12,7 +12,7 @@ CobaltCore follows a strict **operator-per-service architecture**: every compone
 
 Memcached is one of four infrastructure services in the Control Plane Cluster, deployed in **Phase 1** of the dependency graph -- before any OpenStack service can start:
 
-```
+```text
 Phase 1: Infrastructure    --> MariaDB, RabbitMQ, Valkey, Memcached
 Phase 2: Identity          --> Keystone (depends: MariaDB, Memcached)
 Phase 3: Service Catalog   --> K-ORC
@@ -26,7 +26,7 @@ The primary consumer of Memcached is **Keystone**, which uses it for token cachi
 
 ## Operator Architecture
 
-```
+```text
 +---------------------------------------------------------------------+
 |                        Kubernetes Cluster                           |
 |                                                                     |
@@ -50,17 +50,17 @@ The primary consumer of Memcached is **Keystone**, which uses it for token cachi
 |  +--------------------------------------------------------------+   |
 |  |                    Managed Resources                         |   |
 |  |                                                              |   |
-|  |  +------------+  +----------+  +------+  +---------------+  |   |
-|  |  | Deployment |  | Service  |  | PDB  |  | ServiceMonitor|  |   |
-|  |  |            |  | (headless|  |      |  |               |  |   |
-|  |  | +--------+ |  | clusterIP|  |min:1 |  | prometheus    |  |   |
-|  |  | |memcachd| |  | :11211   |  |      |  | scrape config |  |   |
-|  |  | |:11211  | |  +----------+  +------+  +---------------+  |   |
-|  |  | +--------+ |                                              |   |
-|  |  | |exporter| |  +---------------+                           |   |
-|  |  | |:9150   | |  | NetworkPolicy |                           |   |
-|  |  | +--------+ |  |               |                           |   |
-|  |  +------------+  +---------------+                           |   |
+|  |  +--------------+  +----------+  +------+  +---------------+  |   |
+|  |  | Deployment   |  | Service  |  | PDB  |  | ServiceMonitor|  |   |
+|  |  |              |  | (headless|  |      |  |               |  |   |
+|  |  | +----------+ |  | clusterIP|  |min:1 |  | prometheus    |  |   |
+|  |  | |memcached | |  | :11211   |  |      |  | scrape config |  |   |
+|  |  | |:11211    | |  +----------+  +------+  +---------------+  |   |
+|  |  | +----------+ |                                              |   |
+|  |  | |exporter  | |  +---------------+                           |   |
+|  |  | |:9150     | |  | NetworkPolicy |                           |   |
+|  |  | +----------+ |  |               |                           |   |
+|  |  +--------------+  +---------------+                           |   |
 |  +--------------------------------------------------------------+   |
 +---------------------------------------------------------------------+
 ```
@@ -103,14 +103,14 @@ Reconciliation reacts to the **current state**, not to a sequence of events. If 
 
 The controller sets up watches for the following resources. All child resource watches are filtered to resources owned by a `Memcached` CR via owner references.
 
-| Resource         | API Group                | Watch Reason                                         |
-|------------------|--------------------------|------------------------------------------------------|
+| Resource         | API Group               | Watch Reason                                         |
+|------------------|-------------------------|------------------------------------------------------|
 | `Memcached`      | `memcached.c5c3.io`     | Primary resource; triggers reconciliation on changes |
-| `Deployment`     | `apps`                   | Detect drift, observe rollout status                 |
-| `Service`        | core (`""`)              | Detect drift                                         |
-| `PDB`            | `policy`                 | Detect drift                                         |
-| `ServiceMonitor` | `monitoring.coreos.com`  | Detect drift (if monitoring enabled)                 |
-| `NetworkPolicy`  | `networking.k8s.io`      | Detect drift (if network policy enabled)             |
+| `Deployment`     | `apps`                  | Detect drift, observe rollout status                 |
+| `Service`        | core (`""`)             | Detect drift                                         |
+| `PDB`            | `policy`                | Detect drift                                         |
+| `ServiceMonitor` | `monitoring.coreos.com` | Detect drift (if monitoring enabled)                 |
+| `NetworkPolicy`  | `networking.k8s.io`     | Detect drift (if network policy enabled)             |
 
 When any watched resource changes, the controller enqueues the owning `Memcached` CR for reconciliation. This ensures that if someone manually edits a managed Deployment or Service, the operator will detect the drift and restore the desired state.
 
@@ -120,7 +120,7 @@ When any watched resource changes, the controller enqueues the owning `Memcached
 
 The `MemcachedReconciler` follows a structured, sequential reconciliation flow that runs every time the state of a watched resource changes.
 
-```
+```text
 Reconcile(ctx, req)
 |
 +-- 1. Fetch the Memcached CR
@@ -233,11 +233,11 @@ Created when `spec.security.networkPolicy.enabled` is `true`. Restricts ingress 
 
 The operator uses standard Kubernetes conditions to communicate the state of a `Memcached` instance:
 
-| Condition     | Meaning                                                    |
-|---------------|------------------------------------------------------------|
-| `Available`   | `True` when the Deployment has minimum availability        |
-| `Progressing` | `True` when a rollout or scale operation is in progress    |
-| `Degraded`    | `True` when fewer replicas than desired are ready          |
+| Condition     | Meaning                                                 |
+|---------------|---------------------------------------------------------|
+| `Available`   | `True` when the Deployment has minimum availability     |
+| `Progressing` | `True` when a rollout or scale operation is in progress |
+| `Degraded`    | `True` when fewer replicas than desired are ready       |
 
 Condition updates use `meta.SetStatusCondition` to handle `lastTransitionTime` correctly -- the transition time is only updated when the condition's status value actually changes.
 
@@ -266,9 +266,9 @@ This enables Kubernetes garbage collection: when the `Memcached` CR is deleted, 
 
 The reconciler requeues to track rollout progress:
 
-| Condition | Requeue Interval | Reason |
-|-----------|-----------------|--------|
-| Deployment not yet ready | 10 seconds | Poll for rollout progress |
+| Condition                | Requeue Interval | Reason                    |
+|--------------------------|------------------|---------------------------|
+| Deployment not yet ready | 10 seconds       | Poll for rollout progress |
 
 ---
 
@@ -276,11 +276,11 @@ The reconciler requeues to track rollout progress:
 
 All managed resources are labeled with standard Kubernetes recommended labels:
 
-| Label | Value |
-|-------|-------|
-| `app.kubernetes.io/name` | `memcached` |
-| `app.kubernetes.io/instance` | `<Memcached CR name>` |
-| `app.kubernetes.io/managed-by` | `memcached-operator` |
+| Label                          | Value                 |
+|--------------------------------|-----------------------|
+| `app.kubernetes.io/name`       | `memcached`           |
+| `app.kubernetes.io/instance`   | `<Memcached CR name>` |
+| `app.kubernetes.io/managed-by` | `memcached-operator`  |
 
 These labels are used for:
 - Deployment selector matching

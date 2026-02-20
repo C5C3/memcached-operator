@@ -29,9 +29,9 @@ avoid conflicts with spec writes.
 reconciliation. This follows the Kubernetes convention for detecting whether the
 controller has processed the latest spec.
 
-| Scenario                                  | Meaning                                              |
-|-------------------------------------------|------------------------------------------------------|
-| `observedGeneration == metadata.generation` | Controller has acted on the latest spec              |
+| Scenario                                    | Meaning                                                 |
+|---------------------------------------------|---------------------------------------------------------|
+| `observedGeneration == metadata.generation` | Controller has acted on the latest spec                 |
 | `observedGeneration < metadata.generation`  | Controller has not yet processed the latest spec change |
 
 The field is updated unconditionally on every reconcile — not just when the spec
@@ -43,10 +43,10 @@ changes — so it always reflects the most recent reconciliation pass.
 
 `status.readyReplicas` mirrors the owned Deployment's `status.readyReplicas`.
 
-| Deployment State        | `readyReplicas` Value |
-|-------------------------|-----------------------|
-| Deployment exists       | `dep.Status.ReadyReplicas` |
-| Deployment not found    | `0`                   |
+| Deployment State     | `readyReplicas` Value      |
+|----------------------|----------------------------|
+| Deployment exists    | `dep.Status.ReadyReplicas` |
+| Deployment not found | `0`                        |
 
 This field is also exposed as the `Ready` printer column via the
 `+kubebuilder:printcolumn` marker on the Memcached type, so `kubectl get memcached`
@@ -68,11 +68,11 @@ Each condition includes `ObservedGeneration` matching the CR's
 
 Indicates whether the Memcached instance has minimum availability.
 
-| Status  | Reason        | When                                                    |
-|---------|---------------|---------------------------------------------------------|
+| Status  | Reason        | When                                                             |
+|---------|---------------|------------------------------------------------------------------|
 | `True`  | `Available`   | Deployment has `readyReplicas >= 1` **or** desired replicas is 0 |
-| `False` | `Unavailable` | Deployment has `readyReplicas == 0` and desired > 0     |
-| `False` | `Unavailable` | Deployment does not exist yet                           |
+| `False` | `Unavailable` | Deployment has `readyReplicas == 0` and desired > 0              |
+| `False` | `Unavailable` | Deployment does not exist yet                                    |
 
 **Message format**: `"<ready>/<desired> replicas are ready"`
 
@@ -80,12 +80,12 @@ Indicates whether the Memcached instance has minimum availability.
 
 Indicates whether a rollout or scaling operation is in progress.
 
-| Status  | Reason                 | When                                                          |
-|---------|------------------------|---------------------------------------------------------------|
-| `True`  | `Progressing`          | Deployment does not exist yet                                 |
-| `True`  | `Progressing`          | `updatedReplicas < desired` (rollout in progress)             |
-| `True`  | `Progressing`          | `totalReplicas != desired` (scaling in/out)                   |
-| `False` | `ProgressingComplete`  | `updatedReplicas == desired` **and** `totalReplicas == desired` |
+| Status  | Reason                | When                                                            |
+|---------|-----------------------|-----------------------------------------------------------------|
+| `True`  | `Progressing`         | Deployment does not exist yet                                   |
+| `True`  | `Progressing`         | `updatedReplicas < desired` (rollout in progress)               |
+| `True`  | `Progressing`         | `totalReplicas != desired` (scaling in/out)                     |
+| `False` | `ProgressingComplete` | `updatedReplicas == desired` **and** `totalReplicas == desired` |
 
 **Message format**:
 - When Deployment is nil: `"Waiting for deployment to be created"`
@@ -96,12 +96,12 @@ Indicates whether a rollout or scaling operation is in progress.
 
 Indicates whether the instance has fewer ready replicas than desired.
 
-| Status  | Reason        | When                                                      |
-|---------|---------------|-----------------------------------------------------------|
-| `True`  | `Degraded`    | `readyReplicas < desired` and `desired > 0`               |
-| `True`  | `Degraded`    | Deployment does not exist and `desired > 0`               |
-| `False` | `NotDegraded` | `readyReplicas == desired`                                |
-| `False` | `NotDegraded` | `desired == 0` (intentionally scaled to zero)             |
+| Status  | Reason        | When                                          |
+|---------|---------------|-----------------------------------------------|
+| `True`  | `Degraded`    | `readyReplicas < desired` and `desired > 0`   |
+| `True`  | `Degraded`    | Deployment does not exist and `desired > 0`   |
+| `False` | `NotDegraded` | `readyReplicas == desired`                    |
+| `False` | `NotDegraded` | `desired == 0` (intentionally scaled to zero) |
 
 **Message format**:
 - When Deployment is nil: `"Waiting for deployment to be created"`
@@ -116,11 +116,11 @@ Indicates whether the instance has fewer ready replicas than desired.
 
 When `spec.replicas` is `0`, the cluster is intentionally empty:
 
-| Condition   | Status  | Reason               | Rationale                         |
-|-------------|---------|----------------------|-----------------------------------|
-| Available   | `True`  | `Available`          | No availability requirement       |
-| Progressing | `False` | `ProgressingComplete`| Nothing to progress               |
-| Degraded    | `False` | `NotDegraded`        | Desired state is met              |
+| Condition   | Status  | Reason                | Rationale                   |
+|-------------|---------|-----------------------|-----------------------------|
+| Available   | `True`  | `Available`           | No availability requirement |
+| Progressing | `False` | `ProgressingComplete` | Nothing to progress         |
+| Degraded    | `False` | `NotDegraded`         | Desired state is met        |
 
 ### Nil Deployment
 
@@ -141,22 +141,22 @@ Defined in `internal/controller/status.go`:
 
 ### Type Constants
 
-| Constant                   | Value          |
-|----------------------------|----------------|
-| `ConditionTypeAvailable`   | `"Available"`  |
-| `ConditionTypeProgressing` | `"Progressing"`|
-| `ConditionTypeDegraded`    | `"Degraded"`   |
+| Constant                   | Value           |
+|----------------------------|-----------------|
+| `ConditionTypeAvailable`   | `"Available"`   |
+| `ConditionTypeProgressing` | `"Progressing"` |
+| `ConditionTypeDegraded`    | `"Degraded"`    |
 
 ### Reason Constants
 
-| Constant                          | Value                  |
-|-----------------------------------|------------------------|
-| `ConditionReasonAvailable`        | `"Available"`          |
-| `ConditionReasonUnavailable`      | `"Unavailable"`        |
-| `ConditionReasonProgressing`      | `"Progressing"`        |
+| Constant                             | Value                   |
+|--------------------------------------|-------------------------|
+| `ConditionReasonAvailable`           | `"Available"`           |
+| `ConditionReasonUnavailable`         | `"Unavailable"`         |
+| `ConditionReasonProgressing`         | `"Progressing"`         |
 | `ConditionReasonProgressingComplete` | `"ProgressingComplete"` |
-| `ConditionReasonDegraded`         | `"Degraded"`           |
-| `ConditionReasonNotDegraded`      | `"NotDegraded"`        |
+| `ConditionReasonDegraded`            | `"Degraded"`            |
+| `ConditionReasonNotDegraded`         | `"NotDegraded"`         |
 
 ---
 
@@ -178,11 +178,11 @@ func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcached
 
 ### Error Handling
 
-| Error Scenario                     | Behavior                                                   |
-|------------------------------------|------------------------------------------------------------|
-| Deployment fetch fails (not NotFound) | Error wrapped and returned for requeue                  |
-| Status update conflict             | Error returned, controller-runtime requeues with backoff   |
-| Status update transient failure    | Error returned, controller-runtime requeues with backoff   |
+| Error Scenario                        | Behavior                                                 |
+|---------------------------------------|----------------------------------------------------------|
+| Deployment fetch fails (not NotFound) | Error wrapped and returned for requeue                   |
+| Status update conflict                | Error returned, controller-runtime requeues with backoff |
+| Status update transient failure       | Error returned, controller-runtime requeues with backoff |
 
 Status update errors do not affect resource reconciliation — the Deployment and
 Service are reconciled before status, so they converge independently.
@@ -212,7 +212,7 @@ This ordering ensures:
 
 ## Reconciliation Flow
 
-```
+```text
   Memcached CR created/updated
             │
             ▼

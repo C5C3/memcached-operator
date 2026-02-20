@@ -1,0 +1,13 @@
+{
+  "threshold": 15,
+  "minLines": 8,
+  "minTokens": 80,
+  "ignore": [
+    "**/*_test.go",
+    "**/suite_test.go",
+    "**/node_modules/**",
+    "**/docs/.vitepress/**",
+    "**/test/e2e/**",
+    "**/config/**"
+  ]
+}

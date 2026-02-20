@@ -1,0 +1,19 @@
+---
+extends: default
+
+ignore:
+  - docs/node_modules/
+
+rules:
+  document-start: enable
+  line-length:
+    max: 200
+  truthy:
+    allowed-values: ["true", "false"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  indentation:
+    spaces: 2
+    indent-sequences: consistent

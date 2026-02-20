@@ -1,0 +1,23 @@
+# MegaLinter Configuration
+# https://megalinter.io/latest/config-file/
+---
+EXCLUDED_DIRECTORIES:
+  - .planwerk
+
+# Lychee (link checker): non-blocking -- external links may be temporarily unavailable
+SPELL_LYCHEE_DISABLE_ERRORS: true
+
+# Checkov: skip e2e assertions (partial specs) and kustomize patches (overlay only)
+REPOSITORY_CHECKOV_ARGUMENTS: >-
+  --skip-path test/e2e
+  --skip-path config/default/manager_metrics_patch.yaml
+  --skip-path config/default/manager_webhook_patch.yaml
+  --skip-check CKV_K8S_14,CKV_K8S_43,CKV_K8S_38,CKV_K8S_21,CKV_DOCKER_2
+
+# Trivy: skip e2e assertions (partial specs) and kustomize patches (overlay only)
+# --ignorefile: RBAC/image/HEALTHCHECK findings are legitimate for a K8s operator
+REPOSITORY_TRIVY_ARGUMENTS: >-
+  --skip-dirs test/e2e
+  --skip-files config/default/manager_metrics_patch.yaml
+  --skip-files config/default/manager_webhook_patch.yaml
+  --ignorefile .trivyignore.yaml

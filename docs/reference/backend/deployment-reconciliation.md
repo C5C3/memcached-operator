@@ -31,11 +31,11 @@ func labelsForMemcached(name string) map[string]string {
 }
 ```
 
-| Label Key                         | Value                  | Purpose                                         |
-|-----------------------------------|------------------------|--------------------------------------------------|
-| `app.kubernetes.io/name`          | `memcached`            | Identifies the application                       |
-| `app.kubernetes.io/instance`      | `<cr-name>`            | Distinguishes instances of the same application  |
-| `app.kubernetes.io/managed-by`    | `memcached-operator`   | Identifies the managing controller               |
+| Label Key                      | Value                | Purpose                                         |
+|--------------------------------|----------------------|-------------------------------------------------|
+| `app.kubernetes.io/name`       | `memcached`          | Identifies the application                      |
+| `app.kubernetes.io/instance`   | `<cr-name>`          | Distinguishes instances of the same application |
+| `app.kubernetes.io/managed-by` | `memcached-operator` | Identifies the managing controller              |
 
 These labels are used as the Deployment's `spec.selector.matchLabels` and on the
 pod template `metadata.labels`, ensuring the Deployment manages the correct pods.
@@ -51,22 +51,22 @@ file mount path.
 
 ### Flag Mapping
 
-| CRD Field            | Flag  | Default | Example Output              |
-|----------------------|-------|---------|-----------------------------|
-| `maxMemoryMB`        | `-m`  | `64`    | `["-m", "128"]`             |
-| `maxConnections`     | `-c`  | `1024`  | `["-c", "2048"]`            |
-| `threads`            | `-t`  | `4`     | `["-t", "8"]`               |
-| `maxItemSize`        | `-I`  | `"1m"`  | `["-I", "2m"]`              |
-| `verbosity`          | `-v`  | `0`     | `0`: none, `1`: `-v`, `2`: `-vv` |
-| SASL enabled         | `-Y`  | —       | `/etc/memcached/sasl/password-file` (see [SASL Authentication](#sasl-authentication)) |
-| `extraArgs`          | —     | `[]`    | Appended after all flags    |
+| CRD Field        | Flag | Default | Example Output                                                                        |
+|------------------|------|---------|---------------------------------------------------------------------------------------|
+| `maxMemoryMB`    | `-m` | `64`    | `["-m", "128"]`                                                                       |
+| `maxConnections` | `-c` | `1024`  | `["-c", "2048"]`                                                                      |
+| `threads`        | `-t` | `4`     | `["-t", "8"]`                                                                         |
+| `maxItemSize`    | `-I` | `"1m"`  | `["-I", "2m"]`                                                                        |
+| `verbosity`      | `-v` | `0`     | `0`: none, `1`: `-v`, `2`: `-vv`                                                      |
+| SASL enabled     | `-Y` | —       | `/etc/memcached/sasl/password-file` (see [SASL Authentication](#sasl-authentication)) |
+| `extraArgs`      | —    | `[]`    | Appended after all flags                                                              |
 
 ### Default Arguments
 
 When `spec.memcached` is `nil` or all fields are zero-valued, the produced
 argument list is:
 
-```
+```text
 ["-m", "64", "-c", "1024", "-t", "4", "-I", "1m"]
 ```
 
@@ -111,25 +111,25 @@ mutate function so that both creation and updates use identical logic.
 
 ### Spec Defaults
 
-| Field             | Source                | Default            |
-|-------------------|-----------------------|--------------------|
-| `replicas`        | `spec.Replicas`       | `1`                |
-| `image`           | `spec.Image`          | `"memcached:1.6"`  |
-| `args`            | `spec.Memcached`      | See default args   |
-| `resources`       | `spec.Resources`      | (empty)            |
+| Field       | Source           | Default           |
+|-------------|------------------|-------------------|
+| `replicas`  | `spec.Replicas`  | `1`               |
+| `image`     | `spec.Image`     | `"memcached:1.6"` |
+| `args`      | `spec.Memcached` | See default args  |
+| `resources` | `spec.Resources` | (empty)           |
 
 ### Container Specification
 
 The Deployment contains a single container:
 
-| Property          | Value                                                          |
-|-------------------|----------------------------------------------------------------|
-| `name`            | `memcached`                                                    |
-| `image`           | From `spec.Image` (default `memcached:1.6`)                    |
-| `args`            | Built by `buildMemcachedArgs`                                  |
-| `resources`       | From `spec.Resources` (empty if nil)                           |
-| `ports`           | `memcached`: 11211/TCP                                         |
-| `volumeMounts`    | SASL credentials mount (when enabled, see [SASL Authentication](#sasl-authentication)) |
+| Property       | Value                                                                                  |
+|----------------|----------------------------------------------------------------------------------------|
+| `name`         | `memcached`                                                                            |
+| `image`        | From `spec.Image` (default `memcached:1.6`)                                            |
+| `args`         | Built by `buildMemcachedArgs`                                                          |
+| `resources`    | From `spec.Resources` (empty if nil)                                                   |
+| `ports`        | `memcached`: 11211/TCP                                                                 |
+| `volumeMounts` | SASL credentials mount (when enabled, see [SASL Authentication](#sasl-authentication)) |
 
 ### Container Port
 
@@ -148,10 +148,10 @@ The named port `memcached` is referenced by health probes using
 
 Both probes use TCP socket checks on the named port `memcached` (11211):
 
-| Probe              | Type       | Port        | InitialDelay | Period |
-|--------------------|------------|-------------|--------------|--------|
-| `livenessProbe`    | TCP socket | `memcached` | 10s          | 10s    |
-| `readinessProbe`   | TCP socket | `memcached` | 5s           | 5s     |
+| Probe            | Type       | Port        | InitialDelay | Period |
+|------------------|------------|-------------|--------------|--------|
+| `livenessProbe`  | TCP socket | `memcached` | 10s          | 10s    |
+| `readinessProbe` | TCP socket | `memcached` | 5s           | 5s     |
 
 The readiness probe gates traffic to the pod. The liveness probe restarts
 the container if memcached becomes unresponsive.
@@ -170,8 +170,8 @@ appsv1.DeploymentStrategy{
 
 | Parameter        | Value | Effect                                               |
 |------------------|-------|------------------------------------------------------|
-| `maxSurge`       | `1`   | One extra pod is created before terminating old pods  |
-| `maxUnavailable` | `0`   | No existing pods are terminated until new pods ready  |
+| `maxSurge`       | `1`   | One extra pod is created before terminating old pods |
+| `maxUnavailable` | `0`   | No existing pods are terminated until new pods ready |
 
 This ensures zero-downtime rolling updates for cache availability.
 
@@ -210,20 +210,20 @@ read-only VolumeMount named `sasl-credentials` at `/etc/memcached/sasl/`, or
 
 ### Volume and Mount Details
 
-| Property        | Value                                   |
-|-----------------|-----------------------------------------|
-| Volume name     | `sasl-credentials`                      |
-| Volume source   | `Secret` (from `credentialsSecretRef`)  |
-| Mount path      | `/etc/memcached/sasl/`                  |
-| Read-only       | `true`                                  |
-| Secret key      | `password-file`                         |
+| Property      | Value                                  |
+|---------------|----------------------------------------|
+| Volume name   | `sasl-credentials`                     |
+| Volume source | `Secret` (from `credentialsSecretRef`) |
+| Mount path    | `/etc/memcached/sasl/`                 |
+| Read-only     | `true`                                 |
+| Secret key    | `password-file`                        |
 
 ### Container Args
 
 When SASL is enabled, `buildMemcachedArgs` appends `-Y /etc/memcached/sasl/password-file`
 after verbosity flags and before `extraArgs`:
 
-```
+```text
 ["-m", "64", "-c", "1024", "-t", "4", "-I", "1m", "-Y", "/etc/memcached/sasl/password-file"]
 ```
 
@@ -233,13 +233,13 @@ The SASL volume mount is added **only** to the `memcached` container. When
 monitoring is enabled, the `exporter` sidecar does **not** receive the SASL
 volume mount. SASL coexists with all other features:
 
-| Feature                   | Interaction                                                    |
-|---------------------------|----------------------------------------------------------------|
-| Pod security context      | SASL volume/mount added alongside pod-level security settings  |
-| Container security context| SASL mount present on the same container with security context |
-| Monitoring sidecar        | Exporter container does **not** get the SASL volume mount      |
-| Graceful shutdown         | Lifecycle preStop hook coexists with SASL volume mount         |
-| Extra args                | `-Y` flag appears before `extraArgs` in argument list          |
+| Feature                    | Interaction                                                    |
+|----------------------------|----------------------------------------------------------------|
+| Pod security context       | SASL volume/mount added alongside pod-level security settings  |
+| Container security context | SASL mount present on the same container with security context |
+| Monitoring sidecar         | Exporter container does **not** get the SASL volume mount      |
+| Graceful shutdown          | Lifecycle preStop hook coexists with SASL volume mount         |
+| Extra args                 | `-Y` flag appears before `extraArgs` in argument list          |
 
 ### Disabled Behavior
 
@@ -294,11 +294,11 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
 
 `controllerutil.CreateOrUpdate` performs a server-side get-or-create:
 
-| Scenario                      | Mutate Function Called | API Operation | `result` Value                           |
-|-------------------------------|------------------------|---------------|------------------------------------------|
-| Deployment does not exist     | Yes                    | Create        | `controllerutil.OperationResultCreated`  |
-| Deployment exists, spec differs| Yes                   | Update        | `controllerutil.OperationResultUpdated`  |
-| Deployment exists, spec matches| Yes                   | (no-op)       | `controllerutil.OperationResultNone`     |
+| Scenario                        | Mutate Function Called | API Operation | `result` Value                          |
+|---------------------------------|------------------------|---------------|-----------------------------------------|
+| Deployment does not exist       | Yes                    | Create        | `controllerutil.OperationResultCreated` |
+| Deployment exists, spec differs | Yes                    | Update        | `controllerutil.OperationResultUpdated` |
+| Deployment exists, spec matches | Yes                    | (no-op)       | `controllerutil.OperationResultNone`    |
 
 The mutate function runs **before** every create or update, ensuring the
 Deployment always reflects the current CR spec. External drift (manual edits)
@@ -309,14 +309,14 @@ is corrected on the next reconciliation cycle.
 `controllerutil.SetControllerReference` adds an owner reference to the
 Deployment's metadata:
 
-| Field                  | Value                             |
-|------------------------|-----------------------------------|
-| `apiVersion`           | `memcached.c5c3.io/v1alpha1`     |
-| `kind`                 | `Memcached`                       |
-| `name`                 | `<cr-name>`                       |
-| `uid`                  | `<cr-uid>`                        |
-| `controller`           | `true`                            |
-| `blockOwnerDeletion`   | `true`                            |
+| Field                | Value                        |
+|----------------------|------------------------------|
+| `apiVersion`         | `memcached.c5c3.io/v1alpha1` |
+| `kind`               | `Memcached`                  |
+| `name`               | `<cr-name>`                  |
+| `uid`                | `<cr-uid>`                   |
+| `controller`         | `true`                       |
+| `blockOwnerDeletion` | `true`                       |
 
 This enables:
 - **Garbage collection**: Deleting the Memcached CR automatically deletes the
@@ -326,11 +326,11 @@ This enables:
 
 ### Error Handling
 
-| Error Scenario                    | Behavior                                                   |
-|-----------------------------------|------------------------------------------------------------|
-| API server unreachable            | Error returned, controller-runtime requeues with backoff   |
-| Deployment create/update fails    | Error wrapped with context, returned for requeue           |
-| Owner reference conflict          | Error from `SetControllerReference`, returned for requeue  |
+| Error Scenario                 | Behavior                                                  |
+|--------------------------------|-----------------------------------------------------------|
+| API server unreachable         | Error returned, controller-runtime requeues with backoff  |
+| Deployment create/update fails | Error wrapped with context, returned for requeue          |
+| Owner reference conflict       | Error from `SetControllerReference`, returned for requeue |
 
 Errors are wrapped with `fmt.Errorf("reconciling Deployment: %w", err)` to
 provide context in logs while preserving the original error for
@@ -361,18 +361,18 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 ```
 
-| Scenario                              | Return Value           | Effect                           |
-|---------------------------------------|------------------------|----------------------------------|
-| CR not found (deleted)                | `ctrl.Result{}, nil`  | No requeue; owner ref cascade handles Deployment cleanup |
-| CR fetch fails                        | `ctrl.Result{}, err`  | Requeue with exponential backoff |
-| Deployment reconcile succeeds         | `ctrl.Result{}, nil`  | No requeue                       |
-| Deployment reconcile fails            | `ctrl.Result{}, err`  | Requeue with exponential backoff |
+| Scenario                      | Return Value         | Effect                                                   |
+|-------------------------------|----------------------|----------------------------------------------------------|
+| CR not found (deleted)        | `ctrl.Result{}, nil` | No requeue; owner ref cascade handles Deployment cleanup |
+| CR fetch fails                | `ctrl.Result{}, err` | Requeue with exponential backoff                         |
+| Deployment reconcile succeeds | `ctrl.Result{}, nil` | No requeue                                               |
+| Deployment reconcile fails    | `ctrl.Result{}, err` | Requeue with exponential backoff                         |
 
 ---
 
 ## Reconciliation Flow
 
-```
+```text
   Memcached CR created/updated
             │
             ▼

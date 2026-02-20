@@ -79,7 +79,7 @@ kubectl get crd memcacheds.memcached.c5c3.io
 
 Expected output:
 
-```
+```text
 NAME                            CREATED AT
 memcacheds.memcached.c5c3.io    2025-01-15T10:00:00Z
 ```
@@ -125,7 +125,7 @@ kubectl get pods -n memcached-operator-system
 
 Expected output:
 
-```
+```text
 NAME                                                     READY   STATUS    RESTARTS   AGE
 memcached-operator-controller-manager-5b8f4c7d9f-x2k4l   1/1     Running   0          30s
 ```
@@ -146,7 +146,7 @@ kubectl get mutatingwebhookconfigurations,validatingwebhookconfigurations | grep
 
 Expected output:
 
-```
+```text
 mutatingwebhookconfiguration.admissionregistration.k8s.io/memcached-operator-mutating-webhook-configuration      1          30s
 validatingwebhookconfiguration.admissionregistration.k8s.io/memcached-operator-validating-webhook-configuration   1          30s
 ```

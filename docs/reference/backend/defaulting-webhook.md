@@ -31,7 +31,7 @@ Values are resolved in the following order (highest priority first):
 
 ### Webhook Path
 
-```
+```text
 /mutate-memcached-c5c3-io-v1alpha1-memcached
 ```
 
@@ -51,15 +51,15 @@ and the condition under which the default is applied.
 These fields are defaulted on every Memcached resource, regardless of which
 optional sections are present.
 
-| Field | Type | Default | Condition |
-|-------|------|---------|-----------|
-| `spec.replicas` | `*int32` | `1` | When nil (pointer) |
-| `spec.image` | `*string` | `memcached:1.6` | When nil (pointer) |
-| `spec.memcached.maxMemoryMB` | `int32` | `64` | When 0 (struct initialized if nil) |
-| `spec.memcached.maxConnections` | `int32` | `1024` | When 0 (struct initialized if nil) |
-| `spec.memcached.threads` | `int32` | `4` | When 0 (struct initialized if nil) |
-| `spec.memcached.maxItemSize` | `string` | `1m` | When empty string |
-| `spec.memcached.verbosity` | `int32` | `0` | Go zero value — no action needed |
+| Field                           | Type      | Default         | Condition                          |
+|---------------------------------|-----------|-----------------|------------------------------------|
+| `spec.replicas`                 | `*int32`  | `1`             | When nil (pointer)                 |
+| `spec.image`                    | `*string` | `memcached:1.6` | When nil (pointer)                 |
+| `spec.memcached.maxMemoryMB`    | `int32`   | `64`            | When 0 (struct initialized if nil) |
+| `spec.memcached.maxConnections` | `int32`   | `1024`          | When 0 (struct initialized if nil) |
+| `spec.memcached.threads`        | `int32`   | `4`             | When 0 (struct initialized if nil) |
+| `spec.memcached.maxItemSize`    | `string`  | `1m`            | When empty string                  |
+| `spec.memcached.verbosity`      | `int32`   | `0`             | Go zero value — no action needed   |
 
 The `spec.memcached` struct is always initialized (created if nil) because its
 fields are core operational parameters required by every Memcached deployment.
@@ -70,19 +70,19 @@ These fields are only defaulted when `spec.monitoring` is already non-nil.
 If the monitoring section is omitted entirely, it remains nil — the webhook
 does not force-initialize optional sections.
 
-| Field | Type | Default | Condition |
-|-------|------|---------|-----------|
-| `spec.monitoring.exporterImage` | `*string` | `prom/memcached-exporter:v0.15.4` | When nil and monitoring section exists |
-| `spec.monitoring.serviceMonitor.interval` | `string` | `30s` | When empty and serviceMonitor section exists |
-| `spec.monitoring.serviceMonitor.scrapeTimeout` | `string` | `10s` | When empty and serviceMonitor section exists |
+| Field                                          | Type      | Default                           | Condition                                    |
+|------------------------------------------------|-----------|-----------------------------------|----------------------------------------------|
+| `spec.monitoring.exporterImage`                | `*string` | `prom/memcached-exporter:v0.15.4` | When nil and monitoring section exists       |
+| `spec.monitoring.serviceMonitor.interval`      | `string`  | `30s`                             | When empty and serviceMonitor section exists |
+| `spec.monitoring.serviceMonitor.scrapeTimeout` | `string`  | `10s`                             | When empty and serviceMonitor section exists |
 
 ### High Availability Fields (Opt-In)
 
 These fields are only defaulted when `spec.highAvailability` is already non-nil.
 
-| Field | Type | Default | Condition |
-|-------|------|---------|-----------|
-| `spec.highAvailability.antiAffinityPreset` | `*AntiAffinityPreset` | `soft` | When nil and highAvailability section exists |
+| Field                                      | Type                  | Default | Condition                                    |
+|--------------------------------------------|-----------------------|---------|----------------------------------------------|
+| `spec.highAvailability.antiAffinityPreset` | `*AntiAffinityPreset` | `soft`  | When nil and highAvailability section exists |
 
 ---
 
@@ -232,11 +232,11 @@ spec:
 The webhook handles nil nested structs carefully to respect the opt-in nature
 of optional sections:
 
-| Section | Nil Behavior |
-|---------|-------------|
-| `spec.memcached` | **Always initialized** — created and populated with defaults because memcached config is required for every deployment |
-| `spec.monitoring` | **Not initialized** — remains nil; sub-field defaults only apply when the section already exists |
-| `spec.highAvailability` | **Not initialized** — remains nil; sub-field defaults only apply when the section already exists |
+| Section                 | Nil Behavior                                                                                                           |
+|-------------------------|------------------------------------------------------------------------------------------------------------------------|
+| `spec.memcached`        | **Always initialized** — created and populated with defaults because memcached config is required for every deployment |
+| `spec.monitoring`       | **Not initialized** — remains nil; sub-field defaults only apply when the section already exists                       |
+| `spec.highAvailability` | **Not initialized** — remains nil; sub-field defaults only apply when the section already exists                       |
 
 This design means:
 
@@ -251,14 +251,14 @@ This design means:
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Create CR with empty spec | Core fields defaulted; optional sections remain nil |
-| Create CR with explicit values | User values preserved; only omitted fields defaulted |
-| Create CR with monitoring section | Monitoring sub-fields defaulted; core fields defaulted |
-| Create CR with HA section | HA sub-fields defaulted; core fields defaulted |
-| Update CR clearing a field to nil/zero | Webhook re-applies the default for that field |
-| Webhook unavailable | Request rejected (failurePolicy=Fail) |
+| Action                                 | Result                                                 |
+|----------------------------------------|--------------------------------------------------------|
+| Create CR with empty spec              | Core fields defaulted; optional sections remain nil    |
+| Create CR with explicit values         | User values preserved; only omitted fields defaulted   |
+| Create CR with monitoring section      | Monitoring sub-fields defaulted; core fields defaulted |
+| Create CR with HA section              | HA sub-fields defaulted; core fields defaulted         |
+| Update CR clearing a field to nil/zero | Webhook re-applies the default for that field          |
+| Webhook unavailable                    | Request rejected (failurePolicy=Fail)                  |
 
 ---
 

@@ -22,7 +22,7 @@ the `serviceMonitor` sub-section to be present.
 
 ## CRD Field Path
 
-```
+```text
 spec.monitoring.serviceMonitor
 ```
 
@@ -36,11 +36,11 @@ type ServiceMonitorSpec struct {
 }
 ```
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `additionalLabels` | `map[string]string` | No | — | Extra labels merged into ServiceMonitor metadata |
-| `interval` | `string` | No | `"30s"` | Prometheus scrape interval |
-| `scrapeTimeout` | `string` | No | `"10s"` | Prometheus scrape timeout |
+| Field              | Type                | Required | Default | Description                                      |
+|--------------------|---------------------|----------|---------|--------------------------------------------------|
+| `additionalLabels` | `map[string]string` | No       | —       | Extra labels merged into ServiceMonitor metadata |
+| `interval`         | `string`            | No       | `"30s"` | Prometheus scrape interval                       |
+| `scrapeTimeout`    | `string`            | No       | `"10s"` | Prometheus scrape timeout                        |
 
 ---
 
@@ -55,9 +55,9 @@ use identical logic.
 
 The controller applies default values when the CR does not specify them:
 
-| Field | Default |
-|-------|---------|
-| `interval` | `"30s"` |
+| Field           | Default |
+|-----------------|---------|
+| `interval`      | `"30s"` |
 | `scrapeTimeout` | `"10s"` |
 
 ### Labels
@@ -67,11 +67,11 @@ CR, then overlaying the standard Kubernetes recommended labels from
 `labelsForMemcached(name)`. This merge strategy ensures standard labels always
 take precedence and cannot be overridden by user-specified additional labels.
 
-| Label Key | Value | Purpose |
-|-----------|-------|---------|
-| `app.kubernetes.io/name` | `memcached` | Identifies the application |
-| `app.kubernetes.io/instance` | `<cr-name>` | Distinguishes instances of the same application |
-| `app.kubernetes.io/managed-by` | `memcached-operator` | Identifies the managing controller |
+| Label Key                      | Value                | Purpose                                         |
+|--------------------------------|----------------------|-------------------------------------------------|
+| `app.kubernetes.io/name`       | `memcached`          | Identifies the application                      |
+| `app.kubernetes.io/instance`   | `<cr-name>`          | Distinguishes instances of the same application |
+| `app.kubernetes.io/managed-by` | `memcached-operator` | Identifies the managing controller              |
 
 Any labels in `additionalLabels` are merged alongside these standard labels.
 If an additional label has the same key as a standard label, the standard label
@@ -160,14 +160,14 @@ immediately without error.
 The `reconcileResource` helper calls `controllerutil.SetControllerReference`,
 adding an owner reference to the ServiceMonitor's metadata:
 
-| Field | Value |
-|-------|-------|
-| `apiVersion` | `memcached.c5c3.io/v1alpha1` |
-| `kind` | `Memcached` |
-| `name` | `<cr-name>` |
-| `uid` | `<cr-uid>` |
-| `controller` | `true` |
-| `blockOwnerDeletion` | `true` |
+| Field                | Value                        |
+|----------------------|------------------------------|
+| `apiVersion`         | `memcached.c5c3.io/v1alpha1` |
+| `kind`               | `Memcached`                  |
+| `name`               | `<cr-name>`                  |
+| `uid`                | `<cr-uid>`                   |
+| `controller`         | `true`                       |
+| `blockOwnerDeletion` | `true`                       |
 
 This enables:
 - **Garbage collection**: Deleting the Memcached CR automatically deletes the
@@ -318,19 +318,19 @@ immediately.
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Enable monitoring with `serviceMonitor: {}` | ServiceMonitor created with defaults (`interval: 30s`, `scrapeTimeout: 10s`) on next reconcile |
-| Set `interval: "15s"` | ServiceMonitor endpoint updated on next reconcile |
-| Set `scrapeTimeout: "5s"` | ServiceMonitor endpoint updated on next reconcile |
-| Add `additionalLabels` | Labels merged into ServiceMonitor metadata on next reconcile |
-| Override standard label in `additionalLabels` | Standard label preserved (takes precedence) |
-| Disable monitoring (`enabled: false`) | ServiceMonitor reconciliation skipped; existing ServiceMonitor persists until CR is deleted |
-| Remove `monitoring` section | ServiceMonitor reconciliation skipped; existing ServiceMonitor persists until CR is deleted |
-| Remove `serviceMonitor` sub-section | ServiceMonitor reconciliation skipped; existing ServiceMonitor persists until CR is deleted |
-| Delete Memcached CR | ServiceMonitor deleted via garbage collection (owner reference) |
-| Reconcile twice with same spec | No ServiceMonitor update (idempotent) |
-| External drift (manual ServiceMonitor edit) | Corrected on next reconciliation cycle |
+| Action                                        | Result                                                                                         |
+|-----------------------------------------------|------------------------------------------------------------------------------------------------|
+| Enable monitoring with `serviceMonitor: {}`   | ServiceMonitor created with defaults (`interval: 30s`, `scrapeTimeout: 10s`) on next reconcile |
+| Set `interval: "15s"`                         | ServiceMonitor endpoint updated on next reconcile                                              |
+| Set `scrapeTimeout: "5s"`                     | ServiceMonitor endpoint updated on next reconcile                                              |
+| Add `additionalLabels`                        | Labels merged into ServiceMonitor metadata on next reconcile                                   |
+| Override standard label in `additionalLabels` | Standard label preserved (takes precedence)                                                    |
+| Disable monitoring (`enabled: false`)         | ServiceMonitor reconciliation skipped; existing ServiceMonitor persists until CR is deleted    |
+| Remove `monitoring` section                   | ServiceMonitor reconciliation skipped; existing ServiceMonitor persists until CR is deleted    |
+| Remove `serviceMonitor` sub-section           | ServiceMonitor reconciliation skipped; existing ServiceMonitor persists until CR is deleted    |
+| Delete Memcached CR                           | ServiceMonitor deleted via garbage collection (owner reference)                                |
+| Reconcile twice with same spec                | No ServiceMonitor update (idempotent)                                                          |
+| External drift (manual ServiceMonitor edit)   | Corrected on next reconciliation cycle                                                         |
 
 ---
 

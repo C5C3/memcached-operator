@@ -34,22 +34,22 @@ func (r *MemcachedReconciler) reconcileResource(
 ) (controllerutil.OperationResult, error)
 ```
 
-| Parameter      | Type                              | Description                                                                 |
-|----------------|-----------------------------------|-----------------------------------------------------------------------------|
-| `ctx`          | `context.Context`                 | Request context with logger                                                 |
-| `mc`           | `*Memcached`                      | The owning Memcached CR (used for owner reference and event recording)      |
-| `obj`          | `client.Object`                   | Target resource with Name and Namespace set; populated in-place on success  |
-| `mutate`       | `func() error`                    | Sets the desired spec on `obj`; called before every create/update attempt   |
-| `resourceKind` | `string`                          | Human-readable kind for logs and errors (e.g. `"Deployment"`, `"Service"`)  |
+| Parameter      | Type              | Description                                                                |
+|----------------|-------------------|----------------------------------------------------------------------------|
+| `ctx`          | `context.Context` | Request context with logger                                                |
+| `mc`           | `*Memcached`      | The owning Memcached CR (used for owner reference and event recording)     |
+| `obj`          | `client.Object`   | Target resource with Name and Namespace set; populated in-place on success |
+| `mutate`       | `func() error`    | Sets the desired spec on `obj`; called before every create/update attempt  |
+| `resourceKind` | `string`          | Human-readable kind for logs and errors (e.g. `"Deployment"`, `"Service"`) |
 
 ### Return Values
 
-| Value                                     | Meaning                                                    |
-|-------------------------------------------|------------------------------------------------------------|
-| `controllerutil.OperationResultCreated`   | Resource did not exist and was created                     |
-| `controllerutil.OperationResultUpdated`   | Resource existed with different spec and was updated        |
-| `controllerutil.OperationResultNone`      | Resource existed with matching spec; no API call made       |
-| `error`                                   | Non-nil on failure; wrapped with resource kind and name     |
+| Value                                   | Meaning                                                 |
+|-----------------------------------------|---------------------------------------------------------|
+| `controllerutil.OperationResultCreated` | Resource did not exist and was created                  |
+| `controllerutil.OperationResultUpdated` | Resource existed with different spec and was updated    |
+| `controllerutil.OperationResultNone`    | Resource existed with matching spec; no API call made   |
+| `error`                                 | Non-nil on failure; wrapped with resource kind and name |
 
 ---
 
@@ -61,23 +61,23 @@ When `controllerutil.CreateOrUpdate` returns an HTTP 409 Conflict error
 CreateOrUpdate re-fetches the resource with a fresh `resourceVersion` before
 calling the mutate function again.
 
-```
+```go
 const maxConflictRetries = 5
 ```
 
-| Attempt | Action                                                                 |
-|---------|------------------------------------------------------------------------|
-| 1       | Call CreateOrUpdate; if 409 Conflict, log and retry                    |
+| Attempt | Action                                                                     |
+|---------|----------------------------------------------------------------------------|
+| 1       | Call CreateOrUpdate; if 409 Conflict, log and retry                        |
 | 2       | Re-enter CreateOrUpdate (re-Get with fresh resourceVersion); if 409, retry |
-| ...     | Continue retrying                                                      |
-| 5       | Final attempt; if still 409, return conflict error                     |
+| ...     | Continue retrying                                                          |
+| 5       | Final attempt; if still 409, return conflict error                         |
 
 Non-conflict errors (e.g. 500 Internal Server Error, validation failures) are
 returned immediately without retrying.
 
 ### Sequence Diagram
 
-```
+```text
 Reconciler              CreateOrUpdate         API Server
     │                        │                      │
     ├──── attempt 1 ────────►│                      │
@@ -133,11 +133,11 @@ duplicate, or out-of-order events all converge to the same correct state.
 `reconcileResource` emits Kubernetes events on the Memcached CR for create and
 update operations via `emitEventForResult`:
 
-| Operation Result | Event Type | Reason    | Message Format                        |
-|------------------|------------|-----------|---------------------------------------|
-| Created          | Normal     | Created   | `Created <Kind> <name>`              |
-| Updated          | Normal     | Updated   | `Updated <Kind> <name>`              |
-| Unchanged        | —          | —         | No event emitted                      |
+| Operation Result | Event Type | Reason  | Message Format          |
+|------------------|------------|---------|-------------------------|
+| Created          | Normal     | Created | `Created <Kind> <name>` |
+| Updated          | Normal     | Updated | `Updated <Kind> <name>` |
+| Unchanged        | —          | —       | No event emitted        |
 
 Events are visible via `kubectl describe memcached <name>` and provide an audit
 trail of operator actions.
@@ -146,12 +146,12 @@ trail of operator actions.
 
 ## Logging
 
-| Operation   | Log Level | Message                                          | Fields                        |
-|-------------|-----------|--------------------------------------------------|-------------------------------|
-| Created     | Info      | `<Kind> reconciled`                              | `name`, `operation=created`   |
-| Updated     | Info      | `<Kind> reconciled`                              | `name`, `operation=updated`   |
-| Unchanged   | Info      | `<Kind> reconciled`                              | `name`, `operation=unchanged` |
-| Conflict    | Info      | `Conflict retrying <Kind> reconciliation`        | `name`, `attempt`, `maxRetries` |
+| Operation | Log Level | Message                                   | Fields                          |
+|-----------|-----------|-------------------------------------------|---------------------------------|
+| Created   | Info      | `<Kind> reconciled`                       | `name`, `operation=created`     |
+| Updated   | Info      | `<Kind> reconciled`                       | `name`, `operation=updated`     |
+| Unchanged | Info      | `<Kind> reconciled`                       | `name`, `operation=unchanged`   |
+| Conflict  | Info      | `Conflict retrying <Kind> reconciliation` | `name`, `attempt`, `maxRetries` |
 
 ---
 
@@ -162,14 +162,14 @@ managed resource via `controllerutil.SetControllerReference`. This is called
 inside the mutate wrapper, after the caller's mutate function, ensuring it
 applies to both creates and updates.
 
-| Field                | Value                           |
-|----------------------|---------------------------------|
-| `apiVersion`         | `memcached.c5c3.io/v1alpha1`   |
-| `kind`               | `Memcached`                     |
-| `name`               | `<cr-name>`                     |
-| `uid`                | `<cr-uid>`                      |
-| `controller`         | `true`                          |
-| `blockOwnerDeletion` | `true`                          |
+| Field                | Value                        |
+|----------------------|------------------------------|
+| `apiVersion`         | `memcached.c5c3.io/v1alpha1` |
+| `kind`               | `Memcached`                  |
+| `name`               | `<cr-name>`                  |
+| `uid`                | `<cr-uid>`                   |
+| `controller`         | `true`                       |
+| `blockOwnerDeletion` | `true`                       |
 
 This enables automatic garbage collection when the Memcached CR is deleted.
 
@@ -285,13 +285,13 @@ structured logging, and event emission from `reconcileResource`.
 
 ## Error Handling Summary
 
-| Error Scenario                     | Behavior                                                    |
-|------------------------------------|-------------------------------------------------------------|
-| Mutate function returns error      | Error wrapped with `"reconciling <Kind>: ..."` and returned |
-| API server returns 409 Conflict    | Retry up to 5 times, then return conflict error             |
-| API server returns other error     | Error wrapped and returned immediately (no retry)           |
-| Owner reference conflict           | Error from `SetControllerReference`, returned via mutate    |
-| All retries exhausted              | Conflict error returned to controller-runtime for requeue   |
+| Error Scenario                  | Behavior                                                    |
+|---------------------------------|-------------------------------------------------------------|
+| Mutate function returns error   | Error wrapped with `"reconciling <Kind>: ..."` and returned |
+| API server returns 409 Conflict | Retry up to 5 times, then return conflict error             |
+| API server returns other error  | Error wrapped and returned immediately (no retry)           |
+| Owner reference conflict        | Error from `SetControllerReference`, returned via mutate    |
+| All retries exhausted           | Conflict error returned to controller-runtime for requeue   |
 
 All errors are returned to controller-runtime, which applies its standard
 exponential backoff requeue strategy.

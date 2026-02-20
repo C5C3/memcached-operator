@@ -12,10 +12,10 @@ enforces code quality, correctness, build integrity, and manifest freshness
 through four jobs:
 
 | Job                  | Purpose                                        | Dependencies |
-| -------------------- | ---------------------------------------------- | ------------ |
+|----------------------|------------------------------------------------|--------------|
 | `lint`               | `go vet` + golangci-lint v2.10.1               | none         |
 | `test`               | envtest integration tests with race + coverage | none         |
-| `build`              | Multi-stage Docker image build via Buildx       | none         |
+| `build`              | Multi-stage Docker image build via Buildx      | none         |
 | `validate-manifests` | Verify generated CRDs/deepcopy are up-to-date  | none         |
 
 All four jobs run in parallel with no inter-job dependencies, minimising total
@@ -104,11 +104,11 @@ files that were not committed after API type changes.
 
 The CI workflow reuses the project's Makefile targets where possible:
 
-| CI Step               | Makefile Target      |
-| --------------------- | -------------------- |
-| Generate manifests    | `make manifests`     |
-| Generate deepcopy     | `make generate`      |
-| Verify no drift       | `make verify-manifests` |
+| CI Step            | Makefile Target         |
+|--------------------|-------------------------|
+| Generate manifests | `make manifests`        |
+| Generate deepcopy  | `make generate`         |
+| Verify no drift    | `make verify-manifests` |
 
 The lint and test jobs use direct `go` commands / actions rather than Makefile
 targets to avoid installing tool binaries that the actions already provide.

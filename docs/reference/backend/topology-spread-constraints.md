@@ -19,16 +19,16 @@ applied verbatim to the Deployment pod template without transformation.
 Each constraint supports all standard Kubernetes `TopologySpreadConstraint`
 fields:
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `maxSkew` | int32 | Maximum allowed difference in pod count between topology domains |
-| `topologyKey` | string | Node label key used to define topology domains (e.g. `topology.kubernetes.io/zone`) |
-| `whenUnsatisfiable` | string | `DoNotSchedule` or `ScheduleAnyway` |
-| `labelSelector` | LabelSelector | Selector to identify the set of pods to spread |
-| `matchLabelKeys` | []string | Pod label keys used to calculate spreading |
-| `minDomains` | int32 | Minimum number of eligible domains |
-| `nodeAffinityPolicy` | string | How node affinity/selector is treated (`Honor` or `Ignore`) |
-| `nodeTaintsPolicy` | string | How node taints are treated (`Honor` or `Ignore`) |
+| Field                | Type          | Description                                                                         |
+|----------------------|---------------|-------------------------------------------------------------------------------------|
+| `maxSkew`            | int32         | Maximum allowed difference in pod count between topology domains                    |
+| `topologyKey`        | string        | Node label key used to define topology domains (e.g. `topology.kubernetes.io/zone`) |
+| `whenUnsatisfiable`  | string        | `DoNotSchedule` or `ScheduleAnyway`                                                 |
+| `labelSelector`      | LabelSelector | Selector to identify the set of pods to spread                                      |
+| `matchLabelKeys`     | []string      | Pod label keys used to calculate spreading                                          |
+| `minDomains`         | int32         | Minimum number of eligible domains                                                  |
+| `nodeAffinityPolicy` | string        | How node affinity/selector is treated (`Honor` or `Ignore`)                         |
+| `nodeTaintsPolicy`   | string        | How node taints are treated (`Honor` or `Ignore`)                                   |
 
 When `spec.highAvailability` is nil or `topologySpreadConstraints` is nil or
 empty, no topology spread constraints are set on the Deployment.
@@ -37,7 +37,7 @@ empty, no topology spread constraints are set on the Deployment.
 
 ## CRD Field Path
 
-```
+```text
 spec.highAvailability.topologySpreadConstraints[]
 ```
 
@@ -184,14 +184,14 @@ The Deployment's `spec.template.spec.topologySpreadConstraints` will be nil.
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Add `topologySpreadConstraints` | Deployment updated with constraints on next reconcile |
-| Modify a constraint (e.g. change `maxSkew`) | Deployment updated on next reconcile |
-| Remove `topologySpreadConstraints` | Deployment constraints cleared to nil |
-| Remove `highAvailability` section | Deployment constraints cleared to nil |
-| Reconcile twice with same spec | No Deployment update (idempotent) |
-| Add/remove `antiAffinityPreset` | No effect on topology spread constraints |
+| Action                                      | Result                                                |
+|---------------------------------------------|-------------------------------------------------------|
+| Add `topologySpreadConstraints`             | Deployment updated with constraints on next reconcile |
+| Modify a constraint (e.g. change `maxSkew`) | Deployment updated on next reconcile                  |
+| Remove `topologySpreadConstraints`          | Deployment constraints cleared to nil                 |
+| Remove `highAvailability` section           | Deployment constraints cleared to nil                 |
+| Reconcile twice with same spec              | No Deployment update (idempotent)                     |
+| Add/remove `antiAffinityPreset`             | No effect on topology spread constraints              |
 
 ---
 

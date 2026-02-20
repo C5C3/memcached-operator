@@ -74,36 +74,36 @@ CHAINSAW_VERSION ?= v0.2.12
 
 .PHONY: test-e2e
 test-e2e: chainsaw ## Run end-to-end tests against a kind cluster using Chainsaw.
-	$(CHAINSAW) test
+    $(CHAINSAW) test
 ```
 
 ### Prerequisites
 
 Before running `make test-e2e`, the following must be in place:
 
-| Prerequisite | Purpose | Setup Command |
-|-------------|---------|---------------|
-| kind cluster running | Target cluster for tests | `kind create cluster` |
-| Operator deployed | Controller manager running in cluster | `make deploy IMG=<image>` |
-| cert-manager installed | Webhook TLS certificates | `kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.1/cert-manager.yaml` |
-| ServiceMonitor CRD | Required for monitoring-toggle test | Install via Prometheus Operator CRDs |
+| Prerequisite           | Purpose                               | Setup Command                                                                                               |
+|------------------------|---------------------------------------|-------------------------------------------------------------------------------------------------------------|
+| kind cluster running   | Target cluster for tests              | `kind create cluster`                                                                                       |
+| Operator deployed      | Controller manager running in cluster | `make deploy IMG=<image>`                                                                                   |
+| cert-manager installed | Webhook TLS certificates              | `kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.1/cert-manager.yaml` |
+| ServiceMonitor CRD     | Required for monitoring-toggle test   | Install via Prometheus Operator CRDs                                                                        |
 
 ### Shared Test Fixtures (`test/e2e/resources/`)
 
 Reusable YAML templates referenced by multiple test scenarios:
 
-| File | Purpose |
-|------|---------|
-| `memcached-minimal.yaml` | Minimal valid Memcached CR (1 replica, memcached:1.6, 64Mi maxMemoryMB) |
-| `assert-deployment.yaml` | Partial Deployment assertion (labels, replicas, container args, port) |
-| `assert-service.yaml` | Partial headless Service assertion (clusterIP: None, port 11211, selectors) |
-| `assert-status-available.yaml` | Status assertion (readyReplicas: 1, Available=True) |
+| File                           | Purpose                                                                     |
+|--------------------------------|-----------------------------------------------------------------------------|
+| `memcached-minimal.yaml`       | Minimal valid Memcached CR (1 replica, memcached:1.6, 64Mi maxMemoryMB)     |
+| `assert-deployment.yaml`       | Partial Deployment assertion (labels, replicas, container args, port)       |
+| `assert-service.yaml`          | Partial headless Service assertion (clusterIP: None, port 11211, selectors) |
+| `assert-status-available.yaml` | Status assertion (readyReplicas: 1, Available=True)                         |
 
 ---
 
 ## File Structure
 
-```
+```text
 test/e2e/
 ├── basic-deployment/
 │   ├── chainsaw-test.yaml          # Test definition
@@ -187,12 +187,12 @@ test/e2e/
 Verifies that creating a minimal Memcached CR produces the expected Deployment,
 headless Service, and status conditions.
 
-| Step | Operation | Assertion |
-|------|-----------|-----------|
-| create-memcached-cr | `apply` 00-memcached.yaml | CR created |
+| Step                      | Operation                          | Assertion                                                                     |
+|---------------------------|------------------------------------|-------------------------------------------------------------------------------|
+| create-memcached-cr       | `apply` 00-memcached.yaml          | CR created                                                                    |
 | assert-deployment-created | `assert` 01-assert-deployment.yaml | Deployment with correct labels, args (`-m 64 -c 1024 -t 4 -I 1m`), port 11211 |
-| assert-service-created | `assert` 01-assert-service.yaml | Headless Service (clusterIP: None), port 11211, correct selectors |
-| assert-status-available | `assert` 02-assert-status.yaml | readyReplicas: 1, Available=True |
+| assert-service-created    | `assert` 01-assert-service.yaml    | Headless Service (clusterIP: None), port 11211, correct selectors             |
+| assert-status-available   | `assert` 02-assert-status.yaml     | readyReplicas: 1, Available=True                                              |
 
 Owner references on Deployment and Service are verified as part of the
 Deployment and Service assertion files (Chainsaw partial matching includes
@@ -205,15 +205,15 @@ Deployment and Service assertion files (Chainsaw partial matching includes
 Verifies that updating `spec.replicas` scales the Deployment and updates
 `status.readyReplicas`.
 
-| Step | Operation | Assertion |
-|------|-----------|-----------|
-| create-memcached-cr | `apply` | CR with replicas=1 |
-| assert-initial-deployment | `assert` | Deployment.spec.replicas=1 |
-| scale-up-to-3 | `patch` replicas=3 | — |
-| assert-scaled-deployment | `assert` | Deployment.spec.replicas=3 |
-| assert-scaled-status | `assert` | status.readyReplicas=3 |
-| scale-down-to-1 | `patch` replicas=1 | — |
-| assert-scaled-down | `assert` | Deployment.spec.replicas=1 |
+| Step                      | Operation          | Assertion                  |
+|---------------------------|--------------------|----------------------------|
+| create-memcached-cr       | `apply`            | CR with replicas=1         |
+| assert-initial-deployment | `assert`           | Deployment.spec.replicas=1 |
+| scale-up-to-3             | `patch` replicas=3 | —                          |
+| assert-scaled-deployment  | `assert`           | Deployment.spec.replicas=3 |
+| assert-scaled-status      | `assert`           | status.readyReplicas=3     |
+| scale-down-to-1           | `patch` replicas=1 | —                          |
+| assert-scaled-down        | `assert`           | Deployment.spec.replicas=1 |
 
 ### 3. Configuration Changes (REQ-004)
 
@@ -222,12 +222,12 @@ Verifies that updating `spec.replicas` scales the Deployment and updates
 Verifies that changing memcached config fields triggers a rolling update with
 correct container args.
 
-| Step | Operation | Assertion |
-|------|-----------|-----------|
-| create-memcached-cr | `apply` | CR with maxMemoryMB=64, threads=4 |
-| assert-initial-args | `assert` | Container args: `-m 64 -c 1024 -t 4 -I 1m` |
-| update-configuration | `patch` maxMemoryMB=256, threads=8, maxItemSize=2m | — |
-| assert-updated-args | `assert` | Container args: `-m 256 ... -t 8 -I 2m` |
+| Step                 | Operation                                          | Assertion                                  |
+|----------------------|----------------------------------------------------|--------------------------------------------|
+| create-memcached-cr  | `apply`                                            | CR with maxMemoryMB=64, threads=4          |
+| assert-initial-args  | `assert`                                           | Container args: `-m 64 -c 1024 -t 4 -I 1m` |
+| update-configuration | `patch` maxMemoryMB=256, threads=8, maxItemSize=2m | —                                          |
+| assert-updated-args  | `assert`                                           | Container args: `-m 256 ... -t 8 -I 2m`    |
 
 ### 4. Monitoring Toggle (REQ-005)
 
@@ -236,17 +236,17 @@ correct container args.
 Verifies that enabling monitoring injects the exporter sidecar and adds a
 metrics port to the Service.
 
-| Step | Operation | Assertion |
-|------|-----------|-----------|
-| create-memcached-without-monitoring | `apply` | CR without monitoring |
-| assert-no-exporter-sidecar | `assert` | Deployment has 1 container (memcached only) |
-| enable-monitoring | `patch` monitoring.enabled=true | — |
-| assert-exporter-sidecar-injected | `assert` | 2 containers: memcached (port 11211) + exporter (port 9150) |
-| assert-service-metrics-port | `assert` | Service has metrics port |
-| assert-servicemonitor-created | `assert` | ServiceMonitor with correct labels, endpoints, and selector |
-| disable-monitoring | `patch` monitoring.enabled=false | — |
-| assert-exporter-sidecar-removed | `assert` | Deployment has 1 container (memcached only) |
-| assert-servicemonitor-deleted | `error` | ServiceMonitor is removed |
+| Step                                | Operation                        | Assertion                                                   |
+|-------------------------------------|----------------------------------|-------------------------------------------------------------|
+| create-memcached-without-monitoring | `apply`                          | CR without monitoring                                       |
+| assert-no-exporter-sidecar          | `assert`                         | Deployment has 1 container (memcached only)                 |
+| enable-monitoring                   | `patch` monitoring.enabled=true  | —                                                           |
+| assert-exporter-sidecar-injected    | `assert`                         | 2 containers: memcached (port 11211) + exporter (port 9150) |
+| assert-service-metrics-port         | `assert`                         | Service has metrics port                                    |
+| assert-servicemonitor-created       | `assert`                         | ServiceMonitor with correct labels, endpoints, and selector |
+| disable-monitoring                  | `patch` monitoring.enabled=false | —                                                           |
+| assert-exporter-sidecar-removed     | `assert`                         | Deployment has 1 container (memcached only)                 |
+| assert-servicemonitor-deleted       | `error`                          | ServiceMonitor is removed                                   |
 
 **Prerequisite**: ServiceMonitor CRD must be installed in the cluster.
 
@@ -256,13 +256,13 @@ metrics port to the Service.
 
 Verifies that enabling PDB creates a PodDisruptionBudget with correct settings.
 
-| Step | Operation | Assertion |
-|------|-----------|-----------|
-| create-memcached-with-pdb | `apply` | CR with replicas=3, PDB enabled, minAvailable=1 |
-| assert-deployment-ready | `assert` | Deployment with 3 replicas |
-| assert-pdb-created | `assert` | PDB with minAvailable=1, correct selector, owner reference |
-| disable-pdb | `patch` PDB enabled=false | — |
-| assert-pdb-deleted | `error` | PDB is removed |
+| Step                      | Operation                 | Assertion                                                  |
+|---------------------------|---------------------------|------------------------------------------------------------|
+| create-memcached-with-pdb | `apply`                   | CR with replicas=3, PDB enabled, minAvailable=1            |
+| assert-deployment-ready   | `assert`                  | Deployment with 3 replicas                                 |
+| assert-pdb-created        | `assert`                  | PDB with minAvailable=1, correct selector, owner reference |
+| disable-pdb               | `patch` PDB enabled=false | —                                                          |
+| assert-pdb-deleted        | `error`                   | PDB is removed                                             |
 
 ### 6. Graceful Rolling Update (REQ-007)
 
@@ -271,12 +271,12 @@ Verifies that enabling PDB creates a PodDisruptionBudget with correct settings.
 Verifies that graceful shutdown configures preStop hooks and the RollingUpdate
 strategy, and that image changes trigger a correct rolling update.
 
-| Step | Operation | Assertion |
-|------|-----------|-----------|
-| create-memcached-with-graceful-shutdown | `apply` | CR with gracefulShutdown enabled |
-| assert-graceful-shutdown-config | `assert` | RollingUpdate (maxSurge=1, maxUnavailable=0), preStop hook, terminationGracePeriodSeconds |
-| trigger-rolling-update | `patch` image | — |
-| assert-rolling-update-strategy | `assert` | All pods running new image, strategy preserved |
+| Step                                    | Operation     | Assertion                                                                                 |
+|-----------------------------------------|---------------|-------------------------------------------------------------------------------------------|
+| create-memcached-with-graceful-shutdown | `apply`       | CR with gracefulShutdown enabled                                                          |
+| assert-graceful-shutdown-config         | `assert`      | RollingUpdate (maxSurge=1, maxUnavailable=0), preStop hook, terminationGracePeriodSeconds |
+| trigger-rolling-update                  | `patch` image | —                                                                                         |
+| assert-rolling-update-strategy          | `assert`      | All pods running new image, strategy preserved                                            |
 
 ### 7. Webhook Rejection (REQ-008)
 
@@ -286,13 +286,13 @@ Verifies that the validating webhook rejects invalid CRs. Each step uses
 Chainsaw's `expect` with `($error != null): true` to assert that the `apply`
 operation fails.
 
-| Step | Invalid CR | Expected Rejection Reason |
-|------|-----------|--------------------------|
-| reject-insufficient-memory-limit | maxMemoryMB=64, memory limit=32Mi | Memory limit < maxMemoryMB + 32Mi overhead |
-| reject-pdb-mutual-exclusivity | Both minAvailable and maxUnavailable set | Mutually exclusive fields |
+| Step                                    | Invalid CR                                           | Expected Rejection Reason                     |
+|-----------------------------------------|------------------------------------------------------|-----------------------------------------------|
+| reject-insufficient-memory-limit        | maxMemoryMB=64, memory limit=32Mi                    | Memory limit < maxMemoryMB + 32Mi overhead    |
+| reject-pdb-mutual-exclusivity           | Both minAvailable and maxUnavailable set             | Mutually exclusive fields                     |
 | reject-graceful-shutdown-invalid-period | terminationGracePeriodSeconds <= preStopDelaySeconds | Termination period must exceed pre-stop delay |
-| reject-sasl-without-secret-ref | sasl.enabled=true, no credentialsSecretRef.name | Missing required secret reference |
-| reject-tls-without-secret-ref | tls.enabled=true, no certificateSecretRef.name | Missing required secret reference |
+| reject-sasl-without-secret-ref          | sasl.enabled=true, no credentialsSecretRef.name      | Missing required secret reference             |
+| reject-tls-without-secret-ref           | tls.enabled=true, no certificateSecretRef.name       | Missing required secret reference             |
 
 ### 8. CR Deletion & Garbage Collection (REQ-009)
 
@@ -300,12 +300,12 @@ operation fails.
 
 Verifies that deleting a Memcached CR garbage-collects all owned resources.
 
-| Step | Operation | Assertion |
-|------|-----------|-----------|
-| create-memcached-with-all-resources | `apply` | CR with monitoring and PDB enabled |
-| assert-all-resources-exist | `assert` | Deployment, Service, PDB, ServiceMonitor all present |
-| delete-memcached-cr | `delete` Memcached/test-deletion | — |
-| assert-all-resources-garbage-collected | `error` | Deployment, Service, PDB, ServiceMonitor, and CR are all gone |
+| Step                                   | Operation                        | Assertion                                                     |
+|----------------------------------------|----------------------------------|---------------------------------------------------------------|
+| create-memcached-with-all-resources    | `apply`                          | CR with monitoring and PDB enabled                            |
+| assert-all-resources-exist             | `assert`                         | Deployment, Service, PDB, ServiceMonitor all present          |
+| delete-memcached-cr                    | `delete` Memcached/test-deletion | —                                                             |
+| assert-all-resources-garbage-collected | `error`                          | Deployment, Service, PDB, ServiceMonitor, and CR are all gone |
 
 The `error` operation asserts that the specified resource does **not** exist —
 the assertion succeeds when the GET returns `NotFound`.
@@ -396,29 +396,29 @@ at runtime. This provides complete isolation between test cases.
 
 ## Requirement Coverage Matrix
 
-| REQ-ID | Requirement | Test Scenario | Key Assertions |
-|--------|------------|---------------|----------------|
-| REQ-001 | Chainsaw configuration and Makefile target | All (infrastructure) | `.chainsaw.yaml` config, `make test-e2e` target |
-| REQ-002 | Basic deployment: Deployment, Service, status | basic-deployment | Labels, container args, headless Service, Available=True |
-| REQ-003 | Scaling: replicas up and down | scaling | Deployment.spec.replicas, status.readyReplicas |
-| REQ-004 | Configuration changes: container args updated | configuration-changes | Args reflect maxMemoryMB, threads, maxItemSize |
-| REQ-005 | Monitoring toggle: exporter sidecar, ServiceMonitor | monitoring-toggle | Container count, port 9150, Service metrics port, ServiceMonitor labels/endpoints, disable removes sidecar and ServiceMonitor |
-| REQ-006 | PDB creation and deletion: minAvailable, selector | pdb-creation | PDB spec, selector labels, owner reference, disable removes PDB |
-| REQ-007 | Graceful rolling update: strategy, preStop, image update | graceful-rolling-update | maxSurge=1, maxUnavailable=0, preStop hook, new image |
-| REQ-008 | Webhook rejection: invalid CRs rejected | webhook-rejection | Five invalid CR variants all rejected |
-| REQ-009 | CR deletion: garbage collection | cr-deletion | Deployment, Service, PDB, ServiceMonitor, CR all removed |
-| REQ-010 | Makefile integration | All (infrastructure) | `make test-e2e` runs `chainsaw test` |
+| REQ-ID  | Requirement                                              | Test Scenario           | Key Assertions                                                                                                                |
+|---------|----------------------------------------------------------|-------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| REQ-001 | Chainsaw configuration and Makefile target               | All (infrastructure)    | `.chainsaw.yaml` config, `make test-e2e` target                                                                               |
+| REQ-002 | Basic deployment: Deployment, Service, status            | basic-deployment        | Labels, container args, headless Service, Available=True                                                                      |
+| REQ-003 | Scaling: replicas up and down                            | scaling                 | Deployment.spec.replicas, status.readyReplicas                                                                                |
+| REQ-004 | Configuration changes: container args updated            | configuration-changes   | Args reflect maxMemoryMB, threads, maxItemSize                                                                                |
+| REQ-005 | Monitoring toggle: exporter sidecar, ServiceMonitor      | monitoring-toggle       | Container count, port 9150, Service metrics port, ServiceMonitor labels/endpoints, disable removes sidecar and ServiceMonitor |
+| REQ-006 | PDB creation and deletion: minAvailable, selector        | pdb-creation            | PDB spec, selector labels, owner reference, disable removes PDB                                                               |
+| REQ-007 | Graceful rolling update: strategy, preStop, image update | graceful-rolling-update | maxSurge=1, maxUnavailable=0, preStop hook, new image                                                                         |
+| REQ-008 | Webhook rejection: invalid CRs rejected                  | webhook-rejection       | Five invalid CR variants all rejected                                                                                         |
+| REQ-009 | CR deletion: garbage collection                          | cr-deletion             | Deployment, Service, PDB, ServiceMonitor, CR all removed                                                                      |
+| REQ-010 | Makefile integration                                     | All (infrastructure)    | `make test-e2e` runs `chainsaw test`                                                                                          |
 
 ---
 
 ## Known Limitations
 
-| Limitation | Impact | Mitigation |
-|-----------|--------|------------|
-| Pod scheduling time varies | Assert timeouts may need adjustment in slow CI | Global assert timeout set to 120s |
-| cert-manager required | Webhook tests fail without TLS certificates | Documented as prerequisite; tests fail clearly with connection refused |
-| ServiceMonitor CRD required | monitoring-toggle and cr-deletion tests fail without CRD | Documented as prerequisite; Chainsaw reports clear assertion error |
-| Sequential execution | Full suite takes longer than parallel execution | `parallel: 1` avoids resource contention on small clusters |
+| Limitation                  | Impact                                                   | Mitigation                                                             |
+|-----------------------------|----------------------------------------------------------|------------------------------------------------------------------------|
+| Pod scheduling time varies  | Assert timeouts may need adjustment in slow CI           | Global assert timeout set to 120s                                      |
+| cert-manager required       | Webhook tests fail without TLS certificates              | Documented as prerequisite; tests fail clearly with connection refused |
+| ServiceMonitor CRD required | monitoring-toggle and cr-deletion tests fail without CRD | Documented as prerequisite; Chainsaw reports clear assertion error     |
+| Sequential execution        | Full suite takes longer than parallel execution          | `parallel: 1` avoids resource contention on small clusters             |
 
 ---
 

@@ -28,11 +28,11 @@ The certificate management architecture has three layers:
 
 ### Deployment Modes
 
-| Mode | Certificate source | Configuration |
-|------|--------------------|---------------|
-| Production (cert-manager) | cert-manager provisions and rotates certs | Default `config/default/kustomization.yaml` |
-| Local / envtest | controller-runtime auto-generates self-signed certs | `WebhookInstallOptions` in `suite_test.go` |
-| Manual (no cert-manager) | Comment out cert-manager lines in `config/default/kustomization.yaml` | Provide certs manually in the `webhook-server-cert` Secret |
+| Mode                      | Certificate source                                                    | Configuration                                              |
+|---------------------------|-----------------------------------------------------------------------|------------------------------------------------------------|
+| Production (cert-manager) | cert-manager provisions and rotates certs                             | Default `config/default/kustomization.yaml`                |
+| Local / envtest           | controller-runtime auto-generates self-signed certs                   | `WebhookInstallOptions` in `suite_test.go`                 |
+| Manual (no cert-manager)  | Comment out cert-manager lines in `config/default/kustomization.yaml` | Provide certs manually in the `webhook-server-cert` Secret |
 
 ---
 
@@ -81,10 +81,10 @@ spec:
   secretName: webhook-server-cert
 ```
 
-| Field | Purpose |
-|-------|---------|
-| `dnsNames` | SAN entries matching the webhook Service's cluster DNS names. Kustomize substitutes `SERVICE_NAME` and `SERVICE_NAMESPACE` at build time. |
-| `issuerRef` | Points to the self-signed Issuer. Kustomize's `nameReference` configuration automatically updates this when the Issuer is renamed by `namePrefix`. |
+| Field        | Purpose                                                                                                                                                                  |
+|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `dnsNames`   | SAN entries matching the webhook Service's cluster DNS names. Kustomize substitutes `SERVICE_NAME` and `SERVICE_NAMESPACE` at build time.                                |
+| `issuerRef`  | Points to the self-signed Issuer. Kustomize's `nameReference` configuration automatically updates this when the Issuer is renamed by `namePrefix`.                       |
 | `secretName` | The Kubernetes Secret where cert-manager stores the TLS key pair. This name is **not** prefixed by Kustomize — it is referenced directly by the Deployment volume mount. |
 
 After Kustomize processing, `dnsNames` resolve to:
@@ -133,7 +133,7 @@ API server trusts the webhook's TLS certificate without manual `caBundle`
 management.
 
 After Kustomize variable substitution, the annotation resolves to:
-```
+```text
 cert-manager.io/inject-ca-from: memcached-operator-system/memcached-operator-serving-cert
 ```
 
@@ -141,12 +141,12 @@ cert-manager.io/inject-ca-from: memcached-operator-system/memcached-operator-ser
 
 The variable substitution is configured in `config/default/kustomization.yaml`:
 
-| Variable | Source | Field |
-|----------|--------|-------|
-| `CERTIFICATE_NAMESPACE` | `Certificate/serving-cert` | `metadata.namespace` |
-| `CERTIFICATE_NAME` | `Certificate/serving-cert` | `metadata.name` (default) |
-| `SERVICE_NAMESPACE` | `Service/webhook-service` | `metadata.namespace` |
-| `SERVICE_NAME` | `Service/webhook-service` | `metadata.name` (default) |
+| Variable                | Source                     | Field                     |
+|-------------------------|----------------------------|---------------------------|
+| `CERTIFICATE_NAMESPACE` | `Certificate/serving-cert` | `metadata.namespace`      |
+| `CERTIFICATE_NAME`      | `Certificate/serving-cert` | `metadata.name` (default) |
+| `SERVICE_NAMESPACE`     | `Service/webhook-service`  | `metadata.namespace`      |
+| `SERVICE_NAME`          | `Service/webhook-service`  | `metadata.name` (default) |
 
 ---
 
@@ -182,11 +182,11 @@ spec:
 
 This patch adds three things to the manager Deployment:
 
-| Addition | Value | Purpose |
-|----------|-------|---------|
-| Container port | `9443` (named `webhook-server`) | Exposes the webhook HTTPS endpoint. Controller-runtime's default webhook port is 9443. |
-| Volume mount | `/tmp/k8s-webhook-server/serving-certs` | Controller-runtime's default `CertDir`. The webhook server reads `tls.crt` and `tls.key` from this path. |
-| Volume | Secret `webhook-server-cert` | The Secret provisioned by cert-manager (matching `Certificate.spec.secretName`). |
+| Addition       | Value                                   | Purpose                                                                                                  |
+|----------------|-----------------------------------------|----------------------------------------------------------------------------------------------------------|
+| Container port | `9443` (named `webhook-server`)         | Exposes the webhook HTTPS endpoint. Controller-runtime's default webhook port is 9443.                   |
+| Volume mount   | `/tmp/k8s-webhook-server/serving-certs` | Controller-runtime's default `CertDir`. The webhook server reads `tls.crt` and `tls.key` from this path. |
+| Volume         | Secret `webhook-server-cert`            | The Secret provisioned by cert-manager (matching `Certificate.spec.secretName`).                         |
 
 ---
 
@@ -227,12 +227,12 @@ webhookServer := webhook.NewServer(webhook.Options{
 
 The webhook server uses controller-runtime defaults:
 
-| Setting | Default | Source |
-|---------|---------|--------|
-| Port | `9443` | `webhook.DefaultPort` |
-| CertDir | `/tmp/k8s-webhook-server/serving-certs` | `webhook.DefaultCertDir` |
-| CertName | `tls.crt` | `webhook.DefaultCertName` |
-| KeyName | `tls.key` | `webhook.DefaultKeyName` |
+| Setting  | Default                                 | Source                    |
+|----------|-----------------------------------------|---------------------------|
+| Port     | `9443`                                  | `webhook.DefaultPort`     |
+| CertDir  | `/tmp/k8s-webhook-server/serving-certs` | `webhook.DefaultCertDir`  |
+| CertName | `tls.crt`                               | `webhook.DefaultCertName` |
+| KeyName  | `tls.key`                               | `webhook.DefaultKeyName`  |
 
 No explicit `CertDir` or `Port` override is needed because the cert-manager
 Certificate and Deployment patch use these same defaults.
@@ -241,16 +241,16 @@ Certificate and Deployment patch use these same defaults.
 
 ## File Summary
 
-| File | Purpose |
-|------|---------|
-| `config/certmanager/certificate.yaml` | Self-signed Issuer and Certificate resources |
-| `config/certmanager/kustomization.yaml` | Includes certificate.yaml and kustomizeconfig.yaml |
-| `config/certmanager/kustomizeconfig.yaml` | Teaches Kustomize name/var reference resolution for cert-manager |
-| `config/default/kustomization.yaml` | Wires cert-manager resources, patches, and variable substitutions |
-| `config/default/webhookcainjection_patch.yaml` | Adds CA injection annotations to webhook configurations |
-| `config/default/manager_webhook_patch.yaml` | Adds cert volume mount and webhook port to manager Deployment |
-| `config/webhook/service.yaml` | Routes port 443 to manager's webhook port 9443 |
-| `cmd/main.go` | Creates webhook server with default TLS options |
+| File                                           | Purpose                                                           |
+|------------------------------------------------|-------------------------------------------------------------------|
+| `config/certmanager/certificate.yaml`          | Self-signed Issuer and Certificate resources                      |
+| `config/certmanager/kustomization.yaml`        | Includes certificate.yaml and kustomizeconfig.yaml                |
+| `config/certmanager/kustomizeconfig.yaml`      | Teaches Kustomize name/var reference resolution for cert-manager  |
+| `config/default/kustomization.yaml`            | Wires cert-manager resources, patches, and variable substitutions |
+| `config/default/webhookcainjection_patch.yaml` | Adds CA injection annotations to webhook configurations           |
+| `config/default/manager_webhook_patch.yaml`    | Adds cert volume mount and webhook port to manager Deployment     |
+| `config/webhook/service.yaml`                  | Routes port 443 to manager's webhook port 9443                    |
+| `cmd/main.go`                                  | Creates webhook server with default TLS options                   |
 
 ---
 

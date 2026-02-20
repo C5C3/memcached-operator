@@ -14,10 +14,10 @@ isolation.
 
 Two presets are available:
 
-| Preset | Kubernetes API Field | Scheduling Behavior |
-|--------|---------------------|---------------------|
-| `soft` | `preferredDuringSchedulingIgnoredDuringExecution` | Best-effort spreading; pods can co-locate if necessary |
-| `hard` | `requiredDuringSchedulingIgnoredDuringExecution` | Strict spreading; scheduling fails if nodes are insufficient |
+| Preset | Kubernetes API Field                              | Scheduling Behavior                                          |
+|--------|---------------------------------------------------|--------------------------------------------------------------|
+| `soft` | `preferredDuringSchedulingIgnoredDuringExecution` | Best-effort spreading; pods can co-locate if necessary       |
+| `hard` | `requiredDuringSchedulingIgnoredDuringExecution`  | Strict spreading; scheduling fails if nodes are insufficient |
 
 When `spec.highAvailability` is nil or `antiAffinityPreset` is nil, no affinity
 rules are set on the Deployment (the `spec.template.spec.affinity` field is nil).
@@ -142,14 +142,14 @@ The Deployment's `spec.template.spec.affinity` will be nil.
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Set `antiAffinityPreset: soft` | Deployment updated with preferred anti-affinity |
-| Set `antiAffinityPreset: hard` | Deployment updated with required anti-affinity |
-| Change `soft` to `hard` | Deployment affinity updated on next reconcile |
-| Change `hard` to `soft` | Deployment affinity updated on next reconcile |
-| Remove `highAvailability` section | Deployment affinity cleared to nil |
-| Reconcile twice with same spec | No Deployment update (idempotent) |
+| Action                            | Result                                          |
+|-----------------------------------|-------------------------------------------------|
+| Set `antiAffinityPreset: soft`    | Deployment updated with preferred anti-affinity |
+| Set `antiAffinityPreset: hard`    | Deployment updated with required anti-affinity  |
+| Change `soft` to `hard`           | Deployment affinity updated on next reconcile   |
+| Change `hard` to `soft`           | Deployment affinity updated on next reconcile   |
+| Remove `highAvailability` section | Deployment affinity cleared to nil              |
+| Reconcile twice with same spec    | No Deployment update (idempotent)               |
 
 ---
 

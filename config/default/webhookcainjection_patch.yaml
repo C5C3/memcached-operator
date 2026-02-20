@@ -1,3 +1,4 @@
+---
 # This patch adds the cert-manager.io/inject-ca-from annotation to the
 # mutating and validating webhook configurations. This instructs cert-manager
 # to inject the CA certificate from the specified Certificate resource into

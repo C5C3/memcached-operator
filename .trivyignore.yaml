@@ -1,0 +1,18 @@
+# Trivy ignore rules for legitimate operator findings
+# YAML format: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/
+misconfigurations:
+  # Dockerfile: health checks are done via Kubernetes probes, not Docker HEALTHCHECK
+  - id: AVD-DS-0026
+  # manager.yaml uses controller:latest as a kustomize placeholder (replaced at deploy time)
+  - id: AVD-KSV-0013
+  # Container runs as UID 65532 (distroless nonroot); trivy doesn't detect this from the image ref
+  - id: AVD-KSV-0020
+  - id: AVD-KSV-0021
+  # Operator legitimately manages secrets (SASL/TLS secret references)
+  - id: AVD-KSV-0041
+  # Operator legitimately manages Deployments (core reconciliation)
+  - id: AVD-KSV-0048
+  # Leader election requires ConfigMap/Lease access
+  - id: AVD-KSV-0049
+  # Operator legitimately manages Services and NetworkPolicies
+  - id: AVD-KSV-0056

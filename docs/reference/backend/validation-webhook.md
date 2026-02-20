@@ -20,7 +20,7 @@ webhook in the admission chain, so validation sees the fully-defaulted CR.
 
 ### Webhook Path
 
-```
+```text
 /validate-memcached-c5c3-io-v1alpha1-memcached
 ```
 
@@ -43,15 +43,15 @@ Ensures the container memory limit can accommodate the configured Memcached
 cache size plus 32Mi of operational overhead for connections, threads, and
 internal data structures.
 
-| Field | Constraint |
-|-------|-----------|
+| Field                          | Constraint                                                |
+|--------------------------------|-----------------------------------------------------------|
 | `spec.resources.limits.memory` | Must be >= `spec.memcached.maxMemoryMB` (in bytes) + 32Mi |
 
 **Skip condition**: Validation is skipped when `spec.resources` is nil or
 `spec.resources.limits.memory` is not set.
 
 **Error example**:
-```
+```text
 spec.resources.limits.memory: Invalid value: "64Mi":
   memory limit must be at least 96Mi (maxMemoryMB=64Mi + 32Mi overhead)
 ```
@@ -61,11 +61,11 @@ spec.resources.limits.memory: Invalid value: "64Mi":
 Validates PodDisruptionBudget configuration to prevent impossible disruption
 constraints.
 
-| Field | Constraint |
-|-------|-----------|
-| `spec.highAvailability.podDisruptionBudget` | `minAvailable` and `maxUnavailable` are mutually exclusive |
-| `spec.highAvailability.podDisruptionBudget` | At least one of `minAvailable` or `maxUnavailable` must be set when PDB is enabled |
-| `spec.highAvailability.podDisruptionBudget.minAvailable` | Integer value must be strictly less than `spec.replicas` |
+| Field                                                    | Constraint                                                                         |
+|----------------------------------------------------------|------------------------------------------------------------------------------------|
+| `spec.highAvailability.podDisruptionBudget`              | `minAvailable` and `maxUnavailable` are mutually exclusive                         |
+| `spec.highAvailability.podDisruptionBudget`              | At least one of `minAvailable` or `maxUnavailable` must be set when PDB is enabled |
+| `spec.highAvailability.podDisruptionBudget.minAvailable` | Integer value must be strictly less than `spec.replicas`                           |
 
 **Skip condition**: Validation is skipped when `spec.highAvailability` is nil,
 `spec.highAvailability.podDisruptionBudget` is nil, or PDB is not enabled.
@@ -73,7 +73,7 @@ Percentage values for `minAvailable` are not validated against replicas because
 they cannot be compared statically.
 
 **Error examples**:
-```
+```text
 spec.highAvailability.podDisruptionBudget: Invalid value: "":
   minAvailable and maxUnavailable are mutually exclusive, specify only one
 
@@ -89,16 +89,16 @@ spec.highAvailability.podDisruptionBudget.minAvailable: Invalid value: 3:
 Validates that secret references are provided when security features are
 enabled, preventing runtime failures from missing secrets.
 
-| Field | Constraint |
-|-------|-----------|
+| Field                                          | Constraint                                           |
+|------------------------------------------------|------------------------------------------------------|
 | `spec.security.sasl.credentialsSecretRef.name` | Required when `spec.security.sasl.enabled` is `true` |
-| `spec.security.tls.certificateSecretRef.name` | Required when `spec.security.tls.enabled` is `true` |
+| `spec.security.tls.certificateSecretRef.name`  | Required when `spec.security.tls.enabled` is `true`  |
 
 **Skip condition**: Validation is skipped when `spec.security` is nil, or when
 the respective SASL/TLS section is nil or not enabled.
 
 **Error examples**:
-```
+```text
 spec.security.sasl.credentialsSecretRef.name: Required value:
   credentialsSecretRef.name is required when SASL is enabled
 
@@ -111,8 +111,8 @@ spec.security.tls.certificateSecretRef.name: Required value:
 Validates that the termination grace period exceeds the pre-stop delay to
 ensure the pre-stop hook completes before the pod receives SIGKILL.
 
-| Field | Constraint |
-|-------|-----------|
+| Field                                                                  | Constraint                                                                                 |
+|------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
 | `spec.highAvailability.gracefulShutdown.terminationGracePeriodSeconds` | Must be strictly greater than `spec.highAvailability.gracefulShutdown.preStopDelaySeconds` |
 
 **Skip condition**: Validation is skipped when `spec.highAvailability` is nil,
@@ -120,7 +120,7 @@ ensure the pre-stop hook completes before the pod receives SIGKILL.
 enabled.
 
 **Error example**:
-```
+```text
 spec.highAvailability.gracefulShutdown.terminationGracePeriodSeconds: Invalid value: 10:
   terminationGracePeriodSeconds (10) must exceed preStopDelaySeconds (10)
 ```
@@ -301,15 +301,15 @@ sections — all nil-guarded validations are skipped.
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Create CR with invalid fields | Rejected with 403/422 and all field errors listed |
-| Create valid CR | Accepted without modification |
-| Update CR to invalid config | Rejected with field errors |
-| Update CR to valid config | Accepted |
-| Delete CR | Always accepted (no validation on delete) |
-| Webhook unavailable | Request rejected (failurePolicy=Fail) |
-| Minimal CR (empty spec) | Accepted — defaulting webhook fills fields before validation runs |
+| Action                        | Result                                                            |
+|-------------------------------|-------------------------------------------------------------------|
+| Create CR with invalid fields | Rejected with 403/422 and all field errors listed                 |
+| Create valid CR               | Accepted without modification                                     |
+| Update CR to invalid config   | Rejected with field errors                                        |
+| Update CR to valid config     | Accepted                                                          |
+| Delete CR                     | Always accepted (no validation on delete)                         |
+| Webhook unavailable           | Request rejected (failurePolicy=Fail)                             |
+| Minimal CR (empty spec)       | Accepted — defaulting webhook fills fields before validation runs |
 
 ---
 

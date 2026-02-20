@@ -19,13 +19,13 @@ spec:
 
 **What happens:** The defaulting webhook fills in all omitted fields:
 
-| Field | Default Value |
-|-------|---------------|
-| `image` | `memcached:1.6` |
-| `memcached.maxMemoryMB` | `64` |
-| `memcached.maxConnections` | `1024` |
-| `memcached.threads` | `4` |
-| `memcached.maxItemSize` | `1m` |
+| Field                      | Default Value   |
+|----------------------------|-----------------|
+| `image`                    | `memcached:1.6` |
+| `memcached.maxMemoryMB`    | `64`            |
+| `memcached.maxConnections` | `1024`          |
+| `memcached.threads`        | `4`             |
+| `memcached.maxItemSize`    | `1m`            |
 
 **Resources created:**
 

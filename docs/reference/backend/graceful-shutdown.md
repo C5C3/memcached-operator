@@ -28,7 +28,7 @@ is set unless explicitly enabled.
 
 ## CRD Field Path
 
-```
+```text
 spec.highAvailability.gracefulShutdown
 ```
 
@@ -42,11 +42,11 @@ type GracefulShutdownSpec struct {
 }
 ```
 
-| Field | Type | Required | Default | Validation | Description |
-|-------|------|----------|---------|------------|-------------|
-| `enabled` | `bool` | No | `false` | — | Controls whether graceful shutdown is configured |
-| `preStopDelaySeconds` | `int32` | No | `10` | Min: 1, Max: 300 | Seconds the preStop hook sleeps for connection draining |
-| `terminationGracePeriodSeconds` | `int64` | No | `30` | Min: 1, Max: 600 | Pod termination grace period; must exceed `preStopDelaySeconds` |
+| Field                           | Type    | Required | Default | Validation       | Description                                                     |
+|---------------------------------|---------|----------|---------|------------------|-----------------------------------------------------------------|
+| `enabled`                       | `bool`  | No       | `false` | —                | Controls whether graceful shutdown is configured                |
+| `preStopDelaySeconds`           | `int32` | No       | `10`    | Min: 1, Max: 300 | Seconds the preStop hook sleeps for connection draining         |
+| `terminationGracePeriodSeconds` | `int64` | No       | `30`    | Min: 1, Max: 600 | Pod termination grace period; must exceed `preStopDelaySeconds` |
 
 ---
 
@@ -179,16 +179,16 @@ All HA features are applied independently and coexist without conflicts.
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Enable graceful shutdown (`enabled: true`) | PreStop hook and terminationGracePeriodSeconds set on next reconcile |
-| Change `preStopDelaySeconds` | Deployment updated with new sleep duration |
-| Change `terminationGracePeriodSeconds` | Deployment updated with new grace period |
+| Action                                       | Result                                                                           |
+|----------------------------------------------|----------------------------------------------------------------------------------|
+| Enable graceful shutdown (`enabled: true`)   | PreStop hook and terminationGracePeriodSeconds set on next reconcile             |
+| Change `preStopDelaySeconds`                 | Deployment updated with new sleep duration                                       |
+| Change `terminationGracePeriodSeconds`       | Deployment updated with new grace period                                         |
 | Disable graceful shutdown (`enabled: false`) | PreStop hook removed; terminationGracePeriodSeconds reverts to K8s default (30s) |
-| Remove `gracefulShutdown` section | Same as disabled — hook removed |
-| Remove `highAvailability` section | Hook removed; other HA features also cleared |
-| Reconcile twice with same spec | No Deployment update (idempotent) |
-| External drift (manual Deployment edit) | Corrected on next reconciliation cycle |
+| Remove `gracefulShutdown` section            | Same as disabled — hook removed                                                  |
+| Remove `highAvailability` section            | Hook removed; other HA features also cleared                                     |
+| Reconcile twice with same spec               | No Deployment update (idempotent)                                                |
+| External drift (manual Deployment edit)      | Corrected on next reconciliation cycle                                           |
 
 ---
 

@@ -22,13 +22,13 @@ with the Go types via `make verify-manifests`.
 
 ### `make manifests` — CRD and RBAC Generation
 
-```
+```bash
 make manifests
 ```
 
 Invokes `controller-gen` with:
 
-```
+```bash
 controller-gen rbac:roleName=manager-role crd webhook \
   paths="./..." \
   output:crd:artifacts:config=config/crd/bases
@@ -46,33 +46,33 @@ controller-gen rbac:roleName=manager-role crd webhook \
 
 **Output:**
 
-| File | Content |
-|------|---------|
+| File                                                 | Content                                                      |
+|------------------------------------------------------|--------------------------------------------------------------|
 | `config/crd/bases/memcached.c5c3.io_memcacheds.yaml` | CRD with OpenAPI schema, printer columns, status subresource |
-| `config/rbac/role.yaml` | ClusterRole with RBAC rules from reconciler markers |
+| `config/rbac/role.yaml`                              | ClusterRole with RBAC rules from reconciler markers          |
 
 **Key markers that drive CRD generation** (defined in `api/v1alpha1/memcached_types.go`):
 
-| Marker | Location | Effect in CRD |
-|--------|----------|---------------|
-| `+kubebuilder:object:root=true` | `Memcached`, `MemcachedList` | Marks types as CRD root objects |
-| `+kubebuilder:subresource:status` | `Memcached` | Enables `/status` subresource |
-| `+kubebuilder:printcolumn:*` | `Memcached` | Adds `additionalPrinterColumns` for `kubectl get` |
-| `+kubebuilder:validation:Minimum=N` | Spec fields | Sets `minimum` in OpenAPI schema |
-| `+kubebuilder:validation:Maximum=N` | Spec fields | Sets `maximum` in OpenAPI schema |
-| `+kubebuilder:validation:Pattern=...` | `MaxItemSize` | Sets `pattern` in OpenAPI schema |
-| `+kubebuilder:validation:Enum=...` | `AntiAffinityPreset` | Sets `enum` in OpenAPI schema |
-| `+kubebuilder:default=...` | Various fields | Sets `default` in OpenAPI schema |
+| Marker                                | Location                     | Effect in CRD                                     |
+|---------------------------------------|------------------------------|---------------------------------------------------|
+| `+kubebuilder:object:root=true`       | `Memcached`, `MemcachedList` | Marks types as CRD root objects                   |
+| `+kubebuilder:subresource:status`     | `Memcached`                  | Enables `/status` subresource                     |
+| `+kubebuilder:printcolumn:*`          | `Memcached`                  | Adds `additionalPrinterColumns` for `kubectl get` |
+| `+kubebuilder:validation:Minimum=N`   | Spec fields                  | Sets `minimum` in OpenAPI schema                  |
+| `+kubebuilder:validation:Maximum=N`   | Spec fields                  | Sets `maximum` in OpenAPI schema                  |
+| `+kubebuilder:validation:Pattern=...` | `MaxItemSize`                | Sets `pattern` in OpenAPI schema                  |
+| `+kubebuilder:validation:Enum=...`    | `AntiAffinityPreset`         | Sets `enum` in OpenAPI schema                     |
+| `+kubebuilder:default=...`            | Various fields               | Sets `default` in OpenAPI schema                  |
 
 ### `make generate` — DeepCopy Code Generation
 
-```
+```bash
 make generate
 ```
 
 Invokes `controller-gen` with:
 
-```
+```bash
 controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
 ```
 
@@ -86,8 +86,8 @@ controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."
 
 **Output:**
 
-| File | Content |
-|------|---------|
+| File                                    | Content                                          |
+|-----------------------------------------|--------------------------------------------------|
 | `api/v1alpha1/zz_generated.deepcopy.go` | `DeepCopy*` methods for all types in the package |
 
 The generated file includes:
@@ -158,7 +158,7 @@ it for serialization, deserialization, and watch configuration.
 
 ### Registration Flow Diagram
 
-```
+```text
 groupversion_info.go              memcached_types.go              cmd/main.go
 ─────────────────────             ─────────────────               ──────────
 GroupVersion{                     func init() {                   func init() {
@@ -178,13 +178,13 @@ AddToScheme = SchemeBuilder
 
 ### Install CRDs
 
-```
+```bash
 make install
 ```
 
 Runs:
 
-```
+```bash
 kustomize build config/crd | kubectl apply -f -
 ```
 
@@ -197,13 +197,13 @@ This:
 
 ### Uninstall CRDs
 
-```
+```bash
 make uninstall
 ```
 
 Runs:
 
-```
+```bash
 kustomize build config/crd | kubectl delete --ignore-not-found=false -f -
 ```
 
@@ -211,14 +211,14 @@ Removes the CRD and all Memcached custom resources from the cluster.
 
 ### Verify Generated Artifacts
 
-```
+```bash
 make verify-manifests
 ```
 
 Re-runs both `make manifests` and `make generate`, then checks for uncommitted
 changes:
 
-```
+```bash
 git diff --exit-code -- config/crd/ api/v1alpha1/zz_generated.deepcopy.go
 ```
 
@@ -231,39 +231,39 @@ target is intended for CI pipelines to detect stale generated artifacts.
 The generated CRD at `config/crd/bases/memcached.c5c3.io_memcacheds.yaml`
 contains:
 
-| Section | Value |
-|---------|-------|
-| `apiVersion` | `apiextensions.k8s.io/v1` |
-| `kind` | `CustomResourceDefinition` |
-| `metadata.name` | `memcacheds.memcached.c5c3.io` |
-| `spec.group` | `memcached.c5c3.io` |
-| `spec.scope` | `Namespaced` |
-| `spec.names.kind` | `Memcached` |
-| `spec.names.listKind` | `MemcachedList` |
-| `spec.names.plural` | `memcacheds` |
-| `spec.names.singular` | `memcached` |
-| `spec.versions[0].name` | `v1alpha1` |
+| Section                 | Value                          |
+|-------------------------|--------------------------------|
+| `apiVersion`            | `apiextensions.k8s.io/v1`      |
+| `kind`                  | `CustomResourceDefinition`     |
+| `metadata.name`         | `memcacheds.memcached.c5c3.io` |
+| `spec.group`            | `memcached.c5c3.io`            |
+| `spec.scope`            | `Namespaced`                   |
+| `spec.names.kind`       | `Memcached`                    |
+| `spec.names.listKind`   | `MemcachedList`                |
+| `spec.names.plural`     | `memcacheds`                   |
+| `spec.names.singular`   | `memcached`                    |
+| `spec.versions[0].name` | `v1alpha1`                     |
 
 ### Printer Columns
 
-| Column | Type | JSONPath |
-|--------|------|----------|
-| Replicas | integer | `.spec.replicas` |
-| Ready | integer | `.status.readyReplicas` |
-| Age | date | `.metadata.creationTimestamp` |
+| Column   | Type    | JSONPath                      |
+|----------|---------|-------------------------------|
+| Replicas | integer | `.spec.replicas`              |
+| Ready    | integer | `.status.readyReplicas`       |
+| Age      | date    | `.metadata.creationTimestamp` |
 
 ### Validation Constraints
 
-| Field | Constraint |
-|-------|-----------|
-| `spec.replicas` | minimum: 0, maximum: 64, default: 1 |
-| `spec.image` | default: `memcached:1.6` |
-| `spec.memcached.maxMemoryMB` | minimum: 16, maximum: 65536, default: 64 |
-| `spec.memcached.maxConnections` | minimum: 1, maximum: 65536, default: 1024 |
-| `spec.memcached.threads` | minimum: 1, maximum: 128, default: 4 |
-| `spec.memcached.maxItemSize` | pattern: `^[0-9]+(k\|m)$`, default: `1m` |
-| `spec.highAvailability.antiAffinityPreset` | enum: [soft, hard], default: `soft` |
-| `spec.monitoring.exporterImage` | default: `prom/memcached-exporter:v0.15.4` |
+| Field                                      | Constraint                                 |
+|--------------------------------------------|--------------------------------------------|
+| `spec.replicas`                            | minimum: 0, maximum: 64, default: 1        |
+| `spec.image`                               | default: `memcached:1.6`                   |
+| `spec.memcached.maxMemoryMB`               | minimum: 16, maximum: 65536, default: 64   |
+| `spec.memcached.maxConnections`            | minimum: 1, maximum: 65536, default: 1024  |
+| `spec.memcached.threads`                   | minimum: 1, maximum: 128, default: 4       |
+| `spec.memcached.maxItemSize`               | pattern: `^[0-9]+(k\|m)$`, default: `1m`   |
+| `spec.highAvailability.antiAffinityPreset` | enum: [soft, hard], default: `soft`        |
+| `spec.monitoring.exporterImage`            | default: `prom/memcached-exporter:v0.15.4` |
 
 ### Status Subresource
 

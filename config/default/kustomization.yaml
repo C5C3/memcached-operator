@@ -1,3 +1,4 @@
+---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -10,62 +11,62 @@ namespace: memcached-operator-system
 namePrefix: memcached-operator-
 
 # Labels to add to all resources and selectors.
-#labels:
-#- includeSelectors: true
-#  pairs:
+# labels:
+# - includeSelectors: true
+#   pairs:
 #    someName: someValue
 
 resources:
-- ../crd
-- ../rbac
-- ../manager
-- ../webhook
-- ../certmanager
+  - ../crd
+  - ../rbac
+  - ../manager
+  - ../webhook
+  - ../certmanager
 
 patches:
-- path: manager_metrics_patch.yaml
-  target:
-    group: apps
-    version: v1
-    kind: Deployment
-    name: controller-manager
-    namespace: system
-- path: manager_webhook_patch.yaml
-  target:
-    group: apps
-    version: v1
-    kind: Deployment
-    name: controller-manager
-    namespace: system
-- path: webhookcainjection_patch.yaml
+  - path: manager_metrics_patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: controller-manager
+      namespace: system
+  - path: manager_webhook_patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: controller-manager
+      namespace: system
+  - path: webhookcainjection_patch.yaml
 
 # [CERTMANAGER] The following vars and replacements are for cert-manager integration.
 # They substitute the certificate namespace and name into the webhook CA injection patch
 # and the certificate DNS names.
 vars:
-- name: CERTIFICATE_NAMESPACE # namespace of the certificate CR
-  objref:
-    kind: Certificate
-    group: cert-manager.io
-    version: v1
-    name: serving-cert # this name should match the one in certificate.yaml
-  fieldref:
-    fieldpath: metadata.namespace
-- name: CERTIFICATE_NAME
-  objref:
-    kind: Certificate
-    group: cert-manager.io
-    version: v1
-    name: serving-cert # this name should match the one in certificate.yaml
-- name: SERVICE_NAMESPACE # namespace of the service
-  objref:
-    kind: Service
-    version: v1
-    name: webhook-service
-  fieldref:
-    fieldpath: metadata.namespace
-- name: SERVICE_NAME
-  objref:
-    kind: Service
-    version: v1
-    name: webhook-service
+  - name: CERTIFICATE_NAMESPACE # namespace of the certificate CR
+    objref:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert # this name should match the one in certificate.yaml
+    fieldref:
+      fieldpath: metadata.namespace
+  - name: CERTIFICATE_NAME
+    objref:
+      kind: Certificate
+      group: cert-manager.io
+      version: v1
+      name: serving-cert # this name should match the one in certificate.yaml
+  - name: SERVICE_NAMESPACE # namespace of the service
+    objref:
+      kind: Service
+      version: v1
+      name: webhook-service
+    fieldref:
+      fieldpath: metadata.namespace
+  - name: SERVICE_NAME
+    objref:
+      kind: Service
+      version: v1
+      name: webhook-service

@@ -28,7 +28,7 @@ The feature is opt-in — no sidecar or metrics port is added unless
 
 ## CRD Field Path
 
-```
+```text
 spec.monitoring
 ```
 
@@ -43,12 +43,12 @@ type MonitoringSpec struct {
 }
 ```
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `enabled` | `bool` | No | `false` | Controls whether the exporter sidecar is injected |
-| `exporterImage` | `*string` | No | `prom/memcached-exporter:v0.15.4` | Container image for the exporter sidecar |
-| `exporterResources` | `*ResourceRequirements` | No | empty (no limits) | Resource requests and limits for the exporter container |
-| `serviceMonitor` | `*ServiceMonitorSpec` | No | nil | Prometheus ServiceMonitor configuration (separate feature) |
+| Field               | Type                    | Required | Default                           | Description                                                |
+|---------------------|-------------------------|----------|-----------------------------------|------------------------------------------------------------|
+| `enabled`           | `bool`                  | No       | `false`                           | Controls whether the exporter sidecar is injected          |
+| `exporterImage`     | `*string`               | No       | `prom/memcached-exporter:v0.15.4` | Container image for the exporter sidecar                   |
+| `exporterResources` | `*ResourceRequirements` | No       | empty (no limits)                 | Resource requests and limits for the exporter container    |
+| `serviceMonitor`    | `*ServiceMonitorSpec`   | No       | nil                               | Prometheus ServiceMonitor configuration (separate feature) |
 
 ---
 
@@ -68,15 +68,15 @@ container, or `nil` if monitoring is not enabled.
 
 When enabled, the exporter container has the following configuration:
 
-| Property | Value |
-|----------|-------|
-| Name | `exporter` |
-| Image | `spec.monitoring.exporterImage` or `prom/memcached-exporter:v0.15.4` |
-| Port | `9150/TCP` named `metrics` |
-| Resources | `spec.monitoring.exporterResources` or empty |
-| Memcached address | `localhost:11211` (exporter default, no explicit args) |
-| Lifecycle hooks | None |
-| Probes | None |
+| Property          | Value                                                                |
+|-------------------|----------------------------------------------------------------------|
+| Name              | `exporter`                                                           |
+| Image             | `spec.monitoring.exporterImage` or `prom/memcached-exporter:v0.15.4` |
+| Port              | `9150/TCP` named `metrics`                                           |
+| Resources         | `spec.monitoring.exporterResources` or empty                         |
+| Memcached address | `localhost:11211` (exporter default, no explicit args)               |
+| Lifecycle hooks   | None                                                                 |
+| Probes            | None                                                                 |
 
 The exporter connects to memcached via `localhost:11211` using the exporter's
 built-in default `--memcached.address` flag. Since both containers share the
@@ -234,17 +234,17 @@ receives the preStop hook from graceful shutdown.
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Enable monitoring (`enabled: true`) | Exporter sidecar added to Deployment; metrics port added to Service |
-| Set `exporterImage` | Exporter container uses the specified image |
-| Change `exporterImage` | Deployment updated with new exporter image |
-| Set `exporterResources` | Exporter container uses the specified resource requests/limits |
-| Change `exporterResources` | Deployment updated with new resource configuration |
-| Disable monitoring (`enabled: false`) | Exporter container removed from Deployment; metrics port removed from Service |
-| Remove `monitoring` section | Same as disabled — sidecar and metrics port removed |
-| Reconcile twice with same spec | No Deployment or Service update (idempotent) |
-| External drift (manual container removal) | Corrected on next reconciliation cycle |
+| Action                                    | Result                                                                        |
+|-------------------------------------------|-------------------------------------------------------------------------------|
+| Enable monitoring (`enabled: true`)       | Exporter sidecar added to Deployment; metrics port added to Service           |
+| Set `exporterImage`                       | Exporter container uses the specified image                                   |
+| Change `exporterImage`                    | Deployment updated with new exporter image                                    |
+| Set `exporterResources`                   | Exporter container uses the specified resource requests/limits                |
+| Change `exporterResources`                | Deployment updated with new resource configuration                            |
+| Disable monitoring (`enabled: false`)     | Exporter container removed from Deployment; metrics port removed from Service |
+| Remove `monitoring` section               | Same as disabled — sidecar and metrics port removed                           |
+| Reconcile twice with same spec            | No Deployment or Service update (idempotent)                                  |
+| External drift (manual container removal) | Corrected on next reconciliation cycle                                        |
 
 ---
 

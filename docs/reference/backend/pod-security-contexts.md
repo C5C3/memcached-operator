@@ -31,7 +31,7 @@ future defaulting webhook (S021).
 
 ## CRD Field Path
 
-```
+```text
 spec.security.podSecurityContext
 spec.security.containerSecurityContext
 ```
@@ -47,10 +47,10 @@ type SecuritySpec struct {
 }
 ```
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `podSecurityContext` | `*PodSecurityContext` | No | nil | Pod-level security context applied to `PodSpec.SecurityContext` |
-| `containerSecurityContext` | `*SecurityContext` | No | nil | Container-level security context applied to all containers |
+| Field                      | Type                  | Required | Default | Description                                                     |
+|----------------------------|-----------------------|----------|---------|-----------------------------------------------------------------|
+| `podSecurityContext`       | `*PodSecurityContext` | No       | nil     | Pod-level security context applied to `PodSpec.SecurityContext` |
+| `containerSecurityContext` | `*SecurityContext`    | No       | nil     | Container-level security context applied to all containers      |
 
 ---
 
@@ -87,9 +87,9 @@ Both functions follow the same nil-guard pattern as `buildAntiAffinity`,
 
 In `constructDeployment`, the security contexts are applied as follows:
 
-| CR Field | Deployment Field |
-|----------|-----------------|
-| `spec.security.podSecurityContext` | `spec.template.spec.securityContext` |
+| CR Field                                 | Deployment Field                                   |
+|------------------------------------------|----------------------------------------------------|
+| `spec.security.podSecurityContext`       | `spec.template.spec.securityContext`               |
 | `spec.security.containerSecurityContext` | `spec.template.spec.containers[*].securityContext` |
 
 The container security context is applied to **all** containers in the pod:
@@ -215,16 +215,16 @@ defaults.
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Set `spec.security.podSecurityContext` | Pod template `securityContext` is set |
-| Set `spec.security.containerSecurityContext` | All containers get `securityContext` |
-| Change security context values | Deployment updated with new values |
-| Remove `spec.security` | Both pod and container security contexts cleared |
-| Set `podSecurityContext` to nil | Pod security context cleared, container security context preserved |
-| Set `containerSecurityContext` to nil | Container security contexts cleared, pod security context preserved |
-| Reconcile twice with same spec | No Deployment update (idempotent) |
-| External drift (manual removal) | Corrected on next reconciliation cycle |
+| Action                                       | Result                                                              |
+|----------------------------------------------|---------------------------------------------------------------------|
+| Set `spec.security.podSecurityContext`       | Pod template `securityContext` is set                               |
+| Set `spec.security.containerSecurityContext` | All containers get `securityContext`                                |
+| Change security context values               | Deployment updated with new values                                  |
+| Remove `spec.security`                       | Both pod and container security contexts cleared                    |
+| Set `podSecurityContext` to nil              | Pod security context cleared, container security context preserved  |
+| Set `containerSecurityContext` to nil        | Container security contexts cleared, pod security context preserved |
+| Reconcile twice with same spec               | No Deployment update (idempotent)                                   |
+| External drift (manual removal)              | Corrected on next reconciliation cycle                              |
 
 ---
 

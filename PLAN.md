@@ -1,6 +1,10 @@
 # Memcached Kubernetes Operator (memcached.c5c3.io)
 
-A Kubernetes operator for managing Memcached clusters, built with Operator SDK (Go) and controller-runtime. Part of the CobaltCore (C5C3) ecosystem, it fills the gap of a production-ready Memcached operator by providing declarative management of Memcached instances with automated Deployment, headless Service, PDB, ServiceMonitor, and NetworkPolicy reconciliation, plus monitoring via memcached-exporter sidecar, high-availability primitives, security features (SASL, TLS, NetworkPolicies), and validation/defaulting webhooks.
+A Kubernetes operator for managing Memcached clusters, built with Operator SDK (Go) and controller-runtime.
+Part of the CobaltCore (C5C3) ecosystem, it fills the gap of a production-ready Memcached operator by providing
+declarative management of Memcached instances with automated Deployment, headless Service, PDB, ServiceMonitor,
+and NetworkPolicy reconciliation, plus monitoring via memcached-exporter sidecar, high-availability primitives,
+security features (SASL, TLS, NetworkPolicies), and validation/defaulting webhooks.
 
 ## Phase 1: Project Scaffolding & CRD Foundation
 

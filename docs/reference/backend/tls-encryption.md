@@ -38,7 +38,7 @@ configured unless `spec.security.tls.enabled` is explicitly set to `true`.
 
 ## CRD Field Path
 
-```
+```text
 spec.security.tls
 ```
 
@@ -52,19 +52,19 @@ type TLSSpec struct {
 }
 ```
 
-| Field | Type | Required | Default | Description |
-|-------|------|----------|---------|-------------|
-| `enabled` | `bool` | No | `false` | Controls whether TLS encryption is active |
-| `certificateSecretRef` | `LocalObjectReference` | No | — | Reference to the Secret containing `tls.crt`, `tls.key`, and optionally `ca.crt` |
-| `enableClientCert` | `bool` | No | `false` | When true, enables mutual TLS — Memcached requires and verifies client certificates using `ca.crt` from the Secret |
+| Field                  | Type                   | Required | Default | Description                                                                                                        |
+|------------------------|------------------------|----------|---------|--------------------------------------------------------------------------------------------------------------------|
+| `enabled`              | `bool`                 | No       | `false` | Controls whether TLS encryption is active                                                                          |
+| `certificateSecretRef` | `LocalObjectReference` | No       | —       | Reference to the Secret containing `tls.crt`, `tls.key`, and optionally `ca.crt`                                   |
+| `enableClientCert`     | `bool`                 | No       | `false` | When true, enables mutual TLS — Memcached requires and verifies client certificates using `ca.crt` from the Secret |
 
 The Secret referenced by `certificateSecretRef` must contain:
 
-| Key | Required | Description |
-|-----|----------|-------------|
-| `tls.crt` | Yes | TLS certificate chain |
-| `tls.key` | Yes | TLS private key |
-| `ca.crt` | Only when `enableClientCert: true` | CA certificate for verifying client certificates |
+| Key       | Required                           | Description                                      |
+|-----------|------------------------------------|--------------------------------------------------|
+| `tls.crt` | Yes                                | TLS certificate chain                            |
+| `tls.key` | Yes                                | TLS private key                                  |
+| `ca.crt`  | Only when `enableClientCert: true` | CA certificate for verifying client certificates |
 
 ---
 
@@ -114,12 +114,12 @@ func buildMemcachedArgs(
 When `tls` is non-nil and `tls.Enabled` is `true`, the following flags are
 appended to the args slice:
 
-| Flag | Value | Description |
-|------|-------|-------------|
-| `-Z` | — | Enables TLS in Memcached |
-| `-o` | `ssl_chain_cert=/etc/memcached/tls/tls.crt` | Path to the TLS certificate chain |
-| `-o` | `ssl_key=/etc/memcached/tls/tls.key` | Path to the TLS private key |
-| `-o` | `ssl_ca_cert=/etc/memcached/tls/ca.crt` | Path to the CA cert (only when `enableClientCert` is true) |
+| Flag | Value                                       | Description                                                |
+|------|---------------------------------------------|------------------------------------------------------------|
+| `-Z` | —                                           | Enables TLS in Memcached                                   |
+| `-o` | `ssl_chain_cert=/etc/memcached/tls/tls.crt` | Path to the TLS certificate chain                          |
+| `-o` | `ssl_key=/etc/memcached/tls/tls.key`        | Path to the TLS private key                                |
+| `-o` | `ssl_ca_cert=/etc/memcached/tls/ca.crt`     | Path to the CA cert (only when `enableClientCert` is true) |
 
 TLS flags are appended after SASL flags (`-Y`) when both are enabled, ensuring
 both features coexist.
@@ -130,24 +130,24 @@ both features coexist.
 
 In `constructDeployment`, TLS configuration is applied as follows:
 
-| CR Field | Deployment Field |
-|----------|-----------------|
-| `spec.security.tls.enabled` | Container args include `-Z`, `-o ssl_chain_cert`, `-o ssl_key` |
+| CR Field                                 | Deployment Field                                                        |
+|------------------------------------------|-------------------------------------------------------------------------|
+| `spec.security.tls.enabled`              | Container args include `-Z`, `-o ssl_chain_cert`, `-o ssl_key`          |
 | `spec.security.tls.certificateSecretRef` | `spec.template.spec.volumes[]` — Secret volume named `tls-certificates` |
-| `spec.security.tls.enableClientCert` | Container args include `-o ssl_ca_cert`; volume includes `ca.crt` item |
+| `spec.security.tls.enableClientCert`     | Container args include `-o ssl_ca_cert`; volume includes `ca.crt` item  |
 
 Container ports when TLS is enabled:
 
-| Port | Name | Protocol |
-|------|------|----------|
-| 11211 | `memcached` | TCP |
-| 11212 | `memcached-tls` | TCP |
+| Port  | Name            | Protocol |
+|-------|-----------------|----------|
+| 11211 | `memcached`     | TCP      |
+| 11212 | `memcached-tls` | TCP      |
 
 Volume mount on the `memcached` container:
 
-| Name | Mount Path | Read-Only |
-|------|------------|-----------|
-| `tls-certificates` | `/etc/memcached/tls` | Yes |
+| Name               | Mount Path           | Read-Only |
+|--------------------|----------------------|-----------|
+| `tls-certificates` | `/etc/memcached/tls` | Yes       |
 
 ---
 
@@ -155,10 +155,10 @@ Volume mount on the `memcached` container:
 
 In `constructService`, when TLS is enabled, port 11212 is added:
 
-| Port | Name | Target Port | Protocol |
-|------|------|-------------|----------|
-| 11211 | `memcached` | `memcached` | TCP |
-| 11212 | `memcached-tls` | `memcached-tls` | TCP |
+| Port  | Name            | Target Port     | Protocol |
+|-------|-----------------|-----------------|----------|
+| 11211 | `memcached`     | `memcached`     | TCP      |
+| 11212 | `memcached-tls` | `memcached-tls` | TCP      |
 
 When TLS is disabled, only port 11211 is present. Metrics port 9150 continues to
 be included independently when `spec.monitoring.enabled` is `true`.
@@ -316,16 +316,16 @@ Deployment. The Service has only the `memcached` port (11211/TCP).
 
 ## Runtime Behavior
 
-| Action | Result |
-|--------|--------|
-| Enable TLS (`enabled: true`) | `-Z` and `ssl_*` args added; TLS volume and mount added; port 11212 added to Deployment and Service |
-| Set `enableClientCert: true` | `-o ssl_ca_cert` arg added; `ca.crt` included in volume items |
-| Change `certificateSecretRef` | Deployment updated with new Secret reference |
-| Disable TLS (`enabled: false`) | All TLS args, volume, mount, and port 11212 removed from Deployment and Service |
-| Remove `spec.security.tls` | Same as disabled — all TLS artifacts removed |
-| Enable TLS + SASL | Both feature sets coexist: separate volumes, mounts, and args |
-| Reconcile twice with same spec | No Deployment or Service update (idempotent) |
-| External drift (manual removal) | Corrected on next reconciliation cycle |
+| Action                          | Result                                                                                              |
+|---------------------------------|-----------------------------------------------------------------------------------------------------|
+| Enable TLS (`enabled: true`)    | `-Z` and `ssl_*` args added; TLS volume and mount added; port 11212 added to Deployment and Service |
+| Set `enableClientCert: true`    | `-o ssl_ca_cert` arg added; `ca.crt` included in volume items                                       |
+| Change `certificateSecretRef`   | Deployment updated with new Secret reference                                                        |
+| Disable TLS (`enabled: false`)  | All TLS args, volume, mount, and port 11212 removed from Deployment and Service                     |
+| Remove `spec.security.tls`      | Same as disabled — all TLS artifacts removed                                                        |
+| Enable TLS + SASL               | Both feature sets coexist: separate volumes, mounts, and args                                       |
+| Reconcile twice with same spec  | No Deployment or Service update (idempotent)                                                        |
+| External drift (manual removal) | Corrected on next reconciliation cycle                                                              |
 
 ---
 

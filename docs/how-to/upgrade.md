@@ -136,7 +136,7 @@ kubectl rollout status deployment/memcached-operator-controller-manager \
 
 Wait until the rollout completes:
 
-```
+```text
 deployment "memcached-operator-controller-manager" successfully rolled out
 ```
 
@@ -273,9 +273,9 @@ is running correctly and all Memcached instances are healthy.
 
 ## Version Compatibility Matrix
 
-| Operator Version | Kubernetes Version | CRD API Version | cert-manager Version | Notes                    |
-|------------------|--------------------|-----------------|----------------------|--------------------------|
-| v0.1.0           | v1.28 -- v1.32     | v1alpha1        | v1.12+               | Initial release          |
+| Operator Version | Kubernetes Version | CRD API Version | cert-manager Version | Notes           |
+|------------------|--------------------|-----------------|----------------------|-----------------|
+| v0.1.0           | v1.28 -- v1.32     | v1alpha1        | v1.12+               | Initial release |
 
 Check the release notes for each version to confirm compatibility with your
 Kubernetes cluster version. The operator is tested against the Kubernetes

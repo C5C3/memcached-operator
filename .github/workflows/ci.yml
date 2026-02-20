@@ -1,3 +1,4 @@
+---
 name: CI
 
 on:
@@ -57,9 +58,11 @@ jobs:
 
       - name: Run tests with envtest
         run: |
-          export KUBEBUILDER_ASSETS="$(setup-envtest use 1.32.0 --bin-dir /tmp/envtest -p path)"
-          go test $(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /e2e) \
-            -coverprofile=cover.out -covermode=atomic -race
+          KUBEBUILDER_ASSETS="$(setup-envtest use 1.32.0 --bin-dir /tmp/envtest -p path)"
+          export KUBEBUILDER_ASSETS
+          go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' ./... \
+            | grep -v /e2e \
+            | xargs go test -coverprofile=cover.out -covermode=atomic -race
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4

@@ -23,23 +23,23 @@ and OCI-labeled image with no manual intervention.
 
 ### Builder Stage
 
-| Property | Value |
-|----------|-------|
-| Base image | `golang:1.25` |
-| `CGO_ENABLED` | `0` (static binary, no libc dependency) |
-| `GOOS` | `${TARGETOS:-linux}` |
-| `GOARCH` | `${TARGETARCH}` |
-| ldflags | `-s -w` (strip debug info and DWARF tables) |
+| Property      | Value                                       |
+|---------------|---------------------------------------------|
+| Base image    | `golang:1.25`                               |
+| `CGO_ENABLED` | `0` (static binary, no libc dependency)     |
+| `GOOS`        | `${TARGETOS:-linux}`                        |
+| `GOARCH`      | `${TARGETARCH}`                             |
+| ldflags       | `-s -w` (strip debug info and DWARF tables) |
 
 Build args declared in the builder stage:
 
-| ARG | Purpose |
-|-----|---------|
-| `TARGETOS` | Target OS for cross-compilation (default: `linux`) |
-| `TARGETARCH` | Target architecture (`amd64`, `arm64`) |
-| `VERSION` | Semantic version injected into the binary |
-| `GIT_COMMIT` | Git SHA injected into the binary |
-| `BUILD_DATE` | RFC 3339 timestamp injected into the binary |
+| ARG          | Purpose                                            |
+|--------------|----------------------------------------------------|
+| `TARGETOS`   | Target OS for cross-compilation (default: `linux`) |
+| `TARGETARCH` | Target architecture (`amd64`, `arm64`)             |
+| `VERSION`    | Semantic version injected into the binary          |
+| `GIT_COMMIT` | Git SHA injected into the binary                   |
+| `BUILD_DATE` | RFC 3339 timestamp injected into the binary        |
 
 The build command:
 
@@ -54,13 +54,13 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a \
 
 ### Runtime Stage
 
-| Property | Value |
-|----------|-------|
-| Base image | `gcr.io/distroless/static:nonroot` |
-| User | `65532:65532` (nonroot) |
-| Entrypoint | `/manager` |
-| Shell | None (distroless has no shell) |
-| Package manager | None |
+| Property        | Value                              |
+|-----------------|------------------------------------|
+| Base image      | `gcr.io/distroless/static:nonroot` |
+| User            | `65532:65532` (nonroot)            |
+| Entrypoint      | `/manager`                         |
+| Shell           | None (distroless has no shell)     |
+| Package manager | None                               |
 
 The runtime stage contains only the compiled `manager` binary. No build tools,
 Go runtime, source code, or system utilities are present.
@@ -73,16 +73,16 @@ Labels follow the [OCI Image Spec annotations](https://github.com/opencontainers
 Static labels are hardcoded; dynamic labels use build ARGs that must be re-declared
 after the `FROM` instruction (Docker scoping rule).
 
-| Label | Value | Type |
-|-------|-------|------|
-| `org.opencontainers.image.title` | `memcached-operator` | Static |
-| `org.opencontainers.image.description` | `Kubernetes operator for managing Memcached clusters` | Static |
-| `org.opencontainers.image.url` | `https://github.com/c5c3/memcached-operator` | Static |
-| `org.opencontainers.image.source` | `https://github.com/c5c3/memcached-operator` | Static |
-| `org.opencontainers.image.licenses` | `Apache-2.0` | Static |
-| `org.opencontainers.image.version` | `${VERSION}` | Dynamic |
-| `org.opencontainers.image.revision` | `${GIT_COMMIT}` | Dynamic |
-| `org.opencontainers.image.created` | `${BUILD_DATE}` | Dynamic |
+| Label                                  | Value                                                 | Type    |
+|----------------------------------------|-------------------------------------------------------|---------|
+| `org.opencontainers.image.title`       | `memcached-operator`                                  | Static  |
+| `org.opencontainers.image.description` | `Kubernetes operator for managing Memcached clusters` | Static  |
+| `org.opencontainers.image.url`         | `https://github.com/c5c3/memcached-operator`          | Static  |
+| `org.opencontainers.image.source`      | `https://github.com/c5c3/memcached-operator`          | Static  |
+| `org.opencontainers.image.licenses`    | `Apache-2.0`                                          | Static  |
+| `org.opencontainers.image.version`     | `${VERSION}`                                          | Dynamic |
+| `org.opencontainers.image.revision`    | `${GIT_COMMIT}`                                       | Dynamic |
+| `org.opencontainers.image.created`     | `${BUILD_DATE}`                                       | Dynamic |
 
 Inspect labels with:
 
@@ -98,17 +98,17 @@ docker inspect --format='{{json .Config.Labels}}' controller:latest | jq .
 
 Three package-level variables are set at build time via `-X` ldflags:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `Version` | `dev` | Semantic version or git describe output |
-| `GitCommit` | `unknown` | Full git commit SHA |
-| `BuildDate` | `unknown` | UTC build timestamp in RFC 3339 format |
+| Variable    | Default   | Description                             |
+|-------------|-----------|-----------------------------------------|
+| `Version`   | `dev`     | Semantic version or git describe output |
+| `GitCommit` | `unknown` | Full git commit SHA                     |
+| `BuildDate` | `unknown` | UTC build timestamp in RFC 3339 format  |
 
 ### Functions
 
 **`String() string`** — Returns a formatted version string:
 
-```
+```text
 v1.2.3 (commit: abc1234, built: 2026-02-20T12:00:00Z)
 ```
 
@@ -130,11 +130,11 @@ type VersionInfo struct {
 
 Defined at the top of the Makefile with `?=` for override-friendly defaults:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `VERSION` | `$(shell git describe --tags --always --dirty)` | Version from the latest git tag, falls back to short SHA |
-| `GIT_COMMIT` | `$(shell git rev-parse HEAD)` | Full 40-character commit SHA |
-| `BUILD_DATE` | `$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")` | Current UTC time in RFC 3339 |
+| Variable     | Default                                         | Description                                              |
+|--------------|-------------------------------------------------|----------------------------------------------------------|
+| `VERSION`    | `$(shell git describe --tags --always --dirty)` | Version from the latest git tag, falls back to short SHA |
+| `GIT_COMMIT` | `$(shell git rev-parse HEAD)`                   | Full 40-character commit SHA                             |
+| `BUILD_DATE` | `$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")`        | Current UTC time in RFC 3339                             |
 
 All three commands include `2>/dev/null || echo <fallback>` guards for CI
 environments without a git history or tags.
@@ -172,10 +172,10 @@ The Dockerfile declares `TARGETOS` and `TARGETARCH` build args that Docker
 BuildKit automatically populates during multi-platform builds. The `go build`
 command uses these to set `GOOS` and `GOARCH`:
 
-| Platform | `TARGETOS` | `TARGETARCH` |
-|----------|------------|--------------|
-| Linux AMD64 | `linux` | `amd64` |
-| Linux ARM64 | `linux` | `arm64` |
+| Platform    | `TARGETOS` | `TARGETARCH` |
+|-------------|------------|--------------|
+| Linux AMD64 | `linux`    | `amd64`      |
+| Linux ARM64 | `linux`    | `arm64`      |
 
 `CGO_ENABLED=0` ensures a fully static binary with no libc dependency, which is
 required for the distroless runtime image (no libc available).
@@ -187,24 +187,24 @@ required for the distroless runtime image (no libc available).
 The `.dockerignore` file excludes non-essential files from the build context to
 reduce image build time and prevent leaking sensitive or unnecessary files:
 
-| Pattern | Reason |
-|---------|--------|
-| `.git` | Git history not needed in build |
-| `bin/` | Local build artifacts |
-| `testbin/` | Test binaries |
-| `vendor/` | Vendored dependencies (using module download) |
-| `docs/` | Documentation |
-| `cover.out` | Coverage reports |
-| `*.md` | Markdown files |
-| `.gitignore` | Git configuration |
-| `.dockerignore` | Docker configuration |
-| `.golangci.yml` | Linter configuration |
-| `.serena/` | IDE configuration |
-| `.planwerk/` | Planning files |
-| `LICENSES/` | License files |
-| `hack/` | Build scripts |
-| `config/` | Kustomize manifests |
-| `test/` | E2E test fixtures |
+| Pattern         | Reason                                        |
+|-----------------|-----------------------------------------------|
+| `.git`          | Git history not needed in build               |
+| `bin/`          | Local build artifacts                         |
+| `testbin/`      | Test binaries                                 |
+| `vendor/`       | Vendored dependencies (using module download) |
+| `docs/`         | Documentation                                 |
+| `cover.out`     | Coverage reports                              |
+| `*.md`          | Markdown files                                |
+| `.gitignore`    | Git configuration                             |
+| `.dockerignore` | Docker configuration                          |
+| `.golangci.yml` | Linter configuration                          |
+| `.serena/`      | IDE configuration                             |
+| `.planwerk/`    | Planning files                                |
+| `LICENSES/`     | License files                                 |
+| `hack/`         | Build scripts                                 |
+| `config/`       | Kustomize manifests                           |
+| `test/`         | E2E test fixtures                             |
 
 Only `go.mod`, `go.sum`, `cmd/`, `api/`, and `internal/` are included in the
 build context.
@@ -213,11 +213,11 @@ build context.
 
 ## Security Properties
 
-| Property | Implementation |
-|----------|---------------|
-| Non-root execution | `USER 65532:65532` in runtime stage |
-| No shell access | distroless image contains no shell binary |
-| No package manager | distroless image contains no apt/apk |
-| Static binary | `CGO_ENABLED=0` eliminates runtime library dependencies |
-| Minimal attack surface | Only the `manager` binary is present in the final image |
-| Stripped binary | `-s -w` ldflags remove symbol tables and debug information |
+| Property               | Implementation                                             |
+|------------------------|------------------------------------------------------------|
+| Non-root execution     | `USER 65532:65532` in runtime stage                        |
+| No shell access        | distroless image contains no shell binary                  |
+| No package manager     | distroless image contains no apt/apk                       |
+| Static binary          | `CGO_ENABLED=0` eliminates runtime library dependencies    |
+| Minimal attack surface | Only the `manager` binary is present in the final image    |
+| Stripped binary        | `-s -w` ldflags remove symbol tables and debug information |

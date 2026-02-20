@@ -19,11 +19,11 @@ type MemcachedReconciler struct {
 }
 ```
 
-| Field      | Type                    | Description                                                                 |
-|------------|-------------------------|-----------------------------------------------------------------------------|
-| `Client`   | `client.Client`         | Embedded controller-runtime client for reading/writing Kubernetes objects    |
-| `Scheme`   | `*runtime.Scheme`       | Runtime scheme for GVK resolution (serialization, deserialization, watches)  |
-| `Recorder` | `events.EventRecorder`  | Kubernetes event recorder for emitting events on Memcached CRs              |
+| Field      | Type                   | Description                                                                 |
+|------------|------------------------|-----------------------------------------------------------------------------|
+| `Client`   | `client.Client`        | Embedded controller-runtime client for reading/writing Kubernetes objects   |
+| `Scheme`   | `*runtime.Scheme`      | Runtime scheme for GVK resolution (serialization, deserialization, watches) |
+| `Recorder` | `events.EventRecorder` | Kubernetes event recorder for emitting events on Memcached CRs              |
 
 The struct satisfies the `reconcile.Reconciler` interface by implementing the
 `Reconcile(ctx, ctrl.Request) (ctrl.Result, error)` method.
@@ -78,11 +78,11 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 ### Behavior
 
-| Scenario                           | Return Value              | Effect                          |
-|------------------------------------|---------------------------|---------------------------------|
-| CR not found (deleted)             | `ctrl.Result{}, nil`     | No requeue, no error logged     |
-| CR fetch fails (non-NotFound)      | `ctrl.Result{}, err`     | Requeue with exponential backoff|
-| CR fetched successfully            | `ctrl.Result{}, nil`     | Log reconciliation, no requeue  |
+| Scenario                      | Return Value         | Effect                           |
+|-------------------------------|----------------------|----------------------------------|
+| CR not found (deleted)        | `ctrl.Result{}, nil` | No requeue, no error logged      |
+| CR fetch fails (non-NotFound) | `ctrl.Result{}, err` | Requeue with exponential backoff |
+| CR fetched successfully       | `ctrl.Result{}, nil` | Log reconciliation, no requeue   |
 
 The scaffold returns an empty result after a successful fetch. Subsequent
 features (MO-0005 through MO-0014) add reconciliation logic for Deployments,
@@ -110,13 +110,13 @@ func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 ### Watch Types
 
-| Method | Resource Type                   | API Group            | Trigger Condition                                                         |
-|--------|---------------------------------|----------------------|---------------------------------------------------------------------------|
-| `For`  | `Memcached`                     | `memcached.c5c3.io`  | Any create, update, or delete of a Memcached CR                           |
-| `Owns` | `Deployment`                    | `apps`               | Changes to Deployments with an owner reference pointing to a Memcached CR |
-| `Owns` | `Service`                       | (core)               | Changes to Services with an owner reference pointing to a Memcached CR    |
-| `Owns` | `PodDisruptionBudget`           | `policy`             | Changes to PDBs with an owner reference pointing to a Memcached CR        |
-| `Owns` | `NetworkPolicy`                 | `networking.k8s.io`  | Changes to NetworkPolicies with an owner reference pointing to a Memcached CR |
+| Method | Resource Type         | API Group           | Trigger Condition                                                             |
+|--------|-----------------------|---------------------|-------------------------------------------------------------------------------|
+| `For`  | `Memcached`           | `memcached.c5c3.io` | Any create, update, or delete of a Memcached CR                               |
+| `Owns` | `Deployment`          | `apps`              | Changes to Deployments with an owner reference pointing to a Memcached CR     |
+| `Owns` | `Service`             | (core)              | Changes to Services with an owner reference pointing to a Memcached CR        |
+| `Owns` | `PodDisruptionBudget` | `policy`            | Changes to PDBs with an owner reference pointing to a Memcached CR            |
+| `Owns` | `NetworkPolicy`       | `networking.k8s.io` | Changes to NetworkPolicies with an owner reference pointing to a Memcached CR |
 
 ### How `For` Works
 
@@ -171,17 +171,17 @@ Kubebuilder RBAC markers on the reconciler generate the `ClusterRole` rules in
 
 The markers produce the following rules in `config/rbac/role.yaml`:
 
-| API Group                | Resource                | Verbs                                              | Purpose                                  |
-|--------------------------|-------------------------|----------------------------------------------------|------------------------------------------|
-| `memcached.c5c3.io`      | `memcacheds`           | get, list, watch, create, update, patch, delete    | Full CRUD on Memcached CRs               |
-| `memcached.c5c3.io`      | `memcacheds/status`    | get, update, patch                                 | Status subresource updates               |
-| `memcached.c5c3.io`      | `memcacheds/finalizers`| update                                             | Finalizer management                     |
-| `apps`                   | `deployments`          | get, list, watch, create, update, patch, delete    | Manage Memcached Deployments             |
-| (core)                   | `services`             | get, list, watch, create, update, patch, delete    | Manage headless Services                 |
-| `policy`                 | `poddisruptionbudgets` | get, list, watch, create, update, patch, delete    | Manage PodDisruptionBudgets              |
-| `networking.k8s.io`      | `networkpolicies`      | get, list, watch, create, update, patch, delete    | Manage NetworkPolicies                   |
-| `monitoring.coreos.com`  | `servicemonitors`      | get, list, watch, create, update, patch, delete    | Manage Prometheus ServiceMonitors        |
-| (core)                   | `events`               | create, patch                                      | Emit Kubernetes events                   |
+| API Group               | Resource                | Verbs                                           | Purpose                           |
+|-------------------------|-------------------------|-------------------------------------------------|-----------------------------------|
+| `memcached.c5c3.io`     | `memcacheds`            | get, list, watch, create, update, patch, delete | Full CRUD on Memcached CRs        |
+| `memcached.c5c3.io`     | `memcacheds/status`     | get, update, patch                              | Status subresource updates        |
+| `memcached.c5c3.io`     | `memcacheds/finalizers` | update                                          | Finalizer management              |
+| `apps`                  | `deployments`           | get, list, watch, create, update, patch, delete | Manage Memcached Deployments      |
+| (core)                  | `services`              | get, list, watch, create, update, patch, delete | Manage headless Services          |
+| `policy`                | `poddisruptionbudgets`  | get, list, watch, create, update, patch, delete | Manage PodDisruptionBudgets       |
+| `networking.k8s.io`     | `networkpolicies`       | get, list, watch, create, update, patch, delete | Manage NetworkPolicies            |
+| `monitoring.coreos.com` | `servicemonitors`       | get, list, watch, create, update, patch, delete | Manage Prometheus ServiceMonitors |
+| (core)                  | `events`                | create, patch                                   | Emit Kubernetes events            |
 
 ### Why RBAC Markers Are Added Now
 
@@ -200,7 +200,7 @@ reconciled in MO-0014) are declared in this scaffold because:
 
 ## Reconciliation Flow Diagram
 
-```
+```text
                      ┌──────────────────────────────┐
                      │     Kubernetes API Server     │
                      └──────┬───────────┬───────────┘
@@ -235,13 +235,13 @@ reconciled in MO-0014) are declared in this scaffold because:
 
 **Event-to-reconcile mapping:**
 
-| Event Source            | Event Type       | Reconciled Object         |
-|-------------------------|------------------|---------------------------|
-| Memcached CR            | Create/Update/Delete | The Memcached CR itself |
-| Owned Deployment        | Create/Update/Delete | The owning Memcached CR |
-| Owned Service           | Create/Update/Delete | The owning Memcached CR |
-| Owned PDB               | Create/Update/Delete | The owning Memcached CR |
-| Owned NetworkPolicy     | Create/Update/Delete | The owning Memcached CR |
-| Unowned Deployment      | Any              | (not reconciled)          |
+| Event Source        | Event Type           | Reconciled Object       |
+|---------------------|----------------------|-------------------------|
+| Memcached CR        | Create/Update/Delete | The Memcached CR itself |
+| Owned Deployment    | Create/Update/Delete | The owning Memcached CR |
+| Owned Service       | Create/Update/Delete | The owning Memcached CR |
+| Owned PDB           | Create/Update/Delete | The owning Memcached CR |
+| Owned NetworkPolicy | Create/Update/Delete | The owning Memcached CR |
+| Unowned Deployment  | Any                  | (not reconciled)        |
 
 [owner-ref]: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/

@@ -1,0 +1,10 @@
+{
+  "MD010": true,
+  "MD013": { "line_length": 400 },
+  "MD024": { "siblings_only": true },
+  "MD031": false,
+  "MD032": false,
+  "MD036": false,
+  "MD040": true,
+  "MD060": false
+}

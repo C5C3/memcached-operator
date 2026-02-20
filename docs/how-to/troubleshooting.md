@@ -270,7 +270,7 @@ After the CRD is installed, the operator will create the ServiceMonitor on the n
 
 Creating or updating a Memcached CR is rejected with a validation error.
 
-```
+```text
 Error from server (Invalid): error when creating "memcached.yaml":
 admission webhook "vmemcached-v1alpha1.kb.io" denied the request: ...
 ```
@@ -290,7 +290,7 @@ kubectl apply -f memcached.yaml
 
 The webhook validates that `resources.limits.memory >= maxMemoryMB (in bytes) + 32Mi` (operational overhead).
 
-```
+```text
 spec.resources.limits.memory: Invalid value: "128Mi": memory limit must be at least 96Mi (maxMemoryMB=64Mi + 32Mi overhead)
 ```
 
@@ -300,7 +300,7 @@ Fix: Increase `resources.limits.memory` or decrease `maxMemoryMB`.
 
 The webhook validates that PDB `minAvailable` (when set as an integer) must be strictly less than `replicas`.
 
-```
+```text
 spec.highAvailability.podDisruptionBudget.minAvailable: Invalid value: 3: minAvailable (3) must be less than replicas (3)
 ```
 
@@ -325,7 +325,7 @@ Fix: Specify only one of `minAvailable` or `maxUnavailable`.
 
 When SASL is enabled, `credentialsSecretRef.name` must be set. When TLS is enabled, `certificateSecretRef.name` must be set.
 
-```
+```text
 spec.security.sasl.credentialsSecretRef.name: Required value: credentialsSecretRef.name is required when SASL is enabled
 ```
 
@@ -335,7 +335,7 @@ Fix: Provide the required Secret reference name.
 
 When graceful shutdown is enabled, `terminationGracePeriodSeconds` must exceed `preStopDelaySeconds` to ensure the preStop hook completes before the kubelet sends SIGKILL.
 
-```
+```text
 spec.highAvailability.gracefulShutdown.terminationGracePeriodSeconds: Invalid value: 10: terminationGracePeriodSeconds (10) must exceed preStopDelaySeconds (10)
 ```
 
