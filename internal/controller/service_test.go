@@ -291,3 +291,152 @@ func TestConstructService_MonitoringEnabledPortDetails(t *testing.T) {
 		t.Errorf("metrics protocol = %q, want TCP", metricsPort.Protocol)
 	}
 }
+
+func TestConstructService_TLSEnabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-svc", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "my-tls-secret",
+					},
+				},
+			},
+		},
+	}
+	svc := &corev1.Service{}
+
+	constructService(mc, svc)
+
+	if len(svc.Spec.Ports) != 2 {
+		t.Fatalf("expected 2 ports, got %d", len(svc.Spec.Ports))
+	}
+
+	if svc.Spec.Ports[0].Name != testPortName {
+		t.Errorf("first port name = %q, want %q", svc.Spec.Ports[0].Name, testPortName)
+	}
+	if svc.Spec.Ports[0].Port != 11211 {
+		t.Errorf("first port = %d, want 11211", svc.Spec.Ports[0].Port)
+	}
+
+	if svc.Spec.Ports[1].Name != tlsPortName {
+		t.Errorf("second port name = %q, want %q", svc.Spec.Ports[1].Name, tlsPortName)
+	}
+	if svc.Spec.Ports[1].Port != 11212 {
+		t.Errorf("second port = %d, want 11212", svc.Spec.Ports[1].Port)
+	}
+	if svc.Spec.Ports[1].TargetPort != intstr.FromString(tlsPortName) {
+		t.Errorf("second targetPort = %v, want %q", svc.Spec.Ports[1].TargetPort, tlsPortName)
+	}
+	if svc.Spec.Ports[1].Protocol != corev1.ProtocolTCP {
+		t.Errorf("second protocol = %q, want TCP", svc.Spec.Ports[1].Protocol)
+	}
+}
+
+func TestConstructService_TLSDisabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		security *memcachedv1alpha1.SecuritySpec
+	}{
+		{name: "nil Security", security: nil},
+		{name: "nil TLS", security: &memcachedv1alpha1.SecuritySpec{}},
+		{
+			name: "TLS disabled",
+			security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{Enabled: false},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: "default"},
+				Spec:       memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			}
+			svc := &corev1.Service{}
+
+			constructService(mc, svc)
+
+			if len(svc.Spec.Ports) != 1 {
+				t.Fatalf("expected 1 port, got %d", len(svc.Spec.Ports))
+			}
+			if svc.Spec.Ports[0].Name != testPortName {
+				t.Errorf("port name = %q, want %q", svc.Spec.Ports[0].Name, testPortName)
+			}
+			if svc.Spec.Ports[0].Port != 11211 {
+				t.Errorf("port = %d, want 11211", svc.Spec.Ports[0].Port)
+			}
+		})
+	}
+}
+
+func TestConstructService_TLSWithMonitoring(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-mon", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "my-tls-secret",
+					},
+				},
+			},
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+	svc := &corev1.Service{}
+
+	constructService(mc, svc)
+
+	if len(svc.Spec.Ports) != 3 {
+		t.Fatalf("expected 3 ports, got %d", len(svc.Spec.Ports))
+	}
+
+	// Port 11211 (memcached).
+	if svc.Spec.Ports[0].Name != testPortName {
+		t.Errorf("port[0] name = %q, want %q", svc.Spec.Ports[0].Name, testPortName)
+	}
+	if svc.Spec.Ports[0].Port != 11211 {
+		t.Errorf("port[0] = %d, want 11211", svc.Spec.Ports[0].Port)
+	}
+
+	// Port 11212 (memcached-tls).
+	if svc.Spec.Ports[1].Name != tlsPortName {
+		t.Errorf("port[1] name = %q, want %q", svc.Spec.Ports[1].Name, tlsPortName)
+	}
+	if svc.Spec.Ports[1].Port != 11212 {
+		t.Errorf("port[1] = %d, want 11212", svc.Spec.Ports[1].Port)
+	}
+
+	// Port 9150 (metrics).
+	if svc.Spec.Ports[2].Name != "metrics" {
+		t.Errorf("port[2] name = %q, want %q", svc.Spec.Ports[2].Name, "metrics")
+	}
+	if svc.Spec.Ports[2].Port != 9150 {
+		t.Errorf("port[2] = %d, want 9150", svc.Spec.Ports[2].Port)
+	}
+}
+
+func TestConstructService_TLSNilSecurity(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-nil", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{Security: nil},
+	}
+	svc := &corev1.Service{}
+
+	constructService(mc, svc)
+
+	// Should not panic and only have memcached port.
+	if len(svc.Spec.Ports) != 1 {
+		t.Fatalf("expected 1 port, got %d", len(svc.Spec.Ports))
+	}
+	if svc.Spec.Ports[0].Port != 11211 {
+		t.Errorf("port = %d, want 11211", svc.Spec.Ports[0].Port)
+	}
+}

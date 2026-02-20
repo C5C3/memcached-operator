@@ -171,7 +171,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildMemcachedArgs(tt.config, nil)
+			got := buildMemcachedArgs(tt.config, nil, nil)
 
 			if len(got) != len(tt.expected) {
 				t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
@@ -1701,7 +1701,7 @@ func TestBuildMemcachedArgs_SASLEnabled(t *testing.T) {
 		},
 	}
 
-	got := buildMemcachedArgs(nil, sasl)
+	got := buildMemcachedArgs(nil, sasl, nil)
 
 	// Should contain -Y /etc/memcached/sasl/password-file after standard flags.
 	expected := []string{
@@ -1725,7 +1725,7 @@ func TestBuildMemcachedArgs_SASLDisabled(t *testing.T) {
 		Enabled: false,
 	}
 
-	got := buildMemcachedArgs(nil, sasl)
+	got := buildMemcachedArgs(nil, sasl, nil)
 
 	// Should NOT contain -Y flag.
 	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
@@ -1741,7 +1741,7 @@ func TestBuildMemcachedArgs_SASLDisabled(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_SASLNil(t *testing.T) {
-	got := buildMemcachedArgs(nil, nil)
+	got := buildMemcachedArgs(nil, nil, nil)
 
 	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
 	if len(got) != len(expected) {
@@ -1762,7 +1762,7 @@ func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
 		},
 	}
 
-	got := buildMemcachedArgs(config, sasl)
+	got := buildMemcachedArgs(config, sasl, nil)
 
 	// Order: standard flags, verbosity, -Y flag, extra args.
 	expected := []string{
@@ -2090,5 +2090,665 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	}
 	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-secret" {
 		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-secret")
+	}
+}
+
+func TestBuildTLSVolume_Enabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-vol", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "my-tls-secret",
+					},
+				},
+			},
+		},
+	}
+
+	vol := buildTLSVolume(mc)
+
+	if vol == nil {
+		t.Fatal("expected non-nil Volume")
+	}
+	if vol.Name != tlsVolumeName {
+		t.Errorf("volume name = %q, want %q", vol.Name, tlsVolumeName)
+	}
+	if vol.Secret == nil {
+		t.Fatal("expected Secret volume source")
+	}
+	if vol.Secret.SecretName != "my-tls-secret" {
+		t.Errorf("secretName = %q, want %q", vol.Secret.SecretName, "my-tls-secret")
+	}
+	if len(vol.Secret.Items) != 2 {
+		t.Fatalf("expected 2 Items entries, got %d", len(vol.Secret.Items))
+	}
+	if vol.Secret.Items[0].Key != "tls.crt" {
+		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, "tls.crt")
+	}
+	if vol.Secret.Items[0].Path != "tls.crt" {
+		t.Errorf("Items[0].Path = %q, want %q", vol.Secret.Items[0].Path, "tls.crt")
+	}
+	if vol.Secret.Items[1].Key != "tls.key" {
+		t.Errorf("Items[1].Key = %q, want %q", vol.Secret.Items[1].Key, "tls.key")
+	}
+	if vol.Secret.Items[1].Path != "tls.key" {
+		t.Errorf("Items[1].Path = %q, want %q", vol.Secret.Items[1].Path, "tls.key")
+	}
+}
+
+func TestBuildTLSVolume_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name     string
+		security *memcachedv1alpha1.SecuritySpec
+	}{
+		{name: "nil Security", security: nil},
+		{name: "nil TLS", security: &memcachedv1alpha1.SecuritySpec{}},
+		{
+			name: "TLS disabled",
+			security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{Enabled: false},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			}
+
+			if vol := buildTLSVolume(mc); vol != nil {
+				t.Errorf("expected nil Volume, got %+v", vol)
+			}
+		})
+	}
+}
+
+func TestBuildTLSVolume_WithClientCert(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-mtls", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled:          true,
+					EnableClientCert: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "my-tls-secret",
+					},
+				},
+			},
+		},
+	}
+
+	vol := buildTLSVolume(mc)
+
+	if vol == nil {
+		t.Fatal("expected non-nil Volume")
+	}
+	if len(vol.Secret.Items) != 3 {
+		t.Fatalf("expected 3 Items entries, got %d", len(vol.Secret.Items))
+	}
+	if vol.Secret.Items[2].Key != "ca.crt" {
+		t.Errorf("Items[2].Key = %q, want %q", vol.Secret.Items[2].Key, "ca.crt")
+	}
+	if vol.Secret.Items[2].Path != "ca.crt" {
+		t.Errorf("Items[2].Path = %q, want %q", vol.Secret.Items[2].Path, "ca.crt")
+	}
+}
+
+func TestBuildTLSVolumeMount_Enabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-mount", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "my-tls-secret",
+					},
+				},
+			},
+		},
+	}
+
+	vm := buildTLSVolumeMount(mc)
+
+	if vm == nil {
+		t.Fatal("expected non-nil VolumeMount")
+	}
+	if vm.Name != tlsVolumeName {
+		t.Errorf("volumeMount name = %q, want %q", vm.Name, tlsVolumeName)
+	}
+	if vm.MountPath != tlsMountPath {
+		t.Errorf("mountPath = %q, want %q", vm.MountPath, tlsMountPath)
+	}
+	if !vm.ReadOnly {
+		t.Error("expected readOnly=true")
+	}
+}
+
+func TestBuildTLSVolumeMount_ReturnsNil(t *testing.T) {
+	tests := []struct {
+		name     string
+		security *memcachedv1alpha1.SecuritySpec
+	}{
+		{name: "nil Security", security: nil},
+		{name: "nil TLS", security: &memcachedv1alpha1.SecuritySpec{}},
+		{
+			name: "TLS disabled",
+			security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{Enabled: false},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			}
+
+			if vm := buildTLSVolumeMount(mc); vm != nil {
+				t.Errorf("expected nil VolumeMount, got %+v", vm)
+			}
+		})
+	}
+}
+
+func TestBuildMemcachedArgs_TLSEnabled(t *testing.T) {
+	tls := &memcachedv1alpha1.TLSSpec{
+		Enabled: true,
+		CertificateSecretRef: corev1.LocalObjectReference{
+			Name: "my-tls-secret",
+		},
+	}
+
+	got := buildMemcachedArgs(nil, nil, tls)
+
+	expected := []string{
+		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-Z",
+		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
+		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+	}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q\ngot:  %v\nwant: %v",
+				i, got[i], expected[i], got, expected)
+		}
+	}
+}
+
+func TestBuildMemcachedArgs_TLSDisabled(t *testing.T) {
+	tls := &memcachedv1alpha1.TLSSpec{
+		Enabled: false,
+	}
+
+	got := buildMemcachedArgs(nil, nil, tls)
+
+	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q", i, got[i], expected[i])
+		}
+	}
+}
+
+func TestBuildMemcachedArgs_TLSNil(t *testing.T) {
+	got := buildMemcachedArgs(nil, nil, nil)
+
+	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+}
+
+func TestBuildMemcachedArgs_TLSWithClientCert(t *testing.T) {
+	tls := &memcachedv1alpha1.TLSSpec{
+		Enabled:          true,
+		EnableClientCert: true,
+		CertificateSecretRef: corev1.LocalObjectReference{
+			Name: "my-tls-secret",
+		},
+	}
+
+	got := buildMemcachedArgs(nil, nil, tls)
+
+	expected := []string{
+		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-Z",
+		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
+		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+		"-o", "ssl_ca_cert=/etc/memcached/tls/ca.crt",
+	}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q\ngot:  %v\nwant: %v",
+				i, got[i], expected[i], got, expected)
+		}
+	}
+}
+
+func TestBuildMemcachedArgs_TLSWithSASL(t *testing.T) {
+	sasl := &memcachedv1alpha1.SASLSpec{
+		Enabled: true,
+		CredentialsSecretRef: corev1.LocalObjectReference{
+			Name: "my-sasl-secret",
+		},
+	}
+	tls := &memcachedv1alpha1.TLSSpec{
+		Enabled: true,
+		CertificateSecretRef: corev1.LocalObjectReference{
+			Name: "my-tls-secret",
+		},
+	}
+
+	got := buildMemcachedArgs(nil, sasl, tls)
+
+	// Order: standard flags, SASL -Y, TLS -Z/ssl flags.
+	expected := []string{
+		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-Y", "/etc/memcached/sasl/password-file",
+		"-Z",
+		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
+		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+	}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q\ngot:  %v\nwant: %v",
+				i, got[i], expected[i], got, expected)
+		}
+	}
+}
+
+func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
+	config := &memcachedv1alpha1.MemcachedConfig{
+		Verbosity: 1,
+		ExtraArgs: []string{"-o", "modern"},
+	}
+	tls := &memcachedv1alpha1.TLSSpec{
+		Enabled: true,
+		CertificateSecretRef: corev1.LocalObjectReference{
+			Name: "my-tls-secret",
+		},
+	}
+
+	got := buildMemcachedArgs(config, nil, tls)
+
+	// Order: standard flags, verbosity, TLS flags, extra args.
+	expected := []string{
+		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-v",
+		"-Z",
+		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
+		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+		"-o", "modern",
+	}
+	if len(got) != len(expected) {
+		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
+			len(got), len(expected), got, expected)
+	}
+	for i := range expected {
+		if got[i] != expected[i] {
+			t.Errorf("buildMemcachedArgs()[%d] = %q, want %q\ngot:  %v\nwant: %v",
+				i, got[i], expected[i], got, expected)
+		}
+	}
+}
+
+func TestConstructDeployment_TLSEnabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-dep", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "my-tls-secret",
+					},
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	// Verify -Z flag in args.
+	foundZ := false
+	for _, arg := range container.Args {
+		if arg == "-Z" {
+			foundZ = true
+			break
+		}
+	}
+	if !foundZ {
+		t.Errorf("expected -Z flag in args, got %v", container.Args)
+	}
+
+	// Verify ssl_chain_cert in args.
+	foundChainCert := false
+	for _, arg := range container.Args {
+		if arg == "ssl_chain_cert=/etc/memcached/tls/tls.crt" {
+			foundChainCert = true
+			break
+		}
+	}
+	if !foundChainCert {
+		t.Errorf("expected ssl_chain_cert arg, got %v", container.Args)
+	}
+
+	// Verify ssl_key in args.
+	foundKey := false
+	for _, arg := range container.Args {
+		if arg == "ssl_key=/etc/memcached/tls/tls.key" {
+			foundKey = true
+			break
+		}
+	}
+	if !foundKey {
+		t.Errorf("expected ssl_key arg, got %v", container.Args)
+	}
+
+	// Verify volume mount on container.
+	if len(container.VolumeMounts) != 1 {
+		t.Fatalf("expected 1 volumeMount, got %d", len(container.VolumeMounts))
+	}
+	vm := container.VolumeMounts[0]
+	if vm.Name != tlsVolumeName {
+		t.Errorf("volumeMount name = %q, want %q", vm.Name, tlsVolumeName)
+	}
+	if vm.MountPath != tlsMountPath {
+		t.Errorf("volumeMount mountPath = %q, want %q", vm.MountPath, tlsMountPath)
+	}
+	if !vm.ReadOnly {
+		t.Error("expected volumeMount readOnly=true")
+	}
+
+	// Verify volume on pod spec.
+	volumes := dep.Spec.Template.Spec.Volumes
+	if len(volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(volumes))
+	}
+	vol := volumes[0]
+	if vol.Name != tlsVolumeName {
+		t.Errorf("volume name = %q, want %q", vol.Name, tlsVolumeName)
+	}
+	if vol.Secret == nil {
+		t.Fatal("expected Secret volume source")
+	}
+	if vol.Secret.SecretName != "my-tls-secret" {
+		t.Errorf("volume secretName = %q, want %q", vol.Secret.SecretName, "my-tls-secret")
+	}
+	if len(vol.Secret.Items) != 2 {
+		t.Fatalf("expected 2 Items entries, got %d", len(vol.Secret.Items))
+	}
+}
+
+func TestConstructDeployment_TLSDisabled(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: "default"},
+		Spec:       memcachedv1alpha1.MemcachedSpec{},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	// No -Z flag.
+	for _, arg := range container.Args {
+		if arg == "-Z" {
+			t.Error("unexpected -Z flag when TLS is not enabled")
+		}
+	}
+
+	// No volume mounts.
+	if len(container.VolumeMounts) != 0 {
+		t.Errorf("expected 0 volumeMounts, got %d: %v", len(container.VolumeMounts), container.VolumeMounts)
+	}
+
+	// No volumes.
+	if len(dep.Spec.Template.Spec.Volumes) != 0 {
+		t.Errorf("expected 0 volumes, got %d: %v", len(dep.Spec.Template.Spec.Volumes), dep.Spec.Template.Spec.Volumes)
+	}
+
+	// Only one port (11211).
+	if len(container.Ports) != 1 {
+		t.Fatalf("expected 1 port, got %d", len(container.Ports))
+	}
+	if container.Ports[0].ContainerPort != 11211 {
+		t.Errorf("port = %d, want 11211", container.Ports[0].ContainerPort)
+	}
+}
+
+func TestConstructDeployment_TLSWithSASL(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-sasl", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				SASL: &memcachedv1alpha1.SASLSpec{
+					Enabled: true,
+					CredentialsSecretRef: corev1.LocalObjectReference{
+						Name: "sasl-creds",
+					},
+				},
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "tls-certs",
+					},
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	// Both -Y and -Z flags in args.
+	foundY := false
+	foundZ := false
+	yIdx := -1
+	zIdx := -1
+	for i, arg := range container.Args {
+		if arg == "-Y" {
+			foundY = true
+			yIdx = i
+		}
+		if arg == "-Z" {
+			foundZ = true
+			zIdx = i
+		}
+	}
+	if !foundY {
+		t.Errorf("expected -Y flag in args, got %v", container.Args)
+	}
+	if !foundZ {
+		t.Errorf("expected -Z flag in args, got %v", container.Args)
+	}
+	if yIdx >= 0 && zIdx >= 0 && yIdx >= zIdx {
+		t.Errorf("expected -Y (index %d) before -Z (index %d)", yIdx, zIdx)
+	}
+
+	// Both volume mounts: sasl-credentials and tls-certificates.
+	if len(container.VolumeMounts) != 2 {
+		t.Fatalf("expected 2 volumeMounts, got %d", len(container.VolumeMounts))
+	}
+	if container.VolumeMounts[0].Name != "sasl-credentials" {
+		t.Errorf("volumeMount[0] name = %q, want %q", container.VolumeMounts[0].Name, "sasl-credentials")
+	}
+	if container.VolumeMounts[1].Name != tlsVolumeName {
+		t.Errorf("volumeMount[1] name = %q, want %q", container.VolumeMounts[1].Name, tlsVolumeName)
+	}
+
+	// Both volumes.
+	volumes := dep.Spec.Template.Spec.Volumes
+	if len(volumes) != 2 {
+		t.Fatalf("expected 2 volumes, got %d", len(volumes))
+	}
+	if volumes[0].Name != "sasl-credentials" {
+		t.Errorf("volume[0] name = %q, want %q", volumes[0].Name, "sasl-credentials")
+	}
+	if volumes[1].Name != tlsVolumeName {
+		t.Errorf("volume[1] name = %q, want %q", volumes[1].Name, tlsVolumeName)
+	}
+
+	// Two ports: 11211 and 11212.
+	if len(container.Ports) != 2 {
+		t.Fatalf("expected 2 ports, got %d", len(container.Ports))
+	}
+	if container.Ports[0].ContainerPort != 11211 {
+		t.Errorf("port[0] = %d, want 11211", container.Ports[0].ContainerPort)
+	}
+	if container.Ports[1].ContainerPort != 11212 {
+		t.Errorf("port[1] = %d, want 11212", container.Ports[1].ContainerPort)
+	}
+}
+
+func TestConstructDeployment_TLSPort(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-port", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "my-tls-secret",
+					},
+				},
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	container := dep.Spec.Template.Spec.Containers[0]
+
+	if len(container.Ports) != 2 {
+		t.Fatalf("expected 2 ports, got %d", len(container.Ports))
+	}
+
+	// Port 11211 named "memcached".
+	if container.Ports[0].Name != "memcached" {
+		t.Errorf("port[0] name = %q, want %q", container.Ports[0].Name, "memcached")
+	}
+	if container.Ports[0].ContainerPort != 11211 {
+		t.Errorf("port[0] = %d, want 11211", container.Ports[0].ContainerPort)
+	}
+	if container.Ports[0].Protocol != corev1.ProtocolTCP {
+		t.Errorf("port[0] protocol = %q, want TCP", container.Ports[0].Protocol)
+	}
+
+	// Port 11212 named "memcached-tls".
+	if container.Ports[1].Name != tlsPortName {
+		t.Errorf("port[1] name = %q, want %q", container.Ports[1].Name, tlsPortName)
+	}
+	if container.Ports[1].ContainerPort != 11212 {
+		t.Errorf("port[1] = %d, want 11212", container.Ports[1].ContainerPort)
+	}
+	if container.Ports[1].Protocol != corev1.ProtocolTCP {
+		t.Errorf("port[1] protocol = %q, want TCP", container.Ports[1].Protocol)
+	}
+}
+
+func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) {
+	runAsNonRoot := true
+	readOnly := true
+	mc := &memcachedv1alpha1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-full", Namespace: "default"},
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Security: &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "tls-certs",
+					},
+				},
+				PodSecurityContext: &corev1.PodSecurityContext{
+					RunAsNonRoot: &runAsNonRoot,
+				},
+				ContainerSecurityContext: &corev1.SecurityContext{
+					ReadOnlyRootFilesystem: &readOnly,
+				},
+			},
+			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Enabled: true,
+			},
+		},
+	}
+	dep := &appsv1.Deployment{}
+
+	constructDeployment(mc, dep)
+
+	// 2 containers: memcached + exporter.
+	if len(dep.Spec.Template.Spec.Containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(dep.Spec.Template.Spec.Containers))
+	}
+
+	mcContainer := dep.Spec.Template.Spec.Containers[0]
+
+	// TLS: container has volume mount.
+	if len(mcContainer.VolumeMounts) != 1 {
+		t.Fatalf("expected 1 volumeMount on memcached, got %d", len(mcContainer.VolumeMounts))
+	}
+	if mcContainer.VolumeMounts[0].Name != tlsVolumeName {
+		t.Errorf("memcached volumeMount name = %q, want %q", mcContainer.VolumeMounts[0].Name, tlsVolumeName)
+	}
+
+	// TLS: 2 ports on memcached container.
+	if len(mcContainer.Ports) != 2 {
+		t.Fatalf("expected 2 ports on memcached, got %d", len(mcContainer.Ports))
+	}
+
+	// Pod has TLS volume.
+	if len(dep.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	}
+
+	// Pod security context applied.
+	podSC := dep.Spec.Template.Spec.SecurityContext
+	if podSC == nil {
+		t.Fatal("expected non-nil pod SecurityContext")
+	}
+	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
+		t.Error("expected pod RunAsNonRoot=true")
+	}
+
+	// Container security context on both containers.
+	if mcContainer.SecurityContext == nil {
+		t.Fatal("expected non-nil container SecurityContext on memcached")
+	}
+	if mcContainer.SecurityContext.ReadOnlyRootFilesystem == nil || !*mcContainer.SecurityContext.ReadOnlyRootFilesystem {
+		t.Error("expected ReadOnlyRootFilesystem=true on memcached")
+	}
+	exporterContainer := dep.Spec.Template.Spec.Containers[1]
+	if exporterContainer.SecurityContext == nil {
+		t.Fatal("expected non-nil container SecurityContext on exporter")
 	}
 }

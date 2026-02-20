@@ -2,8 +2,8 @@
   "feature_id": "MO-0018",
   "title": "E003: Implement optional TLS encryption",
   "slug": "e003-implement-optional-tls-encryption",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Support optional TLS encryption for Memcached connections. When enabled, configure Memcached with TLS flags, mount TLS certificates from referenced Secrets or cert-manager Certificate resources. Configure port 11212 for TLS alongside or instead of 11211.",
   "stories": [
@@ -303,6 +303,7 @@
       "description": "Add `EnableClientCert bool` field with json tag and kubebuilder optional marker to the existing TLSSpec struct in api/v1alpha1/memcached_types.go. Run `make manifests generate` to regenerate CRD YAML and deepcopy. The TLSSpec struct already exists with Enabled and CertificateSecretRef fields.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -313,6 +314,7 @@
       "description": "Add Ginkgo integration tests in internal/controller/memcached_crd_validation_test.go under the existing 'spec.security.tls' Context. Test that TLS with enableClientCert=true is accepted and that the field round-trips correctly.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -323,6 +325,7 @@
       "description": "Add buildTLSVolume(mc) and buildTLSVolumeMount(mc) functions in internal/controller/deployment.go following the exact same pattern as buildSASLVolume and buildSASLVolumeMount. Volume name: 'tls-certificates', mount path: '/etc/memcached/tls', read-only. The Secret volume projects 'tls.crt' and 'tls.key' items, plus 'ca.crt' when enableClientCert is true. Add corresponding unit tests in deployment_test.go: TestBuildTLSVolume_Enabled, TestBuildTLSVolume_ReturnsNil, TestBuildTLSVolume_WithClientCert, TestBuildTLSVolumeMount_Enabled, TestBuildTLSVolumeMount_ReturnsNil.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -333,6 +336,7 @@
       "description": "Modify buildMemcachedArgs in internal/controller/deployment.go to accept a *TLSSpec parameter (like it already accepts *SASLSpec). When TLS is enabled, append: '-Z', '-o', 'ssl_chain_cert=/etc/memcached/tls/tls.crt', '-o', 'ssl_key=/etc/memcached/tls/tls.key'. When enableClientCert is true, also append '-o', 'ssl_ca_cert=/etc/memcached/tls/ca.crt'. TLS flags go after SASL flags but before extraArgs. Add unit tests: TestBuildMemcachedArgs_TLSEnabled, TestBuildMemcachedArgs_TLSDisabled, TestBuildMemcachedArgs_TLSNil, TestBuildMemcachedArgs_TLSWithClientCert, TestBuildMemcachedArgs_TLSWithSASL, TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs. Update the existing call site in constructDeployment.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -344,6 +348,7 @@
       "description": "Update constructDeployment in internal/controller/deployment.go to: (1) call buildTLSVolumeMount and append to volumeMounts, (2) call buildTLSVolume and append to volumes, (3) add port 11212 named 'memcached-tls' to memcached container ports when TLS enabled, (4) pass TLS spec to buildMemcachedArgs. Add unit tests: TestConstructDeployment_TLSEnabled (full check of args, volume, mount, port), TestConstructDeployment_TLSDisabled (no TLS artifacts), TestConstructDeployment_TLSWithSASL (both features), TestConstructDeployment_TLSPort (port 11212 present), TestConstructDeployment_TLSWithMonitoringAndSecurityContexts.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-003",
@@ -357,6 +362,7 @@
       "description": "Update constructService in internal/controller/service.go to add port 11212 named 'memcached-tls' (targetPort 'memcached-tls', TCP) when spec.security.tls.enabled is true. Add this port after the memcached port and before the metrics port. Add unit tests in service_test.go: TestConstructService_TLSEnabled, TestConstructService_TLSDisabled, TestConstructService_TLSWithMonitoring (three ports), TestConstructService_TLSNilSecurity.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -367,6 +373,7 @@
       "description": "Add Ginkgo integration tests in internal/controller/memcached_deployment_reconcile_test.go in a new 'TLS encryption' Context. Tests: (1) create CR with TLS enabled, verify Deployment has TLS port, args, volume, mount; (2) enable TLS on existing CR, verify Deployment updated; (3) disable TLS, verify Deployment loses TLS artifacts; (4) idempotent reconcile with TLS enabled; (5) TLS with SASL both enabled. Follow the existing reconcileOnce/fetchDeployment pattern.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -377,6 +384,7 @@
       "description": "Add Ginkgo integration tests in internal/controller/memcached_service_reconcile_test.go in a new 'TLS port' Context. Tests: (1) Service has port 11212 when TLS enabled; (2) Service has only port 11211 when TLS disabled; (3) Service has three ports when TLS and monitoring enabled; (4) enable then disable TLS, verify port 11212 is removed. Follow existing fetchService helper pattern.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-007"
@@ -388,6 +396,7 @@
       "description": "Create docs/reference/backend/tls-encryption.md following the exact format of docs/reference/backend/pod-security-contexts.md. Include: Overview, CRD Field Path (spec.security.tls with field table for enabled, certificateSecretRef, enableClientCert), Helper Functions (buildTLSVolume, buildTLSVolumeMount, TLS args logic), Deployment Mapping table, Service Mapping, CR Examples (TLS enabled, TLS with mTLS, TLS with SASL, TLS disabled), Runtime Behavior table, Implementation section.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -562,6 +571,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T07:43:55.192707"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T07:45:06.825931"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T08:18:48.431243"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T08:18:48.451865"
     }
   },
   "execution_history": [
@@ -575,6 +596,56 @@
           "name": "prepare",
           "duration": 237.1060175895691,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "ef4bfa71-7fe4-46b7-a19c-db433d5baf73",
+      "timestamp": "2026-02-20T08:14:51.543558",
+      "total_duration": 1664.039956331253,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 261.0260238647461,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (4 tasks)",
+          "duration": 392.9763972759247,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 187.2000482082367,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 113.55922508239746,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0018] Code Review",
+          "duration": 397.12614607810974,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0018] Improvements",
+          "duration": 187.0817859172821,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0018] Simplify",
+          "duration": 125.07032990455627,
+          "type": "simplify",
           "status": "done"
         }
       ]

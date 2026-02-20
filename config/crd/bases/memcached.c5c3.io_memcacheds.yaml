@@ -977,6 +977,12 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      enableClientCert:
+                        description: |-
+                          EnableClientCert controls whether mutual TLS (mTLS) is required.
+                          When true, Memcached will require clients to present a valid TLS certificate.
+                          The CA certificate in the Secret (ca.crt) will be used to verify client certificates.
+                        type: boolean
                       enabled:
                         description: Enabled controls whether TLS encryption is active.
                         type: boolean

@@ -264,6 +264,7 @@ func TestSecuritySpec_AllFieldsSet(t *testing.T) {
 			CertificateSecretRef: corev1.LocalObjectReference{
 				Name: "memcached-tls-cert",
 			},
+			EnableClientCert: true,
 		},
 	}
 
@@ -285,6 +286,9 @@ func TestSecuritySpec_AllFieldsSet(t *testing.T) {
 	if s.TLS.CertificateSecretRef.Name != "memcached-tls-cert" {
 		t.Errorf("unexpected TLS.CertificateSecretRef.Name: %s", s.TLS.CertificateSecretRef.Name)
 	}
+	if !s.TLS.EnableClientCert {
+		t.Error("expected TLS.EnableClientCert to be true")
+	}
 }
 
 func TestSASLSpec_ZeroValue(t *testing.T) {
@@ -304,6 +308,40 @@ func TestTLSSpec_ZeroValue(t *testing.T) {
 	}
 	if tls.CertificateSecretRef.Name != "" {
 		t.Error("expected CertificateSecretRef.Name to be empty for zero value")
+	}
+	if tls.EnableClientCert {
+		t.Error("expected EnableClientCert to be false for zero value")
+	}
+}
+
+func TestTLSSpec_WithEnableClientCert(t *testing.T) {
+	tls := TLSSpec{
+		Enabled: true,
+		CertificateSecretRef: corev1.LocalObjectReference{
+			Name: "tls-cert",
+		},
+		EnableClientCert: true,
+	}
+	if !tls.Enabled {
+		t.Error("expected Enabled to be true")
+	}
+	if tls.CertificateSecretRef.Name != "tls-cert" {
+		t.Errorf("unexpected CertificateSecretRef.Name: %s", tls.CertificateSecretRef.Name)
+	}
+	if !tls.EnableClientCert {
+		t.Error("expected EnableClientCert to be true")
+	}
+}
+
+func TestTLSSpec_EnableClientCertDefaultsFalse(t *testing.T) {
+	tls := TLSSpec{
+		Enabled: true,
+		CertificateSecretRef: corev1.LocalObjectReference{
+			Name: "tls-cert",
+		},
+	}
+	if tls.EnableClientCert {
+		t.Error("expected EnableClientCert to default to false when not set")
 	}
 }
 

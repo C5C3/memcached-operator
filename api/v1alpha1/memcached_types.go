@@ -200,6 +200,12 @@ type TLSSpec struct {
 	// The Secret must contain "tls.crt", "tls.key", and optionally "ca.crt" keys.
 	// +optional
 	CertificateSecretRef corev1.LocalObjectReference `json:"certificateSecretRef,omitempty"`
+
+	// EnableClientCert controls whether mutual TLS (mTLS) is required.
+	// When true, Memcached will require clients to present a valid TLS certificate.
+	// The CA certificate in the Secret (ca.crt) will be used to verify client certificates.
+	// +optional
+	EnableClientCert bool `json:"enableClientCert,omitempty"`
 }
 
 // ServiceSpec defines configuration for the headless Service.

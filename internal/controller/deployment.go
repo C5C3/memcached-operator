@@ -22,10 +22,11 @@ func labelsForMemcached(name string) map[string]string {
 }
 
 // buildMemcachedArgs constructs the command-line arguments for a memcached process
-// based on the provided configuration and optional SASL spec.
+// based on the provided configuration and optional SASL and TLS specs.
 // If config is nil, defaults are used. When SASL is enabled, the -Y flag is
-// appended pointing to the mounted password file.
-func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig, sasl *memcachedv1alpha1.SASLSpec) []string {
+// appended pointing to the mounted password file. When TLS is enabled, the -Z flag
+// and ssl_chain_cert/ssl_key options are appended.
+func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig, sasl *memcachedv1alpha1.SASLSpec, tls *memcachedv1alpha1.TLSSpec) []string {
 	// Apply defaults when config is nil.
 	if config == nil {
 		config = &memcachedv1alpha1.MemcachedConfig{}
@@ -69,6 +70,18 @@ func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig, sasl *memcach
 	// SASL authentication: -Y <password-file>.
 	if sasl != nil && sasl.Enabled {
 		args = append(args, "-Y", saslMountPath+"/password-file")
+	}
+
+	// TLS encryption: -Z, -o ssl_chain_cert, -o ssl_key, optionally -o ssl_ca_cert.
+	if tls != nil && tls.Enabled {
+		args = append(args,
+			"-Z",
+			"-o", "ssl_chain_cert="+tlsMountPath+"/tls.crt",
+			"-o", "ssl_key="+tlsMountPath+"/tls.key",
+		)
+		if tls.EnableClientCert {
+			args = append(args, "-o", "ssl_ca_cert="+tlsMountPath+"/ca.crt")
+		}
 	}
 
 	// Append extra args at the end.
@@ -233,6 +246,52 @@ func buildSASLVolumeMount(mc *memcachedv1alpha1.Memcached) *corev1.VolumeMount {
 	}
 }
 
+// tlsVolumeName is the name used for the TLS certificates volume.
+const tlsVolumeName = "tls-certificates"
+
+// tlsMountPath is the path where TLS certificates are mounted in the container.
+const tlsMountPath = "/etc/memcached/tls"
+
+// tlsPortName is the name used for the TLS container and service port.
+const tlsPortName = "memcached-tls"
+
+// buildTLSVolume returns a Volume that projects the TLS certificate Secret,
+// or nil if TLS is not enabled.
+func buildTLSVolume(mc *memcachedv1alpha1.Memcached) *corev1.Volume {
+	if mc.Spec.Security == nil || mc.Spec.Security.TLS == nil || !mc.Spec.Security.TLS.Enabled {
+		return nil
+	}
+	items := []corev1.KeyToPath{
+		{Key: "tls.crt", Path: "tls.crt"},
+		{Key: "tls.key", Path: "tls.key"},
+	}
+	if mc.Spec.Security.TLS.EnableClientCert {
+		items = append(items, corev1.KeyToPath{Key: "ca.crt", Path: "ca.crt"})
+	}
+	return &corev1.Volume{
+		Name: tlsVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			Secret: &corev1.SecretVolumeSource{
+				SecretName: mc.Spec.Security.TLS.CertificateSecretRef.Name,
+				Items:      items,
+			},
+		},
+	}
+}
+
+// buildTLSVolumeMount returns a VolumeMount for the TLS certificates,
+// or nil if TLS is not enabled.
+func buildTLSVolumeMount(mc *memcachedv1alpha1.Memcached) *corev1.VolumeMount {
+	if mc.Spec.Security == nil || mc.Spec.Security.TLS == nil || !mc.Spec.Security.TLS.Enabled {
+		return nil
+	}
+	return &corev1.VolumeMount{
+		Name:      tlsVolumeName,
+		MountPath: tlsMountPath,
+		ReadOnly:  true,
+	}
+}
+
 // buildPodSecurityContext returns the PodSecurityContext from the Memcached CR,
 // or nil if no pod security context is configured.
 func buildPodSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.PodSecurityContext {
@@ -266,13 +325,15 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 		image = *mc.Spec.Image
 	}
 
-	// Resolve SASL spec for args and volume/mount helpers.
+	// Resolve SASL and TLS specs for args and volume/mount helpers.
 	var saslSpec *memcachedv1alpha1.SASLSpec
+	var tlsSpec *memcachedv1alpha1.TLSSpec
 	if mc.Spec.Security != nil {
 		saslSpec = mc.Spec.Security.SASL
+		tlsSpec = mc.Spec.Security.TLS
 	}
 
-	args := buildMemcachedArgs(mc.Spec.Memcached, saslSpec)
+	args := buildMemcachedArgs(mc.Spec.Memcached, saslSpec, tlsSpec)
 
 	var resources corev1.ResourceRequirements
 	if mc.Spec.Resources != nil {
@@ -292,6 +353,24 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 	if vm := buildSASLVolumeMount(mc); vm != nil {
 		volumeMounts = append(volumeMounts, *vm)
 	}
+	if vm := buildTLSVolumeMount(mc); vm != nil {
+		volumeMounts = append(volumeMounts, *vm)
+	}
+
+	ports := []corev1.ContainerPort{
+		{
+			Name:          "memcached",
+			ContainerPort: 11211,
+			Protocol:      corev1.ProtocolTCP,
+		},
+	}
+	if tlsSpec != nil && tlsSpec.Enabled {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          tlsPortName,
+			ContainerPort: 11212,
+			Protocol:      corev1.ProtocolTCP,
+		})
+	}
 
 	memcachedContainer := corev1.Container{
 		Name:            "memcached",
@@ -301,13 +380,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 		Lifecycle:       lifecycle,
 		SecurityContext: containerSecurityContext,
 		VolumeMounts:    volumeMounts,
-		Ports: []corev1.ContainerPort{
-			{
-				Name:          "memcached",
-				ContainerPort: 11211,
-				Protocol:      corev1.ProtocolTCP,
-			},
-		},
+		Ports:           ports,
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				TCPSocket: &corev1.TCPSocketAction{
@@ -336,6 +409,9 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 
 	var volumes []corev1.Volume
 	if v := buildSASLVolume(mc); v != nil {
+		volumes = append(volumes, *v)
+	}
+	if v := buildTLSVolume(mc); v != nil {
 		volumes = append(volumes, *v)
 	}
 

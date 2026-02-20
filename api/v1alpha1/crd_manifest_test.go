@@ -252,6 +252,23 @@ func TestCRDSchemaValidationMarkers(t *testing.T) {
 		}
 	})
 
+	t.Run("spec.security.tls has enableClientCert property", func(t *testing.T) {
+		tlsSchema := getNestedProperty(t, schema, "spec", "security", "tls")
+		expectedProps := []string{"enabled", "certificateSecretRef", "enableClientCert"}
+		for _, prop := range expectedProps {
+			if _, ok := tlsSchema.Properties[prop]; !ok {
+				t.Errorf("tls property %q not found", prop)
+			}
+		}
+	})
+
+	t.Run("spec.security.tls.enableClientCert is boolean", func(t *testing.T) {
+		prop := getNestedProperty(t, schema, "spec", "security", "tls", "enableClientCert")
+		if prop.Type != "boolean" {
+			t.Errorf("expected type boolean, got %q", prop.Type)
+		}
+	})
+
 	t.Run("spec.highAvailability.antiAffinityPreset enum", func(t *testing.T) {
 		prop := getNestedProperty(t, schema, "spec", "highAvailability", "antiAffinityPreset")
 		if len(prop.Enum) != 2 {

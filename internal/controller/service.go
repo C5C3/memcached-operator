@@ -33,6 +33,15 @@ func constructService(mc *memcachedv1alpha1.Memcached, svc *corev1.Service) {
 		},
 	}
 
+	if mc.Spec.Security != nil && mc.Spec.Security.TLS != nil && mc.Spec.Security.TLS.Enabled {
+		ports = append(ports, corev1.ServicePort{
+			Name:       tlsPortName,
+			Port:       11212,
+			TargetPort: intstr.FromString(tlsPortName),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
+
 	if mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "metrics",

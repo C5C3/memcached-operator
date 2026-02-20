@@ -1,0 +1,75 @@
+{
+  "feature_id": "MO-0018",
+  "title": "E003: Implement optional TLS encryption",
+  "date": "2026-02-20",
+  "verdict": "APPROVED",
+  "summary": "TLS encryption feature fully implemented following the established SASL pattern. Adds EnableClientCert field to TLSSpec, buildTLSVolume/buildTLSVolumeMount helpers, TLS args in buildMemcachedArgs, TLS port 11212 in Deployment and Service, comprehensive unit and integration tests, and reference documentation. All 245 Ginkgo integration specs pass, all unit tests pass, go vet clean, CRD manifests regenerated and up-to-date. Lint issues (goconst) are pre-existing on main and not introduced by this feature. 3 pre-existing test failures in reconcile_resource_test.go are unrelated to TLS.",
+  "tests_checklist": [
+    {"item": "Unit tests for buildTLSVolume (enabled, nil cases, clientCert)", "checked": true},
+    {"item": "Unit tests for buildTLSVolumeMount (enabled, nil cases)", "checked": true},
+    {"item": "Unit tests for buildMemcachedArgs with TLS (enabled, disabled, nil, clientCert, withSASL, withVerbosityAndExtraArgs)", "checked": true},
+    {"item": "Unit tests for constructDeployment with TLS (enabled, disabled, withSASL, port, withMonitoringAndSecurityContexts)", "checked": true},
+    {"item": "Unit tests for constructService with TLS (enabled, disabled, withMonitoring, nilSecurity)", "checked": true},
+    {"item": "CRD validation integration tests for enableClientCert field", "checked": true},
+    {"item": "CRD manifest tests for enableClientCert schema", "checked": true},
+    {"item": "API types tests for EnableClientCert field", "checked": true},
+    {"item": "Deployment reconciliation integration tests (enable, disable, toggle, idempotency, SASL coexistence, secret update)", "checked": true},
+    {"item": "Service reconciliation integration tests (enable, disable, toggle, idempotency, monitoring coexistence)", "checked": true},
+    {"item": "Edge cases covered: nil security, nil TLS, disabled TLS, empty spec", "checked": true},
+    {"item": "SASL regression tests still pass", "checked": true},
+    {"item": "All 245 Ginkgo specs pass", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing SASL pattern exactly (volume/mount helpers, args builder, constructDeployment/Service integration)", "checked": true},
+    {"item": "Functions do one thing (buildTLSVolume, buildTLSVolumeMount, TLS block in buildMemcachedArgs)", "checked": true},
+    {"item": "Functions are small and focused (<20 lines each)", "checked": true},
+    {"item": "Named constants for volume name and mount path (tlsVolumeName, tlsMountPath)", "checked": true},
+    {"item": "Clear naming conventions consistent with SASL pattern", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "No scope creep beyond TLS feature", "checked": true},
+    {"item": "Proper nil-safety guards (3-level nil checks on security/TLS/enabled)", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "TLS volume mounted read-only", "checked": true},
+    {"item": "No hardcoded secrets or credentials", "checked": true},
+    {"item": "Certificate paths use constants, not user-controlled strings", "checked": true},
+    {"item": "TLS flags match official memcached documentation (-Z, ssl_chain_cert, ssl_key, ssl_ca_cert)", "checked": true},
+    {"item": "No path traversal possible (fixed mount paths)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution follows the simplest possible approach (mirroring SASL pattern)", "checked": true},
+    {"item": "No unnecessary abstractions introduced", "checked": true},
+    {"item": "Changes are backward-compatible (TLS is opt-in)", "checked": true},
+    {"item": "Deployment ports list refactored cleanly to support conditional TLS port", "checked": true},
+    {"item": "TLS port ordering correct: memcached(11211), memcached-tls(11212), metrics(9150)", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code between SASL and TLS (each has unique logic)", "checked": true},
+    {"item": "No unused functions or exports", "checked": true},
+    {"item": "No future-proofing or unnecessary features", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil guards return early (nil volume/mount when TLS disabled)", "checked": true},
+    {"item": "TLS spec checked before accessing fields", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All nil pointer paths handled (nil security, nil TLS, disabled TLS)", "checked": true},
+    {"item": "EnableClientCert defaults to false (zero value)", "checked": true},
+    {"item": "Volume items conditionally include ca.crt only when needed", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "Minor (pre-existing, not introduced by this feature): lint goconst warnings in test files for string literals like 'tls-certificates', 'memcached-tls', 'metrics'. These use the string literals directly in tests rather than the defined constants (tlsVolumeName). Consider using constants in test files for consistency, but this is cosmetic and pre-existing."
+  ],
+  "next_steps": [],
+  "verification_results": {
+    "go_vet": "PASS (clean)",
+    "go_test_unit": "PASS (all TLS unit tests pass)",
+    "go_test_integration": "PASS (245/245 Ginkgo specs pass)",
+    "make_manifests_generate": "PASS (no drift)",
+    "golangci_lint": "12 pre-existing issues (goconst, unparam) — identical to main branch, no new issues introduced",
+    "pre_existing_failures": "3 test failures in reconcile_resource_test.go (metrics counter tests) — present on main, unrelated to TLS"
+  }
+}

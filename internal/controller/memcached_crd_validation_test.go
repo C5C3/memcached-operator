@@ -600,6 +600,44 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 		})
+
+		It("should accept TLS with enableClientCert=true", func() {
+			mc := validMemcached(uniqueName("tls-mtls"))
+			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "tls-cert",
+					},
+					EnableClientCert: true,
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			// Verify round-trip: enableClientCert persists correctly.
+			fetched := &memcachedv1alpha1.Memcached{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
+			Expect(fetched.Spec.Security.TLS.EnableClientCert).To(BeTrue())
+			Expect(fetched.Spec.Security.TLS.Enabled).To(BeTrue())
+			Expect(fetched.Spec.Security.TLS.CertificateSecretRef.Name).To(Equal("tls-cert"))
+		})
+
+		It("should default enableClientCert to false when not specified", func() {
+			mc := validMemcached(uniqueName("tls-nomtls"))
+			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+				TLS: &memcachedv1alpha1.TLSSpec{
+					Enabled: true,
+					CertificateSecretRef: corev1.LocalObjectReference{
+						Name: "tls-cert",
+					},
+				},
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			fetched := &memcachedv1alpha1.Memcached{}
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
+			Expect(fetched.Spec.Security.TLS.EnableClientCert).To(BeFalse())
+		})
 	})
 
 	Context("spec.security.podSecurityContext and containerSecurityContext", func() {
