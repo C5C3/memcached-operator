@@ -431,8 +431,11 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should coexist with PDB and monitoring sidecar", func() {
 			mc := validMemcached(uniqueName("sm-coexist"))
+			replicas := int32(3)
+			mc.Spec.Replicas = &replicas
+			minAvail := intstr.FromInt32(1)
 			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true},
+				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
 			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
 				Enabled:        true,
@@ -467,6 +470,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 		It("should coexist with graceful shutdown and anti-affinity", func() {
 			mc := validMemcached(uniqueName("sm-coex-ha"))
 			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			replicas := int32(3)
+			mc.Spec.Replicas = &replicas
+			minAvail := intstr.FromInt32(1)
 			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
 				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
@@ -474,7 +480,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
 				},
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true},
+				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
 			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
 				Enabled: true,
@@ -511,6 +517,8 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should create ServiceMonitor alongside custom PDB configuration", func() {
 			mc := validMemcached(uniqueName("sm-coex-pdb"))
+			replicas := int32(3)
+			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(2)
 			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
@@ -589,8 +597,11 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should not create ServiceMonitor when monitoring enabled but serviceMonitor nil alongside PDB", func() {
 			mc := validMemcached(uniqueName("sm-coex-nosm"))
+			replicas := int32(3)
+			mc.Spec.Replicas = &replicas
+			minAvail := intstr.FromInt32(1)
 			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true},
+				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
 			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
 				Enabled: true,

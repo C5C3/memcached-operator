@@ -320,6 +320,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.highAvailability.podDisruptionBudget", func() {
 		It("should accept PDB with integer minAvailable", func() {
 			mc := validMemcached(uniqueName("pdb-int"))
+			replicas := int32(3)
+			mc.Spec.Replicas = &replicas
 			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
 					Enabled:      true,
@@ -419,13 +421,13 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 		})
 
 		It("should accept gracefulShutdown with valid terminationGracePeriodSeconds", func() {
-			// Minimum: 1
+			// Minimum: terminationGracePeriodSeconds must exceed preStopDelaySeconds.
 			mc := validMemcached(uniqueName("gs-tgps-min"))
 			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
 				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           1,
-					TerminationGracePeriodSeconds: 1,
+					TerminationGracePeriodSeconds: 2,
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -459,6 +461,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.highAvailability with all sub-fields", func() {
 		It("should accept a fully populated HA spec", func() {
 			mc := validMemcached(uniqueName("ha-full"))
+			replicas := int32(3)
+			mc.Spec.Replicas = &replicas
 			hard := memcachedv1alpha1.AntiAffinityPresetHard
 			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
 				AntiAffinityPreset: &hard,

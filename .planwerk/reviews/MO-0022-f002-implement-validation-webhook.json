@@ -1,0 +1,79 @@
+{
+  "feature_id": "MO-0022",
+  "title": "F002: Implement validation webhook",
+  "date": "2026-02-20",
+  "verdict": "APPROVED",
+  "summary": "Validation webhook correctly implements all 6 cross-field validation rules (REQ-001 through REQ-006) with proper error aggregation via field.ErrorList, registered via .WithValidator() in the builder chain. ValidateCreate and ValidateUpdate apply identical logic; ValidateDelete returns nil. The implementation follows existing defaulting webhook patterns, uses proper Kubernetes field validation APIs, and has comprehensive unit test coverage (63+ tests) plus integration tests via envtest. Documentation accurately describes all rules and error messages. All blocking and major checks pass.",
+  "tests_checklist": [
+    {"item": "Unit tests exist and pass for all 6 validation rules", "checked": true},
+    {"item": "Integration tests exist via envtest k8sClient.Create/Update", "checked": true},
+    {"item": "Edge cases covered (nil, boundary, disabled)", "checked": true},
+    {"item": "Error aggregation tested (multiple simultaneous violations)", "checked": true},
+    {"item": "Delete always allowed tested with invalid CR", "checked": true},
+    {"item": "Existing defaulting webhook tests pass without modification", "checked": true},
+    {"item": "Integration tests cover TLS rejection and graceful shutdown rejection individually", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing defaulting webhook patterns (logging, interface, markers)", "checked": true},
+    {"item": "Functions have single responsibility and are ≤40 lines", "checked": true},
+    {"item": "No magic numbers (memoryOverhead constant defined)", "checked": true},
+    {"item": "No dead code, no TODOs, no stubs", "checked": true},
+    {"item": "Nesting depth ≤2 levels throughout", "checked": true},
+    {"item": "Uses Kubernetes standard utilities (field.ErrorList, apierrors.NewInvalid)", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "Input validated at API boundary (webhook intercepts CREATE/UPDATE)", "checked": true},
+    {"item": "No injection risks (safe fmt.Sprintf with numeric values only)", "checked": true},
+    {"item": "No hardcoded secrets or credentials", "checked": true},
+    {"item": "Sensitive data not exposed in logs or error messages", "checked": true},
+    {"item": "failurePolicy=Fail in ValidatingWebhookConfiguration", "checked": true},
+    {"item": "sideEffects=None in webhook manifest", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Validator registered via builder chain (.WithValidator) after .WithDefaulter", "checked": true},
+    {"item": "Compile-time interface check present (var _ admission.Validator[*Memcached])", "checked": true},
+    {"item": "ValidatingWebhookConfiguration generated in config/webhook/manifests.yaml", "checked": true},
+    {"item": "Webhook path matches kubebuilder marker", "checked": true},
+    {"item": "Solution is minimal — no over-engineering", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated validation logic between Create and Update", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "Field path construction is idiomatic, not duplicated", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Nil guards return early before accessing nested fields", "checked": true},
+    {"item": "Disabled flags bypass validation immediately", "checked": true},
+    {"item": "All errors aggregated and returned at once (not fail-on-first)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All pointer fields nil-checked before access", "checked": true},
+    {"item": "IntOrString type checked before comparing integer value", "checked": true},
+    {"item": "Memory limit only validated when both resources and memcached config present", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "TE-MINOR-1",
+      "severity": "minor",
+      "check_id": "TE2",
+      "description": "Integration test file missing 3 rejection scenarios from plan task 3.1: (1) TLS enabled without secret, (2) terminationGracePeriodSeconds <= preStopDelaySeconds, (3) both minAvailable and maxUnavailable set. These are comprehensively covered in unit tests and partially in modified existing integration tests (PDB mutual exclusivity moved to memcached_pdb_reconcile_test.go).",
+      "location": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "fix": "Add 3 additional Context blocks for TLS rejection, graceful shutdown timing rejection, and PDB mutual exclusivity rejection. Also add a 'valid update' test case."
+    },
+    {
+      "id": "TE-MINOR-2",
+      "severity": "minor",
+      "check_id": "TE7",
+      "description": "Integration test assertions check for substring presence in error messages (e.g., ContainSubstring(\"memory\")) but do not verify the field path structure. Unit tests are more specific.",
+      "location": "internal/controller/memcached_validation_webhook_integration_test.go:30",
+      "fix": "Consider checking for full field path substrings (e.g., \"spec.resources.limits.memory\") for more precise assertions."
+    }
+  ],
+  "suggested_improvements": [
+    "Add dedicated integration tests for TLS rejection, graceful shutdown timing rejection, and PDB mutual exclusivity to match plan task 3.1 (10 scenarios planned, 6 implemented)",
+    "Use more specific ContainSubstring assertions in integration tests (full field paths instead of single keywords)"
+  ],
+  "next_steps": []
+}

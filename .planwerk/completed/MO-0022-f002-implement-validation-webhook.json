@@ -2,8 +2,8 @@
   "feature_id": "MO-0022",
   "title": "F002: Implement validation webhook",
   "slug": "f002-implement-validation-webhook",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Implement a validating admission webhook that rejects invalid CRD configurations: replicas >= 0, maxMemoryMB > 0, threads > 0, valid maxItemSize format, valid antiAffinityPreset values (soft/hard), consistent resource limits (memory limit >= maxMemoryMB + overhead), valid verbosity range (0-2).",
   "stories": [
@@ -372,6 +372,7 @@
       "description": "Create api/v1alpha1/memcached_validation_webhook.go with: (1) MemcachedCustomValidator struct implementing admission.Validator[*Memcached], (2) kubebuilder webhook marker for path=/validate-memcached-c5c3-io-v1alpha1-memcached, (3) internal validateMemcached(mc *Memcached) field.ErrorList helper that collects all errors, (4) ValidateCreate calling validateMemcached, (5) ValidateUpdate calling validateMemcached on the new object, (6) ValidateDelete returning nil always. Implement two validation rules in this task: memory limit consistency (REQ-001: spec.resources.limits.memory >= maxMemoryMB*1Mi + 32Mi when both are specified) and graceful shutdown timing (REQ-006: terminationGracePeriodSeconds > preStopDelaySeconds when enabled). Use field.Invalid/field.Required with proper field paths. Create api/v1alpha1/memcached_validation_webhook_test.go with unit tests covering: memory limit sufficient/insufficient/boundary/nil, graceful shutdown timing valid/invalid/disabled/nil, delete always allowed, valid CR accepted, error aggregation. Follow the existing test pattern from memcached_webhook_test.go (standard Go testing, same package).",
       "level": 1,
       "estimate_minutes": 30,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-006",
@@ -386,6 +387,7 @@
       "description": "Add to the validateMemcached function in api/v1alpha1/memcached_validation_webhook.go: (1) PDB mutual exclusivity check — reject when both minAvailable and maxUnavailable are set (REQ-003), (2) PDB minAvailable vs replicas check — when PDB is enabled, minAvailable is an integer, and replicas is set, reject if minAvailable >= replicas (REQ-002). Handle IntOrString type for minAvailable by only validating integer values (percentage values cannot be compared without runtime pod count). Add unit tests to memcached_validation_webhook_test.go: minAvailable < replicas (pass), minAvailable == replicas (reject), minAvailable > replicas (reject), both fields set (reject), only maxUnavailable (pass), PDB nil (pass), PDB disabled (pass), percentage minAvailable (skip validation, pass).",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003"
@@ -397,6 +399,7 @@
       "description": "Add to the validateMemcached function in api/v1alpha1/memcached_validation_webhook.go: (1) SASL secret check — when security.sasl.enabled=true, credentialsSecretRef.name must be non-empty (REQ-004), (2) TLS secret check — when security.tls.enabled=true, certificateSecretRef.name must be non-empty (REQ-005). Add unit tests to memcached_validation_webhook_test.go: SASL enabled with secret (pass), SASL enabled without secret (reject), SASL disabled (pass), SASL nil (pass), TLS enabled with secret (pass), TLS enabled without secret (reject), TLS disabled (pass), TLS nil (pass), security section nil (pass).",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-005"
@@ -408,6 +411,7 @@
       "description": "Modify SetupMemcachedWebhookWithManager in api/v1alpha1/memcached_webhook.go to chain .WithValidator(&MemcachedCustomValidator{}) after .WithDefaulter(&MemcachedCustomDefaulter{}). Add compile-time check: var _ admission.Validator[*Memcached] = &MemcachedCustomValidator{}. Run make manifests to regenerate config/webhook/manifests.yaml — verify it now contains both MutatingWebhookConfiguration and ValidatingWebhookConfiguration. Run make generate to regenerate deepcopy if needed. Run make vet to ensure no issues.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -418,6 +422,7 @@
       "description": "Create internal/controller/memcached_validation_webhook_integration_test.go with Ginkgo/Gomega tests using envtest (package controller_test, using existing k8sClient and ctx from suite_test.go). Test scenarios via k8sClient.Create/Update: (1) reject insufficient memory limit (64Mi limit, 64 maxMemoryMB), (2) reject minAvailable >= replicas, (3) reject both minAvailable and maxUnavailable set, (4) reject SASL enabled without secret, (5) reject TLS enabled without secret, (6) reject terminationGracePeriodSeconds <= preStopDelaySeconds, (7) accept minimal CR (validates defaulting + validation integration), (8) accept fully-specified valid CR with all optional sections, (9) reject update from valid to invalid config, (10) accept valid update. Use existing test helpers: validMemcached(), uniqueName(), int32Ptr(), strPtr(). Verify error messages contain expected field paths using Expect(err.Error()).To(ContainSubstring(...)).",
       "level": 3,
       "estimate_minutes": 30,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -434,6 +439,7 @@
       "description": "Create docs/reference/backend/validation-webhook.md following the structure of the existing docs/reference/backend/defaulting-webhook.md. Include: (1) Overview section with webhook path (/validate-memcached-c5c3-io-v1alpha1-memcached), admission type (Validating), failure policy (Fail), side effects (None), (2) Validation rules table listing all cross-field rules with field paths, constraints, and error messages, (3) Example rejected CRs (memory limit too low, PDB misconfigured, SASL without secret, timing mismatch), (4) Example accepted CRs (minimal, fully-specified valid), (5) Admission chain explanation (defaulting runs first, then validation), (6) Error format explanation (aggregated field.ErrorList via StatusError).",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -622,6 +628,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T10:28:51.058249"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T11:42:11.158431"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T12:19:23.012151"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T12:19:23.033919"
     }
   },
   "execution_history": [
@@ -635,6 +653,56 @@
           "name": "prepare",
           "duration": 395.045569896698,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "2849b3ab-3da5-4eb7-b2ce-77fca1fc7ae4",
+      "timestamp": "2026-02-20T12:13:22.808908",
+      "total_duration": 1732.3417546749115,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 289.339941740036,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 563.3692581653595,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 119.09978485107422,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 122.59937739372253,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0022] Code Review",
+          "duration": 338.8964910507202,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0022] Improvements",
+          "duration": 147.20251083374023,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0022] Simplify",
+          "duration": 151.8343906402588,
+          "type": "simplify",
           "status": "done"
         }
       ]

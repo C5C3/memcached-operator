@@ -169,7 +169,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 				},
 				Limits: corev1.ResourceList{
 					corev1.ResourceCPU:    resource.MustParse("500m"),
-					corev1.ResourceMemory: resource.MustParse("256Mi"),
+					corev1.ResourceMemory: resource.MustParse("300Mi"),
 				},
 			}
 			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
@@ -206,7 +206,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 			Expect(container.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
 			Expect(container.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("128Mi")))
 			Expect(container.Resources.Limits[corev1.ResourceCPU]).To(Equal(resource.MustParse("500m")))
-			Expect(container.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("256Mi")))
+			Expect(container.Resources.Limits[corev1.ResourceMemory]).To(Equal(resource.MustParse("300Mi")))
 		})
 
 		It("should create a Deployment with requests-only resources", func() {
