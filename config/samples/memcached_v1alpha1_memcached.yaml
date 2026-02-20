@@ -37,7 +37,7 @@ spec:
       seccompProfile:
         type: RuntimeDefault
     containerSecurityContext:
-      runAsUser: 1000
+      runAsUser: 11211
       runAsNonRoot: true
       readOnlyRootFilesystem: true
       allowPrivilegeEscalation: false

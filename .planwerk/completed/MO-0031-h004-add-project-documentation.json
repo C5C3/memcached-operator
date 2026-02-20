@@ -2,8 +2,8 @@
   "feature_id": "MO-0031",
   "title": "H004: Add project documentation",
   "slug": "h004-add-project-documentation",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "Write operator documentation: installation guide, CRD reference with all fields documented, upgrade guide, troubleshooting, architecture overview. Include example CRs for common use cases (minimal, HA, monitoring-enabled, TLS-enabled).",
   "stories": [
@@ -366,6 +366,7 @@
       "title": "Create documentation index page at docs/index.md linking all sections and existing reference docs (REQ-007)",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -375,6 +376,7 @@
       "title": "Write architecture overview at docs/explanation/architecture-overview.md with diagrams, reconciliation flow, managed resources, design principles, and watch model (REQ-005)",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -384,6 +386,7 @@
       "title": "Write comprehensive CRD field reference at docs/reference/crd-reference.md documenting all spec/status fields, nested structs, defaults, validation, and webhook behavior (REQ-002, REQ-008)",
       "level": 1,
       "estimate_minutes": 30,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-008"
@@ -394,6 +397,7 @@
       "title": "Write installation guide at docs/how-to/installation.md covering prerequisites, CRD install, local dev, cluster deployment, and verification (REQ-001, REQ-008)",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-008"
@@ -404,6 +408,7 @@
       "title": "Write upgrade guide at docs/how-to/upgrade.md covering pre-upgrade checklist, CRD update, operator deployment, verification, and rollback (REQ-003, REQ-008)",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-008"
@@ -414,6 +419,7 @@
       "title": "Write troubleshooting guide at docs/how-to/troubleshooting.md covering 6+ failure scenarios with symptom/diagnosis/causes/fix pattern (REQ-004, REQ-008)",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-008"
@@ -424,6 +430,7 @@
       "title": "Write example CRs document at docs/how-to/examples.md with annotated minimal, HA, monitoring, TLS, and production examples (REQ-006, REQ-009)",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-009"
@@ -434,6 +441,7 @@
       "title": "Create example CR YAML files in config/samples/: minimal.yaml, ha.yaml, monitoring.yaml, tls.yaml, production.yaml matching the examples doc (REQ-006, REQ-009)",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-009"
@@ -444,6 +452,7 @@
       "title": "Update config/samples/kustomization.yaml to include all new example CR files (REQ-006)",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -453,6 +462,7 @@
       "title": "Update docs/index.md to cross-reference all new docs and verify all links resolve correctly (REQ-007)",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -462,6 +472,7 @@
       "title": "Write test that validates all example CR YAML files in config/samples/ parse as valid Memcached objects and pass webhook validation (REQ-009)",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -471,6 +482,7 @@
       "title": "Write test that validates all YAML code blocks in docs/how-to/examples.md parse as valid Memcached CRs with correct apiVersion/kind/field names (REQ-009)",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -480,6 +492,7 @@
       "title": "Write test that validates all internal links in documentation files resolve to existing files or anchors (REQ-007)",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -570,6 +583,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-20T18:26:20.904930"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T18:27:56.215139"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T19:23:50.673294"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T19:23:50.693478"
     }
   },
   "execution_history": [
@@ -583,6 +608,50 @@
           "name": "prepare",
           "duration": 181.32498741149902,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "6cef2fe5-6e43-40fe-b3c6-ac89de81885e",
+      "timestamp": "2026-02-20T19:17:05.011164",
+      "total_duration": 1205.2797119617462,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (7 tasks)",
+          "duration": 199.48709893226624,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 89.01413774490356,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 427.38540840148926,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0031] Code Review",
+          "duration": 190.66076469421387,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0031] Improvements",
+          "duration": 84.90201926231384,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0031] Simplify",
+          "duration": 213.83028292655945,
+          "type": "simplify",
           "status": "done"
         }
       ]

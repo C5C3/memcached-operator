@@ -1,0 +1,22 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  labels:
+    app.kubernetes.io/name: memcached-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: memcached-monitored
+spec:
+  replicas: 2
+  monitoring:
+    enabled: true
+    exporterResources:
+      requests:
+        cpu: 50m
+        memory: 32Mi
+      limits:
+        cpu: 100m
+        memory: 64Mi
+    serviceMonitor:
+      additionalLabels:
+        release: prometheus
+      interval: 15s

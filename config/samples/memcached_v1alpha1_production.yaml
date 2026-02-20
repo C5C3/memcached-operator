@@ -1,0 +1,89 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  labels:
+    app.kubernetes.io/name: memcached-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: memcached-production
+  namespace: cache
+spec:
+  replicas: 5
+  image: "memcached:1.6"
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+  memcached:
+    maxMemoryMB: 2048
+    maxConnections: 4096
+    threads: 8
+    maxItemSize: "2m"
+    verbosity: 0
+    extraArgs:
+      - "-o"
+      - "modern"
+  highAvailability:
+    antiAffinityPreset: soft
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+    podDisruptionBudget:
+      enabled: true
+      maxUnavailable: 1
+    gracefulShutdown:
+      enabled: true
+      preStopDelaySeconds: 15
+      terminationGracePeriodSeconds: 45
+  monitoring:
+    enabled: true
+    exporterResources:
+      requests:
+        cpu: 50m
+        memory: 32Mi
+      limits:
+        cpu: 200m
+        memory: 64Mi
+    serviceMonitor:
+      additionalLabels:
+        release: prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+  security:
+    podSecurityContext:
+      runAsNonRoot: true
+      seccompProfile:
+        type: RuntimeDefault
+    containerSecurityContext:
+      runAsUser: 11211
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+      seccompProfile:
+        type: RuntimeDefault
+    sasl:
+      enabled: true
+      credentialsSecretRef:
+        name: memcached-prod-sasl
+    tls:
+      enabled: true
+      certificateSecretRef:
+        name: memcached-prod-tls
+    networkPolicy:
+      enabled: true
+      allowedSources:
+        - podSelector:
+            matchLabels:
+              app: api-server
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus

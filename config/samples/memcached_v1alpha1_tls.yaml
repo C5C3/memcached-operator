@@ -1,0 +1,14 @@
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  labels:
+    app.kubernetes.io/name: memcached-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: memcached-tls
+spec:
+  replicas: 3
+  security:
+    tls:
+      enabled: true
+      certificateSecretRef:
+        name: memcached-tls-certs

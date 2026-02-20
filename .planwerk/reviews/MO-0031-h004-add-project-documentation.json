@@ -1,0 +1,90 @@
+{
+  "summary": "Documentation suite for the Memcached Operator: 7 documentation files (index, architecture, CRD reference, installation, upgrade, troubleshooting, examples), 5 new sample CRs (minimal, HA, monitoring, TLS, production), updated kustomization.yaml, and 3 Go test files validating YAML examples, documentation YAML blocks, and internal link resolution. All tests pass, go vet is clean.",
+  "verdict": "NEEDS_CHANGES",
+  "tests_checklist": [
+    {"item": "V1: All tests pass (go test ./...)", "checked": true},
+    {"item": "V2: go vet clean", "checked": true},
+    {"item": "V3: golangci-lint (skipped — toolchain version mismatch, not a code issue)", "checked": true},
+    {"item": "TE1: Happy path tested — sample CRs validated, doc examples validated, links validated", "checked": true},
+    {"item": "TE2: Edge cases tested — partial YAML snippets, bash/ini block exclusion, empty/missing checks", "checked": true},
+    {"item": "TE3: Error cases tested — missing files, broken links, malformed YAML all caught", "checked": true},
+    {"item": "TE4: Tests independent — no shared mutable state between tests", "checked": true},
+    {"item": "TE7: Assertions specific — exact apiVersion, kind, field values checked", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Q1: Test functions do one thing each", "checked": true},
+    {"item": "Q3: Helper functions extracted (loadSampleYAML, extractYAMLBlocks, filterCompleteYAMLCRs, findMarkdownFiles)", "checked": true},
+    {"item": "Q4: Clear naming throughout", "checked": true},
+    {"item": "P1: Follows existing docs/reference/backend/ patterns (Source header, tables, code blocks)", "checked": true},
+    {"item": "P5: File locations match project structure conventions (Diataxis: explanation, how-to, reference)", "checked": true},
+    {"item": "DA1: Documentation accurately describes implemented behavior", "checked": false},
+    {"item": "DA3: New docs entries accurately reflect implemented behavior", "checked": false}
+  ],
+  "security_checklist": [
+    {"item": "S3: No hardcoded secrets in sample CRs (only reference names)", "checked": true},
+    {"item": "S5: No sensitive data in logs or docs", "checked": true},
+    {"item": "S6: No path traversal in test file resolution (uses runtime.Caller-relative paths)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible for documentation + validation tests", "checked": true},
+    {"item": "Test files co-located with types in api/v1alpha1/ for direct access to Memcached struct", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated documentation content", "checked": true},
+    {"item": "CRD reference is separate from existing per-component backend docs", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Tests fail fast with t.Fatal on setup errors", "checked": true},
+    {"item": "Sanity checks (zero files, zero links) catch setup problems", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Tests validate both existence and content of files", "checked": true},
+    {"item": "Link validation strips anchors and normalizes paths", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [
+    {
+      "severity": "MAJOR",
+      "id": "DA1",
+      "description": "Architecture overview (docs/explanation/architecture-overview.md lines 269-305) documents a 'Stats Collection' section describing TCP-based stats collection via the memcached text protocol, status fields 'currentConnections' and 'hitRatio', aggregation across pods, error handling, and 2s/3s timeouts. None of this functionality exists in the codebase — the MemcachedStatus type only has Conditions, ReadyReplicas, and ObservedGeneration. The reconciliation flow diagram (line 162) also references 'Query memcached stats via TCP' and the requeue table (line 303) says 'Refresh stats' — all describing unimplemented behavior.",
+      "location": "docs/explanation/architecture-overview.md:162,269-305",
+      "fix": "Remove the entire 'Stats Collection' section (lines 268-293). Update reconciliation flow step 8 to remove 'Query memcached stats via TCP (currentConnections, hitRatio)'. Update requeue table to say 'Periodic re-reconciliation' instead of 'Refresh stats (connections, hit ratio)'."
+    }
+  ],
+  "issues_found": [
+    {
+      "id": "DA1-1",
+      "severity": "major",
+      "check_id": "DA1",
+      "description": "Architecture overview documents unimplemented Stats Collection feature as if it exists. The 'Stats Collection' section (lines 269-305) describes TCP-based memcached stats querying, status fields 'currentConnections' and 'hitRatio', pod aggregation logic, and timeout configuration — none of which exist in the codebase. MemcachedStatus only has Conditions, ReadyReplicas, and ObservedGeneration.",
+      "location": "docs/explanation/architecture-overview.md:269-305",
+      "fix": "Remove the 'Stats Collection' section entirely (lines 268-305). Update reconciliation flow step 8 (line 162) to remove 'Query memcached stats via TCP (currentConnections, hitRatio)' — replace with just 'Set conditions: Available, Progressing, Degraded'. Update requeue reason (line 303) from 'Refresh stats (connections, hit ratio)' to 'Periodic re-reconciliation'."
+    },
+    {
+      "id": "DA1-2",
+      "severity": "major",
+      "check_id": "DA1",
+      "description": "Reconciliation flow diagram references non-existent stats collection step.",
+      "location": "docs/explanation/architecture-overview.md:162",
+      "fix": "Change line 162 from '|   +-- Query memcached stats via TCP (currentConnections, hitRatio)' to remove the stats reference. Step 8 should only cover setting conditions and observedGeneration."
+    },
+    {
+      "id": "DA1-3",
+      "severity": "major",
+      "check_id": "DA1",
+      "description": "Requeue strategy table claims 60s requeue is for 'Refresh stats (connections, hit ratio)' — no stats functionality exists.",
+      "location": "docs/explanation/architecture-overview.md:303",
+      "fix": "Update the requeue reason to 'Periodic re-reconciliation' or similar accurate description."
+    }
+  ],
+  "suggested_improvements": [
+    "Minor: The test_specifications in the progress file reference paths in internal/controller/ (e.g. sample_cr_validation_test.go, doc_examples_validation_test.go, doc_links_test.go) but the actual test files are in api/v1alpha1/ (sample_yaml_test.go, doc_yaml_test.go, doc_links_test.go). This is a planning artifact discrepancy, not a code issue.",
+    "Minor: The installation guide lists 'Go 1.24 or later' as a local development prerequisite, but go.mod targets Go 1.25. Consider updating to match.",
+    "Minor: config/samples/memcached_v1alpha1_memcached.yaml uses runAsUser: 1000 with fsGroup: 11211 — the uid mismatch is harmless but inconsistent with the production sample which uses 11211 for both."
+  ],
+  "next_steps": [
+    "Remove the Stats Collection section from docs/explanation/architecture-overview.md (lines 268-305)",
+    "Update the reconciliation flow diagram step 8 to remove stats references (line 162)",
+    "Update the requeue strategy table to remove stats references (line 303)"
+  ]
+}
