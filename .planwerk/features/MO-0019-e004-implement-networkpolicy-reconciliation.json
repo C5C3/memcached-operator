@@ -1,0 +1,554 @@
+{
+  "feature_id": "MO-0019",
+  "title": "E004: Implement NetworkPolicy reconciliation",
+  "slug": "e004-implement-networkpolicy-reconciliation",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Create and reconcile a NetworkPolicy when enabled in the CRD spec. Restrict ingress to Memcached port (11211) and exporter port (9150) from allowed sources. Set owner references for cleanup. The controller watches NetworkPolicy resources for drift detection.",
+  "stories": [
+    {
+      "title": "Operator creates NetworkPolicy when enabled",
+      "role": "cluster operator",
+      "want": "the operator to create a Kubernetes NetworkPolicy restricting ingress traffic to my Memcached pods when I enable the networkPolicy feature in the CRD spec",
+      "so_that": "only authorized sources can reach Memcached, improving the security posture of my cluster",
+      "criteria": [
+        "When spec.security.networkPolicy.enabled is true, a NetworkPolicy with the same name as the Memcached CR is created in the same namespace",
+        "The NetworkPolicy allows ingress on port 11211/TCP (memcached) from allowed sources",
+        "When monitoring is enabled, the NetworkPolicy additionally allows ingress on port 9150/TCP (metrics exporter)",
+        "When TLS is enabled, the NetworkPolicy additionally allows ingress on port 11212/TCP (memcached-tls)",
+        "The NetworkPolicy has owner references pointing to the Memcached CR for garbage collection"
+      ]
+    },
+    {
+      "title": "Operator skips NetworkPolicy when disabled",
+      "role": "cluster operator",
+      "want": "the operator to NOT create a NetworkPolicy when the feature is disabled or not configured",
+      "so_that": "I can run Memcached without network restrictions when my environment does not require them",
+      "criteria": [
+        "No NetworkPolicy is created when spec.security is nil",
+        "No NetworkPolicy is created when spec.security.networkPolicy is nil",
+        "No NetworkPolicy is created when spec.security.networkPolicy.enabled is false",
+        "No error is returned during reconciliation when NetworkPolicy is disabled"
+      ]
+    },
+    {
+      "title": "Operator allows configuring ingress sources",
+      "role": "cluster operator",
+      "want": "to configure which namespaces and pods are allowed to reach Memcached",
+      "so_that": "I can restrict access to only the application pods that need Memcached connectivity",
+      "criteria": [
+        "The CRD accepts an allowedSources list of NetworkPolicyPeer entries",
+        "When allowedSources is empty/nil, the NetworkPolicy allows ingress from any source (empty from: [])",
+        "When allowedSources contains namespace selectors, only pods from matching namespaces can reach Memcached",
+        "When allowedSources contains pod selectors, only matching pods can reach Memcached"
+      ]
+    },
+    {
+      "title": "Operator corrects NetworkPolicy drift",
+      "role": "cluster operator",
+      "want": "the operator to detect and correct manual modifications to the NetworkPolicy",
+      "so_that": "the actual network policy always matches my declared intent in the CRD spec",
+      "criteria": [
+        "If an external actor modifies the NetworkPolicy ports, the next reconciliation restores them",
+        "If an external actor modifies the NetworkPolicy ingress rules, the next reconciliation restores them",
+        "Two consecutive reconciliations without spec changes produce no NetworkPolicy update (idempotent)",
+        "The controller watches NetworkPolicy resources via Owns() for drift detection"
+      ]
+    },
+    {
+      "title": "Operator updates NetworkPolicy when spec changes",
+      "role": "cluster operator",
+      "want": "the NetworkPolicy to be updated when I change the Memcached CRD spec",
+      "so_that": "enabling monitoring or changing allowed sources takes effect without manual intervention",
+      "criteria": [
+        "Enabling monitoring adds port 9150 to the NetworkPolicy ingress rules",
+        "Disabling monitoring removes port 9150 from the NetworkPolicy ingress rules",
+        "Enabling TLS adds port 11212 to the NetworkPolicy ingress rules",
+        "Changing allowedSources updates the NetworkPolicy ingress from peers"
+      ]
+    },
+    {
+      "title": "CRD validates NetworkPolicy configuration",
+      "role": "cluster operator",
+      "want": "the CRD to accept valid NetworkPolicy configurations and round-trip correctly",
+      "so_that": "I have confidence the operator will apply my intended policy",
+      "criteria": [
+        "A CR with spec.security.networkPolicy.enabled=true is accepted",
+        "A CR with spec.security.networkPolicy.enabled=false is accepted",
+        "A CR with spec.security.networkPolicy with allowedSources containing namespaceSelector is accepted",
+        "A CR with spec.security.networkPolicy with allowedSources containing podSelector is accepted"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The controller SHALL create a NetworkPolicy when spec.security.networkPolicy.enabled is true",
+      "priority": "SHALL",
+      "rationale": "Core feature: restrict ingress to Memcached pods via Kubernetes NetworkPolicy when operator-managed network isolation is enabled",
+      "scenarios": [
+        {
+          "name": "NetworkPolicy created when enabled",
+          "when": "a Memcached CR is created with spec.security.networkPolicy.enabled=true",
+          "then": "a NetworkPolicy with the same name and namespace is created with ingress rules for port 11211",
+          "and_then": [
+            "the NetworkPolicy has policyTypes=[Ingress]",
+            "the NetworkPolicy podSelector matches labelsForMemcached(name)"
+          ]
+        },
+        {
+          "name": "NetworkPolicy includes memcached port",
+          "when": "the NetworkPolicy is created",
+          "then": "the ingress rules include port 11211/TCP",
+          "and_then": [
+            "the port is always present regardless of monitoring/TLS settings"
+          ]
+        },
+        {
+          "name": "NetworkPolicy has standard labels",
+          "when": "the NetworkPolicy is created",
+          "then": "metadata.labels contains the standard labelsForMemcached(name) labels",
+          "and_then": [
+            "app.kubernetes.io/name=memcached",
+            "app.kubernetes.io/instance=<cr-name>",
+            "app.kubernetes.io/managed-by=memcached-operator"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The controller SHALL skip NetworkPolicy reconciliation when the feature is disabled or not configured",
+      "priority": "SHALL",
+      "rationale": "NetworkPolicy is opt-in; operators who do not need network isolation should not have policies applied",
+      "scenarios": [
+        {
+          "name": "No NetworkPolicy when security is nil",
+          "when": "spec.security is nil",
+          "then": "reconcileNetworkPolicy returns nil without creating any resource",
+          "and_then": []
+        },
+        {
+          "name": "No NetworkPolicy when networkPolicy is nil",
+          "when": "spec.security.networkPolicy is nil",
+          "then": "reconcileNetworkPolicy returns nil without creating any resource",
+          "and_then": []
+        },
+        {
+          "name": "No NetworkPolicy when enabled is false",
+          "when": "spec.security.networkPolicy.enabled is false",
+          "then": "reconcileNetworkPolicy returns nil without creating any resource",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The controller SHALL include exporter metrics port 9150 in the NetworkPolicy when monitoring is enabled",
+      "priority": "SHALL",
+      "rationale": "When monitoring is enabled, Prometheus must be able to scrape the exporter sidecar on port 9150",
+      "scenarios": [
+        {
+          "name": "Metrics port included when monitoring enabled",
+          "when": "spec.monitoring.enabled is true and spec.security.networkPolicy.enabled is true",
+          "then": "the NetworkPolicy ingress rules include port 9150/TCP in addition to port 11211/TCP",
+          "and_then": []
+        },
+        {
+          "name": "No metrics port when monitoring disabled",
+          "when": "spec.monitoring is nil or spec.monitoring.enabled is false and networkPolicy is enabled",
+          "then": "the NetworkPolicy ingress rules only include port 11211/TCP",
+          "and_then": [
+            "port 9150 is not present in the ingress rules"
+          ]
+        },
+        {
+          "name": "Toggling monitoring updates NetworkPolicy ports",
+          "when": "monitoring is enabled after initial NetworkPolicy creation",
+          "then": "the next reconciliation adds port 9150/TCP to the existing ingress rules",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The controller SHALL include TLS port 11212 in the NetworkPolicy when TLS is enabled",
+      "priority": "SHALL",
+      "rationale": "When TLS is enabled, clients connect on port 11212 and this port must be permitted in the NetworkPolicy",
+      "scenarios": [
+        {
+          "name": "TLS port included when TLS enabled",
+          "when": "spec.security.tls.enabled is true and spec.security.networkPolicy.enabled is true",
+          "then": "the NetworkPolicy ingress rules include port 11212/TCP in addition to port 11211/TCP",
+          "and_then": []
+        },
+        {
+          "name": "No TLS port when TLS disabled",
+          "when": "spec.security.tls is nil or spec.security.tls.enabled is false and networkPolicy is enabled",
+          "then": "the NetworkPolicy ingress rules do not include port 11212/TCP",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The controller SHALL allow configuring ingress sources via spec.security.networkPolicy.allowedSources",
+      "priority": "SHALL",
+      "rationale": "Operators need fine-grained control over which workloads can reach Memcached pods",
+      "scenarios": [
+        {
+          "name": "Default allows all sources",
+          "when": "allowedSources is nil or empty",
+          "then": "the NetworkPolicy ingress rule has an empty from list (allows all sources within the policy scope)",
+          "and_then": [
+            "this effectively means all pods in the cluster can reach the allowed ports"
+          ]
+        },
+        {
+          "name": "Namespace selector restricts sources",
+          "when": "allowedSources contains a peer with namespaceSelector",
+          "then": "the NetworkPolicy ingress from includes the namespaceSelector peer",
+          "and_then": [
+            "only pods from matching namespaces can access Memcached"
+          ]
+        },
+        {
+          "name": "Pod selector restricts sources",
+          "when": "allowedSources contains a peer with podSelector",
+          "then": "the NetworkPolicy ingress from includes the podSelector peer",
+          "and_then": [
+            "only matching pods can access Memcached"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The controller SHALL set a controller owner reference on the NetworkPolicy",
+      "priority": "SHALL",
+      "rationale": "Owner references enable automatic garbage collection when the Memcached CR is deleted and allow the watch to map events back to the parent",
+      "scenarios": [
+        {
+          "name": "Owner reference set on creation",
+          "when": "the NetworkPolicy is created",
+          "then": "the ownerReferences field contains a single entry pointing to the Memcached CR",
+          "and_then": [
+            "apiVersion is memcached.c5c3.io/v1alpha1",
+            "kind is Memcached",
+            "controller is true",
+            "blockOwnerDeletion is true"
+          ]
+        },
+        {
+          "name": "NetworkPolicy deleted when CR deleted",
+          "when": "the Memcached CR is deleted",
+          "then": "the NetworkPolicy is garbage collected by Kubernetes via the owner reference",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The controller SHALL reconcile NetworkPolicy idempotently and correct drift",
+      "priority": "SHALL",
+      "rationale": "Level-triggered reconciliation requires deterministic output and drift correction for reliable operation",
+      "scenarios": [
+        {
+          "name": "Idempotent reconciliation",
+          "when": "two consecutive reconciliations run without spec changes",
+          "then": "the NetworkPolicy resourceVersion does not change on the second reconciliation",
+          "and_then": [
+            "no update API call is made"
+          ]
+        },
+        {
+          "name": "Drift correction on ports",
+          "when": "an external actor removes port 9150 from the NetworkPolicy while monitoring is enabled",
+          "then": "the next reconciliation restores port 9150 in the ingress rules",
+          "and_then": []
+        },
+        {
+          "name": "Drift correction on ingress from peers",
+          "when": "an external actor modifies the NetworkPolicy ingress from peers",
+          "then": "the next reconciliation restores the peers to match allowedSources",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The CRD SHALL define NetworkPolicySpec types and the fields SHALL be accepted by the API server",
+      "priority": "SHALL",
+      "rationale": "The CRD must define the types for the new security.networkPolicy field and they must pass validation",
+      "scenarios": [
+        {
+          "name": "CRD accepts networkPolicy enabled",
+          "when": "a Memcached CR is submitted with spec.security.networkPolicy.enabled=true",
+          "then": "the API server accepts the CR without validation errors",
+          "and_then": []
+        },
+        {
+          "name": "CRD accepts networkPolicy with allowedSources",
+          "when": "a Memcached CR is submitted with spec.security.networkPolicy.allowedSources containing namespace and pod selectors",
+          "then": "the API server accepts the CR without validation errors",
+          "and_then": [
+            "the allowedSources round-trip correctly on GET"
+          ]
+        },
+        {
+          "name": "CRD accepts networkPolicy disabled",
+          "when": "a Memcached CR is submitted with spec.security.networkPolicy.enabled=false",
+          "then": "the API server accepts the CR without validation errors",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add NetworkPolicySpec CRD types to api/v1alpha1/memcached_types.go (REQ-008)",
+      "description": "Add NetworkPolicySpec struct to SecuritySpec in api/v1alpha1/memcached_types.go. The struct has: Enabled bool, AllowedSources []networkingv1.NetworkPolicyPeer. Add the NetworkPolicy field to SecuritySpec. Run 'make manifests generate' to regenerate CRD YAML and deepcopy. Follow the same pattern as PDBSpec and SASLSpec (nested struct with Enabled bool + optional config).",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add CRD validation integration tests for NetworkPolicy fields (REQ-008)",
+      "description": "Add a Ginkgo test section in internal/controller/memcached_crd_validation_test.go following the existing pattern for SASL/TLS. Test: accept networkPolicy enabled, accept networkPolicy disabled, accept networkPolicy with allowedSources containing namespaceSelector, accept networkPolicy with allowedSources containing podSelector, accept fully populated security spec with networkPolicy. Verify round-trip persistence of allowedSources.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Implement constructNetworkPolicy builder function and networkPolicyEnabled guard in internal/controller/networkpolicy.go (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "description": "Create internal/controller/networkpolicy.go with: (1) networkPolicyEnabled(mc) bool guard — returns true only when spec.security.networkPolicy.enabled is true (check nil chain: Security, NetworkPolicy, Enabled). Follow pdbEnabled pattern. (2) constructNetworkPolicy(mc, np) pure builder function. Set labels via labelsForMemcached. Set spec.podSelector to labelsForMemcached(mc.Name). Set policyTypes=[Ingress]. Build ingress ports: always include 11211/TCP (memcached). If mc.Spec.Security.TLS.Enabled, add 11212/TCP (memcached-tls). If mc.Spec.Monitoring.Enabled, add 9150/TCP (metrics). Set ingress from peers from mc.Spec.Security.NetworkPolicy.AllowedSources (empty/nil means allow all — use a single IngressRule with ports only and no from). If allowedSources is non-empty, include them as the from field.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add unit tests for constructNetworkPolicy and networkPolicyEnabled in internal/controller/networkpolicy_test.go (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)",
+      "description": "Create internal/controller/networkpolicy_test.go with table-driven Go tests following servicemonitor_test.go and pdb_test.go patterns. Tests for networkPolicyEnabled: nil Security, nil NetworkPolicy, enabled=false, enabled=true. Tests for constructNetworkPolicy: (1) basic with only memcached port, (2) with monitoring enabled adds metrics port, (3) with TLS enabled adds TLS port, (4) with both monitoring and TLS, (5) with allowedSources containing namespaceSelector, (6) with allowedSources containing podSelector, (7) empty allowedSources produces no from field, (8) labels set correctly on metadata, (9) podSelector matches labelsForMemcached, (10) instance-scoped selector with different instance names.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Wire reconcileNetworkPolicy into the main Reconcile loop in memcached_controller.go (REQ-001, REQ-002, REQ-006)",
+      "description": "Add reconcileNetworkPolicy method to MemcachedReconciler in memcached_controller.go following the reconcilePDB/reconcileServiceMonitor pattern. The method: checks networkPolicyEnabled, creates a networkingv1.NetworkPolicy with name=mc.Name namespace=mc.Namespace, calls r.reconcileResource with constructNetworkPolicy mutate function and 'NetworkPolicy' kind string. Wire this into the Reconcile function after reconcileServiceMonitor and before reconcileStatus. The controller already has Owns(&networkingv1.NetworkPolicy{}) in SetupWithManager and the RBAC marker for networking.k8s.io/networkpolicies is already present.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add envtest integration tests for NetworkPolicy reconciliation in internal/controller/memcached_networkpolicy_reconcile_test.go (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005, REQ-006, REQ-007)",
+      "description": "Create internal/controller/memcached_networkpolicy_reconcile_test.go with Ginkgo/Gomega tests following the memcached_pdb_reconcile_test.go pattern. Add fetchNetworkPolicy helper. Tests: (1) NetworkPolicy created with defaults when enabled — verify ports include 11211, labels, podSelector, policyTypes. (2) Owner reference set correctly. (3) NetworkPolicy includes metrics port 9150 when monitoring is enabled. (4) NetworkPolicy includes TLS port 11212 when TLS is enabled. (5) NetworkPolicy with all ports when monitoring+TLS enabled. (6) NetworkPolicy with allowedSources populates ingress from peers. (7) No NetworkPolicy created when disabled. (8) NetworkPolicy updated when monitoring toggled on. (9) Idempotent — second reconcile does not change resourceVersion. (10) NetworkPolicy ingress from field is empty when allowedSources is nil.",
+      "level": 3,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for NetworkPolicy reconciliation in docs/reference/backend/networkpolicy-reconciliation.md (REQ-001 to REQ-008)",
+      "description": "Create docs/reference/backend/networkpolicy-reconciliation.md following the docs/reference/backend/pdb-reconciliation.md pattern exactly. Include: Overview, CRD Field Path (spec.security.networkPolicy), field table for NetworkPolicySpec (enabled, allowedSources), NetworkPolicy Construction section, Default Values, Labels, Selector, Reconciliation Method, Skip Logic, Owner Reference, CR Examples (basic enabled, with monitoring, with TLS, with allowedSources, disabled), Runtime Behavior table, Implementation section.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestNetworkPolicyEnabled",
+      "story": "Operator skips NetworkPolicy when disabled",
+      "expected": "Returns false when Security is nil, NetworkPolicy is nil, or enabled is false; returns true only when enabled is true",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy",
+      "story": "Operator creates NetworkPolicy when enabled",
+      "expected": "Constructs NetworkPolicy with correct ports (11211 always, 9150 when monitoring, 11212 when TLS), labels, podSelector, and policyTypes",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy_Labels",
+      "story": "Operator creates NetworkPolicy when enabled",
+      "expected": "NetworkPolicy metadata.labels contain labelsForMemcached standard labels",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy_MetricsPort",
+      "story": "Operator updates NetworkPolicy when spec changes",
+      "expected": "Port 9150/TCP included when monitoring enabled, absent when disabled",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy_TLSPort",
+      "story": "Operator updates NetworkPolicy when spec changes",
+      "expected": "Port 11212/TCP included when TLS enabled, absent when disabled",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy_AllowedSources",
+      "story": "Operator allows configuring ingress sources",
+      "expected": "NetworkPolicy ingress from field populated with allowedSources peers; empty from when allowedSources is nil",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy_InstanceScopedSelector",
+      "story": "Operator creates NetworkPolicy when enabled",
+      "expected": "PodSelector uses instance-specific labels ensuring per-CR isolation",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "NetworkPolicy creation with defaults when enabled",
+      "story": "Operator creates NetworkPolicy when enabled",
+      "expected": "NetworkPolicy created with port 11211, standard labels, podSelector, policyTypes=[Ingress], owner reference",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "Owner reference set correctly",
+      "story": "Operator creates NetworkPolicy when enabled",
+      "expected": "Owner reference points to Memcached CR with controller=true and blockOwnerDeletion=true",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "No NetworkPolicy when disabled",
+      "story": "Operator skips NetworkPolicy when disabled",
+      "expected": "No NetworkPolicy resource exists after reconciliation when networkPolicy is not enabled",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "NetworkPolicy includes metrics port when monitoring enabled",
+      "story": "Operator updates NetworkPolicy when spec changes",
+      "expected": "NetworkPolicy ingress ports include both 11211 and 9150 when monitoring is enabled",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "NetworkPolicy includes TLS port when TLS enabled",
+      "story": "Operator updates NetworkPolicy when spec changes",
+      "expected": "NetworkPolicy ingress ports include both 11211 and 11212 when TLS is enabled",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "Idempotent NetworkPolicy reconciliation",
+      "story": "Operator corrects NetworkPolicy drift",
+      "expected": "Second reconcile without changes does not update NetworkPolicy resourceVersion",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "NetworkPolicy with allowedSources",
+      "story": "Operator allows configuring ingress sources",
+      "expected": "NetworkPolicy ingress from contains the configured namespaceSelector/podSelector peers",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "CRD Validation: spec.security.networkPolicy",
+      "story": "CRD validates NetworkPolicy configuration",
+      "expected": "API server accepts networkPolicy enabled/disabled and with allowedSources; fields round-trip correctly",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 8 SHALL requirements (REQ-001 to REQ-008) have corresponding passing unit and/or integration tests",
+    "constructNetworkPolicy is a pure builder function (no client calls, no side effects) consistent with constructPDB/constructDeployment/constructService/constructServiceMonitor patterns",
+    "networkPolicyEnabled guard follows the nil-chain pattern of pdbEnabled/serviceMonitorEnabled",
+    "reconcileNetworkPolicy follows the exact pattern of reconcilePDB: guard check → empty object → reconcileResource call",
+    "NetworkPolicy ports are dynamically computed based on monitoring and TLS state — no hardcoded port lists",
+    "Owner reference is set via reconcileResource/SetControllerReference — no manual owner reference construction",
+    "CRD types use standard kubebuilder markers and run make manifests generate without errors",
+    "All tests pass: make test (envtest + unit), make lint, make vet",
+    "Reference documentation follows the exact structure and format of docs/reference/backend/pdb-reconciliation.md"
+  ],
+  "implementation_notes": "Architecture: Follow the established sub-resource reconciliation pattern used by PDB and ServiceMonitor. The implementation consists of three layers:\n\n1. **CRD Types** (api/v1alpha1/memcached_types.go): Add NetworkPolicySpec struct to SecuritySpec. Use networkingv1.NetworkPolicyPeer for allowedSources to leverage Kubernetes native types. This avoids reinventing selector types and ensures compatibility.\n\n2. **Builder + Guard** (internal/controller/networkpolicy.go): Pure functions constructNetworkPolicy and networkPolicyEnabled. The builder dynamically computes ingress ports based on monitoring and TLS state from the CR. AllowedSources maps directly to the NetworkPolicy ingress from field.\n\n3. **Reconciler wiring** (internal/controller/memcached_controller.go): Add reconcileNetworkPolicy call in the Reconcile method. The controller already has Owns(&networkingv1.NetworkPolicy{}) registered in SetupWithManager and the RBAC marker for networking.k8s.io/networkpolicies is present.\n\n**Key decisions:**\n- Use networkingv1.NetworkPolicyPeer directly in the CRD rather than custom selector types — this gives operators full Kubernetes NetworkPolicy peer semantics (namespaceSelector, podSelector, ipBlock).\n- When allowedSources is empty/nil, produce a single ingress rule with only ports and no from field. Per Kubernetes NetworkPolicy semantics, this allows all sources.\n- Port computation is dynamic: always 11211, conditionally 11212 (TLS), conditionally 9150 (monitoring).\n- The controller watch for NetworkPolicy is already in place (Owns in SetupWithManager).\n\n**Potential pitfalls:**\n- The constructNetworkPolicy function must fully set np.Spec on every call (not merge) to ensure idempotency with CreateOrUpdate. Follow the constructDeployment pattern of fully setting spec.\n- NetworkPolicyPeer types include ipBlock which uses pointer fields — ensure deepcopy generation handles this (it will, since we use the Kubernetes native type).\n- The ingress rule must use a single IngressRule with all ports, not separate rules per port, to ensure the from peers apply to all ports uniformly.",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.426461"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T08:18:58.606780"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T08:22:39.074843"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "95865a70-6607-454e-94f2-3ea3b6705108",
+      "timestamp": "2026-02-20T08:22:39.074869",
+      "total_duration": 216.31479668617249,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 216.31479668617249,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
