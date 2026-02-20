@@ -22,6 +22,11 @@ vendor/
 *.swo
 *~
 
+# Node.js / VitePress
+node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # OS
 .DS_Store
 Thumbs.db

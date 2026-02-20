@@ -34,7 +34,7 @@ Detailed technical reference material.
 | Document | Description |
 |----------|-------------|
 | [CRD Reference](reference/crd-reference.md) | Complete field reference for the Memcached Custom Resource Definition |
-| [Backend Reference Docs](reference/backend/) | Detailed per-feature implementation references covering reconciliation, webhooks, testing, security, and more |
+| [Backend Reference Docs](reference/backend/project-structure.md) | Detailed per-feature implementation references covering reconciliation, webhooks, testing, security, and more |
 
 The `reference/backend/` directory contains in-depth implementation references for individual features, including:
 
