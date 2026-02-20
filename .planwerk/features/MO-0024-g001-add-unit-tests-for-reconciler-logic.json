@@ -1,0 +1,624 @@
+{
+  "feature_id": "MO-0024",
+  "title": "G001: Add unit tests for reconciler logic",
+  "slug": "g001-add-unit-tests-for-reconciler-logic",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Write unit tests for the reconciler's resource-building logic: Deployment construction, Service construction, PDB construction, ServiceMonitor construction, NetworkPolicy construction. Test field mapping from CRD spec to Kubernetes resource specs. Mock the Kubernetes client for isolated testing.",
+  "stories": [
+    {
+      "title": "Operator developer verifies Deployment construction covers all CRD fields",
+      "role": "operator developer",
+      "want": "unit tests that verify every CRD spec field is correctly mapped to Deployment fields",
+      "so_that": "I can confidently refactor deployment construction without breaking field mappings",
+      "criteria": [
+        "constructDeployment with all features enabled (SASL, TLS, monitoring, security contexts, graceful shutdown, anti-affinity, topology spread, resources) produces correct Deployment",
+        "constructDeployment with zero replicas sets Deployment replicas to 0",
+        "constructDeployment is idempotent: calling twice on the same Deployment produces identical spec",
+        "constructDeployment with nil spec fields (nil image, nil replicas, nil resources, nil memcached config) uses defaults"
+      ]
+    },
+    {
+      "title": "Operator developer verifies Service construction maps all spec fields",
+      "role": "operator developer",
+      "want": "unit tests that verify Service construction correctly maps annotations, ports, and labels",
+      "so_that": "I can change Service logic knowing all edge cases are covered",
+      "criteria": [
+        "constructService clears previously-set annotations when spec.service becomes nil",
+        "constructService is idempotent: calling twice on the same Service produces identical spec",
+        "constructService with empty annotations map in spec clears existing annotations",
+        "constructService selector uses instance-scoped labels matching pod template labels"
+      ]
+    },
+    {
+      "title": "Operator developer verifies PDB construction handles all configurations",
+      "role": "operator developer",
+      "want": "unit tests that verify PDB construction handles minAvailable, maxUnavailable, and defaults",
+      "so_that": "PDB logic is fully covered and regression-proof",
+      "criteria": [
+        "constructPDB is idempotent: calling twice on the same PDB produces identical spec",
+        "constructPDB correctly clears the opposite field when switching from minAvailable to maxUnavailable",
+        "pdbEnabled returns correct result for all nil/false/true combinations"
+      ]
+    },
+    {
+      "title": "Operator developer verifies ServiceMonitor construction maps monitoring spec",
+      "role": "operator developer",
+      "want": "unit tests that verify ServiceMonitor interval, timeout, labels, and selectors are correct",
+      "so_that": "monitoring configuration is reliably mapped to ServiceMonitor resources",
+      "criteria": [
+        "constructServiceMonitor is idempotent: calling twice on the same ServiceMonitor produces identical spec",
+        "constructServiceMonitor with nil ServiceMonitor sub-spec uses defaults for interval and scrapeTimeout",
+        "serviceMonitorEnabled returns correct result for all nil/disabled/enabled combinations"
+      ]
+    },
+    {
+      "title": "Operator developer verifies NetworkPolicy construction handles all port and peer combinations",
+      "role": "operator developer",
+      "want": "unit tests that verify NetworkPolicy ports, peers, and selectors are correctly constructed",
+      "so_that": "network security rules are guaranteed correct under all configurations",
+      "criteria": [
+        "constructNetworkPolicy is idempotent: calling twice produces identical spec",
+        "constructNetworkPolicy with multiple allowed sources sets all peers correctly",
+        "networkPolicyEnabled returns correct result for all nil/false/true combinations"
+      ]
+    },
+    {
+      "title": "Operator developer verifies reconcile methods use mock client correctly",
+      "role": "operator developer",
+      "want": "unit tests that use fake Kubernetes client to verify reconcile methods for each resource type",
+      "so_that": "reconcile logic can be tested without envtest overhead",
+      "criteria": [
+        "reconcileDeployment creates Deployment with correct name/namespace using fake client",
+        "reconcileService creates headless Service with correct spec using fake client",
+        "reconcilePDB skips when PDB is not enabled and creates when enabled using fake client",
+        "reconcileServiceMonitor skips when monitoring is not enabled and creates when enabled using fake client",
+        "reconcileNetworkPolicy skips when not enabled and creates when enabled using fake client"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "Unit tests SHALL verify constructDeployment correctly maps ALL CRD spec fields to Deployment fields including defaults, SASL, TLS, monitoring, security contexts, graceful shutdown, anti-affinity, topology spread, and resources",
+      "priority": "SHALL",
+      "rationale": "The Deployment is the core resource; comprehensive field mapping tests prevent regressions when modifying construction logic",
+      "scenarios": [
+        {
+          "name": "All features enabled",
+          "when": "constructDeployment is called with a Memcached CR that has all optional features enabled (SASL, TLS, monitoring, security contexts, graceful shutdown, soft anti-affinity, topology spread, custom resources, custom image, custom replicas, custom memcached config)",
+          "then": "the Deployment contains 2 containers (memcached + exporter), SASL and TLS volumes and mounts, custom args, security contexts, lifecycle hook, affinity, topology spread constraints, and correct replicas/image/resources",
+          "and_then": [
+            "all container ports include memcached (11211) and memcached-tls (11212)",
+            "exporter container has security context applied"
+          ]
+        },
+        {
+          "name": "Zero replicas",
+          "when": "constructDeployment is called with spec.Replicas set to pointer to 0",
+          "then": "the Deployment replicas field is set to 0",
+          "and_then": [
+            "all other fields are still correctly populated"
+          ]
+        },
+        {
+          "name": "Idempotent construction",
+          "when": "constructDeployment is called twice on the same Deployment object with the same Memcached CR",
+          "then": "the Deployment spec is identical after both calls",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "Unit tests SHALL verify constructService correctly maps spec fields including headless ClusterIP, ports (memcached, TLS, metrics), labels, selectors, and annotations",
+      "priority": "SHALL",
+      "rationale": "The Service must be headless and expose the correct ports based on TLS and monitoring configuration",
+      "scenarios": [
+        {
+          "name": "Annotation clearing",
+          "when": "constructService is called on a Service that previously had annotations, with a Memcached CR that has nil spec.Service",
+          "then": "the Service annotations are set to nil (cleared)",
+          "and_then": []
+        },
+        {
+          "name": "Idempotent construction",
+          "when": "constructService is called twice on the same Service with the same Memcached CR",
+          "then": "the Service spec is identical after both calls",
+          "and_then": []
+        },
+        {
+          "name": "Empty annotations map clears existing",
+          "when": "constructService is called with spec.Service.Annotations as empty map (non-nil but empty)",
+          "then": "the Service annotations are set to nil (empty map treated as no annotations)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "Unit tests SHALL verify constructPDB correctly handles minAvailable/maxUnavailable precedence, defaults, and field clearing",
+      "priority": "SHALL",
+      "rationale": "PDB misconfiguration can cause disruption budget violations; field clearing is critical when switching between minAvailable and maxUnavailable",
+      "scenarios": [
+        {
+          "name": "Switching from maxUnavailable to minAvailable clears maxUnavailable",
+          "when": "constructPDB is called on a PDB that previously had maxUnavailable set, with a new spec that sets only minAvailable",
+          "then": "the PDB has minAvailable set and maxUnavailable cleared to nil",
+          "and_then": []
+        },
+        {
+          "name": "Idempotent construction",
+          "when": "constructPDB is called twice on the same PDB with the same Memcached CR",
+          "then": "the PDB spec is identical after both calls",
+          "and_then": []
+        },
+        {
+          "name": "Switching from minAvailable to maxUnavailable clears minAvailable",
+          "when": "constructPDB is called on a PDB that previously had minAvailable set, with a new spec that sets only maxUnavailable",
+          "then": "the PDB has maxUnavailable set and minAvailable cleared to nil",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "Unit tests SHALL verify constructServiceMonitor correctly maps interval, scrapeTimeout, labels (including additional labels and conflict resolution), namespace selector, and endpoint configuration",
+      "priority": "SHALL",
+      "rationale": "ServiceMonitor misconfiguration leads to missing metrics; label precedence must be correct to avoid overriding standard labels",
+      "scenarios": [
+        {
+          "name": "Idempotent construction",
+          "when": "constructServiceMonitor is called twice on the same ServiceMonitor with the same Memcached CR",
+          "then": "the ServiceMonitor spec is identical after both calls",
+          "and_then": []
+        },
+        {
+          "name": "Nil ServiceMonitor sub-spec uses defaults",
+          "when": "constructServiceMonitor is called with monitoring enabled but ServiceMonitor sub-spec is nil",
+          "then": "the ServiceMonitor has interval 30s and scrapeTimeout 10s (defaults)",
+          "and_then": [
+            "endpoint port is 'metrics'"
+          ]
+        },
+        {
+          "name": "Multiple additional labels merged correctly",
+          "when": "constructServiceMonitor is called with 3+ additional labels, one of which conflicts with a standard label",
+          "then": "non-conflicting additional labels appear in metadata, conflicting label is overridden by standard label",
+          "and_then": [
+            "selector.matchLabels contain only standard labels, not additional labels"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "Unit tests SHALL verify constructNetworkPolicy correctly builds ingress rules with correct port combinations and allowed source peers",
+      "priority": "SHALL",
+      "rationale": "NetworkPolicy misconfiguration can block legitimate traffic or allow unauthorized access",
+      "scenarios": [
+        {
+          "name": "Idempotent construction",
+          "when": "constructNetworkPolicy is called twice on the same NetworkPolicy with the same Memcached CR",
+          "then": "the NetworkPolicy spec is identical after both calls",
+          "and_then": []
+        },
+        {
+          "name": "Multiple allowed sources",
+          "when": "constructNetworkPolicy is called with 2+ allowed sources (mix of namespace and pod selectors)",
+          "then": "all peers are present in the ingress rule's From field",
+          "and_then": []
+        },
+        {
+          "name": "All three ports enabled",
+          "when": "constructNetworkPolicy is called with TLS enabled and monitoring enabled",
+          "then": "ingress rule has 3 ports: 11211, 11212, 9150 in order",
+          "and_then": [
+            "all ports use TCP protocol"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "Unit tests SHALL verify reconcileDeployment, reconcileService, reconcilePDB, reconcileServiceMonitor, and reconcileNetworkPolicy methods use the Kubernetes client correctly",
+      "priority": "SHALL",
+      "rationale": "Reconcile methods must correctly create/update resources via the client and skip when features are disabled",
+      "scenarios": [
+        {
+          "name": "reconcileDeployment creates Deployment via fake client",
+          "when": "reconcileDeployment is called with a valid Memcached CR and a fake client that has no existing Deployment",
+          "then": "a Deployment is created in the fake client with the correct name, namespace, and owner reference",
+          "and_then": [
+            "the Deployment spec matches what constructDeployment produces"
+          ]
+        },
+        {
+          "name": "reconcileService creates headless Service via fake client",
+          "when": "reconcileService is called with a valid Memcached CR and a fake client that has no existing Service",
+          "then": "a Service is created with ClusterIP=None, correct ports, and owner reference",
+          "and_then": []
+        },
+        {
+          "name": "reconcilePDB skips when disabled",
+          "when": "reconcilePDB is called with a Memcached CR that has PDB disabled (no HighAvailability spec)",
+          "then": "no PDB resource is created in the fake client and no error is returned",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "Unit tests SHALL verify reconcileServiceMonitor and reconcileNetworkPolicy skip resource creation when their features are disabled",
+      "priority": "SHALL",
+      "rationale": "Resources must not be created when their corresponding feature is disabled, to avoid unnecessary cluster resources",
+      "scenarios": [
+        {
+          "name": "reconcileServiceMonitor skips when monitoring disabled",
+          "when": "reconcileServiceMonitor is called with a Memcached CR that has nil Monitoring",
+          "then": "no ServiceMonitor is created and no error is returned",
+          "and_then": []
+        },
+        {
+          "name": "reconcileNetworkPolicy skips when disabled",
+          "when": "reconcileNetworkPolicy is called with a Memcached CR that has nil Security.NetworkPolicy",
+          "then": "no NetworkPolicy is created and no error is returned",
+          "and_then": []
+        },
+        {
+          "name": "reconcileServiceMonitor creates when enabled",
+          "when": "reconcileServiceMonitor is called with monitoring and ServiceMonitor enabled",
+          "then": "a ServiceMonitor is created with correct endpoint, interval, and owner reference",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "Unit tests SHALL verify builder helper functions handle all nil guard paths without panicking",
+      "priority": "SHALL",
+      "rationale": "Builder helpers must handle nil pointers gracefully since many CRD spec fields are optional",
+      "scenarios": [
+        {
+          "name": "buildAntiAffinity nil HighAvailability",
+          "when": "buildAntiAffinity is called with mc.Spec.HighAvailability = nil",
+          "then": "it returns nil without panicking",
+          "and_then": []
+        },
+        {
+          "name": "buildGracefulShutdown nil HighAvailability",
+          "when": "buildGracefulShutdown is called with mc.Spec.HighAvailability = nil",
+          "then": "it returns (nil, nil) without panicking",
+          "and_then": []
+        },
+        {
+          "name": "buildExporterContainer nil Monitoring",
+          "when": "buildExporterContainer is called with mc.Spec.Monitoring = nil",
+          "then": "it returns nil without panicking",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add constructDeployment kitchen-sink test with all features enabled simultaneously (REQ-001)",
+      "description": "Add a test `TestConstructDeployment_AllFeaturesEnabled` to `internal/controller/deployment_test.go` that creates a Memcached CR with ALL optional features enabled (custom replicas=3, custom image, custom resources, custom memcached config with verbosity+extraArgs, SASL enabled, TLS enabled with client cert, monitoring enabled with custom exporter image, pod+container security contexts, soft anti-affinity, topology spread constraints, graceful shutdown with custom values). Verify the resulting Deployment has: 2 containers (memcached + exporter), SASL+TLS volumes and volume mounts on memcached container only, correct args order (standard flags, verbosity, SASL -Y, TLS -Z and ssl opts, extraArgs), both container ports (11211, 11212), lifecycle hook, termination grace period, affinity, topology constraints, security contexts on both containers, correct replicas/image/resources. Follow existing table-driven test style.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add constructDeployment tests for zero replicas and idempotency (REQ-001)",
+      "description": "Add two tests to `internal/controller/deployment_test.go`: (1) `TestConstructDeployment_ZeroReplicas` - verify that when spec.Replicas is a pointer to 0, the Deployment replicas is set to 0 and all other fields are still correctly populated (labels, probes, strategy). (2) `TestConstructDeployment_Idempotent` - call constructDeployment twice on the same Deployment object with the same CR, verify the Deployment spec is byte-identical after both calls using reflect.DeepEqual. Test with a non-trivial CR (custom replicas, image, monitoring enabled).",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add constructService tests for annotation clearing and idempotency (REQ-002)",
+      "description": "Add tests to `internal/controller/service_test.go`: (1) `TestConstructService_ClearsAnnotations` - create a Service with pre-existing annotations, call constructService with a CR that has nil spec.Service, verify annotations are nil. (2) `TestConstructService_EmptyAnnotationsMap` - call with spec.Service.Annotations as empty map, verify annotations are nil. (3) `TestConstructService_Idempotent` - call constructService twice with monitoring+TLS enabled CR on same Service, verify specs are identical via reflect.DeepEqual.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Add constructPDB tests for field switching and idempotency (REQ-003)",
+      "description": "Add tests to `internal/controller/pdb_test.go`: (1) `TestConstructPDB_SwitchMaxUnavailableToMinAvailable` - create PDB with maxUnavailable=1, then call constructPDB with CR that has minAvailable=2, verify maxUnavailable is nil and minAvailable is 2. (2) `TestConstructPDB_SwitchMinAvailableToMaxUnavailable` - reverse: PDB starts with minAvailable, switched to maxUnavailable. (3) `TestConstructPDB_Idempotent` - call constructPDB twice, verify DeepEqual.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Add constructServiceMonitor idempotency test (REQ-004)",
+      "description": "Add test `TestConstructServiceMonitor_Idempotent` to `internal/controller/servicemonitor_test.go`: call constructServiceMonitor twice on the same ServiceMonitor with a CR that has custom interval, scrapeTimeout, and additional labels, verify specs are identical via reflect.DeepEqual.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Add constructNetworkPolicy tests for multiple peers and idempotency (REQ-005)",
+      "description": "Add tests to `internal/controller/networkpolicy_test.go`: (1) `TestConstructNetworkPolicy_MultiplePeers` - create CR with 3 allowed sources (namespace selector, pod selector, combined namespace+pod selector), verify all 3 peers appear in From field. (2) `TestConstructNetworkPolicy_Idempotent` - call constructNetworkPolicy twice with TLS+monitoring+allowedSources CR, verify specs are identical via reflect.DeepEqual.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add reconcileDeployment unit test with fake client (REQ-006)",
+      "description": "Add test file `internal/controller/reconcile_deployment_unit_test.go` (or add to `reconcile_resource_test.go`): (1) `TestReconcileDeployment_CreatesDeployment` - use fake.NewClientBuilder with testScheme(), call reconcileDeployment, verify a Deployment exists in the fake client with correct name/namespace, owner reference pointing to the Memcached CR, and spec matching constructDeployment output. (2) `TestReconcileDeployment_UpdatesExistingDeployment` - pre-create a Deployment with different replicas, call reconcileDeployment, verify the Deployment is updated. Reuse existing testScheme() and newTestReconciler() helpers from reconcile_resource_test.go.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add reconcileService unit test with fake client (REQ-006)",
+      "description": "Add tests: (1) `TestReconcileService_CreatesService` - use fake client, call reconcileService, verify Service exists with ClusterIP=None, correct ports and labels, and owner reference. (2) `TestReconcileService_UpdatesExistingService` - pre-create Service, call reconcileService with changed CR (add monitoring), verify metrics port added.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Add reconcilePDB unit test with fake client (REQ-006, REQ-007)",
+      "description": "Add tests: (1) `TestReconcilePDB_SkipsWhenDisabled` - call reconcilePDB with PDB not enabled, verify no PDB created and no error. (2) `TestReconcilePDB_CreatesWhenEnabled` - call with PDB enabled, verify PDB exists with correct minAvailable and owner reference.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Add reconcileServiceMonitor unit test with fake client (REQ-006, REQ-007)",
+      "description": "Add tests: (1) `TestReconcileServiceMonitor_SkipsWhenDisabled` - call with monitoring nil, verify no ServiceMonitor created. (2) `TestReconcileServiceMonitor_CreatesWhenEnabled` - call with monitoring+serviceMonitor enabled, verify ServiceMonitor exists with correct endpoint and owner reference. NOTE: must register monitoring.coreos.com scheme in testScheme for ServiceMonitor type.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Add reconcileNetworkPolicy unit test with fake client (REQ-006, REQ-007)",
+      "description": "Add tests: (1) `TestReconcileNetworkPolicy_SkipsWhenDisabled` - call with NetworkPolicy not enabled, verify no NetworkPolicy created. (2) `TestReconcileNetworkPolicy_CreatesWhenEnabled` - call with NetworkPolicy enabled, verify NetworkPolicy exists with correct ingress rules and owner reference.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Run full test suite and verify all tests pass with go vet and golangci-lint (REQ-001 to REQ-008)",
+      "description": "Run `make test` to execute all unit and integration tests. Run `make vet` and `make lint` to verify no static analysis errors. Fix any failures. Verify test count increased by the expected number of new tests.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Write reference documentation for unit test coverage (REQ-001 to REQ-008)",
+      "description": "Create `docs/reference/backend/unit-test-coverage.md` documenting: (1) which builder functions are tested and in which files, (2) which reconcile methods have mock-based unit tests, (3) test patterns used (table-driven, idempotency, field-switching, fake client), (4) how to run the tests. Reference the existing test file locations and naming conventions.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_AllFeaturesEnabled",
+      "story": "Operator developer verifies Deployment construction covers all CRD fields",
+      "expected": "Deployment with 2 containers, SASL+TLS volumes/mounts, all args in order, both ports, lifecycle hook, affinity, topology, security contexts, correct replicas/image/resources",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_ZeroReplicas",
+      "story": "Operator developer verifies Deployment construction covers all CRD fields",
+      "expected": "Deployment replicas is 0, all other fields correctly populated",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_Idempotent",
+      "story": "Operator developer verifies Deployment construction covers all CRD fields",
+      "expected": "Two calls to constructDeployment on same object produce identical spec",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_ClearsAnnotations",
+      "story": "Operator developer verifies Service construction maps all spec fields",
+      "expected": "Service annotations are nil after calling with nil spec.Service on Service that had annotations",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_EmptyAnnotationsMap",
+      "story": "Operator developer verifies Service construction maps all spec fields",
+      "expected": "Service annotations are nil when spec.Service.Annotations is empty map",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService_Idempotent",
+      "story": "Operator developer verifies Service construction maps all spec fields",
+      "expected": "Two calls to constructService on same object produce identical spec",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_SwitchMaxUnavailableToMinAvailable",
+      "story": "Operator developer verifies PDB construction handles all configurations",
+      "expected": "PDB maxUnavailable is nil after switching to minAvailable",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_SwitchMinAvailableToMaxUnavailable",
+      "story": "Operator developer verifies PDB construction handles all configurations",
+      "expected": "PDB minAvailable is nil after switching to maxUnavailable",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB_Idempotent",
+      "story": "Operator developer verifies PDB construction handles all configurations",
+      "expected": "Two calls to constructPDB on same object produce identical spec",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/servicemonitor_test.go",
+      "test_function": "TestConstructServiceMonitor_Idempotent",
+      "story": "Operator developer verifies ServiceMonitor construction maps monitoring spec",
+      "expected": "Two calls to constructServiceMonitor on same object produce identical spec",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy_MultiplePeers",
+      "story": "Operator developer verifies NetworkPolicy construction handles all port and peer combinations",
+      "expected": "All 3 allowed source peers appear in the ingress rule From field",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy_Idempotent",
+      "story": "Operator developer verifies NetworkPolicy construction handles all port and peer combinations",
+      "expected": "Two calls to constructNetworkPolicy on same object produce identical spec",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "TestReconcileDeployment_CreatesDeployment",
+      "story": "Operator developer verifies reconcile methods use mock client correctly",
+      "expected": "Deployment created in fake client with correct name, namespace, owner ref, and spec",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "TestReconcileService_CreatesService",
+      "story": "Operator developer verifies reconcile methods use mock client correctly",
+      "expected": "Service created in fake client with ClusterIP=None, correct ports, and owner ref",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "TestReconcilePDB_SkipsWhenDisabled",
+      "story": "Operator developer verifies reconcile methods use mock client correctly",
+      "expected": "No PDB created when PDB is not enabled, no error returned",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "TestReconcilePDB_CreatesWhenEnabled",
+      "story": "Operator developer verifies reconcile methods use mock client correctly",
+      "expected": "PDB created with correct spec and owner ref when enabled",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "TestReconcileServiceMonitor_SkipsWhenDisabled",
+      "story": "Operator developer verifies reconcile methods use mock client correctly",
+      "expected": "No ServiceMonitor created when monitoring disabled, no error",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "TestReconcileNetworkPolicy_SkipsWhenDisabled",
+      "story": "Operator developer verifies reconcile methods use mock client correctly",
+      "expected": "No NetworkPolicy created when not enabled, no error",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All new tests pass when running `make test` with zero failures",
+    "No golangci-lint errors introduced (`make lint` passes)",
+    "No go vet errors introduced (`make vet` passes)",
+    "All test_specifications from the plan are implemented with matching test function names",
+    "Tests follow existing patterns: table-driven Go tests in `*_test.go` files, using standard library testing package (not Ginkgo) for unit tests",
+    "Fake client tests reuse existing helpers (testScheme, newTestReconciler, newFakeClient) from reconcile_resource_test.go",
+    "Idempotency tests use reflect.DeepEqual to compare full specs",
+    "No modification to non-test files (only _test.go files and docs are affected)"
+  ],
+  "implementation_notes": "This feature adds unit tests to existing test files. The codebase already has extensive unit test coverage for builder functions and some fake-client tests for reconcileResource. The new tests fill specific gaps: (1) kitchen-sink test combining ALL features in constructDeployment, (2) idempotency tests for all 5 construct* functions, (3) field-switching tests for constructPDB, (4) annotation-clearing tests for constructService, (5) fake-client tests for each reconcile* method (reconcileDeployment, reconcileService, reconcilePDB, reconcileServiceMonitor, reconcileNetworkPolicy). All tests use standard Go testing (not Ginkgo), table-driven patterns where appropriate, and reuse existing test helpers. For ServiceMonitor fake-client tests, the monitoringv1 scheme must be registered in testScheme. Key files: deployment.go (constructDeployment, buildMemcachedArgs, buildAntiAffinity, etc.), service.go (constructService), pdb.go (constructPDB, pdbEnabled), servicemonitor.go (constructServiceMonitor, serviceMonitorEnabled), networkpolicy.go (constructNetworkPolicy, networkPolicyEnabled), memcached_controller.go (reconcileDeployment, reconcileService, etc.), reconcile_resource.go (reconcileResource).",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.428862"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T12:56:40.528346"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T13:00:50.453045"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "59a03c70-2ccc-453e-be27-ea348e6a48eb",
+      "timestamp": "2026-02-20T13:00:50.453072",
+      "total_duration": 246.39245867729187,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 246.39245867729187,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
