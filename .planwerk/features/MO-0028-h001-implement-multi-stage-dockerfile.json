@@ -1,0 +1,511 @@
+{
+  "feature_id": "MO-0028",
+  "title": "H001: Implement multi-stage Dockerfile",
+  "slug": "h001-implement-multi-stage-dockerfile",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "Create a multi-stage Dockerfile: build stage with Go 1.24+ compiles the operator binary, runtime stage uses distroless/static base image for minimal attack surface. Include labels for OCI image spec.",
+  "stories": [
+    {
+      "title": "Operator image includes OCI-compliant metadata labels",
+      "role": "cluster administrator",
+      "want": "the operator container image to include standard OCI labels (title, description, version, source, revision, license, created timestamp)",
+      "so_that": "I can inspect the image to identify its origin, version, and license using standard tooling (docker inspect, crane, skopeo)",
+      "criteria": [
+        "Image contains org.opencontainers.image.title label set to 'memcached-operator'",
+        "Image contains org.opencontainers.image.description label describing the operator",
+        "Image contains org.opencontainers.image.source label pointing to the GitHub repository URL",
+        "Image contains org.opencontainers.image.url label pointing to the project URL",
+        "Image contains org.opencontainers.image.version label with the build version",
+        "Image contains org.opencontainers.image.revision label with the git commit SHA",
+        "Image contains org.opencontainers.image.created label with RFC 3339 timestamp",
+        "Image contains org.opencontainers.image.licenses label set to 'Apache-2.0'"
+      ]
+    },
+    {
+      "title": "Operator binary embeds version information via ldflags",
+      "role": "operator developer",
+      "want": "the operator binary to embed version, git commit, and build date at compile time via Go ldflags",
+      "so_that": "the running operator can report its version in logs and metrics for debugging and auditing",
+      "criteria": [
+        "A version package exists at internal/version/version.go with exported Version, GitCommit, and BuildDate variables",
+        "The Dockerfile go build command includes -ldflags that set these variables",
+        "The Makefile passes VERSION, GIT_COMMIT, and BUILD_DATE as build args to docker build",
+        "Default values are set when ldflags are not provided (e.g. 'dev', 'unknown', 'unknown')"
+      ]
+    },
+    {
+      "title": "Operator image has minimal attack surface",
+      "role": "security engineer",
+      "want": "the runtime container image to use distroless/static:nonroot with no shell, no package manager, and non-root user",
+      "so_that": "the container has the smallest possible attack surface in production",
+      "criteria": [
+        "Runtime stage uses gcr.io/distroless/static:nonroot base image",
+        "Container runs as user 65532:65532 (nonroot)",
+        "Only the compiled manager binary is present in the runtime image",
+        "CGO_ENABLED=0 produces a fully static binary with no libc dependency"
+      ]
+    },
+    {
+      "title": "Docker build supports multi-architecture targets",
+      "role": "operator developer",
+      "want": "the Dockerfile to support building for linux/amd64 and linux/arm64 via TARGETOS and TARGETARCH build args",
+      "so_that": "the operator can be deployed on both AMD64 and ARM64 Kubernetes nodes",
+      "criteria": [
+        "TARGETOS and TARGETARCH build args are declared in the builder stage",
+        "GOOS and GOARCH are set from these args with linux as the default OS",
+        "make docker-buildx builds for linux/amd64,linux/arm64 platforms",
+        "The binary is cross-compiled with CGO_ENABLED=0 for static linking"
+      ]
+    },
+    {
+      "title": "Makefile targets pass dynamic metadata to Docker build",
+      "role": "operator developer",
+      "want": "make docker-build and make docker-buildx to automatically populate OCI labels with the current git revision, version tag, and timestamp",
+      "so_that": "every built image is automatically tagged with accurate build metadata without manual intervention",
+      "criteria": [
+        "make docker-build passes --build-arg for VERSION, GIT_COMMIT, and BUILD_DATE",
+        "GIT_COMMIT defaults to the output of git rev-parse HEAD",
+        "BUILD_DATE defaults to the current UTC timestamp in RFC 3339 format",
+        "VERSION defaults to the output of git describe --tags --always --dirty",
+        "make docker-buildx also passes the same build args"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The Dockerfile SHALL include OCI image spec labels on the runtime stage using build-time ARGs for dynamic values",
+      "priority": "SHALL",
+      "rationale": "OCI labels provide standardized image metadata for registries, scanners, and operators to identify image provenance",
+      "scenarios": [
+        {
+          "name": "Static labels are present",
+          "when": "the Docker image is built with default args",
+          "then": "the image contains org.opencontainers.image.title='memcached-operator', org.opencontainers.image.licenses='Apache-2.0', org.opencontainers.image.source='https://github.com/c5c3/memcached-operator'",
+          "and_then": [
+            "labels are inspectable via docker inspect or crane"
+          ]
+        },
+        {
+          "name": "Dynamic labels populated from build args",
+          "when": "docker build is invoked with --build-arg VERSION=v1.0.0 --build-arg GIT_COMMIT=abc123 --build-arg BUILD_DATE=2026-01-01T00:00:00Z",
+          "then": "the image contains org.opencontainers.image.version='v1.0.0', org.opencontainers.image.revision='abc123', org.opencontainers.image.created='2026-01-01T00:00:00Z'",
+          "and_then": [
+            "each label value matches the corresponding build arg exactly"
+          ]
+        },
+        {
+          "name": "Default values used when build args omitted",
+          "when": "docker build is invoked without explicit VERSION, GIT_COMMIT, or BUILD_DATE args",
+          "then": "the labels use empty-string defaults and do not cause build failure",
+          "and_then": [
+            "the build completes successfully"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The build stage SHALL compile a fully static Go binary with CGO_ENABLED=0 and cross-compilation support via TARGETOS/TARGETARCH",
+      "priority": "SHALL",
+      "rationale": "A static binary is required for the distroless runtime which has no libc; cross-compilation enables multi-arch images",
+      "scenarios": [
+        {
+          "name": "Default build produces linux binary",
+          "when": "docker build is run without specifying TARGETOS or TARGETARCH",
+          "then": "the binary is compiled for linux (TARGETOS defaults to linux)",
+          "and_then": [
+            "the binary is statically linked with no dynamic dependencies"
+          ]
+        },
+        {
+          "name": "Cross-compilation for ARM64",
+          "when": "docker build is run with --build-arg TARGETARCH=arm64",
+          "then": "the binary is compiled for linux/arm64",
+          "and_then": [
+            "CGO_ENABLED=0 ensures no C dependencies"
+          ]
+        },
+        {
+          "name": "Build caches Go module downloads",
+          "when": "go.mod and go.sum are copied before source code",
+          "then": "the go mod download layer is cached across source code changes",
+          "and_then": [
+            "rebuilds after source changes skip module download"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The runtime stage SHALL use gcr.io/distroless/static:nonroot as base image and run as non-root user 65532",
+      "priority": "SHALL",
+      "rationale": "Distroless images minimize attack surface; non-root execution follows the principle of least privilege",
+      "scenarios": [
+        {
+          "name": "Runtime uses distroless base",
+          "when": "the runtime stage is defined in the Dockerfile",
+          "then": "it uses FROM gcr.io/distroless/static:nonroot",
+          "and_then": [
+            "no shell, no package manager, no other utilities are present"
+          ]
+        },
+        {
+          "name": "Container runs as non-root",
+          "when": "the container is started",
+          "then": "the process runs as UID 65532 GID 65532",
+          "and_then": [
+            "USER 65532:65532 is set in the Dockerfile"
+          ]
+        },
+        {
+          "name": "Only manager binary is in runtime image",
+          "when": "the runtime image filesystem is inspected",
+          "then": "only the /manager binary is present (copied from builder stage)",
+          "and_then": [
+            "WORKDIR is set to / and ENTRYPOINT is ['/manager']"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The Go binary SHALL embed version, git commit, and build date via ldflags at compile time",
+      "priority": "SHALL",
+      "rationale": "Embedded version info enables runtime identification of the operator version for debugging, logging, and metrics",
+      "scenarios": [
+        {
+          "name": "Ldflags set version variables",
+          "when": "the binary is built with ldflags -X flags for Version, GitCommit, BuildDate",
+          "then": "the internal/version package variables contain the injected values",
+          "and_then": [
+            "values are accessible at runtime for logging"
+          ]
+        },
+        {
+          "name": "Default values when ldflags not provided",
+          "when": "the binary is built without ldflags (e.g. go build without -ldflags)",
+          "then": "Version defaults to 'dev', GitCommit defaults to 'unknown', BuildDate defaults to 'unknown'",
+          "and_then": [
+            "the binary still starts and operates normally"
+          ]
+        },
+        {
+          "name": "Dockerfile build command includes ldflags",
+          "when": "docker build is invoked with VERSION, GIT_COMMIT, BUILD_DATE build args",
+          "then": "the go build command in the Dockerfile passes -ldflags with -X flags setting the version package variables",
+          "and_then": [
+            "the compiled binary has the injected version information"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The Makefile SHALL pass VERSION, GIT_COMMIT, and BUILD_DATE build args to docker build and docker-buildx targets",
+      "priority": "SHALL",
+      "rationale": "Automating build arg population ensures every image build includes accurate metadata without manual steps",
+      "scenarios": [
+        {
+          "name": "docker-build passes build args",
+          "when": "make docker-build is run",
+          "then": "the docker build command includes --build-arg for VERSION, GIT_COMMIT, BUILD_DATE",
+          "and_then": [
+            "VERSION defaults to git describe output, GIT_COMMIT defaults to git rev-parse HEAD, BUILD_DATE defaults to current UTC RFC 3339 timestamp"
+          ]
+        },
+        {
+          "name": "docker-buildx passes build args",
+          "when": "make docker-buildx is run",
+          "then": "the docker buildx build command includes the same --build-arg flags",
+          "and_then": [
+            "multi-arch builds all receive the same version metadata"
+          ]
+        },
+        {
+          "name": "Variables can be overridden",
+          "when": "make docker-build VERSION=v2.0.0 is run",
+          "then": "the overridden VERSION value is passed to docker build",
+          "and_then": [
+            "GIT_COMMIT and BUILD_DATE still use their defaults"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The .dockerignore SHALL exclude test files, documentation, CI config, and development artifacts from the build context",
+      "priority": "SHALL",
+      "rationale": "Minimizing build context reduces image build time and prevents leaking sensitive or unnecessary files",
+      "scenarios": [
+        {
+          "name": "Development artifacts excluded",
+          "when": "docker build is run",
+          "then": "the build context excludes .git, bin/, testbin/, vendor/, docs/, *.md, hack/, config/, .serena/, .planwerk/, cover.out",
+          "and_then": [
+            "only go.mod, go.sum, cmd/, api/, and internal/ are in the build context"
+          ]
+        },
+        {
+          "name": "Test directory excluded",
+          "when": "docker build is run",
+          "then": "the test/ directory (E2E tests) is excluded from the build context",
+          "and_then": [
+            "build context size is minimized"
+          ]
+        },
+        {
+          "name": "License type hardcoded in label",
+          "when": "the OCI license label is set",
+          "then": "the license type is hardcoded as 'Apache-2.0' in the LABEL instruction",
+          "and_then": [
+            "LICENSE file exclusion from context does not affect label"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The Docker build SHALL complete successfully and produce a valid container image",
+      "priority": "SHALL",
+      "rationale": "The Dockerfile must be verified to build without errors after all modifications",
+      "scenarios": [
+        {
+          "name": "Build completes without errors",
+          "when": "docker build -t memcached-operator:test . is run from the project root",
+          "then": "the build exits with status 0 and produces a tagged image",
+          "and_then": [
+            "all stages complete successfully"
+          ]
+        },
+        {
+          "name": "Image contains expected labels",
+          "when": "the built image is inspected",
+          "then": "all 8 OCI labels are present",
+          "and_then": [
+            "static labels have hardcoded values, dynamic labels have build-arg values"
+          ]
+        },
+        {
+          "name": "Manager binary is at expected path",
+          "when": "the runtime image layers are inspected",
+          "then": "the /manager binary exists and is executable",
+          "and_then": [
+            "ENTRYPOINT points to /manager"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The Dockerfile SHOULD include descriptive comments for each stage and significant instruction",
+      "priority": "SHOULD",
+      "rationale": "Comments improve maintainability and help developers understand the build process and design decisions",
+      "scenarios": [
+        {
+          "name": "Builder stage documented",
+          "when": "the Dockerfile is read",
+          "then": "the builder stage has a comment explaining its purpose and the module caching strategy",
+          "and_then": []
+        },
+        {
+          "name": "Runtime stage documented",
+          "when": "the Dockerfile is read",
+          "then": "the runtime stage has a comment explaining the distroless base choice",
+          "and_then": []
+        },
+        {
+          "name": "OCI labels section documented",
+          "when": "the Dockerfile is read",
+          "then": "the LABEL block references the OCI image spec",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create internal/version package with ldflags variables and unit tests (REQ-004)",
+      "description": "Create internal/version/version.go with exported var Version, GitCommit, BuildDate (defaults: 'dev', 'unknown', 'unknown'). Add a String() function returning formatted version info. Create internal/version/version_test.go testing defaults and String() output. File: internal/version/version.go, internal/version/version_test.go.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add OCI labels and ldflags to Dockerfile (REQ-001, REQ-002, REQ-003, REQ-004, REQ-008)",
+      "description": "Modify the existing Dockerfile to: (1) Add ARG declarations for VERSION, GIT_COMMIT, BUILD_DATE in the builder stage, (2) Update the go build RUN command to include -ldflags '-s -w -X github.com/c5c3/memcached-operator/internal/version.Version=${VERSION} -X ...GitCommit=${GIT_COMMIT} -X ...BuildDate=${BUILD_DATE}', (3) Add ARG declarations for the same in the runtime stage, (4) Add a LABEL block with all 8 OCI image spec labels (title, description, url, source, version, revision, created, licenses). Keep existing structure (multi-stage, distroless, nonroot user). File: Dockerfile.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Update .dockerignore to exclude test/ directory (REQ-006)",
+      "description": "Add test/ to .dockerignore to exclude E2E test files from the Docker build context. The existing .dockerignore already excludes most artifacts but is missing the test/ directory. File: .dockerignore.",
+      "level": 1,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Update Makefile docker-build and docker-buildx targets to pass build args (REQ-005)",
+      "description": "Add Makefile variables: VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev), GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo unknown), BUILD_DATE ?= $(shell date -u +\"%Y-%m-%dT%H:%M:%SZ\"). Update docker-build target to pass --build-arg VERSION=$(VERSION) --build-arg GIT_COMMIT=$(GIT_COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE). Update docker-buildx target similarly. File: Makefile.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Verify Docker build succeeds and labels are correct (REQ-007)",
+      "description": "Run docker build -t memcached-operator:test --build-arg VERSION=test --build-arg GIT_COMMIT=abc123 --build-arg BUILD_DATE=2026-01-01T00:00:00Z . and verify: (1) build succeeds, (2) docker inspect shows all 8 OCI labels with correct values, (3) image uses distroless base. This is a manual verification step.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007",
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for Dockerfile and container build (REQ-008)",
+      "description": "Create docs/reference/backend/multi-stage-dockerfile.md documenting: (1) Dockerfile structure (builder stage, runtime stage), (2) OCI labels table with all 8 labels and their sources, (3) Build ARGs table (VERSION, GIT_COMMIT, BUILD_DATE, TARGETOS, TARGETARCH), (4) Makefile targets (docker-build, docker-push, docker-buildx) with usage examples, (5) .dockerignore contents, (6) Security properties (distroless, nonroot, static binary, CGO_ENABLED=0). File: docs/reference/backend/multi-stage-dockerfile.md.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/version/version_test.go",
+      "test_function": "TestVersionDefaults",
+      "story": "Operator binary embeds version information via ldflags",
+      "expected": "Version, GitCommit, and BuildDate should have default values ('dev', 'unknown', 'unknown') when ldflags are not set",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/version/version_test.go",
+      "test_function": "TestVersionString",
+      "story": "Operator binary embeds version information via ldflags",
+      "expected": "String() should return a formatted string containing Version, GitCommit, and BuildDate",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "Dockerfile",
+      "test_function": "manual: docker build verification",
+      "story": "Operator image includes OCI-compliant metadata labels",
+      "expected": "docker build succeeds and docker inspect shows all 8 OCI labels",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "Dockerfile",
+      "test_function": "manual: docker build with build args",
+      "story": "Makefile targets pass dynamic metadata to Docker build",
+      "expected": "docker build with --build-arg VERSION=v1.0.0 sets org.opencontainers.image.version=v1.0.0",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "Makefile",
+      "test_function": "manual: make docker-build",
+      "story": "Makefile targets pass dynamic metadata to Docker build",
+      "expected": "make docker-build passes VERSION, GIT_COMMIT, BUILD_DATE build args derived from git",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": ".dockerignore",
+      "test_function": "manual: verify build context",
+      "story": "Operator image has minimal attack surface",
+      "expected": ".dockerignore excludes .git, bin/, test/, docs/, config/, hack/, *.md, and other non-essential files",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "Dockerfile",
+      "test_function": "manual: verify distroless runtime",
+      "story": "Operator image has minimal attack surface",
+      "expected": "Runtime stage uses gcr.io/distroless/static:nonroot and runs as USER 65532:65532",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "Dockerfile",
+      "test_function": "manual: verify cross-compilation",
+      "story": "Docker build supports multi-architecture targets",
+      "expected": "Builder stage declares TARGETOS and TARGETARCH ARGs and uses them in go build with CGO_ENABLED=0",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/version/version_test.go",
+      "test_function": "TestVersionInfo",
+      "story": "Operator binary embeds version information via ldflags",
+      "expected": "Info() returns a struct with all version fields accessible",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "Dockerfile",
+      "test_function": "manual: verify ldflags in build command",
+      "story": "Operator binary embeds version information via ldflags",
+      "expected": "The RUN go build command includes -ldflags with -X flags for internal/version.Version, .GitCommit, .BuildDate",
+      "requirement_id": "REQ-004"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "Dockerfile builds successfully: docker build completes with exit code 0",
+    "All 8 OCI labels present: title, description, url, source, version, revision, created, licenses verified via docker inspect",
+    "Build args propagate correctly: VERSION, GIT_COMMIT, BUILD_DATE build args populate corresponding OCI labels and ldflags",
+    "internal/version package tests pass: go test ./internal/version/... exits with 0",
+    "Makefile docker-build includes --build-arg flags for VERSION, GIT_COMMIT, BUILD_DATE with git-derived defaults",
+    "Security maintained: runtime stage uses gcr.io/distroless/static:nonroot, USER 65532:65532, CGO_ENABLED=0",
+    "go vet ./... passes without errors after adding internal/version package",
+    "golangci-lint run passes without errors after adding internal/version package",
+    "Reference documentation exists at docs/reference/backend/multi-stage-dockerfile.md covering Dockerfile structure, OCI labels, build args, and Makefile targets"
+  ],
+  "implementation_notes": "The existing Dockerfile at /workspace/Dockerfile already implements the multi-stage pattern (golang:1.25 builder, gcr.io/distroless/static:nonroot runtime). The primary enhancement is adding OCI image spec labels and version embedding via ldflags.\n\nArchitectural decisions:\n- OCI labels are added to the runtime stage (not builder) so they appear on the final image\n- Dynamic label values (version, revision, created) use build ARGs with empty defaults to avoid build failures\n- Static label values (title, description, source, url, licenses) are hardcoded since they don't change per build\n- Version embedding uses a dedicated internal/version package following Go convention for ldflags injection\n- The -s -w ldflags strip debug info and DWARF tables to reduce binary size\n- Makefile variables use ?= for override-friendly defaults derived from git commands\n\nKey files:\n- Dockerfile: Add ARGs and LABELs, update go build with ldflags\n- Makefile: Add VERSION/GIT_COMMIT/BUILD_DATE variables, update docker-build/docker-buildx targets\n- internal/version/version.go: New package with ldflags-injectable variables\n- internal/version/version_test.go: Unit tests for version package\n- .dockerignore: Add test/ exclusion\n- docs/reference/backend/multi-stage-dockerfile.md: Reference documentation\n\nPitfalls to avoid:\n- ARGs must be re-declared after each FROM instruction (Docker scoping rule)\n- git describe may fail in CI without tags; use fallback (|| echo dev)\n- date format must be RFC 3339 for org.opencontainers.image.created\n- Do not add the version package to cmd/main.go startup logging in this task (that's a separate concern for the operator's logging setup)",
+  "status_history": {
+    "draft": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-18T20:22:08.430777"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:53:25.490384"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T16:58:49.950075"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "b550e8d4-0556-4193-bcce-2d3b7be7535e",
+      "timestamp": "2026-02-20T16:58:49.950102",
+      "total_duration": 320.4689779281616,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 320.4689779281616,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
