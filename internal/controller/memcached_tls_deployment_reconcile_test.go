@@ -11,6 +11,8 @@ import (
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 )
 
+const testTLSVolumeName = "tls-certificates"
+
 var _ = Describe("TLS Deployment Reconciliation", func() {
 
 	Context("TLS enabled (REQ-001, REQ-003, REQ-004, REQ-006, REQ-007)", func() {
@@ -52,7 +54,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			// TLS volume mount.
 			var tlsMount *corev1.VolumeMount
 			for i := range container.VolumeMounts {
-				if container.VolumeMounts[i].Name == "tls-certificates" {
+				if container.VolumeMounts[i].Name == testTLSVolumeName {
 					tlsMount = &container.VolumeMounts[i]
 					break
 				}
@@ -64,7 +66,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			// TLS volume.
 			var tlsVol *corev1.Volume
 			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == "tls-certificates" {
+				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
 					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
 					break
 				}
@@ -100,7 +102,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			// Volume should include ca.crt item.
 			var tlsVol *corev1.Volume
 			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == "tls-certificates" {
+				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
 					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
 					break
 				}
@@ -132,12 +134,12 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 			// No TLS volume mount.
 			for _, vm := range container.VolumeMounts {
-				Expect(vm.Name).NotTo(Equal("tls-certificates"))
+				Expect(vm.Name).NotTo(Equal(testTLSVolumeName))
 			}
 
 			// No TLS volume.
 			for _, v := range dep.Spec.Template.Spec.Volumes {
-				Expect(v.Name).NotTo(Equal("tls-certificates"))
+				Expect(v.Name).NotTo(Equal(testTLSVolumeName))
 			}
 		})
 	})
@@ -176,7 +178,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			// Verify TLS volume exists.
 			var hasTLSVol bool
 			for _, v := range dep.Spec.Template.Spec.Volumes {
-				if v.Name == "tls-certificates" {
+				if v.Name == testTLSVolumeName {
 					hasTLSVol = true
 					break
 				}
@@ -197,7 +199,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 			// Verify TLS volume removed.
 			for _, v := range dep.Spec.Template.Spec.Volumes {
-				Expect(v.Name).NotTo(Equal("tls-certificates"))
+				Expect(v.Name).NotTo(Equal(testTLSVolumeName))
 			}
 		})
 	})
@@ -286,7 +288,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 				if vm.Name == "sasl-credentials" {
 					hasSASLMount = true
 				}
-				if vm.Name == "tls-certificates" {
+				if vm.Name == testTLSVolumeName {
 					hasTLSMount = true
 				}
 			}
@@ -299,7 +301,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 				if v.Name == "sasl-credentials" {
 					hasSASLVol = true
 				}
-				if v.Name == "tls-certificates" {
+				if v.Name == testTLSVolumeName {
 					hasTLSVol = true
 				}
 			}
@@ -329,7 +331,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			dep := fetchDeployment(mc)
 			var tlsVol *corev1.Volume
 			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == "tls-certificates" {
+				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
 					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
 					break
 				}
@@ -347,7 +349,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 			dep = fetchDeployment(mc)
 			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == "tls-certificates" {
+				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
 					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
 					break
 				}

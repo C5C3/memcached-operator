@@ -10,9 +10,19 @@ formatters:
     - goimports
   settings:
     goimports:
-      local-prefixes: github.com/c5c3/memcached-operator
+      local-prefixes:
+        - github.com/c5c3/memcached-operator
 
 linters:
+  exclusions:
+    paths:
+      - bin
+      - testbin
+      - hack
+    rules:
+      - linters:
+          - gocyclo
+        path: _test\.go
   enable:
     - errcheck
     - goconst
@@ -26,21 +36,15 @@ linters:
     - unconvert
     - unparam
     - unused
-
-linters-settings:
-  gocyclo:
-    min-complexity: 15
-  goconst:
-    min-len: 3
-    min-occurrences: 3
-  misspell:
-    locale: US
+  settings:
+    gocyclo:
+      min-complexity: 15
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+    misspell:
+      locale: US
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-  exclude-dirs:
-    - bin
-    - testbin
-    - hack

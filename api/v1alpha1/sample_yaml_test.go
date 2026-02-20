@@ -222,20 +222,20 @@ func TestAllSamplesHaveValidStructure(t *testing.T) {
 			memcached := loadSampleYAML(t, filename)
 
 			// All samples must have TypeMeta set
-			if memcached.TypeMeta.APIVersion == "" {
+			if memcached.APIVersion == "" {
 				t.Error("TypeMeta.APIVersion is empty")
 			}
-			if memcached.TypeMeta.Kind == "" {
+			if memcached.Kind == "" {
 				t.Error("TypeMeta.Kind is empty")
 			}
 
 			// All samples must have metadata
-			if memcached.ObjectMeta.Name == "" {
+			if memcached.Name == "" {
 				t.Error("ObjectMeta.Name is empty")
 			}
 
 			// All samples should have labels
-			if len(memcached.ObjectMeta.Labels) == 0 {
+			if len(memcached.Labels) == 0 {
 				t.Logf("INFO: no labels found in %q - consider adding labels for better organization", filename)
 			}
 

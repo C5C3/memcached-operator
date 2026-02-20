@@ -53,7 +53,7 @@ func TestValidateDelete_AlwaysSucceeds(t *testing.T) {
 
 func TestValidateCreate_FullyPopulatedValidCR(t *testing.T) {
 	replicas := int32(3)
-	image := "memcached:1.6"
+	image := DefaultImage
 	mc := &Memcached{
 		Spec: MemcachedSpec{
 			Replicas:  &replicas,
@@ -999,7 +999,7 @@ func TestValidation_StatusErrorFormat(t *testing.T) {
 
 func TestValidateUpdate_ValidToInvalid(t *testing.T) {
 	replicas := int32(3)
-	image := "memcached:1.6"
+	image := DefaultImage
 
 	old := &Memcached{
 		Spec: MemcachedSpec{
@@ -1032,7 +1032,7 @@ func TestValidateUpdate_ValidToInvalid(t *testing.T) {
 
 func TestValidateUpdate_ValidCRAccepted(t *testing.T) {
 	replicas := int32(3)
-	image := "memcached:1.6"
+	image := DefaultImage
 
 	old := &Memcached{
 		Spec: MemcachedSpec{

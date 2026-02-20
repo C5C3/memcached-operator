@@ -23,6 +23,9 @@ const (
 	testCPU100m           = "100m"
 	testMem128Mi          = "128Mi"
 	testDefaultImage      = "memcached:1.6"
+	testHostnameTopology  = "kubernetes.io/hostname"
+	testZoneTopology      = "topology.kubernetes.io/zone"
+	testPasswordFileKey   = "password-file"
 )
 
 func TestLabelsForMemcached(t *testing.T) {
@@ -501,7 +504,7 @@ func antiAffinityPresetPtr(p memcachedv1alpha1.AntiAffinityPreset) *memcachedv1a
 func zoneSpreadConstraint() corev1.TopologySpreadConstraint {
 	return corev1.TopologySpreadConstraint{
 		MaxSkew:           1,
-		TopologyKey:       "topology.kubernetes.io/zone",
+		TopologyKey:       testZoneTopology,
 		WhenUnsatisfiable: corev1.DoNotSchedule,
 	}
 }
@@ -532,11 +535,11 @@ func TestBuildAntiAffinity_Soft(t *testing.T) {
 	if term.Weight != 100 {
 		t.Errorf("expected weight 100, got %d", term.Weight)
 	}
-	if term.PodAffinityTerm.TopologyKey != "kubernetes.io/hostname" {
+	if term.PodAffinityTerm.TopologyKey != testHostnameTopology {
 		t.Errorf("expected topologyKey kubernetes.io/hostname, got %q", term.PodAffinityTerm.TopologyKey)
 	}
 	matchLabels := term.PodAffinityTerm.LabelSelector.MatchLabels
-	if matchLabels["app.kubernetes.io/name"] != "memcached" {
+	if matchLabels["app.kubernetes.io/name"] != testPortName {
 		t.Errorf("expected label app.kubernetes.io/name=memcached, got %q", matchLabels["app.kubernetes.io/name"])
 	}
 	if matchLabels["app.kubernetes.io/instance"] != "my-cache" {
@@ -571,11 +574,11 @@ func TestBuildAntiAffinity_Hard(t *testing.T) {
 		t.Fatalf("expected 1 required term, got %d", len(required))
 	}
 	term := required[0]
-	if term.TopologyKey != "kubernetes.io/hostname" {
+	if term.TopologyKey != testHostnameTopology {
 		t.Errorf("expected topologyKey kubernetes.io/hostname, got %q", term.TopologyKey)
 	}
 	matchLabels := term.LabelSelector.MatchLabels
-	if matchLabels["app.kubernetes.io/name"] != "memcached" {
+	if matchLabels["app.kubernetes.io/name"] != testPortName {
 		t.Errorf("expected label app.kubernetes.io/name=memcached, got %q", matchLabels["app.kubernetes.io/name"])
 	}
 	if matchLabels["app.kubernetes.io/instance"] != "my-cache" {
@@ -718,7 +721,7 @@ func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					{
 						MaxSkew:           1,
-						TopologyKey:       "topology.kubernetes.io/zone",
+						TopologyKey:       testZoneTopology,
 						WhenUnsatisfiable: corev1.DoNotSchedule,
 						LabelSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
@@ -739,13 +742,13 @@ func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
 	if got[0].MaxSkew != 1 {
 		t.Errorf("maxSkew = %d, want 1", got[0].MaxSkew)
 	}
-	if got[0].TopologyKey != "topology.kubernetes.io/zone" {
+	if got[0].TopologyKey != testZoneTopology {
 		t.Errorf("topologyKey = %q, want topology.kubernetes.io/zone", got[0].TopologyKey)
 	}
 	if got[0].WhenUnsatisfiable != corev1.DoNotSchedule {
 		t.Errorf("whenUnsatisfiable = %q, want DoNotSchedule", got[0].WhenUnsatisfiable)
 	}
-	if got[0].LabelSelector == nil || got[0].LabelSelector.MatchLabels["app.kubernetes.io/name"] != "memcached" {
+	if got[0].LabelSelector == nil || got[0].LabelSelector.MatchLabels["app.kubernetes.io/name"] != testPortName {
 		t.Error("expected labelSelector to be passed through")
 	}
 }
@@ -759,7 +762,7 @@ func TestBuildTopologySpreadConstraints_MultipleConstraints(t *testing.T) {
 					zoneSpreadConstraint(),
 					{
 						MaxSkew:           1,
-						TopologyKey:       "kubernetes.io/hostname",
+						TopologyKey:       testHostnameTopology,
 						WhenUnsatisfiable: corev1.ScheduleAnyway,
 					},
 				},
@@ -772,10 +775,10 @@ func TestBuildTopologySpreadConstraints_MultipleConstraints(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("expected 2 constraints, got %d", len(got))
 	}
-	if got[0].TopologyKey != "topology.kubernetes.io/zone" {
+	if got[0].TopologyKey != testZoneTopology {
 		t.Errorf("first constraint topologyKey = %q, want topology.kubernetes.io/zone", got[0].TopologyKey)
 	}
-	if got[1].TopologyKey != "kubernetes.io/hostname" {
+	if got[1].TopologyKey != testHostnameTopology {
 		t.Errorf("second constraint topologyKey = %q, want kubernetes.io/hostname", got[1].TopologyKey)
 	}
 }
@@ -839,7 +842,7 @@ func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
 	if tsc[0].MaxSkew != 1 {
 		t.Errorf("maxSkew = %d, want 1", tsc[0].MaxSkew)
 	}
-	if tsc[0].TopologyKey != "topology.kubernetes.io/zone" {
+	if tsc[0].TopologyKey != testZoneTopology {
 		t.Errorf("topologyKey = %q, want topology.kubernetes.io/zone", tsc[0].TopologyKey)
 	}
 }
@@ -885,7 +888,7 @@ func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
 	if len(tsc) != 1 {
 		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
 	}
-	if tsc[0].TopologyKey != "topology.kubernetes.io/zone" {
+	if tsc[0].TopologyKey != testZoneTopology {
 		t.Errorf("topologyKey = %q, want topology.kubernetes.io/zone", tsc[0].TopologyKey)
 	}
 }
@@ -1336,7 +1339,7 @@ func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
 	if len(containers) != 2 {
 		t.Fatalf("expected 2 containers, got %d", len(containers))
 	}
-	if containers[0].Name != "memcached" {
+	if containers[0].Name != testPortName {
 		t.Errorf("first container name = %q, want 'memcached'", containers[0].Name)
 	}
 	if containers[1].Name != testExporterContainer {
@@ -1357,7 +1360,7 @@ func TestConstructDeployment_MonitoringDisabled(t *testing.T) {
 	if len(containers) != 1 {
 		t.Fatalf("expected 1 container, got %d", len(containers))
 	}
-	if containers[0].Name != "memcached" {
+	if containers[0].Name != testPortName {
 		t.Errorf("container name = %q, want 'memcached'", containers[0].Name)
 	}
 }
@@ -1609,11 +1612,11 @@ func TestBuildSASLVolume_Enabled(t *testing.T) {
 	if len(vol.Secret.Items) != 1 {
 		t.Fatalf("expected 1 Items entry, got %d", len(vol.Secret.Items))
 	}
-	if vol.Secret.Items[0].Key != "password-file" {
-		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, "password-file")
+	if vol.Secret.Items[0].Key != testPasswordFileKey {
+		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, testPasswordFileKey)
 	}
-	if vol.Secret.Items[0].Path != "password-file" {
-		t.Errorf("Items[0].Path = %q, want %q", vol.Secret.Items[0].Path, "password-file")
+	if vol.Secret.Items[0].Path != testPasswordFileKey {
+		t.Errorf("Items[0].Path = %q, want %q", vol.Secret.Items[0].Path, testPasswordFileKey)
 	}
 }
 
@@ -1864,8 +1867,8 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 	if len(vol.Secret.Items) != 1 {
 		t.Fatalf("expected 1 Items entry, got %d", len(vol.Secret.Items))
 	}
-	if vol.Secret.Items[0].Key != "password-file" {
-		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, "password-file")
+	if vol.Secret.Items[0].Key != testPasswordFileKey {
+		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, testPasswordFileKey)
 	}
 }
 
@@ -2666,7 +2669,7 @@ func TestConstructDeployment_TLSPort(t *testing.T) {
 	}
 
 	// Port 11211 named "memcached".
-	if container.Ports[0].Name != "memcached" {
+	if container.Ports[0].Name != testPortName {
 		t.Errorf("port[0] name = %q, want %q", container.Ports[0].Name, "memcached")
 	}
 	if container.Ports[0].ContainerPort != 11211 {
@@ -3048,7 +3051,7 @@ func TestConstructDeployment_KitchenSink_HA(t *testing.T) {
 	if preferred[0].Weight != 100 {
 		t.Errorf("anti-affinity weight = %d, want 100", preferred[0].Weight)
 	}
-	if preferred[0].PodAffinityTerm.TopologyKey != "kubernetes.io/hostname" {
+	if preferred[0].PodAffinityTerm.TopologyKey != testHostnameTopology {
 		t.Errorf("anti-affinity topologyKey = %q, want kubernetes.io/hostname", preferred[0].PodAffinityTerm.TopologyKey)
 	}
 
@@ -3057,7 +3060,7 @@ func TestConstructDeployment_KitchenSink_HA(t *testing.T) {
 	if len(tsc) != 1 {
 		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
 	}
-	if tsc[0].TopologyKey != "topology.kubernetes.io/zone" {
+	if tsc[0].TopologyKey != testZoneTopology {
 		t.Errorf("topology spread topologyKey = %q, want topology.kubernetes.io/zone", tsc[0].TopologyKey)
 	}
 	if tsc[0].WhenUnsatisfiable != corev1.DoNotSchedule {

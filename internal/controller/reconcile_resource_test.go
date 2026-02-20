@@ -476,8 +476,9 @@ func TestReconcileResource_NilRecorderDoesNotPanic(t *testing.T) {
 }
 
 // getReconcileResourceCounter reads the current value of memcached_reconcile_resource_total
-// for the given resource_kind and result labels from the controller-runtime metrics registry.
-func getReconcileResourceCounter(t *testing.T, resourceKind, result string) float64 {
+// for the "Service" resource_kind and result label from the controller-runtime metrics registry.
+func getReconcileResourceCounter(t *testing.T, result string) float64 {
+	const resourceKind = "Service"
 	t.Helper()
 	gatherer, ok := ctrlmetrics.Registry.(prometheus.Gatherer)
 	if !ok {
@@ -522,7 +523,7 @@ func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
 
-	before := getReconcileResourceCounter(t, "Service", "created")
+	before := getReconcileResourceCounter(t, "created")
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: "default"},
@@ -535,7 +536,7 @@ func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	after := getReconcileResourceCounter(t, "Service", "created")
+	after := getReconcileResourceCounter(t, "created")
 	if after != before+1 {
 		t.Errorf("expected Service/created counter to increment by 1, got before=%v after=%v", before, after)
 	}
@@ -555,7 +556,7 @@ func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
 	c := newFakeClient(mc, existingSvc)
 	r := newTestReconciler(c)
 
-	before := getReconcileResourceCounter(t, "Service", "updated")
+	before := getReconcileResourceCounter(t, "updated")
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default"},
@@ -568,7 +569,7 @@ func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	after := getReconcileResourceCounter(t, "Service", "updated")
+	after := getReconcileResourceCounter(t, "updated")
 	if after != before+1 {
 		t.Errorf("expected Service/updated counter to increment by 1, got before=%v after=%v", before, after)
 	}
@@ -594,7 +595,7 @@ func TestReconcileResource_IncrementsMetricOnUnchanged(t *testing.T) {
 		t.Fatalf("unexpected error on create: %v", err)
 	}
 
-	before := getReconcileResourceCounter(t, "Service", "unchanged")
+	before := getReconcileResourceCounter(t, "unchanged")
 
 	// Second call: unchanged.
 	_, err = r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -605,7 +606,7 @@ func TestReconcileResource_IncrementsMetricOnUnchanged(t *testing.T) {
 		t.Fatalf("unexpected error on unchanged: %v", err)
 	}
 
-	after := getReconcileResourceCounter(t, "Service", "unchanged")
+	after := getReconcileResourceCounter(t, "unchanged")
 	if after != before+1 {
 		t.Errorf("expected Service/unchanged counter to increment by 1, got before=%v after=%v", before, after)
 	}
@@ -633,9 +634,9 @@ func TestReconcileResource_DoesNotIncrementMetricOnError(t *testing.T) {
 	r := newTestReconciler(wrappedClient)
 
 	// Gather all Service counters before to compare delta.
-	createdBefore := getReconcileResourceCounter(t, "Service", "created")
-	updatedBefore := getReconcileResourceCounter(t, "Service", "updated")
-	unchangedBefore := getReconcileResourceCounter(t, "Service", "unchanged")
+	createdBefore := getReconcileResourceCounter(t, "created")
+	updatedBefore := getReconcileResourceCounter(t, "updated")
+	unchangedBefore := getReconcileResourceCounter(t, "unchanged")
 
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default"},
@@ -645,9 +646,9 @@ func TestReconcileResource_DoesNotIncrementMetricOnError(t *testing.T) {
 		return nil
 	}, "Service")
 
-	createdAfter := getReconcileResourceCounter(t, "Service", "created")
-	updatedAfter := getReconcileResourceCounter(t, "Service", "updated")
-	unchangedAfter := getReconcileResourceCounter(t, "Service", "unchanged")
+	createdAfter := getReconcileResourceCounter(t, "created")
+	updatedAfter := getReconcileResourceCounter(t, "updated")
+	unchangedAfter := getReconcileResourceCounter(t, "unchanged")
 
 	if createdAfter != createdBefore {
 		t.Errorf("Service/created counter changed on error: before=%v after=%v", createdBefore, createdAfter)

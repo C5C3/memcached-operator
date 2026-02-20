@@ -176,7 +176,7 @@ func TestMonitoringSpec_ZeroValue(t *testing.T) {
 }
 
 func TestMonitoringSpec_AllFieldsSet(t *testing.T) {
-	img := "prom/memcached-exporter:v0.15.4"
+	img := DefaultExporterImage
 	m := MonitoringSpec{
 		Enabled:       true,
 		ExporterImage: &img,
@@ -196,7 +196,7 @@ func TestMonitoringSpec_AllFieldsSet(t *testing.T) {
 	if !m.Enabled {
 		t.Error("expected Enabled to be true")
 	}
-	if *m.ExporterImage != "prom/memcached-exporter:v0.15.4" {
+	if *m.ExporterImage != DefaultExporterImage {
 		t.Errorf("unexpected ExporterImage: %s", *m.ExporterImage)
 	}
 	if m.ExporterResources.Requests.Cpu().String() != "50m" {
@@ -205,7 +205,7 @@ func TestMonitoringSpec_AllFieldsSet(t *testing.T) {
 	if m.ServiceMonitor.Interval != "30s" {
 		t.Errorf("unexpected Interval: %s", m.ServiceMonitor.Interval)
 	}
-	if m.ServiceMonitor.ScrapeTimeout != "10s" {
+	if m.ServiceMonitor.ScrapeTimeout != DefaultServiceMonitorScrapeTimeout {
 		t.Errorf("unexpected ScrapeTimeout: %s", m.ServiceMonitor.ScrapeTimeout)
 	}
 	if m.ServiceMonitor.AdditionalLabels["team"] != "infra" {

@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+const (
+	testExplicitImage    = "memcached:1.6.28"
+	testExplicitInterval = "15s"
+)
+
 func TestMemcachedDefaulting_EmptySpec(t *testing.T) {
 	mc := &Memcached{}
 	d := &MemcachedCustomDefaulter{}
@@ -55,7 +60,7 @@ func TestMemcachedDefaulting_EmptySpec(t *testing.T) {
 
 func TestMemcachedDefaulting_PreservesExplicitValues(t *testing.T) {
 	replicas := int32(3)
-	image := "memcached:1.6.28"
+	image := testExplicitImage
 	mc := &Memcached{
 		Spec: MemcachedSpec{
 			Replicas: &replicas,
@@ -78,7 +83,7 @@ func TestMemcachedDefaulting_PreservesExplicitValues(t *testing.T) {
 	if *mc.Spec.Replicas != 3 {
 		t.Errorf("expected replicas=3, got %d", *mc.Spec.Replicas)
 	}
-	if *mc.Spec.Image != "memcached:1.6.28" {
+	if *mc.Spec.Image != testExplicitImage {
 		t.Errorf("expected image=memcached:1.6.28, got %s", *mc.Spec.Image)
 	}
 	if mc.Spec.Memcached.MaxMemoryMB != 256 {
@@ -301,7 +306,7 @@ func TestMemcachedDefaulting_ServiceMonitorPartialPreserved(t *testing.T) {
 			Monitoring: &MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &ServiceMonitorSpec{
-					Interval: "15s",
+					Interval: testExplicitInterval,
 				},
 			},
 		},
@@ -312,7 +317,7 @@ func TestMemcachedDefaulting_ServiceMonitorPartialPreserved(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if mc.Spec.Monitoring.ServiceMonitor.Interval != "15s" {
+	if mc.Spec.Monitoring.ServiceMonitor.Interval != testExplicitInterval {
 		t.Errorf("expected interval=15s (preserved), got %s", mc.Spec.Monitoring.ServiceMonitor.Interval)
 	}
 	if mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout != "10s" {
@@ -360,7 +365,7 @@ func TestMemcachedDefaulting_ReplicasZeroPreserved(t *testing.T) {
 
 func TestMemcachedDefaulting_FullySpecifiedCRUnchanged(t *testing.T) {
 	replicas := int32(5)
-	image := "memcached:1.6.28"
+	image := testExplicitImage
 	exporterImage := "custom/exporter:v2"
 	preset := AntiAffinityPresetHard
 
@@ -398,7 +403,7 @@ func TestMemcachedDefaulting_FullySpecifiedCRUnchanged(t *testing.T) {
 	if *mc.Spec.Replicas != 5 {
 		t.Errorf("expected replicas=5, got %d", *mc.Spec.Replicas)
 	}
-	if *mc.Spec.Image != "memcached:1.6.28" {
+	if *mc.Spec.Image != testExplicitImage {
 		t.Errorf("expected image=memcached:1.6.28, got %s", *mc.Spec.Image)
 	}
 	if mc.Spec.Memcached.MaxMemoryMB != 512 {
@@ -422,7 +427,7 @@ func TestMemcachedDefaulting_FullySpecifiedCRUnchanged(t *testing.T) {
 	if *mc.Spec.Monitoring.ExporterImage != "custom/exporter:v2" {
 		t.Errorf("expected exporterImage=custom/exporter:v2, got %s", *mc.Spec.Monitoring.ExporterImage)
 	}
-	if mc.Spec.Monitoring.ServiceMonitor.Interval != "15s" {
+	if mc.Spec.Monitoring.ServiceMonitor.Interval != testExplicitInterval {
 		t.Errorf("expected interval=15s, got %s", mc.Spec.Monitoring.ServiceMonitor.Interval)
 	}
 	if mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout != "5s" {
@@ -593,7 +598,7 @@ func TestMemcachedDefaulting_ServiceMonitorFullySpecifiedPreserved(t *testing.T)
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if mc.Spec.Monitoring.ServiceMonitor.Interval != "15s" {
+	if mc.Spec.Monitoring.ServiceMonitor.Interval != testExplicitInterval {
 		t.Errorf("expected interval=15s, got %s", mc.Spec.Monitoring.ServiceMonitor.Interval)
 	}
 	if mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout != "5s" {

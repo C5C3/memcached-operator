@@ -172,7 +172,7 @@ func TestConstructServiceMonitor_AdditionalLabels(t *testing.T) {
 		t.Errorf("expected additional label team=platform, got %q", sm.Labels["team"])
 	}
 	// Base labels still present.
-	if sm.Labels["app.kubernetes.io/name"] != "memcached" {
+	if sm.Labels["app.kubernetes.io/name"] != testPortName {
 		t.Errorf("expected base label app.kubernetes.io/name=memcached, got %q", sm.Labels["app.kubernetes.io/name"])
 	}
 
@@ -205,7 +205,7 @@ func TestConstructServiceMonitor_AdditionalLabelsConflict(t *testing.T) {
 	constructServiceMonitor(mc, sm)
 
 	// Standard label must win over the additionalLabels override attempt.
-	if sm.Labels["app.kubernetes.io/name"] != "memcached" {
+	if sm.Labels["app.kubernetes.io/name"] != testPortName {
 		t.Errorf("standard label app.kubernetes.io/name = %q, want %q (standard must take precedence)", sm.Labels["app.kubernetes.io/name"], "memcached")
 	}
 	if sm.Labels["app.kubernetes.io/instance"] != "conflict-labels" {
@@ -402,7 +402,7 @@ func TestConstructServiceMonitor_Idempotent(t *testing.T) {
 	if sm.Labels["team"] != "platform" {
 		t.Errorf("expected additional label team=platform, got %q", sm.Labels["team"])
 	}
-	if sm.Labels["app.kubernetes.io/name"] != "memcached" {
+	if sm.Labels["app.kubernetes.io/name"] != testPortName {
 		t.Errorf("expected standard label app.kubernetes.io/name=memcached, got %q", sm.Labels["app.kubernetes.io/name"])
 	}
 	if len(sm.Spec.Endpoints) != 1 {

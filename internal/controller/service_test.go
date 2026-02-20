@@ -220,7 +220,7 @@ func TestConstructService_MonitoringEnabled(t *testing.T) {
 		t.Errorf("first port = %d, want 11211", svc.Spec.Ports[0].Port)
 	}
 
-	if svc.Spec.Ports[1].Name != "metrics" {
+	if svc.Spec.Ports[1].Name != testMetricsPort {
 		t.Errorf("second port name = %q, want %q", svc.Spec.Ports[1].Name, "metrics")
 	}
 	if svc.Spec.Ports[1].Port != 9150 {
@@ -279,7 +279,7 @@ func TestConstructService_MonitoringEnabledPortDetails(t *testing.T) {
 
 	metricsPort := svc.Spec.Ports[1]
 
-	if metricsPort.Name != "metrics" {
+	if metricsPort.Name != testMetricsPort {
 		t.Errorf("metrics port name = %q, want %q", metricsPort.Name, "metrics")
 	}
 	if metricsPort.Port != 9150 {
@@ -416,7 +416,7 @@ func TestConstructService_TLSWithMonitoring(t *testing.T) {
 	}
 
 	// Port 9150 (metrics).
-	if svc.Spec.Ports[2].Name != "metrics" {
+	if svc.Spec.Ports[2].Name != testMetricsPort {
 		t.Errorf("port[2] name = %q, want %q", svc.Spec.Ports[2].Name, "metrics")
 	}
 	if svc.Spec.Ports[2].Port != 9150 {

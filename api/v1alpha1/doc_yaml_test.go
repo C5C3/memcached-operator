@@ -126,7 +126,7 @@ func TestDocumentationYAMLExamples(t *testing.T) {
 			continue
 		}
 
-		testName := memcached.ObjectMeta.Name
+		testName := memcached.Name
 		if testName == "" {
 			testName = fmt.Sprintf("unnamed_block_%d", i+1)
 		}
@@ -139,19 +139,19 @@ func TestDocumentationYAMLExamples(t *testing.T) {
 			}
 
 			// Verify kind
-			expectedKind := "Memcached"
+			expectedKind := "Memcached" //nolint:goconst // test literal
 			if memcached.Kind != expectedKind {
 				t.Errorf("kind: got %q, want %q", memcached.Kind, expectedKind)
 			}
 
 			// Verify metadata.name is non-empty
-			if memcached.ObjectMeta.Name == "" {
+			if memcached.Name == "" {
 				t.Error("metadata.name is empty")
 			}
 
 			// Mark this CR as found
-			if _, exists := expectedCRs[memcached.ObjectMeta.Name]; exists {
-				expectedCRs[memcached.ObjectMeta.Name] = true
+			if _, exists := expectedCRs[memcached.Name]; exists {
+				expectedCRs[memcached.Name] = true
 			}
 
 			// Additional validation: verify spec fields are properly typed
