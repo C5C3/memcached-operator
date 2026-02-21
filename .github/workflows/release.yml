@@ -144,8 +144,8 @@ jobs:
 
       - name: Generate install manifest
         env:
-          IMG: ghcr.io/c5c3/memcached-operator:${{ github.ref_name }}
-        run: make build-installer
+          VERSION: ${{ github.ref_name }}
+        run: make build-installer IMG="ghcr.io/c5c3/memcached-operator:${VERSION#v}"
 
       - name: Copy CRD artifact
         run: cp config/crd/bases/memcached.c5c3.io_memcacheds.yaml dist/
