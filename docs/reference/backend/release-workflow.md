@@ -96,12 +96,14 @@ Runs after `release-image` succeeds. This job:
 2. **Copies the CRD manifest** (`memcached.c5c3.io_memcacheds.yaml`) for users
    who want to install only the CRD without the operator.
 
-3. **Generates a changelog** from git log between the previous tag and the
-   current tag, excluding documentation-only commits.
+3. **Generates a changelog** using [git-cliff](https://git-cliff.org/) with the
+   `cliff.toml` configuration at the repository root. git-cliff parses
+   conventional commits and groups them by type (Features, Bug Fixes, Testing,
+   etc.). Planning commits (`plan(...)`) are automatically excluded.
 
 4. **Creates a GitHub Release** using `softprops/action-gh-release@v2` with:
-   - Auto-generated release notes from GitHub
-   - Custom changelog body with install instructions
+   - git-cliff generated changelog grouped by commit type
+   - Container image reference and install instructions
    - Attached artifacts: `install.yaml`, `memcached.c5c3.io_memcacheds.yaml`
 
 ---

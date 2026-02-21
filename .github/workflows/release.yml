@@ -151,44 +151,45 @@ jobs:
         run: cp config/crd/bases/memcached.c5c3.io_memcacheds.yaml dist/
 
       - name: Generate changelog
-        id: changelog
+        id: git-cliff
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --verbose --latest --strip header
         env:
-          REPO: c5c3/memcached-operator
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Build release body
+        id: release-body
+        env:
+          CHANGELOG: ${{ steps.git-cliff.outputs.content }}
+          REPO: ${{ github.repository }}
         run: |
           IMAGE_REF="ghcr.io/${REPO}:${GITHUB_REF_NAME#v}"
           RELEASE_URL="https://github.com/${REPO}/releases/download/${GITHUB_REF_NAME}/install.yaml"
-          PREV_TAG=$(git tag --sort=-v:refname | head -2 | tail -1)
-          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "$GITHUB_REF_NAME" ]; then
-            echo "body=Initial release." >> "$GITHUB_OUTPUT"
-          else
-            CHANGELOG=$(git log --pretty=format:"- %s (%h)" "${PREV_TAG}..${GITHUB_REF_NAME}" -- . ':!docs/')
-            EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
-            {
-              echo "body<<$EOF"
-              echo "## Changes since ${PREV_TAG}"
-              echo ""
-              echo "$CHANGELOG"
-              echo ""
-              echo "## Container Image"
-              echo ""
-              echo "\`\`\`"
-              echo "$IMAGE_REF"
-              echo "\`\`\`"
-              echo ""
-              echo "## Installation"
-              echo ""
-              echo "\`\`\`bash"
-              echo "kubectl apply -f $RELEASE_URL"
-              echo "\`\`\`"
-              echo "$EOF"
-            } >> "$GITHUB_OUTPUT"
-          fi
+          EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
+          {
+            echo "body<<$EOF"
+            echo "$CHANGELOG"
+            echo ""
+            echo "## Container Image"
+            echo ""
+            echo "\`\`\`"
+            echo "$IMAGE_REF"
+            echo "\`\`\`"
+            echo ""
+            echo "## Installation"
+            echo ""
+            echo "\`\`\`bash"
+            echo "kubectl apply -f $RELEASE_URL"
+            echo "\`\`\`"
+            echo "$EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          body: ${{ steps.changelog.outputs.body }}
-          generate_release_notes: true
+          body: ${{ steps.release-body.outputs.body }}
           files: |
             dist/install.yaml
             dist/memcached.c5c3.io_memcacheds.yaml

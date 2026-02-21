@@ -1,0 +1,38 @@
+[changelog]
+body = """
+{%- if version %}
+## {{ version }} - {{ timestamp | date(format="%Y-%m-%d") }}
+{%- else %}
+## Unreleased
+{%- endif %}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits -%}
+- {% if commit.scope %}*({{ commit.scope }})* {% endif -%}
+{% if commit.breaking %}[**breaking**] {% endif -%}
+{{ commit.message | upper_first }}
+{% endfor %}
+{% endfor %}
+"""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+protect_breaking_commits = false
+filter_commits = true
+sort_commits = "oldest"
+commit_parsers = [
+  { message = "^plan\\(", skip = true },
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^test", group = "Testing" },
+  { message = "^refactor", group = "Refactor" },
+  { message = "^perf", group = "Performance" },
+  { message = "^doc", group = "Documentation" },
+  { message = "^style", group = "Styling" },
+  { message = "^chore\\(release\\)", skip = true },
+  { message = "^chore|^ci", group = "Miscellaneous" },
+  { message = "^revert", group = "Reverted" },
+]
