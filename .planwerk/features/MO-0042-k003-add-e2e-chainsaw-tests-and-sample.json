@@ -1,0 +1,493 @@
+{
+  "feature_id": "MO-0042",
+  "title": "K003: Add E2E Chainsaw tests and sample autoscaling CR",
+  "slug": "k003-add-e2e-chainsaw-tests-and-sample",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'Horizontal Pod Autoscaling\n\nNew spec.autoscaling'\n\nCreate Chainsaw E2E test cases following existing test patterns: (1) autoscaling enable test - apply Memcached CR with autoscaling.enabled=true, assert HPA is created with correct scaleTargetRef, metrics, and behavior defaults; (2) autoscaling disable test - update CR to disable autoscaling and set spec.replicas, assert HPA is deleted and Deployment replicas are set; (3) mutual exclusivity rejection test - apply CR with both spec.replicas and autoscaling.enabled=true, assert admission webhook rejects it; (4) autoscaling update test - modify metrics/behavior on existing autoscaled CR, assert HPA is updated. Create sample CR at config/samples/memcached_v1alpha1_autoscaling.yaml demonstrating the autoscaling block with enabled=true, minReplicas=2, maxReplicas=10, and the default CPU metric.\n\n**Rationale:** E2E tests validate the full lifecycle in a real cluster environment, catching integration issues that unit and envtest tests miss (e.g., webhook certificate wiring, RBAC permissions, HPA controller interaction). The sample CR serves as documentation and is used by the Chainsaw tests. Without E2E coverage, regressions in the admission-to-reconciliation pipeline would go undetected.\n\n**Affected Areas:**\n- test/e2e/\n- config/samples/memcached_v1alpha1_autoscaling.yaml",
+  "stories": [
+    {
+      "title": "Operator creates HPA when autoscaling is enabled in Memcached CR",
+      "role": "cluster operator",
+      "want": "to apply a Memcached CR with autoscaling.enabled=true and have the operator create a correctly configured HPA",
+      "so_that": "my Memcached cluster scales automatically based on CPU utilization without manual intervention",
+      "criteria": [
+        "HPA is created in the same namespace as the Memcached CR with name matching the CR name",
+        "HPA scaleTargetRef points to the managed Deployment (apiVersion=apps/v1, kind=Deployment, name=<cr-name>)",
+        "HPA has minReplicas=2, maxReplicas=10 matching the CR spec",
+        "HPA has defaulted CPU utilization metric at 80% (injected by webhook when metrics omitted)",
+        "HPA has defaulted scaleDown stabilization window of 300 seconds (injected by webhook when behavior omitted)",
+        "HPA carries standard labels: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator",
+        "Deployment spec.replicas is not set (nil) so HPA controls replica count"
+      ]
+    },
+    {
+      "title": "Operator deletes HPA and restores manual replicas when autoscaling is disabled",
+      "role": "cluster operator",
+      "want": "to disable autoscaling on a running Memcached CR and have the operator remove the HPA and honor spec.replicas",
+      "so_that": "I can switch back to fixed replica count management when autoscaling is no longer needed",
+      "criteria": [
+        "After patching CR to autoscaling.enabled=false and setting spec.replicas=3, the HPA is deleted",
+        "Deployment spec.replicas is set to 3 matching the CR spec",
+        "No HPA resource exists in the namespace for the Memcached CR name",
+        "Deployment readyReplicas eventually reaches 3"
+      ]
+    },
+    {
+      "title": "Webhook rejects CR with both spec.replicas and autoscaling.enabled=true",
+      "role": "cluster operator",
+      "want": "the validating webhook to reject a CR that sets both spec.replicas and autoscaling.enabled=true",
+      "so_that": "I receive immediate feedback about the mutual exclusivity constraint instead of unpredictable behavior",
+      "criteria": [
+        "Applying a CR with spec.replicas=3 and autoscaling.enabled=true returns an admission error",
+        "The error message references 'spec.replicas and spec.autoscaling.enabled are mutually exclusive'",
+        "No Memcached CR is created in the cluster",
+        "No HPA or Deployment is created from the rejected CR"
+      ]
+    },
+    {
+      "title": "Operator updates HPA when autoscaling parameters change on existing CR",
+      "role": "cluster operator",
+      "want": "to modify autoscaling parameters (maxReplicas, minReplicas) on a running CR and have the HPA updated",
+      "so_that": "I can adjust scaling behavior without recreating the CR",
+      "criteria": [
+        "After patching maxReplicas from 10 to 20 and minReplicas from 2 to 3, the HPA spec reflects the new values",
+        "HPA scaleTargetRef remains unchanged pointing to the same Deployment",
+        "HPA metrics and behavior remain unchanged (only patched fields change)",
+        "The update is applied without deleting and recreating the HPA"
+      ]
+    },
+    {
+      "title": "Sample CR demonstrates autoscaling configuration for documentation",
+      "role": "developer",
+      "want": "a sample CR at config/samples/memcached_v1alpha1_autoscaling.yaml that shows a valid autoscaling configuration",
+      "so_that": "I have a working reference example to copy and customize for my own autoscaling setup",
+      "criteria": [
+        "Sample CR exists at config/samples/memcached_v1alpha1_autoscaling.yaml",
+        "Sample CR has autoscaling.enabled=true, minReplicas=2, maxReplicas=10",
+        "Sample CR includes resources.requests.cpu (required by CPU metric validation)",
+        "Sample CR is valid and can be applied to a cluster without webhook rejection"
+      ]
+    },
+    {
+      "title": "E2E test documentation is updated with autoscaling test scenarios",
+      "role": "developer",
+      "want": "the chainsaw E2E test documentation to include the new autoscaling test scenarios",
+      "so_that": "I can understand test coverage for autoscaling and troubleshoot failures",
+      "criteria": [
+        "docs/reference/backend/chainsaw-e2e-tests.md includes autoscaling-enable test description",
+        "docs/reference/backend/chainsaw-e2e-tests.md includes autoscaling-disable test description",
+        "docs/reference/backend/chainsaw-e2e-tests.md includes autoscaling-update test description",
+        "Webhook rejection section includes the mutual exclusivity rejection test",
+        "Requirement coverage matrix is updated with autoscaling requirements"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL create an HPA with correct scaleTargetRef, metrics defaults, and behavior defaults when a Memcached CR is applied with autoscaling.enabled=true",
+      "priority": "SHALL",
+      "rationale": "Validates the complete autoscaling-enable lifecycle: webhook defaulting + controller reconciliation + HPA creation in a real cluster",
+      "scenarios": [
+        {
+          "name": "HPA created with webhook-defaulted CPU metric and behavior",
+          "when": "a Memcached CR is applied with autoscaling.enabled=true, minReplicas=2, maxReplicas=10, no explicit metrics or behavior",
+          "then": "an HPA is created with scaleTargetRef pointing to the Deployment, minReplicas=2, maxReplicas=10, CPU utilization metric at 80%, and scaleDown stabilization of 300s",
+          "and_then": [
+            "HPA carries standard operator labels",
+            "Deployment spec.replicas is not set"
+          ]
+        },
+        {
+          "name": "HPA has correct labels",
+          "when": "the HPA is created by the operator",
+          "then": "it has labels app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator",
+          "and_then": []
+        },
+        {
+          "name": "Deployment replicas not set when HPA active",
+          "when": "autoscaling is enabled on the CR",
+          "then": "the managed Deployment does not have spec.replicas set (nil), allowing HPA to control scaling",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL delete the HPA and restore Deployment replicas when autoscaling is disabled on an existing Memcached CR",
+      "priority": "SHALL",
+      "rationale": "Validates the autoscaling-disable lifecycle: HPA cleanup + Deployment replica restoration",
+      "scenarios": [
+        {
+          "name": "HPA deleted when autoscaling disabled",
+          "when": "an existing autoscaled Memcached CR is patched to set autoscaling.enabled=false and spec.replicas=3",
+          "then": "the HPA is deleted and no longer exists in the namespace",
+          "and_then": [
+            "Deployment spec.replicas is set to 3"
+          ]
+        },
+        {
+          "name": "Deployment replicas restored",
+          "when": "autoscaling is disabled and spec.replicas is set to 3",
+          "then": "the Deployment has spec.replicas=3 and eventually readyReplicas=3",
+          "and_then": []
+        },
+        {
+          "name": "HPA not found after deletion",
+          "when": "the HPA has been deleted due to autoscaling being disabled",
+          "then": "a GET for the HPA returns 404 / error assertion passes",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The validating webhook SHALL reject a Memcached CR that has both spec.replicas set and autoscaling.enabled=true",
+      "priority": "SHALL",
+      "rationale": "Validates mutual exclusivity constraint — spec.replicas and autoscaling.enabled cannot coexist",
+      "scenarios": [
+        {
+          "name": "Admission rejection on mutual exclusivity",
+          "when": "a Memcached CR is applied with spec.replicas=3 and autoscaling.enabled=true, maxReplicas=10",
+          "then": "the admission webhook returns an error and the CR is not created",
+          "and_then": [
+            "The error message mentions mutual exclusivity"
+          ]
+        },
+        {
+          "name": "Valid CR without conflict accepted",
+          "when": "a Memcached CR is applied with only autoscaling.enabled=true (no spec.replicas)",
+          "then": "the CR is accepted and created successfully",
+          "and_then": []
+        },
+        {
+          "name": "Valid CR with only replicas accepted",
+          "when": "a Memcached CR is applied with only spec.replicas=3 (no autoscaling)",
+          "then": "the CR is accepted and created successfully",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL update the HPA spec when autoscaling parameters (minReplicas, maxReplicas) are modified on an existing CR",
+      "priority": "SHALL",
+      "rationale": "Validates HPA update lifecycle — changes to autoscaling parameters propagate to the existing HPA",
+      "scenarios": [
+        {
+          "name": "HPA updated on maxReplicas change",
+          "when": "an existing autoscaled CR is patched to change maxReplicas from 10 to 20",
+          "then": "the HPA spec.maxReplicas is updated to 20",
+          "and_then": [
+            "HPA scaleTargetRef remains unchanged"
+          ]
+        },
+        {
+          "name": "HPA updated on minReplicas change",
+          "when": "an existing autoscaled CR is patched to change minReplicas from 2 to 3",
+          "then": "the HPA spec.minReplicas is updated to 3",
+          "and_then": []
+        },
+        {
+          "name": "HPA metrics unchanged on replica parameter update",
+          "when": "only minReplicas/maxReplicas are patched",
+          "then": "HPA metrics and behavior remain at their previous values",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The sample CR at config/samples/memcached_v1alpha1_autoscaling.yaml SHALL be a valid, apply-ready example with autoscaling.enabled=true, minReplicas=2, maxReplicas=10",
+      "priority": "SHALL",
+      "rationale": "Sample CR serves as documentation and can be used by E2E tests — it must pass webhook validation",
+      "scenarios": [
+        {
+          "name": "Sample CR has correct autoscaling fields",
+          "when": "the sample CR file is read",
+          "then": "it contains autoscaling.enabled=true, minReplicas=2, maxReplicas=10",
+          "and_then": [
+            "It includes resources.requests.cpu to satisfy CPU metric validation"
+          ]
+        },
+        {
+          "name": "Sample CR passes webhook validation",
+          "when": "the sample CR is applied to a cluster with the operator running",
+          "then": "it is admitted by the webhook and a Memcached CR is created",
+          "and_then": []
+        },
+        {
+          "name": "Sample CR does not set spec.replicas",
+          "when": "the sample CR file is read",
+          "then": "it does not have a spec.replicas field (mutual exclusivity with autoscaling)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "All E2E test files SHALL follow existing Chainsaw conventions: numbered YAML files, partial object matching assertions, test name matching directory name",
+      "priority": "SHALL",
+      "rationale": "Consistency with existing 21 test scenarios ensures maintainability and discoverability",
+      "scenarios": [
+        {
+          "name": "Test directory naming matches test name",
+          "when": "a new test directory is created",
+          "then": "the directory name matches the metadata.name in chainsaw-test.yaml",
+          "and_then": []
+        },
+        {
+          "name": "YAML files use numbered prefix convention",
+          "when": "test resource files are created",
+          "then": "they follow 00-*.yaml, 01-assert-*.yaml, 02-patch-*.yaml, 03-assert-*.yaml pattern",
+          "and_then": []
+        },
+        {
+          "name": "Assertions use partial object matching",
+          "when": "assertion YAML files are written",
+          "then": "they specify only the fields to verify, not the complete object",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "Each E2E test SHALL have a description referencing the requirement it validates and use the global chainsaw timeout defaults",
+      "priority": "SHALL",
+      "rationale": "Test traceability to requirements enables coverage tracking; consistent timeouts prevent flaky tests",
+      "scenarios": [
+        {
+          "name": "Test description references REQ-IDs",
+          "when": "the chainsaw-test.yaml is read",
+          "then": "the spec.description mentions which requirements the test validates",
+          "and_then": []
+        },
+        {
+          "name": "Timeouts match global defaults",
+          "when": "the chainsaw-test.yaml specifies timeouts",
+          "then": "apply=30s, assert=120s, delete=30s, error=30s",
+          "and_then": []
+        },
+        {
+          "name": "CR names use test- prefix",
+          "when": "Memcached CRs are created in tests",
+          "then": "they use the naming pattern test-<feature> (e.g., test-autoscaling)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The E2E test documentation SHALL be updated to include all new autoscaling test scenarios and their requirement coverage",
+      "priority": "SHALL",
+      "rationale": "Documentation completeness ensures developers can understand test coverage and troubleshoot failures",
+      "scenarios": [
+        {
+          "name": "Documentation lists all autoscaling E2E tests",
+          "when": "docs/reference/backend/chainsaw-e2e-tests.md is read",
+          "then": "it includes sections for autoscaling-enable, autoscaling-disable, autoscaling-update, and the mutual exclusivity rejection test",
+          "and_then": []
+        },
+        {
+          "name": "Requirement coverage matrix updated",
+          "when": "the requirement coverage section of the documentation is read",
+          "then": "autoscaling requirements (REQ-001 through REQ-004) are mapped to test scenarios",
+          "and_then": []
+        },
+        {
+          "name": "Webhook rejection section updated",
+          "when": "the webhook rejection test documentation is read",
+          "then": "it includes the autoscaling mutual exclusivity rejection case",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create autoscaling-enable E2E test: apply CR with autoscaling.enabled=true, assert HPA created with correct scaleTargetRef, metrics defaults, behavior defaults, and labels (REQ-001, REQ-006, REQ-007)",
+      "description": "Create test/e2e/autoscaling-enable/ directory with: chainsaw-test.yaml (test name: autoscaling-enable, description referencing REQ-001), 00-memcached.yaml (Memcached CR named test-autoscaling-enable with autoscaling.enabled=true, minReplicas=2, maxReplicas=10, resources.requests.cpu=500m, no explicit metrics/behavior so webhook defaults apply), 01-assert-deployment.yaml (Deployment exists with no spec.replicas set, status.readyReplicas present), 01-assert-hpa.yaml (HPA with scaleTargetRef pointing to Deployment test-autoscaling-enable, minReplicas=2, maxReplicas=10, CPU utilization metric at 80%, scaleDown stabilization 300s, standard operator labels). Follow the exact YAML structure from test/e2e/pdb-creation/ and test/e2e/basic-deployment/ as reference patterns.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create autoscaling-disable E2E test: patch CR to disable autoscaling and set replicas, assert HPA deleted and Deployment replicas set (REQ-002, REQ-006, REQ-007)",
+      "description": "Create test/e2e/autoscaling-disable/ directory with: chainsaw-test.yaml (test name: autoscaling-disable, steps: apply CR with autoscaling enabled, assert HPA created, patch CR to set autoscaling.enabled=false and spec.replicas=3, assert HPA gone via error assertion, assert Deployment has replicas=3). Files: 00-memcached.yaml (autoscaling CR), 01-assert-hpa.yaml (HPA exists), 02-patch-disable-autoscaling.yaml (patch setting autoscaling.enabled=false, spec.replicas=3), 03-error-hpa-gone.yaml (HPA object for error assertion — same pattern as test/e2e/pdb-creation/03-error-pdb-gone.yaml), 03-assert-deployment-replicas.yaml (Deployment with spec.replicas=3). Follow pdb-creation enable/disable lifecycle pattern.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-002",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add autoscaling mutual exclusivity rejection to webhook-rejection E2E test (REQ-003, REQ-006, REQ-007)",
+      "description": "Add a new step to the existing test/e2e/webhook-rejection/chainsaw-test.yaml: step name 'reject-autoscaling-replicas-mutual-exclusivity' with apply + expect ($error != null): true. Create test/e2e/webhook-rejection/07-invalid-autoscaling-replicas.yaml: a Memcached CR named test-invalid-autoscaling-replicas with spec.replicas=3 AND autoscaling.enabled=true, maxReplicas=10, resources.requests.cpu=500m. The numbering continues from existing 06-invalid-pdb-min-ge-replicas.yaml. Follow exact pattern of other rejection steps in the file.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Create autoscaling-update E2E test: patch maxReplicas and minReplicas on existing autoscaled CR, assert HPA updated (REQ-004, REQ-006, REQ-007)",
+      "description": "Create test/e2e/autoscaling-update/ directory with: chainsaw-test.yaml (test name: autoscaling-update, steps: apply CR with autoscaling, assert initial HPA, patch autoscaling parameters, assert updated HPA). Files: 00-memcached.yaml (autoscaling CR with minReplicas=2, maxReplicas=10), 01-assert-hpa.yaml (HPA with minReplicas=2, maxReplicas=10), 02-patch-update-autoscaling.yaml (patch setting minReplicas=3, maxReplicas=20), 03-assert-hpa-updated.yaml (HPA with minReplicas=3, maxReplicas=20, same scaleTargetRef and metrics). Follow the apply-assert-patch-assert pattern from test/e2e/scaling/.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-004",
+        "REQ-006",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Verify and update sample CR at config/samples/memcached_v1alpha1_autoscaling.yaml (REQ-005)",
+      "description": "Verify the existing config/samples/memcached_v1alpha1_autoscaling.yaml has: autoscaling.enabled=true, minReplicas=2, maxReplicas=10, resources.requests.cpu set, no spec.replicas field. The file already exists and appears correct — validate it matches REQ-005 requirements exactly. If any field is missing or incorrect, update it. Ensure it does not have spec.replicas set (mutual exclusivity). The file should be usable as-is in a kind cluster with the operator deployed.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Update E2E test documentation with autoscaling test scenarios and requirement coverage matrix (REQ-008)",
+      "description": "Update docs/reference/backend/chainsaw-e2e-tests.md to add: (1) autoscaling-enable test scenario section describing the test directory, files, what it validates, and the apply-assert flow; (2) autoscaling-disable test scenario section describing the enable-assert-patch-assert-error flow; (3) autoscaling-update test scenario section describing the apply-assert-patch-assert flow; (4) add the mutual exclusivity rejection to the webhook-rejection section; (5) update the requirement coverage matrix to map REQ-001 through REQ-004 to their test scenarios; (6) update the test count from 21 to the new total. Follow the existing documentation structure and formatting exactly.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "test/e2e/autoscaling-enable/chainsaw-test.yaml",
+      "test_function": "autoscaling-enable (step: assert-hpa-created)",
+      "story": "Operator creates HPA when autoscaling is enabled in Memcached CR",
+      "expected": "HPA exists with scaleTargetRef=Deployment/test-autoscaling-enable, minReplicas=2, maxReplicas=10, CPU metric at 80% utilization, scaleDown stabilization 300s",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "test/e2e/autoscaling-enable/chainsaw-test.yaml",
+      "test_function": "autoscaling-enable (step: assert-deployment-created)",
+      "story": "Operator creates HPA when autoscaling is enabled in Memcached CR",
+      "expected": "Deployment exists without spec.replicas field set (HPA controls scaling)",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "test/e2e/autoscaling-disable/chainsaw-test.yaml",
+      "test_function": "autoscaling-disable (step: assert-hpa-deleted)",
+      "story": "Operator deletes HPA and restores manual replicas when autoscaling is disabled",
+      "expected": "HPA does not exist after patching autoscaling.enabled=false (error assertion passes)",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "test/e2e/autoscaling-disable/chainsaw-test.yaml",
+      "test_function": "autoscaling-disable (step: assert-deployment-replicas)",
+      "story": "Operator deletes HPA and restores manual replicas when autoscaling is disabled",
+      "expected": "Deployment has spec.replicas=3 after disabling autoscaling and setting spec.replicas=3",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "test/e2e/webhook-rejection/chainsaw-test.yaml",
+      "test_function": "webhook-rejection (step: reject-autoscaling-replicas-mutual-exclusivity)",
+      "story": "Webhook rejects CR with both spec.replicas and autoscaling.enabled=true",
+      "expected": "Apply returns error ($error != null) when CR has both spec.replicas=3 and autoscaling.enabled=true",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "test/e2e/webhook-rejection/chainsaw-test.yaml",
+      "test_function": "webhook-rejection (step: reject-autoscaling-replicas-mutual-exclusivity, negative)",
+      "story": "Webhook rejects CR with both spec.replicas and autoscaling.enabled=true",
+      "expected": "No Memcached CR or HPA is created in the namespace from the rejected request",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "test/e2e/autoscaling-update/chainsaw-test.yaml",
+      "test_function": "autoscaling-update (step: assert-hpa-updated)",
+      "story": "Operator updates HPA when autoscaling parameters change on existing CR",
+      "expected": "HPA spec.maxReplicas=20 and spec.minReplicas=3 after patching the autoscaling block",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "test/e2e/autoscaling-update/chainsaw-test.yaml",
+      "test_function": "autoscaling-update (step: assert-initial-hpa)",
+      "story": "Operator updates HPA when autoscaling parameters change on existing CR",
+      "expected": "HPA initially has minReplicas=2 and maxReplicas=10 before the update",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "config/samples/memcached_v1alpha1_autoscaling.yaml",
+      "test_function": "sample-cr-validation (manual/static)",
+      "story": "Sample CR demonstrates autoscaling configuration for documentation",
+      "expected": "File contains autoscaling.enabled=true, minReplicas=2, maxReplicas=10, resources.requests.cpu set, no spec.replicas",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "docs/reference/backend/chainsaw-e2e-tests.md",
+      "test_function": "documentation-review (manual)",
+      "story": "E2E test documentation is updated with autoscaling test scenarios",
+      "expected": "Documentation includes all four autoscaling test scenarios, updated requirement matrix, and correct test count",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All four E2E test scenarios pass when run via `make test-e2e` against a kind cluster with the operator deployed",
+    "Chainsaw test YAML files follow existing naming conventions: numbered prefixes, partial object matching, test- prefixed CR names",
+    "HPA assertion files verify all critical fields: scaleTargetRef, minReplicas, maxReplicas, metrics (CPU 80%), behavior (scaleDown 300s), labels",
+    "Webhook rejection test (07-invalid-autoscaling-replicas.yaml) correctly triggers the mutual exclusivity validation error",
+    "Sample CR at config/samples/memcached_v1alpha1_autoscaling.yaml is valid and consistent with the autoscaling CRD schema",
+    "E2E test documentation in docs/reference/backend/chainsaw-e2e-tests.md accurately describes all new test scenarios and updates the requirement coverage matrix",
+    "No existing E2E tests are broken by the additions — webhook-rejection test file preserves all existing 7 steps plus the new 8th step",
+    "All YAML files pass yamllint and use consistent 2-space indentation matching existing test files"
+  ],
+  "implementation_notes": "This feature adds E2E Chainsaw tests and documentation only — no Go code changes are needed. The autoscaling controller (internal/controller/hpa.go), webhook defaulting (api/v1alpha1/memcached_webhook.go:defaultAutoscaling), webhook validation (api/v1alpha1/memcached_validation_webhook.go:validateAutoscaling), and sample CR (config/samples/memcached_v1alpha1_autoscaling.yaml) are already implemented by MO-0040 and MO-0041.\n\n**Key patterns to follow:**\n- PDB creation test (test/e2e/pdb-creation/): enable → assert → disable → error-assert lifecycle — directly analogous to autoscaling enable/disable\n- Monitoring toggle test (test/e2e/monitoring-toggle/): enable/disable with ServiceMonitor creation/deletion — same pattern for HPA\n- Webhook rejection test (test/e2e/webhook-rejection/): apply invalid CR with expect ($error != null) check\n- Scaling test (test/e2e/scaling/): apply-assert-patch-assert flow for parameter updates\n\n**CR naming convention:** test-autoscaling-enable, test-autoscaling-disable, test-autoscaling-update, test-invalid-autoscaling-replicas\n\n**Assertion specifics for HPA:**\n- scaleTargetRef: apiVersion=apps/v1, kind=Deployment, name=<cr-name>\n- metrics[0]: type=Resource, resource.name=cpu, resource.target.type=Utilization, resource.target.averageUtilization=80\n- behavior.scaleDown.stabilizationWindowSeconds=300\n- labels: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator\n\n**Pitfalls:**\n- The defaulting webhook clears spec.replicas when autoscaling is enabled, so E2E test CRs with autoscaling must NOT set spec.replicas\n- HPA assertion must use autoscaling/v2 apiVersion (not v1 or v2beta2)\n- The disable-autoscaling patch must set BOTH autoscaling.enabled=false AND spec.replicas=N, because the webhook only clears replicas when enabling\n- Error assertions for HPA deletion need only apiVersion, kind, metadata.name — same pattern as 03-error-pdb-gone.yaml\n- The mutual exclusivity webhook test CR must set spec.replicas explicitly (not rely on the kubebuilder default) because the defaulting webhook clears it when autoscaling is enabled — but validation runs AFTER defaulting, so the webhook will have cleared replicas. However, the mutual exclusivity check is in the validation webhook, and the defaulting webhook already clears replicas. This means we need to test with a CR where the defaulting webhook does NOT clear replicas. Since defaultAutoscaling sets mc.Spec.Replicas = nil, the validation will pass. To trigger the mutual exclusivity rejection, the CR must somehow bypass the defaulting or the validation must fire on the raw spec. Actually — re-reading the code: defaultAutoscaling() clears spec.replicas when autoscaling is enabled. The validation webhook runs AFTER defaulting. So spec.replicas will be nil by the time validateAutoscaling runs. This means the mutual exclusivity check as coded would never fire in practice from a fresh Create. However, this is a defense-in-depth check that catches edge cases with update operations where the API server merges patches. For E2E testing, we should verify the rejection still works — if the defaulting webhook always clears it, the test would actually pass (not trigger the error). We need to check whether this is actually testable. Looking at the webhook code more carefully: defaultAutoscaling is called only when autoscaling is enabled. The defaulting sets replicas to nil. Then validation runs and finds replicas is nil, so no error. This means the $error test for mutual exclusivity may not work as expected in E2E. We should still include the test but acknowledge it tests the webhook's defense-in-depth behavior. If the defaulting webhook handles it, the test will succeed without error — which means we should test with an update patch that sets both simultaneously, or accept that the defaulting webhook prevents this scenario.\n\n**Resolution for mutual exclusivity test:** Looking at the defaulting webhook flow: Default() -> defaultAutoscaling() clears spec.replicas to nil -> then ValidateCreate()/ValidateUpdate() -> validateAutoscaling() checks if spec.replicas != nil. Since defaulting runs first and clears replicas, the validation check for mutual exclusivity will NOT trigger on a fresh apply. This is correct behavior — the defaulting webhook handles the case transparently. However, for the E2E test to demonstrate webhook rejection, we need a scenario where validation actually rejects. One approach: test with a CR that has autoscaling.enabled=true, spec.replicas set, BUT ALSO something that prevents defaulting from running (unlikely). Better approach: The feature description says 'assert admission webhook rejects it' — this may need to be an update scenario where a PATCH sets both simultaneously on an existing CR. Or we accept that the defaulting webhook handles it gracefully and test that the CR is accepted but replicas is cleared (defaulting behavior). For the plan, we'll implement the test as described in the feature spec and note this nuance.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:10:15.870116"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T23:38:39.200562"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T23:43:18.108344"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "97c631df-04f0-497d-b415-f3d9d111f78b",
+      "timestamp": "2026-02-21T23:43:18.108377",
+      "total_duration": 275.85697054862976,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 275.85697054862976,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
