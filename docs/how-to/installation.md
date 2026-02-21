@@ -16,7 +16,7 @@ To verify your cluster meets these requirements:
 
 ```bash
 # Check Kubernetes version
-kubectl version --short
+kubectl version
 
 # Verify cert-manager is running
 kubectl get pods -n cert-manager
