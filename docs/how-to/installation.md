@@ -58,29 +58,7 @@ If you plan to build the operator from source or run it locally, you also need:
 Before deploying the operator, install the `Memcached` Custom Resource Definition
 into your cluster. Choose one of the following methods:
 
-### Option A: From source (recommended for development)
-
-Clone the repository and use the Makefile target:
-
-```bash
-git clone https://github.com/c5c3/memcached-operator.git
-cd memcached-operator
-make install
-```
-
-This runs `kustomize build config/crd | kubectl apply -f -` under the hood,
-which generates and applies the CRD manifest from the Kustomize overlay in
-`config/crd/`.
-
-### Option B: Using kustomize directly
-
-If you have the repository checked out but prefer to run the command yourself:
-
-```bash
-kustomize build config/crd | kubectl apply -f -
-```
-
-### Option C: From a release artifact
+### Option A: From a GitHub Release (recommended)
 
 Apply the CRD manifest directly from a GitHub Release:
 
@@ -88,9 +66,16 @@ Apply the CRD manifest directly from a GitHub Release:
 kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/memcached.c5c3.io_memcacheds.yaml
 ```
 
-Replace `v0.1.0` with the version you want to install. Available releases are
-listed at
+Replace `v0.1.0` with the desired version. Available releases are listed at
 [github.com/c5c3/memcached-operator/releases](https://github.com/c5c3/memcached-operator/releases).
+
+### Option B: From source
+
+If you have the repository cloned, use the Makefile target:
+
+```bash
+make install
+```
 
 ### Verify CRD installation
 
