@@ -22,6 +22,15 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/do
 kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
 ```
 
+#### Install Prometheus Operator CRDs (optional)
+
+If you plan to use `ServiceMonitor` resources for Prometheus-based monitoring,
+install the Prometheus Operator CRDs:
+
+```bash
+kubectl apply -f https://github.com/prometheus-operator/prometheus-operator/releases/latest/download/stripped-down-crds.yaml
+```
+
 #### Verify prerequisites
 
 ```bash
