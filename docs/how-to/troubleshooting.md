@@ -167,7 +167,7 @@ kubectl logs <pod-name> -n <namespace> -c memcached --previous
 # Look for "unknown option" or "illegal argument" messages
 ```
 
-Fix: Remove or correct the invalid arguments in `spec.memcached.extraArgs`. Refer to the [memcached man page](https://man7.org/linux/man-pages/man1/memcached.1.html) for valid flags.
+Fix: Remove or correct the invalid arguments in `spec.memcached.extraArgs`. Refer to the [memcached documentation](https://docs.memcached.org/serverguide/configuring/) for valid flags.
 
 **Missing SASL Secret**
 

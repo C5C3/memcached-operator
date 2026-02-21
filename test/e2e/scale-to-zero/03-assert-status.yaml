@@ -4,11 +4,13 @@ kind: Memcached
 metadata:
   name: test-scale-zero
 status:
-  readyReplicas: 0
   conditions:
     - type: Available
       status: "False"
       reason: Unavailable
+    - type: Progressing
+      status: "False"
+      reason: ProgressingComplete
     - type: Degraded
       status: "False"
       reason: NotDegraded

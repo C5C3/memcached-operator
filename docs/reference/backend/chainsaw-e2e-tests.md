@@ -248,14 +248,14 @@ test/e2e/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with non-existent image (test-degraded)
 │   ├── 01-assert-deployment.yaml   # Deployment created with invalid image
-│   └── 01-assert-status.yaml       # Degraded=True, Available=False, readyReplicas=0
+│   └── 01-assert-status.yaml       # Degraded=True, Available=False, Progressing=False (ProgressingComplete)
 ├── scale-to-zero/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with replicas=1 (test-scale-zero)
 │   ├── 01-assert-status-available.yaml # Initial Available=True, readyReplicas=1
 │   ├── 02-patch-scale-zero.yaml    # Patch replicas to 0
 │   ├── 03-assert-deployment.yaml   # Deployment.spec.replicas=0
-│   └── 03-assert-status.yaml       # Available=False, Degraded=False, readyReplicas=0
+│   └── 03-assert-status.yaml       # Available=False, Progressing=False, Degraded=False
 ├── owner-references/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with all features enabled (test-owner-refs)
@@ -412,12 +412,12 @@ the assertion succeeds when the GET returns `NotFound`.
 Verifies that enabling SASL authentication creates the correct Secret volume,
 volumeMount, and container args (`-Y <authfile>`) in the Deployment.
 
-| Step                   | Operation                     | Assertion                                                                                              |
-|------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------|
-| create-sasl-secret     | `apply` 00-sasl-secret.yaml   | Opaque Secret with `password-file` key created                                                         |
-| create-memcached-cr    | `apply` 00-memcached.yaml     | CR with `security.sasl.enabled: true`, `credentialsSecretRef.name: test-sasl-credentials`              |
-| assert-deployment-sasl | `assert` 01-assert-deployment | Volume `sasl-credentials` with item `{key: password-file, path: password-file}`, mount at `/etc/memcached/sasl` (readOnly), args include `-Y /etc/memcached/sasl/password-file` |
-| assert-status-available | `assert` 02-assert-status    | readyReplicas: 1, Available=True                                                                       |
+| Step                    | Operation                     | Assertion                                                                                                                                                                       |
+|-------------------------|-------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| create-sasl-secret      | `apply` 00-sasl-secret.yaml   | Opaque Secret with `password-file` key created                                                                                                                                  |
+| create-memcached-cr     | `apply` 00-memcached.yaml     | CR with `security.sasl.enabled: true`, `credentialsSecretRef.name: test-sasl-credentials`                                                                                       |
+| assert-deployment-sasl  | `assert` 01-assert-deployment | Volume `sasl-credentials` with item `{key: password-file, path: password-file}`, mount at `/etc/memcached/sasl` (readOnly), args include `-Y /etc/memcached/sasl/password-file` |
+| assert-status-available | `assert` 02-assert-status     | readyReplicas: 1, Available=True                                                                                                                                                |
 
 The SASL Secret must be created **before** the Memcached CR because the
 validating webhook requires `credentialsSecretRef.name` to reference an existing
@@ -435,14 +435,14 @@ Verifies that enabling TLS encryption creates a cert-manager Certificate, adds
 the TLS volume, volumeMount, `-Z` and `ssl_chain_cert`/`ssl_key` container args,
 and configures port 11212 on the Deployment and Service.
 
-| Step                       | Operation                              | Assertion                                                                                         |
-|----------------------------|----------------------------------------|---------------------------------------------------------------------------------------------------|
-| create-cert-manager-resources | `apply` 00-cert-manager.yaml       | Self-signed Issuer + Certificate (secretName: `test-tls-certs`)                                   |
-| assert-certificate-ready   | `assert` 00-assert-certificate-ready   | Certificate status Ready=True                                                                     |
-| create-memcached-cr        | `apply` 01-memcached.yaml              | CR with `security.tls.enabled: true`, `certificateSecretRef.name: test-tls-certs`                 |
-| assert-deployment-tls      | `assert` 02-assert-deployment          | Volume `tls-certificates` with items `tls.crt`, `tls.key`; mount at `/etc/memcached/tls` (readOnly); args include `-Z -o ssl_chain_cert=... -o ssl_key=...`; port `memcached-tls` on 11212 |
-| assert-service-tls-port    | `assert` 02-assert-service             | Service ports include `memcached-tls` on port 11212 targeting `memcached-tls`                     |
-| assert-status-available    | `assert` 03-assert-status              | readyReplicas: 1, Available=True                                                                  |
+| Step                          | Operation                            | Assertion                                                                                                                                                                                  |
+|-------------------------------|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| create-cert-manager-resources | `apply` 00-cert-manager.yaml         | Self-signed Issuer + Certificate (secretName: `test-tls-certs`)                                                                                                                            |
+| assert-certificate-ready      | `assert` 00-assert-certificate-ready | Certificate status Ready=True                                                                                                                                                              |
+| create-memcached-cr           | `apply` 01-memcached.yaml            | CR with `security.tls.enabled: true`, `certificateSecretRef.name: test-tls-certs`                                                                                                          |
+| assert-deployment-tls         | `assert` 02-assert-deployment        | Volume `tls-certificates` with items `tls.crt`, `tls.key`; mount at `/etc/memcached/tls` (readOnly); args include `-Z -o ssl_chain_cert=... -o ssl_key=...`; port `memcached-tls` on 11212 |
+| assert-service-tls-port       | `assert` 02-assert-service           | Service ports include `memcached-tls` on port 11212 targeting `memcached-tls`                                                                                                              |
+| assert-status-available       | `assert` 03-assert-status            | readyReplicas: 1, Available=True                                                                                                                                                           |
 
 The Certificate must reach `Ready=True` before applying the Memcached CR to
 ensure the TLS Secret exists (avoiding a race condition where the operator
@@ -464,14 +464,14 @@ Verifies that enabling TLS with `enableClientCert: true` adds the `ca.crt` key
 projection to the TLS volume and the `ssl_ca_cert` arg to the container, in
 addition to the standard TLS configuration.
 
-| Step                       | Operation                              | Assertion                                                                                         |
-|----------------------------|----------------------------------------|---------------------------------------------------------------------------------------------------|
-| create-cert-manager-resources | `apply` 00-cert-manager.yaml       | Self-signed Issuer + Certificate (secretName: `test-mtls-certs`)                                  |
-| assert-certificate-ready   | `assert` 00-assert-certificate-ready   | Certificate status Ready=True                                                                     |
-| create-memcached-cr        | `apply` 01-memcached.yaml              | CR with `tls.enabled: true`, `enableClientCert: true`, `certificateSecretRef.name: test-mtls-certs` |
-| assert-deployment-mtls     | `assert` 02-assert-deployment          | Volume items include `ca.crt` alongside `tls.crt`/`tls.key`; args include `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`; port `memcached-tls` on 11212 |
-| assert-service-tls-port    | `assert` 02-assert-service             | Service ports include `memcached-tls` on port 11212                                               |
-| assert-status-available    | `assert` 03-assert-status              | readyReplicas: 1, Available=True                                                                  |
+| Step                          | Operation                            | Assertion                                                                                                                                           |
+|-------------------------------|--------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
+| create-cert-manager-resources | `apply` 00-cert-manager.yaml         | Self-signed Issuer + Certificate (secretName: `test-mtls-certs`)                                                                                    |
+| assert-certificate-ready      | `assert` 00-assert-certificate-ready | Certificate status Ready=True                                                                                                                       |
+| create-memcached-cr           | `apply` 01-memcached.yaml            | CR with `tls.enabled: true`, `enableClientCert: true`, `certificateSecretRef.name: test-mtls-certs`                                                 |
+| assert-deployment-mtls        | `assert` 02-assert-deployment        | Volume items include `ca.crt` alongside `tls.crt`/`tls.key`; args include `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`; port `memcached-tls` on 11212 |
+| assert-service-tls-port       | `assert` 02-assert-service           | Service ports include `memcached-tls` on port 11212                                                                                                 |
+| assert-status-available       | `assert` 03-assert-status            | readyReplicas: 1, Available=True                                                                                                                    |
 
 The mTLS test extends TLS by verifying that `enableClientCert: true` causes the
 operator to project the `ca.crt` key from the Secret and add the
@@ -496,19 +496,19 @@ ingress port 11211, allowedSources propagation, port adaptation when TLS and
 monitoring are enabled (11211, 11212, 9150), and deletion when networkPolicy is
 disabled.
 
-| Step                              | Operation                                        | Assertion                                                                                         |
-|-----------------------------------|--------------------------------------------------|---------------------------------------------------------------------------------------------------|
-| create-memcached-with-networkpolicy | `apply` 00-memcached.yaml                      | CR with `security.networkPolicy.enabled: true` (`test-netpol`)                                    |
-| assert-deployment-ready           | `assert` 01-assert-deployment.yaml               | Deployment with correct labels                                                                    |
-| assert-networkpolicy-created      | `assert` 01-assert-networkpolicy.yaml            | NetworkPolicy with podSelector matching operator labels, policyTypes: [Ingress], port 11211/TCP   |
-| patch-allowed-sources             | `patch` 02-patch-allowed-sources.yaml            | Add `allowedSources` with podSelector `app: allowed-client`                                       |
-| assert-networkpolicy-allowed-sources | `assert` 03-assert-networkpolicy-allowed-sources.yaml | NetworkPolicy ingress `from` field contains podSelector with `app: allowed-client`             |
-| create-cert-manager-resources     | `apply` 04-cert-manager.yaml                     | Self-signed Issuer + Certificate (secretName: `test-netpol-certs`)                                |
-| assert-certificate-ready          | `assert` 04-assert-certificate-ready.yaml        | Certificate status Ready=True                                                                     |
-| patch-enable-tls-monitoring       | `patch` 05-patch-enable-tls-monitoring.yaml      | Enable TLS (`certificateSecretRef.name: test-netpol-certs`) and monitoring                        |
-| assert-networkpolicy-all-ports    | `assert` 06-assert-networkpolicy-all-ports.yaml  | NetworkPolicy ingress ports: 11211/TCP, 11212/TCP, 9150/TCP; `from` peer preserved                |
-| disable-networkpolicy             | `patch` 07-patch-disable-networkpolicy.yaml      | Patch `security.networkPolicy.enabled: false`                                                     |
-| assert-networkpolicy-deleted      | `error` 08-error-networkpolicy-gone.yaml         | NetworkPolicy resource no longer exists                                                           |
+| Step                                 | Operation                                             | Assertion                                                                                       |
+|--------------------------------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
+| create-memcached-with-networkpolicy  | `apply` 00-memcached.yaml                             | CR with `security.networkPolicy.enabled: true` (`test-netpol`)                                  |
+| assert-deployment-ready              | `assert` 01-assert-deployment.yaml                    | Deployment with correct labels                                                                  |
+| assert-networkpolicy-created         | `assert` 01-assert-networkpolicy.yaml                 | NetworkPolicy with podSelector matching operator labels, policyTypes: [Ingress], port 11211/TCP |
+| patch-allowed-sources                | `patch` 02-patch-allowed-sources.yaml                 | Add `allowedSources` with podSelector `app: allowed-client`                                     |
+| assert-networkpolicy-allowed-sources | `assert` 03-assert-networkpolicy-allowed-sources.yaml | NetworkPolicy ingress `from` field contains podSelector with `app: allowed-client`              |
+| create-cert-manager-resources        | `apply` 04-cert-manager.yaml                          | Self-signed Issuer + Certificate (secretName: `test-netpol-certs`)                              |
+| assert-certificate-ready             | `assert` 04-assert-certificate-ready.yaml             | Certificate status Ready=True                                                                   |
+| patch-enable-tls-monitoring          | `patch` 05-patch-enable-tls-monitoring.yaml           | Enable TLS (`certificateSecretRef.name: test-netpol-certs`) and monitoring                      |
+| assert-networkpolicy-all-ports       | `assert` 06-assert-networkpolicy-all-ports.yaml       | NetworkPolicy ingress ports: 11211/TCP, 11212/TCP, 9150/TCP; `from` peer preserved              |
+| disable-networkpolicy                | `patch` 07-patch-disable-networkpolicy.yaml           | Patch `security.networkPolicy.enabled: false`                                                   |
+| assert-networkpolicy-deleted         | `error` 08-error-networkpolicy-gone.yaml              | NetworkPolicy resource no longer exists                                                         |
 
 **Prerequisite**: cert-manager must be installed in the cluster (required for the
 TLS port adaptation step).
@@ -527,14 +527,14 @@ Verifies that custom annotations defined in `spec.service.annotations` are
 propagated to the managed headless Service, that updating annotations propagates
 the changes, and that removing annotations clears them from the Service.
 
-| Step                         | Operation                                | Assertion                                                                                                                 |
-|------------------------------|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
-| create-memcached-with-annotations | `apply` 00-memcached.yaml          | CR with two annotations: `external-dns.alpha.kubernetes.io/hostname` and `service.beta.kubernetes.io/aws-load-balancer-internal` (`test-svc-ann`) |
-| assert-service-has-annotations | `assert` 01-assert-service.yaml        | Service has both custom annotations, correct labels, headless (clusterIP: None), port 11211                               |
-| update-annotations           | `patch` 02-patch-update-annotations.yaml | Replace annotations with `external-dns.alpha.kubernetes.io/hostname: memcached-updated.example.com` and `prometheus.io/scrape: "true"` |
-| assert-service-annotations-updated | `assert` 03-assert-service-updated.yaml | Service annotations contain the updated key-value pairs                                                              |
-| remove-annotations           | `patch` 04-patch-remove-annotations.yaml | Patch `spec.service: null` to remove all annotations                                                                      |
-| assert-service-no-annotations | `assert` 05-assert-service-no-annotations.yaml | Service has correct labels and spec; JMESPath expression asserts annotations are absent or empty                     |
+| Step                               | Operation                                      | Assertion                                                                                                                                         |
+|------------------------------------|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------|
+| create-memcached-with-annotations  | `apply` 00-memcached.yaml                      | CR with two annotations: `external-dns.alpha.kubernetes.io/hostname` and `service.beta.kubernetes.io/aws-load-balancer-internal` (`test-svc-ann`) |
+| assert-service-has-annotations     | `assert` 01-assert-service.yaml                | Service has both custom annotations, correct labels, headless (clusterIP: None), port 11211                                                       |
+| update-annotations                 | `patch` 02-patch-update-annotations.yaml       | Replace annotations with `external-dns.alpha.kubernetes.io/hostname: memcached-updated.example.com` and `prometheus.io/scrape: "true"`            |
+| assert-service-annotations-updated | `assert` 03-assert-service-updated.yaml        | Service annotations contain the updated key-value pairs                                                                                           |
+| remove-annotations                 | `patch` 04-patch-remove-annotations.yaml       | Patch `spec.service: null` to remove all annotations                                                                                              |
+| assert-service-no-annotations      | `assert` 05-assert-service-no-annotations.yaml | Service has correct labels and spec; JMESPath expression asserts annotations are absent or empty                                                  |
 
 **CRD fields tested**:
 - `spec.service.annotations` — Custom annotations propagated to the managed Service
@@ -547,13 +547,13 @@ Verifies that configuring PDB with `maxUnavailable` (instead of `minAvailable`)
 creates a PodDisruptionBudget with the correct `maxUnavailable` setting, and that
 updating it propagates to the PDB.
 
-| Step                                    | Operation                        | Assertion                                                  |
-|-----------------------------------------|----------------------------------|------------------------------------------------------------|
-| create-memcached-with-pdb-max-unavailable | `apply` 00-memcached.yaml     | CR with replicas=3, PDB enabled, maxUnavailable=1          |
-| assert-deployment-ready                 | `assert` 01-assert-deployment    | Deployment with 3 replicas                                 |
-| assert-pdb-max-unavailable              | `assert` 01-assert-pdb          | PDB with maxUnavailable=1, correct selector, labels        |
-| update-max-unavailable                  | `patch` maxUnavailable=2         | —                                                          |
-| assert-pdb-updated                      | `assert` 03-assert-pdb-updated  | PDB with maxUnavailable=2                                  |
+| Step                                      | Operation                      | Assertion                                           |
+|-------------------------------------------|--------------------------------|-----------------------------------------------------|
+| create-memcached-with-pdb-max-unavailable | `apply` 00-memcached.yaml      | CR with replicas=3, PDB enabled, maxUnavailable=1   |
+| assert-deployment-ready                   | `assert` 01-assert-deployment  | Deployment with 3 replicas                          |
+| assert-pdb-max-unavailable                | `assert` 01-assert-pdb         | PDB with maxUnavailable=1, correct selector, labels |
+| update-max-unavailable                    | `patch` maxUnavailable=2       | —                                                   |
+| assert-pdb-updated                        | `assert` 03-assert-pdb-updated | PDB with maxUnavailable=2                           |
 
 **CRD fields tested**:
 - `spec.highAvailability.podDisruptionBudget.enabled` — Enables the PDB
@@ -567,12 +567,12 @@ Verifies that setting `memcached.verbosity` and `memcached.extraArgs` propagates
 to the Deployment container args, and that updating them triggers a rolling update
 with the correct args.
 
-| Step                                         | Operation                                         | Assertion                                             |
-|----------------------------------------------|----------------------------------------------------|-------------------------------------------------------|
-| create-memcached-with-verbosity-and-extra-args | `apply` 00-memcached.yaml                       | CR with verbosity=1, extraArgs=["-o", "modern"]       |
-| assert-initial-args                          | `assert` 01-assert-deployment                      | Args include `-v -o modern` after standard flags      |
-| update-verbosity-and-extra-args              | `patch` verbosity=2, extraArgs=["--max-reqs-per-event", "20"] | —                                          |
-| assert-updated-args                          | `assert` 03-assert-deployment                      | Args include `-vv --max-reqs-per-event 20`            |
+| Step                                           | Operation                                                     | Assertion                                        |
+|------------------------------------------------|---------------------------------------------------------------|--------------------------------------------------|
+| create-memcached-with-verbosity-and-extra-args | `apply` 00-memcached.yaml                                     | CR with verbosity=1, extraArgs=["-o", "modern"]  |
+| assert-initial-args                            | `assert` 01-assert-deployment                                 | Args include `-v -o modern` after standard flags |
+| update-verbosity-and-extra-args                | `patch` verbosity=2, extraArgs=["--max-reqs-per-event", "20"] | —                                                |
+| assert-updated-args                            | `assert` 03-assert-deployment                                 | Args include `-vv --max-reqs-per-event 20`       |
 
 **CRD fields tested**:
 - `spec.memcached.verbosity` — Controls verbosity flag (0=none, 1=-v, 2=-vv)
@@ -585,12 +585,12 @@ with the correct args.
 Verifies that specifying a custom exporter image in the monitoring config uses
 that image for the exporter sidecar instead of the default.
 
-| Step                               | Operation                              | Assertion                                                      |
-|------------------------------------|----------------------------------------|----------------------------------------------------------------|
-| create-memcached-with-custom-exporter | `apply` 00-memcached.yaml          | CR with monitoring enabled, exporterImage=v0.14.0              |
-| assert-custom-exporter-image       | `assert` 01-assert-deployment          | Exporter sidecar uses custom image v0.14.0                     |
-| update-exporter-image              | `patch` exporterImage=v0.15.4          | —                                                              |
-| assert-updated-exporter-image      | `assert` 03-assert-deployment          | Exporter sidecar uses updated image v0.15.4                    |
+| Step                                  | Operation                     | Assertion                                         |
+|---------------------------------------|-------------------------------|---------------------------------------------------|
+| create-memcached-with-custom-exporter | `apply` 00-memcached.yaml     | CR with monitoring enabled, exporterImage=v0.14.0 |
+| assert-custom-exporter-image          | `assert` 01-assert-deployment | Exporter sidecar uses custom image v0.14.0        |
+| update-exporter-image                 | `patch` exporterImage=v0.15.4 | —                                                 |
+| assert-updated-exporter-image         | `assert` 03-assert-deployment | Exporter sidecar uses updated image v0.15.4       |
 
 **CRD fields tested**:
 - `spec.monitoring.enabled` — Enables the exporter sidecar
@@ -604,12 +604,12 @@ Verifies that custom pod and container security contexts defined in
 `spec.security` are propagated to the Deployment pod template, and that
 updating them triggers a rolling update with the new settings.
 
-| Step                                    | Operation                                      | Assertion                                                  |
-|-----------------------------------------|------------------------------------------------|------------------------------------------------------------|
-| create-memcached-with-security-contexts | `apply` 00-memcached.yaml                     | CR with runAsNonRoot, readOnlyRootFilesystem, drop ALL     |
-| assert-security-contexts                | `assert` 01-assert-deployment                  | Pod and container security contexts match CR spec          |
-| update-security-contexts                | `patch` runAsUser=1000, fsGroup=1000           | —                                                          |
-| assert-updated-security-contexts        | `assert` 03-assert-deployment                  | Updated security contexts with runAsUser=1000              |
+| Step                                    | Operation                            | Assertion                                              |
+|-----------------------------------------|--------------------------------------|--------------------------------------------------------|
+| create-memcached-with-security-contexts | `apply` 00-memcached.yaml            | CR with runAsNonRoot, readOnlyRootFilesystem, drop ALL |
+| assert-security-contexts                | `assert` 01-assert-deployment        | Pod and container security contexts match CR spec      |
+| update-security-contexts                | `patch` runAsUser=1000, fsGroup=1000 | —                                                      |
+| assert-updated-security-contexts        | `assert` 03-assert-deployment        | Updated security contexts with runAsUser=1000          |
 
 **CRD fields tested**:
 - `spec.security.podSecurityContext` — Pod-level security context (runAsNonRoot, fsGroup)
@@ -623,10 +623,10 @@ Verifies that setting `antiAffinityPreset` to `"hard"` configures
 `requiredDuringSchedulingIgnoredDuringExecution` pod anti-affinity on the
 Deployment, with the correct topology key and label selector.
 
-| Step                                      | Operation                  | Assertion                                                                           |
-|-------------------------------------------|----------------------------|-------------------------------------------------------------------------------------|
-| create-memcached-with-hard-anti-affinity  | `apply` 00-memcached.yaml | CR with antiAffinityPreset="hard"                                                   |
-| assert-hard-anti-affinity                 | `assert` 01-assert-deployment | requiredDuringScheduling anti-affinity with topologyKey and instance label selector |
+| Step                                     | Operation                     | Assertion                                                                           |
+|------------------------------------------|-------------------------------|-------------------------------------------------------------------------------------|
+| create-memcached-with-hard-anti-affinity | `apply` 00-memcached.yaml     | CR with antiAffinityPreset="hard"                                                   |
+| assert-hard-anti-affinity                | `assert` 01-assert-deployment | requiredDuringScheduling anti-affinity with topologyKey and instance label selector |
 
 **CRD fields tested**:
 - `spec.highAvailability.antiAffinityPreset` — Controls pod anti-affinity ("soft" or "hard")
@@ -638,13 +638,13 @@ Deployment, with the correct topology key and label selector.
 Verifies that a Memcached CR with a non-existent container image reports
 `Degraded=True` and `Available=False` status conditions. The operator creates
 the Deployment, but pods fail to pull the image (ImagePullBackOff), causing
-`readyReplicas=0` and triggering the degraded status path.
+zero ready replicas and triggering the degraded status path.
 
-| Step                      | Operation                    | Assertion                                                                                      |
-|---------------------------|------------------------------|------------------------------------------------------------------------------------------------|
-| create-memcached-cr       | `apply` 00-memcached.yaml   | CR with image `memcached:nonexistent-tag-does-not-exist` (`test-degraded`)                     |
-| assert-deployment-created | `assert` 01-assert-deployment | Deployment exists with invalid image, correct labels, owner reference                          |
-| assert-status-degraded    | `assert` 01-assert-status    | Degraded=True (reason: Degraded), Available=False (reason: Unavailable), Progressing=True (reason: Progressing), readyReplicas=0 |
+| Step                      | Operation                     | Assertion                                                                                                                |
+|---------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| create-memcached-cr       | `apply` 00-memcached.yaml     | CR with image `memcached:nonexistent-tag-does-not-exist` (`test-degraded`)                                               |
+| assert-deployment-created | `assert` 01-assert-deployment | Deployment exists with invalid image, correct labels, owner reference                                                    |
+| assert-status-degraded    | `assert` 01-assert-status     | Degraded=True (reason: Degraded), Available=False (reason: Unavailable), Progressing=False (reason: ProgressingComplete) |
 
 **CRD fields tested**:
 - `spec.replicas` — Desired replica count (1)
@@ -655,17 +655,17 @@ the Deployment, but pods fail to pull the image (ImagePullBackOff), causing
 **Directory**: `test/e2e/scale-to-zero/`
 
 Verifies that patching a healthy Memcached CR from `replicas=1` to `replicas=0`
-results in `Available=False`, `Degraded=False`, and `readyReplicas=0`. This is a
+results in `Available=False`, `Progressing=False`, and `Degraded=False`. This is a
 two-phase apply-assert-patch-assert test that first confirms a healthy starting
 state before scaling down.
 
-| Step                    | Operation                          | Assertion                                                                  |
-|-------------------------|------------------------------------|----------------------------------------------------------------------------|
-| create-memcached-cr     | `apply` 00-memcached.yaml         | CR with replicas=1 (`test-scale-zero`)                                     |
-| assert-initial-status   | `assert` 01-assert-status-available | Available=True, readyReplicas=1                                            |
-| scale-to-zero           | `patch` 02-patch-scale-zero.yaml   | Patch `spec.replicas` to 0                                                 |
-| assert-deployment-scaled | `assert` 03-assert-deployment     | Deployment.spec.replicas=0                                                 |
-| assert-status-unavailable | `assert` 03-assert-status        | Available=False (Unavailable), Degraded=False (NotDegraded), readyReplicas=0 |
+| Step                      | Operation                           | Assertion                                                                                            |
+|---------------------------|-------------------------------------|------------------------------------------------------------------------------------------------------|
+| create-memcached-cr       | `apply` 00-memcached.yaml           | CR with replicas=1 (`test-scale-zero`)                                                               |
+| assert-initial-status     | `assert` 01-assert-status-available | Available=True, readyReplicas=1                                                                      |
+| scale-to-zero             | `patch` 02-patch-scale-zero.yaml    | Patch `spec.replicas` to 0                                                                           |
+| assert-deployment-scaled  | `assert` 03-assert-deployment       | Deployment.spec.replicas=0                                                                           |
+| assert-status-unavailable | `assert` 03-assert-status           | Available=False (Unavailable), Progressing=False (ProgressingComplete), Degraded=False (NotDegraded) |
 
 **CRD fields tested**:
 - `spec.replicas` — Scale-to-zero behavior (patched from 1 to 0)
@@ -684,14 +684,14 @@ Verifies that all child resources created by the operator have correct
 creation) separately from the cr-deletion test that validates the outcome
 (resources cleaned up on deletion).
 
-| Step                                | Operation                                 | Assertion                                                                                         |
-|-------------------------------------|-------------------------------------------|---------------------------------------------------------------------------------------------------|
-| create-memcached-with-all-features  | `apply` 00-memcached.yaml                | CR with monitoring, PDB, and NetworkPolicy enabled (`test-owner-refs`)                            |
-| assert-deployment-owner-reference   | `assert` 01-assert-deployment.yaml       | Deployment ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true |
-| assert-service-owner-reference      | `assert` 01-assert-service.yaml          | Service ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                 |
-| assert-pdb-owner-reference          | `assert` 01-assert-pdb.yaml             | PDB ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                     |
-| assert-networkpolicy-owner-reference | `assert` 01-assert-networkpolicy.yaml   | NetworkPolicy ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true           |
-| assert-servicemonitor-owner-reference | `assert` 01-assert-servicemonitor.yaml | ServiceMonitor ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true          |
+| Step                                  | Operation                              | Assertion                                                                                                                   |
+|---------------------------------------|----------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
+| create-memcached-with-all-features    | `apply` 00-memcached.yaml              | CR with monitoring, PDB, and NetworkPolicy enabled (`test-owner-refs`)                                                      |
+| assert-deployment-owner-reference     | `assert` 01-assert-deployment.yaml     | Deployment ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true |
+| assert-service-owner-reference        | `assert` 01-assert-service.yaml        | Service ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
+| assert-pdb-owner-reference            | `assert` 01-assert-pdb.yaml            | PDB ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                               |
+| assert-networkpolicy-owner-reference  | `assert` 01-assert-networkpolicy.yaml  | NetworkPolicy ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                     |
+| assert-servicemonitor-owner-reference | `assert` 01-assert-servicemonitor.yaml | ServiceMonitor ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                    |
 
 The test does **not** delete the CR or assert resource cleanup — that is covered by
 the cr-deletion test (scenario 8). This separation allows pinpointing whether a GC
@@ -829,84 +829,84 @@ verify runtime protocol behavior. This means:
 
 ### Security E2E Tests (MO-0032)
 
-| REQ-ID      | Requirement                                                    | Test Scenario       | Key Assertions                                                                                                     |
-|-------------|----------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------|
-| MO-0032-001 | SASL Secret and CR configuration propagation                   | sasl-authentication | Secret with `password-file` key, CR with `sasl.enabled: true` and `credentialsSecretRef`                           |
-| MO-0032-002 | SASL Deployment volume, mount, and args                        | sasl-authentication | Volume `sasl-credentials`, mount at `/etc/memcached/sasl`, args `-Y /etc/memcached/sasl/password-file`             |
-| MO-0032-003 | TLS cert-manager Certificate creation                          | tls-encryption      | Self-signed Issuer, Certificate with `Ready=True`, Secret with `tls.crt`/`tls.key`                                |
-| MO-0032-004 | TLS Deployment volume, mount, args, and port                   | tls-encryption      | Volume `tls-certificates`, mount at `/etc/memcached/tls`, args `-Z -o ssl_chain_cert -o ssl_key`, port 11212       |
-| MO-0032-005 | TLS Service port configuration                                 | tls-encryption      | Service port `memcached-tls` on 11212 targeting `memcached-tls`                                                    |
-| MO-0032-006 | mTLS ca.crt volume projection and ssl_ca_cert arg              | tls-mtls            | Volume items include `ca.crt`, args include `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`                             |
-| MO-0032-007 | mTLS preserves standard TLS configuration                      | tls-mtls            | All TLS assertions (volume, mount, args, ports) plus `ca.crt` additions                                           |
-| MO-0032-008 | Security tests follow Chainsaw conventions                     | All security tests  | Numbered YAML files, apply/assert flow, partial object matching, standard timeouts, `test-{name}` CR naming        |
-| MO-0032-009 | Tests are spec-level assertions only (no runtime verification) | All security tests  | Assertions on Deployment spec, Service spec, CR status — no pod logs or protocol connections                       |
+| REQ-ID      | Requirement                                                    | Test Scenario       | Key Assertions                                                                                               |
+|-------------|----------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------|
+| MO-0032-001 | SASL Secret and CR configuration propagation                   | sasl-authentication | Secret with `password-file` key, CR with `sasl.enabled: true` and `credentialsSecretRef`                     |
+| MO-0032-002 | SASL Deployment volume, mount, and args                        | sasl-authentication | Volume `sasl-credentials`, mount at `/etc/memcached/sasl`, args `-Y /etc/memcached/sasl/password-file`       |
+| MO-0032-003 | TLS cert-manager Certificate creation                          | tls-encryption      | Self-signed Issuer, Certificate with `Ready=True`, Secret with `tls.crt`/`tls.key`                           |
+| MO-0032-004 | TLS Deployment volume, mount, args, and port                   | tls-encryption      | Volume `tls-certificates`, mount at `/etc/memcached/tls`, args `-Z -o ssl_chain_cert -o ssl_key`, port 11212 |
+| MO-0032-005 | TLS Service port configuration                                 | tls-encryption      | Service port `memcached-tls` on 11212 targeting `memcached-tls`                                              |
+| MO-0032-006 | mTLS ca.crt volume projection and ssl_ca_cert arg              | tls-mtls            | Volume items include `ca.crt`, args include `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`                       |
+| MO-0032-007 | mTLS preserves standard TLS configuration                      | tls-mtls            | All TLS assertions (volume, mount, args, ports) plus `ca.crt` additions                                      |
+| MO-0032-008 | Security tests follow Chainsaw conventions                     | All security tests  | Numbered YAML files, apply/assert flow, partial object matching, standard timeouts, `test-{name}` CR naming  |
+| MO-0032-009 | Tests are spec-level assertions only (no runtime verification) | All security tests  | Assertions on Deployment spec, Service spec, CR status — no pod logs or protocol connections                 |
 
 ### Network & Service E2E Tests (MO-0033)
 
-| REQ-ID           | Requirement                                                        | Test Scenario       | Key Assertions                                                                                                      |
-|------------------|--------------------------------------------------------------------|---------------------|---------------------------------------------------------------------------------------------------------------------|
-| REQ-E2E-NP-001  | NetworkPolicy creation with podSelector and port 11211             | network-policy      | NetworkPolicy with operator labels, policyTypes: [Ingress], ingress port 11211/TCP                                  |
-| REQ-E2E-NP-002  | allowedSources propagation to NetworkPolicy ingress from field     | network-policy      | Ingress `from` contains podSelector with `app: allowed-client`                                                      |
-| REQ-E2E-NP-003  | TLS port 11212 added to NetworkPolicy when TLS enabled             | network-policy      | Ingress ports include 11211/TCP, 11212/TCP, 9150/TCP after enabling TLS and monitoring                              |
-| REQ-E2E-NP-004  | NetworkPolicy deleted when networkPolicy disabled                  | network-policy      | Error assertion confirms NetworkPolicy no longer exists after disabling                                             |
-| REQ-E2E-NP-005  | Monitoring port 9150 added to NetworkPolicy when monitoring enabled | network-policy      | Ingress ports include 9150/TCP alongside 11211/TCP and 11212/TCP                                                    |
-| REQ-E2E-SA-001  | Service annotations propagated from CR spec                        | service-annotations | Service metadata.annotations contains custom annotations, labels and headless spec preserved                        |
-| REQ-E2E-SA-002  | Service annotations cleared when removed from CR spec              | service-annotations | Service metadata.annotations empty after patching `spec.service: null`, Service spec unchanged                      |
-| REQ-E2E-DOC-001 | Documentation updated with new test entries                        | (this document)     | network-policy and service-annotations sections, file structure, requirement coverage matrix                         |
+| REQ-ID          | Requirement                                                         | Test Scenario       | Key Assertions                                                                                 |
+|-----------------|---------------------------------------------------------------------|---------------------|------------------------------------------------------------------------------------------------|
+| REQ-E2E-NP-001  | NetworkPolicy creation with podSelector and port 11211              | network-policy      | NetworkPolicy with operator labels, policyTypes: [Ingress], ingress port 11211/TCP             |
+| REQ-E2E-NP-002  | allowedSources propagation to NetworkPolicy ingress from field      | network-policy      | Ingress `from` contains podSelector with `app: allowed-client`                                 |
+| REQ-E2E-NP-003  | TLS port 11212 added to NetworkPolicy when TLS enabled              | network-policy      | Ingress ports include 11211/TCP, 11212/TCP, 9150/TCP after enabling TLS and monitoring         |
+| REQ-E2E-NP-004  | NetworkPolicy deleted when networkPolicy disabled                   | network-policy      | Error assertion confirms NetworkPolicy no longer exists after disabling                        |
+| REQ-E2E-NP-005  | Monitoring port 9150 added to NetworkPolicy when monitoring enabled | network-policy      | Ingress ports include 9150/TCP alongside 11211/TCP and 11212/TCP                               |
+| REQ-E2E-SA-001  | Service annotations propagated from CR spec                         | service-annotations | Service metadata.annotations contains custom annotations, labels and headless spec preserved   |
+| REQ-E2E-SA-002  | Service annotations cleared when removed from CR spec               | service-annotations | Service metadata.annotations empty after patching `spec.service: null`, Service spec unchanged |
+| REQ-E2E-DOC-001 | Documentation updated with new test entries                         | (this document)     | network-policy and service-annotations sections, file structure, requirement coverage matrix   |
 
 ### Deployment Config E2E Tests (MO-0034)
 
-| REQ-ID           | Requirement                                                        | Test Scenario            | Key Assertions                                                                                                      |
-|------------------|--------------------------------------------------------------------|--------------------------|---------------------------------------------------------------------------------------------------------------------|
-| MO-0034-001      | PDB with maxUnavailable creates correct PDB and supports updates   | pdb-max-unavailable      | PDB with maxUnavailable=1, correct selector/labels; update to maxUnavailable=2 propagates                           |
-| MO-0034-002      | Verbosity level propagates to container args (-v, -vv)             | verbosity-extra-args     | Args include `-v` for verbosity=1, `-vv` for verbosity=2, placed after standard flags                              |
-| MO-0034-003      | extraArgs appended to container args after standard flags          | verbosity-extra-args     | Args include `-o modern` after standard flags; update to new extraArgs propagates                                   |
-| MO-0034-004      | Custom exporter image used for monitoring sidecar                  | custom-exporter-image    | Exporter sidecar uses custom image v0.14.0; update to v0.15.4 propagates                                           |
-| MO-0034-005      | Pod security context propagated to Deployment                      | security-contexts        | Pod securityContext with runAsNonRoot, fsGroup; update to runAsUser=1000 propagates                                 |
-| MO-0034-006      | Container security context propagated to Deployment                | security-contexts        | Container securityContext with readOnlyRootFilesystem, drop ALL; update propagates                                  |
-| MO-0034-007      | Hard anti-affinity creates requiredDuringScheduling affinity       | hard-anti-affinity       | requiredDuringSchedulingIgnoredDuringExecution with topologyKey and instance label selector                          |
+| REQ-ID      | Requirement                                                      | Test Scenario         | Key Assertions                                                                              |
+|-------------|------------------------------------------------------------------|-----------------------|---------------------------------------------------------------------------------------------|
+| MO-0034-001 | PDB with maxUnavailable creates correct PDB and supports updates | pdb-max-unavailable   | PDB with maxUnavailable=1, correct selector/labels; update to maxUnavailable=2 propagates   |
+| MO-0034-002 | Verbosity level propagates to container args (-v, -vv)           | verbosity-extra-args  | Args include `-v` for verbosity=1, `-vv` for verbosity=2, placed after standard flags       |
+| MO-0034-003 | extraArgs appended to container args after standard flags        | verbosity-extra-args  | Args include `-o modern` after standard flags; update to new extraArgs propagates           |
+| MO-0034-004 | Custom exporter image used for monitoring sidecar                | custom-exporter-image | Exporter sidecar uses custom image v0.14.0; update to v0.15.4 propagates                    |
+| MO-0034-005 | Pod security context propagated to Deployment                    | security-contexts     | Pod securityContext with runAsNonRoot, fsGroup; update to runAsUser=1000 propagates         |
+| MO-0034-006 | Container security context propagated to Deployment              | security-contexts     | Container securityContext with readOnlyRootFilesystem, drop ALL; update propagates          |
+| MO-0034-007 | Hard anti-affinity creates requiredDuringScheduling affinity     | hard-anti-affinity    | requiredDuringSchedulingIgnoredDuringExecution with topologyKey and instance label selector |
 
 ### Status & Scale E2E Tests (MO-0035)
 
-| REQ-ID           | Requirement                                                        | Test Scenario            | Key Assertions                                                                                                      |
-|------------------|--------------------------------------------------------------------|--------------------------|---------------------------------------------------------------------------------------------------------------------|
-| REQ-E2E-SD-001   | Degraded status when non-existent image specified                  | status-degraded          | Degraded=True (Degraded), Available=False (Unavailable), readyReplicas=0                                            |
-| REQ-E2E-SD-002   | Deployment created despite invalid image                           | status-degraded          | Deployment exists with correct labels and owner reference, pods in ImagePullBackOff                                  |
-| REQ-E2E-SZ-001   | Scale-to-zero transitions Available to False                       | scale-to-zero            | After patching replicas=0: Available=False (Unavailable), Degraded=False (NotDegraded), readyReplicas=0             |
-| REQ-E2E-SZ-002   | Scale-to-zero sets Deployment replicas to 0                        | scale-to-zero            | Deployment.spec.replicas=0 after patching CR                                                                        |
-| REQ-CTL-SZ-001   | computeConditions returns Available=False when desiredReplicas=0   | (unit test)              | Unit test in status_test.go verifies Available=False for 0 desired, 0 ready replicas                                |
-| REQ-DOC-001      | Documentation updated with new test entries                        | (this document)          | status-degraded and scale-to-zero sections, file structure, requirement coverage matrix                             |
+| REQ-ID         | Requirement                                                      | Test Scenario   | Key Assertions                                                                                                                  |
+|----------------|------------------------------------------------------------------|-----------------|---------------------------------------------------------------------------------------------------------------------------------|
+| REQ-E2E-SD-001 | Degraded status when non-existent image specified                | status-degraded | Degraded=True (Degraded), Available=False (Unavailable), Progressing=False (ProgressingComplete)                                |
+| REQ-E2E-SD-002 | Deployment created despite invalid image                         | status-degraded | Deployment exists with correct labels and owner reference, pods in ImagePullBackOff                                             |
+| REQ-E2E-SZ-001 | Scale-to-zero transitions Available to False                     | scale-to-zero   | After patching replicas=0: Available=False (Unavailable), Progressing=False (ProgressingComplete), Degraded=False (NotDegraded) |
+| REQ-E2E-SZ-002 | Scale-to-zero sets Deployment replicas to 0                      | scale-to-zero   | Deployment.spec.replicas=0 after patching CR                                                                                    |
+| REQ-CTL-SZ-001 | computeConditions returns Available=False when desiredReplicas=0 | (unit test)     | Unit test in status_test.go verifies Available=False for 0 desired, 0 ready replicas                                            |
+| REQ-DOC-001    | Documentation updated with new test entries                      | (this document) | status-degraded and scale-to-zero sections, file structure, requirement coverage matrix                                         |
 
 ### Owner References GC Chain E2E Tests (MO-0036)
 
-| REQ-ID           | Requirement                                                        | Test Scenario            | Key Assertions                                                                                                      |
-|------------------|--------------------------------------------------------------------|--------------------------|---------------------------------------------------------------------------------------------------------------------|
-| REQ-OR-001       | Memcached CR with all features enabled                             | owner-references         | CR with monitoring, PDB, and NetworkPolicy enabled; Deployment reaches readyReplicas=2                              |
-| REQ-OR-002       | Deployment ownerReferences set correctly                           | owner-references         | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true |
-| REQ-OR-003       | Service ownerReferences set correctly                              | owner-references         | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true   |
-| REQ-OR-004       | PDB ownerReferences set correctly                                  | owner-references         | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
-| REQ-OR-005       | NetworkPolicy ownerReferences set correctly                        | owner-references         | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
-| REQ-OR-006       | ServiceMonitor ownerReferences set correctly                       | owner-references         | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
-| REQ-OR-007       | Single test with CR creation and 5 assertion steps                 | owner-references         | One chainsaw-test.yaml with create + 5 individual assertion steps; does NOT delete CR                               |
-| REQ-OR-008       | Documentation updated with owner-references test                   | (this document)          | File structure, test scenario section, requirement coverage matrix all include owner-references                      |
+| REQ-ID     | Requirement                                        | Test Scenario    | Key Assertions                                                                                                                         |
+|------------|----------------------------------------------------|------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| REQ-OR-001 | Memcached CR with all features enabled             | owner-references | CR with monitoring, PDB, and NetworkPolicy enabled; Deployment reaches readyReplicas=2                                                 |
+| REQ-OR-002 | Deployment ownerReferences set correctly           | owner-references | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true |
+| REQ-OR-003 | Service ownerReferences set correctly              | owner-references | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true                       |
+| REQ-OR-004 | PDB ownerReferences set correctly                  | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                              |
+| REQ-OR-005 | NetworkPolicy ownerReferences set correctly        | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                              |
+| REQ-OR-006 | ServiceMonitor ownerReferences set correctly       | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                              |
+| REQ-OR-007 | Single test with CR creation and 5 assertion steps | owner-references | One chainsaw-test.yaml with create + 5 individual assertion steps; does NOT delete CR                                                  |
+| REQ-OR-008 | Documentation updated with owner-references test   | (this document)  | File structure, test scenario section, requirement coverage matrix all include owner-references                                        |
 
 ---
 
 ## Known Limitations
 
-| Limitation                  | Impact                                                   | Mitigation                                                             |
-|-----------------------------|----------------------------------------------------------|------------------------------------------------------------------------|
-| Pod scheduling time varies  | Assert timeouts may need adjustment in slow CI           | Global assert timeout set to 120s                                      |
-| cert-manager required       | Webhook and TLS/mTLS tests fail without cert-manager     | Documented as prerequisite; tests fail clearly with connection refused |
-| ServiceMonitor CRD required | monitoring-toggle and cr-deletion tests fail without CRD | Documented as prerequisite; Chainsaw reports clear assertion error     |
-| Sequential execution        | Full suite takes longer than parallel execution          | `parallel: 1` avoids resource contention on small clusters             |
-| No runtime protocol testing | SASL/TLS/mTLS tests verify Deployment spec, not actual memcached protocol | By design: tests are fast, deterministic, and need no memcached client |
-| Certificate issuance delay  | cert-manager may take time to issue certificates in CI   | Explicit `assert-certificate-ready` step waits for Ready=True within 120s |
-| No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw partial matching asserts presence of fields but cannot assert absence; the TLS test does not verify that `ssl_ca_cert` is absent when `enableClientCert` is false | The mTLS test provides the complementary positive assertion that `ssl_ca_cert` is present only when `enableClientCert: true`; combined, the two tests confirm correct conditional behavior |
-| Annotation removal uses JMESPath absence check | The service-annotations test uses a JMESPath expression to positively assert that annotations are absent or empty after removal | This upgrades confidence over simple field omission: the assertion actively fails if annotations remain on the Service |
-| Hard anti-affinity with single-node kind | The hard-anti-affinity test uses replicas=1 to avoid scheduling failures on single-node kind clusters; the test verifies the Deployment spec, not scheduling behavior | The spec-level assertion confirms the operator correctly translates `antiAffinityPreset: hard` to `requiredDuringSchedulingIgnoredDuringExecution` |
-| Degraded test depends on image pull failure timing | The status-degraded test relies on the kubelet reporting ImagePullBackOff within the 120s assert timeout for the operator to detect readyReplicas=0 and set Degraded=True | The 120s timeout is generous; image pull failures are typically reported within seconds by the kubelet |
-| Scale-to-zero Available=False is a controller behavior change | The `computeConditions` function was changed to return Available=False when desiredReplicas=0; previously it returned Available=True for scale-to-zero | This is intentional: zero replicas cannot serve traffic, so Available=False is the correct semantic; existing tests updated accordingly |
+| Limitation                                         | Impact                                                                                                                             | Mitigation                                                                                                                 |
+|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| Pod scheduling time varies                         | Assert timeouts may need adjustment in slow CI                                                                                     | Global assert timeout set to 120s                                                                                          |
+| cert-manager required                              | Webhook and TLS/mTLS tests fail without cert-manager                                                                               | Documented as prerequisite; tests fail clearly with connection refused                                                     |
+| ServiceMonitor CRD required                        | monitoring-toggle and cr-deletion tests fail without CRD                                                                           | Documented as prerequisite; Chainsaw reports clear assertion error                                                         |
+| Sequential execution                               | Full suite takes longer than parallel execution                                                                                    | `parallel: 1` avoids resource contention on small clusters                                                                 |
+| No runtime protocol testing                        | SASL/TLS/mTLS tests verify Deployment spec, not actual memcached protocol                                                          | By design: tests are fast, deterministic, and need no memcached client                                                     |
+| Certificate issuance delay                         | cert-manager may take time to issue certificates in CI                                                                             | Explicit `assert-certificate-ready` step waits for Ready=True within 120s                                                  |
+| No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw asserts presence but not absence; TLS test cannot verify `ssl_ca_cert` absent when `enableClientCert` is false            | mTLS test asserts `ssl_ca_cert` present only when `enableClientCert: true`; combined, both tests confirm correct behavior  |
+| Annotation removal uses JMESPath absence check     | service-annotations test uses JMESPath to assert annotations are absent or empty after removal                                     | Assertion actively fails if annotations remain on the Service; upgrades confidence over simple field omission              |
+| Hard anti-affinity with single-node kind           | hard-anti-affinity test uses replicas=1 to avoid scheduling failures on single-node kind; verifies Deployment spec, not scheduling | Spec assertion confirms operator translates `antiAffinityPreset: hard` to `requiredDuringSchedulingIgnoredDuringExecution` |
+| Degraded test depends on image pull timing         | status-degraded test relies on kubelet reporting ImagePullBackOff within 120s for operator to set Degraded=True                    | The 120s timeout is generous; image pull failures are typically reported within seconds by the kubelet                     |
+| Scale-to-zero Available=False behavior change      | `computeConditions` changed to return Available=False when desiredReplicas=0; previously returned Available=True                   | Intentional: zero replicas cannot serve traffic, so Available=False is correct; existing tests updated accordingly         |
 
 ---
 

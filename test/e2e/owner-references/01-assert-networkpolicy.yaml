@@ -19,3 +19,5 @@ spec:
     - ports:
         - protocol: TCP
           port: 11211
+        - protocol: TCP
+          port: 9150

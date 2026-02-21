@@ -12,4 +12,11 @@ metadata:
 spec:
   clusterIP: None
   ports:
-    - port: 11211
+    - name: memcached
+      port: 11211
+      protocol: TCP
+      targetPort: memcached
+    - name: metrics
+      port: 9150
+      protocol: TCP
+      targetPort: metrics
