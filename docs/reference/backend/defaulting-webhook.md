@@ -51,15 +51,15 @@ and the condition under which the default is applied.
 These fields are defaulted on every Memcached resource, regardless of which
 optional sections are present.
 
-| Field                           | Type      | Default         | Condition                          |
-|---------------------------------|-----------|-----------------|------------------------------------|
-| `spec.replicas`                 | `*int32`  | `1`             | When nil (pointer)                 |
-| `spec.image`                    | `*string` | `memcached:1.6` | When nil (pointer)                 |
-| `spec.memcached.maxMemoryMB`    | `int32`   | `64`            | When 0 (struct initialized if nil) |
-| `spec.memcached.maxConnections` | `int32`   | `1024`          | When 0 (struct initialized if nil) |
-| `spec.memcached.threads`        | `int32`   | `4`             | When 0 (struct initialized if nil) |
-| `spec.memcached.maxItemSize`    | `string`  | `1m`            | When empty string                  |
-| `spec.memcached.verbosity`      | `int32`   | `0`             | Go zero value — no action needed   |
+| Field                           | Type      | Default         | Condition                               |
+|---------------------------------|-----------|-----------------|-----------------------------------------|
+| `spec.replicas`                 | `*int32`  | `1`             | When nil and autoscaling is not enabled |
+| `spec.image`                    | `*string` | `memcached:1.6` | When nil (pointer)                      |
+| `spec.memcached.maxMemoryMB`    | `int32`   | `64`            | When 0 (struct initialized if nil)      |
+| `spec.memcached.maxConnections` | `int32`   | `1024`          | When 0 (struct initialized if nil)      |
+| `spec.memcached.threads`        | `int32`   | `4`             | When 0 (struct initialized if nil)      |
+| `spec.memcached.maxItemSize`    | `string`  | `1m`            | When empty string                       |
+| `spec.memcached.verbosity`      | `int32`   | `0`             | Go zero value — no action needed        |
 
 The `spec.memcached` struct is always initialized (created if nil) because its
 fields are core operational parameters required by every Memcached deployment.
@@ -83,6 +83,40 @@ These fields are only defaulted when `spec.highAvailability` is already non-nil.
 | Field                                      | Type                  | Default | Condition                                    |
 |--------------------------------------------|-----------------------|---------|----------------------------------------------|
 | `spec.highAvailability.antiAffinityPreset` | `*AntiAffinityPreset` | `soft`  | When nil and highAvailability section exists |
+
+### Autoscaling Fields (Opt-In, Requires Enabled)
+
+These fields are only defaulted when `spec.autoscaling` is non-nil **and**
+`spec.autoscaling.enabled` is `true`. If the autoscaling section is omitted or
+disabled, no defaults are injected.
+
+| Field                       | Type                                             | Default                                       | Condition                             |
+|-----------------------------|--------------------------------------------------|-----------------------------------------------|---------------------------------------|
+| `spec.autoscaling.metrics`  | `[]autoscalingv2.MetricSpec`                     | CPU utilization metric targeting 80% average  | When empty and autoscaling is enabled |
+| `spec.autoscaling.behavior` | `*autoscalingv2.HorizontalPodAutoscalerBehavior` | scaleDown stabilization window of 300 seconds | When nil and autoscaling is enabled   |
+
+The default CPU utilization metric is equivalent to:
+
+```yaml
+metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+```
+
+The default behavior is equivalent to:
+
+```yaml
+behavior:
+  scaleDown:
+    stabilizationWindowSeconds: 300
+```
+
+The 300-second stabilization window prevents rapid scale-down that could cause
+cache stampedes when load decreases temporarily.
 
 ---
 
@@ -198,6 +232,47 @@ spec:
     antiAffinityPreset: soft
 ```
 
+### With Autoscaling Enabled
+
+```yaml
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: my-cache
+spec:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+```
+
+After the webhook:
+
+```yaml
+spec:
+  # replicas is cleared (mutually exclusive with autoscaling.enabled)
+  image: "memcached:1.6"
+  memcached:
+    maxMemoryMB: 64
+    maxConnections: 1024
+    threads: 4
+    maxItemSize: "1m"
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+```
+
 ### Fully Specified CR (No Changes)
 
 A CR with all fields explicitly set passes through the webhook unchanged:
@@ -237,6 +312,7 @@ of optional sections:
 | `spec.memcached`        | **Always initialized** — created and populated with defaults because memcached config is required for every deployment |
 | `spec.monitoring`       | **Not initialized** — remains nil; sub-field defaults only apply when the section already exists                       |
 | `spec.highAvailability` | **Not initialized** — remains nil; sub-field defaults only apply when the section already exists                       |
+| `spec.autoscaling`      | **Not initialized** — remains nil; sub-field defaults only apply when the section exists **and** `enabled` is `true`   |
 
 This design means:
 
@@ -246,19 +322,23 @@ This design means:
   anti-affinity rules — the webhook does not force HA settings.
 - Omitting `spec.memcached` still results in a fully configured deployment
   because the webhook creates and populates the struct.
+- Omitting `spec.autoscaling` or setting `enabled: false` results in no
+  autoscaling defaults — the webhook does not inject metrics or behavior
+  unless autoscaling is explicitly enabled.
 
 ---
 
 ## Runtime Behavior
 
-| Action                                 | Result                                                 |
-|----------------------------------------|--------------------------------------------------------|
-| Create CR with empty spec              | Core fields defaulted; optional sections remain nil    |
-| Create CR with explicit values         | User values preserved; only omitted fields defaulted   |
-| Create CR with monitoring section      | Monitoring sub-fields defaulted; core fields defaulted |
-| Create CR with HA section              | HA sub-fields defaulted; core fields defaulted         |
-| Update CR clearing a field to nil/zero | Webhook re-applies the default for that field          |
-| Webhook unavailable                    | Request rejected (failurePolicy=Fail)                  |
+| Action                                 | Result                                                                  |
+|----------------------------------------|-------------------------------------------------------------------------|
+| Create CR with empty spec              | Core fields defaulted; optional sections remain nil                     |
+| Create CR with explicit values         | User values preserved; only omitted fields defaulted                    |
+| Create CR with monitoring section      | Monitoring sub-fields defaulted; core fields defaulted                  |
+| Create CR with HA section              | HA sub-fields defaulted; core fields defaulted                          |
+| Create CR with autoscaling enabled     | Metrics and behavior defaulted; replicas cleared; core fields defaulted |
+| Update CR clearing a field to nil/zero | Webhook re-applies the default for that field                           |
+| Webhook unavailable                    | Request rejected (failurePolicy=Fail)                                   |
 
 ---
 

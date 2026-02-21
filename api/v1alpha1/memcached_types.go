@@ -2,6 +2,7 @@
 package v1alpha1
 
 import (
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -225,6 +226,35 @@ type NetworkPolicySpec struct {
 	AllowedSources []networkingv1.NetworkPolicyPeer `json:"allowedSources,omitempty,omitzero"`
 }
 
+// AutoscalingSpec defines horizontal pod autoscaling configuration for Memcached.
+type AutoscalingSpec struct {
+	// Enabled controls whether horizontal pod autoscaling is active.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MinReplicas is the lower limit for the number of replicas to which the autoscaler can scale down.
+	// When nil, the HPA default (1) is used.
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	MinReplicas *int32 `json:"minReplicas,omitempty,omitzero"`
+
+	// MaxReplicas is the upper limit for the number of replicas to which the autoscaler can scale up.
+	// +kubebuilder:validation:Minimum=1
+	MaxReplicas int32 `json:"maxReplicas,omitempty"`
+
+	// Metrics contains the specifications for which to use to calculate the desired replica count.
+	// When empty and autoscaling is enabled, the defaulting webhook injects a CPU utilization metric
+	// targeting 80% average utilization.
+	// +optional
+	Metrics []autoscalingv2.MetricSpec `json:"metrics,omitempty,omitzero"`
+
+	// Behavior configures the scaling behavior of the target in both Up and Down directions.
+	// When nil and autoscaling is enabled, the defaulting webhook injects a scaleDown
+	// stabilization window of 300 seconds to prevent cache stampedes.
+	// +optional
+	Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior `json:"behavior,omitempty,omitzero"`
+}
+
 // ServiceSpec defines configuration for the headless Service.
 type ServiceSpec struct {
 	// Annotations are custom annotations added to the Service metadata.
@@ -265,6 +295,10 @@ type MemcachedSpec struct {
 	// Security contains security settings.
 	// +optional
 	Security *SecuritySpec `json:"security,omitempty,omitzero"`
+
+	// Autoscaling contains horizontal pod autoscaling configuration.
+	// +optional
+	Autoscaling *AutoscalingSpec `json:"autoscaling,omitempty,omitzero"`
 
 	// Service contains configuration for the headless Service.
 	// +optional

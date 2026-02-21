@@ -30,6 +30,7 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 | `highAvailability` | [`*HighAvailabilitySpec`](#highavailabilityspec)                                                                    | --                | --            | High-availability settings (anti-affinity, PDB, topology spread, graceful shutdown) |
 | `monitoring`       | [`*MonitoringSpec`](#monitoringspec)                                                                                | --                | --            | Monitoring and metrics configuration                                                |
 | `security`         | [`*SecuritySpec`](#securityspec)                                                                                    | --                | --            | Security settings (security contexts, SASL, TLS, NetworkPolicy)                     |
+| `autoscaling`      | [`*AutoscalingSpec`](#autoscalingspec)                                                                              | --                | --            | Horizontal pod autoscaling configuration                                            |
 | `service`          | [`*ServiceSpec`](#servicespec)                                                                                      | --                | --            | Configuration for the headless Service                                              |
 
 ---
@@ -178,6 +179,22 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 
 ---
 
+## AutoscalingSpec
+
+`AutoscalingSpec` defines horizontal pod autoscaling configuration. When `enabled` is `true`, the operator creates an HPA targeting the Memcached Deployment and `spec.replicas` must not be set (they are mutually exclusive).
+
+| Field         | Type                                                                                                                                       | Default | Validation | Description                                                                                                                         |
+|---------------|--------------------------------------------------------------------------------------------------------------------------------------------|---------|------------|-------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`     | `bool`                                                                                                                                     | `false` | --         | Controls whether horizontal pod autoscaling is active                                                                               |
+| `minReplicas` | `*int32`                                                                                                                                   | --      | min=1      | Lower limit for the number of replicas. When nil, the HPA default (1) is used                                                       |
+| `maxReplicas` | `int32`                                                                                                                                    | --      | min=1      | Upper limit for the number of replicas                                                                                              |
+| `metrics`     | [`[]MetricSpec`](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/horizontal-pod-autoscaler-v2/#MetricSpec)          | --      | --         | Specifications for calculating desired replica count. Defaulted to 80% CPU utilization when empty and autoscaling is enabled        |
+| `behavior`    | [`*HorizontalPodAutoscalerBehavior`](https://kubernetes.io/docs/reference/kubernetes-api/workload-resources/horizontal-pod-autoscaler-v2/) | --      | --         | Scaling behavior for Up and Down directions. Defaulted to a 300s scaleDown stabilization window when nil and autoscaling is enabled |
+
+> **Note:** When `autoscaling.enabled` is `true`, `spec.replicas` must not be set. The validation webhook rejects CRs where both are specified.
+
+---
+
 ## ServiceSpec
 
 `ServiceSpec` defines configuration for the headless Service created for each Memcached instance.
@@ -240,6 +257,8 @@ The defaulting webhook sets values for omitted fields before the resource is per
 | `spec.monitoring.serviceMonitor.interval`      | `"30s"`                             | When empty (only if `serviceMonitor` section exists) |
 | `spec.monitoring.serviceMonitor.scrapeTimeout` | `"10s"`                             | When empty (only if `serviceMonitor` section exists) |
 | `spec.highAvailability.antiAffinityPreset`     | `"soft"`                            | When nil (only if `highAvailability` section exists) |
+| `spec.autoscaling.metrics`                     | CPU utilization at 80%              | When empty (only if `autoscaling` is enabled)        |
+| `spec.autoscaling.behavior`                    | scaleDown stabilization 300s        | When nil (only if `autoscaling` is enabled)          |
 
 ### Validation Rules
 
@@ -254,6 +273,9 @@ The validation webhook enforces cross-field constraints that cannot be expressed
 | Graceful shutdown timing    | Graceful shutdown is enabled                                    | `terminationGracePeriodSeconds` must exceed `preStopDelaySeconds`                                                                    |
 | SASL secret required        | `security.sasl.enabled` is `true`                               | `credentialsSecretRef.name` must be non-empty                                                                                        |
 | TLS secret required         | `security.tls.enabled` is `true`                                | `certificateSecretRef.name` must be non-empty                                                                                        |
+| Replicas/autoscaling mutex  | `autoscaling.enabled` is `true`                                 | `spec.replicas` must not be set                                                                                                      |
+| minReplicas <= maxReplicas  | `autoscaling.enabled` is `true` with `minReplicas` set          | `minReplicas` must not exceed `maxReplicas`                                                                                          |
+| CPU request for HPA         | `autoscaling.enabled` with CPU utilization metric               | `resources.requests.cpu` must be set                                                                                                 |
 
 ---
 
@@ -412,4 +434,33 @@ spec:
       additionalLabels:
         release: kube-prometheus-stack
       interval: 15s
+```
+
+### Autoscaling
+
+A configuration using horizontal pod autoscaling instead of static replicas.
+
+```yaml
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: autoscaled-cache
+  namespace: production
+spec:
+  image: memcached:1.6
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 512Mi
+  memcached:
+    maxMemoryMB: 256
+    maxConnections: 2048
+    threads: 4
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
 ```

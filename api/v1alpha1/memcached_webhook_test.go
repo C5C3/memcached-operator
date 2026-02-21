@@ -4,6 +4,10 @@ package v1alpha1
 import (
 	"context"
 	"testing"
+
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 const (
@@ -666,5 +670,340 @@ func TestMemcachedDefaulting_IdempotentWithMonitoringAndHA(t *testing.T) {
 	}
 	if *mc.Spec.HighAvailability.AntiAffinityPreset != preset {
 		t.Errorf("idempotency: antiAffinityPreset changed")
+	}
+}
+
+// --- Task 2.1/2.2: Autoscaling defaulting tests (REQ-003, REQ-004) ---
+
+func TestMemcachedDefaulting_AutoscalingDefaultMetrics(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mc.Spec.Autoscaling.Metrics) != 1 {
+		t.Fatalf("expected 1 default metric, got %d", len(mc.Spec.Autoscaling.Metrics))
+	}
+	metric := mc.Spec.Autoscaling.Metrics[0]
+	if metric.Type != autoscalingv2.ResourceMetricSourceType {
+		t.Errorf("expected metric type=Resource, got %s", metric.Type)
+	}
+	if metric.Resource == nil {
+		t.Fatal("expected resource metric to be non-nil")
+	}
+	if metric.Resource.Name != corev1.ResourceCPU {
+		t.Errorf("expected resource name=cpu, got %s", metric.Resource.Name)
+	}
+	if metric.Resource.Target.Type != autoscalingv2.UtilizationMetricType {
+		t.Errorf("expected target type=Utilization, got %s", metric.Resource.Target.Type)
+	}
+	if metric.Resource.Target.AverageUtilization == nil || *metric.Resource.Target.AverageUtilization != 80 {
+		t.Errorf("expected averageUtilization=80, got %v", metric.Resource.Target.AverageUtilization)
+	}
+}
+
+func TestMemcachedDefaulting_AutoscalingDefaultBehavior(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mc.Spec.Autoscaling.Behavior == nil {
+		t.Fatal("expected behavior to be defaulted")
+	}
+	if mc.Spec.Autoscaling.Behavior.ScaleDown == nil {
+		t.Fatal("expected scaleDown to be set")
+	}
+	if mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds == nil {
+		t.Fatal("expected stabilizationWindowSeconds to be set")
+	}
+	if *mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds != 300 {
+		t.Errorf("expected stabilizationWindowSeconds=300, got %d", *mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds)
+	}
+}
+
+func TestMemcachedDefaulting_AutoscalingPreservesUserMetrics(t *testing.T) {
+	memUtilization := int32(70)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+				Metrics: []autoscalingv2.MetricSpec{
+					{
+						Type: autoscalingv2.ResourceMetricSourceType,
+						Resource: &autoscalingv2.ResourceMetricSource{
+							Name: corev1.ResourceMemory,
+							Target: autoscalingv2.MetricTarget{
+								Type:               autoscalingv2.UtilizationMetricType,
+								AverageUtilization: &memUtilization,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mc.Spec.Autoscaling.Metrics) != 1 {
+		t.Fatalf("expected 1 user metric preserved, got %d", len(mc.Spec.Autoscaling.Metrics))
+	}
+	if mc.Spec.Autoscaling.Metrics[0].Resource.Name != corev1.ResourceMemory {
+		t.Errorf("expected user memory metric preserved, got %s", mc.Spec.Autoscaling.Metrics[0].Resource.Name)
+	}
+	if *mc.Spec.Autoscaling.Metrics[0].Resource.Target.AverageUtilization != 70 {
+		t.Errorf("expected averageUtilization=70 preserved, got %d", *mc.Spec.Autoscaling.Metrics[0].Resource.Target.AverageUtilization)
+	}
+}
+
+func TestMemcachedDefaulting_AutoscalingPreservesUserBehavior(t *testing.T) {
+	stabilization := int32(600)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+				Behavior: &autoscalingv2.HorizontalPodAutoscalerBehavior{
+					ScaleDown: &autoscalingv2.HPAScalingRules{
+						StabilizationWindowSeconds: &stabilization,
+					},
+				},
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds == nil {
+		t.Fatal("expected stabilizationWindowSeconds to remain set")
+	}
+	if *mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds != 600 {
+		t.Errorf("expected stabilizationWindowSeconds=600 (preserved), got %d", *mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds)
+	}
+}
+
+func TestMemcachedDefaulting_AutoscalingDisabledNoDefaults(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     false,
+				MaxReplicas: 10,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mc.Spec.Autoscaling.Metrics) != 0 {
+		t.Errorf("expected no metrics when disabled, got %d", len(mc.Spec.Autoscaling.Metrics))
+	}
+	if mc.Spec.Autoscaling.Behavior != nil {
+		t.Error("expected no behavior when disabled")
+	}
+}
+
+func TestMemcachedDefaulting_NilAutoscalingStaysNil(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: nil,
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mc.Spec.Autoscaling != nil {
+		t.Error("expected autoscaling to remain nil (opt-in section)")
+	}
+}
+
+func TestMemcachedDefaulting_AutoscalingIdempotent(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("first Default call: unexpected error: %v", err)
+	}
+
+	metricsLen := len(mc.Spec.Autoscaling.Metrics)
+	cpuUtil := *mc.Spec.Autoscaling.Metrics[0].Resource.Target.AverageUtilization
+	stabilization := *mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("second Default call: unexpected error: %v", err)
+	}
+
+	if len(mc.Spec.Autoscaling.Metrics) != metricsLen {
+		t.Errorf("idempotency: metrics count changed from %d to %d", metricsLen, len(mc.Spec.Autoscaling.Metrics))
+	}
+	if *mc.Spec.Autoscaling.Metrics[0].Resource.Target.AverageUtilization != cpuUtil {
+		t.Errorf("idempotency: CPU utilization changed")
+	}
+	if *mc.Spec.Autoscaling.Behavior.ScaleDown.StabilizationWindowSeconds != stabilization {
+		t.Errorf("idempotency: stabilization window changed")
+	}
+}
+
+// --- Autoscaling + replicas interaction (B1 fix) ---
+
+func TestMemcachedDefaulting_AutoscalingClearsReplicas(t *testing.T) {
+	// When autoscaling is enabled, the webhook must clear spec.replicas
+	// (the CRD schema default +kubebuilder:default=1 may have set it).
+	replicas := int32(1)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas: &replicas,
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mc.Spec.Replicas != nil {
+		t.Errorf("expected spec.replicas to be nil when autoscaling is enabled, got %d", *mc.Spec.Replicas)
+	}
+}
+
+func TestMemcachedDefaulting_NoAutoscalingStillDefaultsReplicas(t *testing.T) {
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled: false,
+			},
+		},
+	}
+	d := &MemcachedCustomDefaulter{}
+
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mc.Spec.Replicas == nil || *mc.Spec.Replicas != DefaultReplicas {
+		t.Errorf("expected spec.replicas=%d when autoscaling is disabled, got %v", DefaultReplicas, mc.Spec.Replicas)
+	}
+}
+
+// --- Chained default + validation tests (catch pipeline interaction bugs) ---
+
+func TestDefaultThenValidate_AutoscalingEnabled(t *testing.T) {
+	// Simulates the full admission pipeline: default then validate.
+	// Before the B1 fix, this would fail because Default() set replicas=1,
+	// then validation rejected replicas + autoscaling.enabled.
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+			},
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("100m"),
+				},
+			},
+		},
+	}
+
+	d := &MemcachedCustomDefaulter{}
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("defaulting error: %v", err)
+	}
+
+	if err := validateMemcached(mc); err != nil {
+		t.Errorf("expected no validation error after defaulting autoscaling CR, got: %v", err)
+	}
+}
+
+func TestDefaultThenValidate_AutoscalingWithExplicitReplicas(t *testing.T) {
+	// Autoscaling enabled + explicit replicas: defaulting clears replicas,
+	// validation passes.
+	replicas := int32(3)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas: &replicas,
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+			},
+			Resources: &corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU: resource.MustParse("100m"),
+				},
+			},
+		},
+	}
+
+	d := &MemcachedCustomDefaulter{}
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("defaulting error: %v", err)
+	}
+
+	if mc.Spec.Replicas != nil {
+		t.Errorf("expected replicas to be cleared, got %d", *mc.Spec.Replicas)
+	}
+
+	if err := validateMemcached(mc); err != nil {
+		t.Errorf("expected no validation error after defaulting, got: %v", err)
+	}
+}
+
+func TestDefaultThenValidate_NoAutoscaling(t *testing.T) {
+	// Without autoscaling, replicas should be defaulted to 1 and validation passes.
+	mc := &Memcached{}
+
+	d := &MemcachedCustomDefaulter{}
+	if err := d.Default(context.Background(), mc); err != nil {
+		t.Fatalf("defaulting error: %v", err)
+	}
+
+	if mc.Spec.Replicas == nil || *mc.Spec.Replicas != 1 {
+		t.Errorf("expected replicas=1, got %v", mc.Spec.Replicas)
+	}
+
+	if err := validateMemcached(mc); err != nil {
+		t.Errorf("expected no validation error after defaulting minimal CR, got: %v", err)
 	}
 }

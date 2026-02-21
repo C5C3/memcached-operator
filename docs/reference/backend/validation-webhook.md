@@ -33,7 +33,7 @@ Operations: `create`, `update`
 
 ## Validation Rules
 
-The webhook enforces five categories of validation rules. All rules are
+The webhook enforces six categories of validation rules. All rules are
 evaluated on every request, and errors are aggregated into a single
 `StatusError` response.
 
@@ -123,6 +123,32 @@ enabled.
 ```text
 spec.highAvailability.gracefulShutdown.terminationGracePeriodSeconds: Invalid value: 10:
   terminationGracePeriodSeconds (10) must exceed preStopDelaySeconds (10)
+```
+
+### Autoscaling Constraints (REQ-005, REQ-006, REQ-007)
+
+Validates autoscaling configuration to prevent conflicting settings and
+ensure the HPA can function correctly.
+
+| Field                          | Constraint                                                                     |
+|--------------------------------|--------------------------------------------------------------------------------|
+| `spec.replicas`                | Must not be set when `spec.autoscaling.enabled` is `true` (mutually exclusive) |
+| `spec.autoscaling.minReplicas` | Must not exceed `spec.autoscaling.maxReplicas`                                 |
+| `spec.resources.requests.cpu`  | Required when autoscaling uses CPU utilization metrics                         |
+
+**Skip condition**: Validation is skipped when `spec.autoscaling` is nil or
+`spec.autoscaling.enabled` is `false`.
+
+**Error examples**:
+```text
+spec.replicas: Invalid value: 3:
+  spec.replicas and spec.autoscaling.enabled are mutually exclusive
+
+spec.autoscaling.minReplicas: Invalid value: 10:
+  minReplicas (10) must not exceed maxReplicas (5)
+
+spec.resources.requests.cpu: Required value:
+  resources.requests.cpu is required when using CPU utilization metrics
 ```
 
 ### Delete Operations (REQ-010)
@@ -216,6 +242,56 @@ spec:
 ```
 
 **Error**: `spec.highAvailability.gracefulShutdown.terminationGracePeriodSeconds: Invalid value: 10: terminationGracePeriodSeconds (10) must exceed preStopDelaySeconds (10)`
+
+### Rejected: Autoscaling With Replicas
+
+```yaml
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: my-cache
+spec:
+  replicas: 3
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+```
+
+**Error**: `spec.replicas: Invalid value: 3: spec.replicas and spec.autoscaling.enabled are mutually exclusive`
+
+### Rejected: minReplicas Exceeds maxReplicas
+
+```yaml
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: my-cache
+spec:
+  autoscaling:
+    enabled: true
+    minReplicas: 10
+    maxReplicas: 5
+```
+
+**Error**: `spec.autoscaling.minReplicas: Invalid value: 10: minReplicas (10) must not exceed maxReplicas (5)`
+
+### Rejected: CPU Utilization Without CPU Request
+
+```yaml
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: my-cache
+spec:
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    # No resources.requests.cpu — defaulted metrics target CPU utilization
+```
+
+**Error**: `spec.resources.requests.cpu: Required value: resources.requests.cpu is required when using CPU utilization metrics`
 
 ### Rejected: Multiple Violations
 
@@ -337,6 +413,7 @@ func validateMemcached(mc *Memcached) error {
     allErrs = append(allErrs, validatePDB(mc)...)
     allErrs = append(allErrs, validateGracefulShutdown(mc)...)
     allErrs = append(allErrs, validateSecuritySecretRefs(mc)...)
+    allErrs = append(allErrs, validateAutoscaling(mc)...)
     // ...
 }
 ```

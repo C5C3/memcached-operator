@@ -8,3 +8,4 @@ resources:
   - memcached_v1alpha1_monitoring.yaml
   - memcached_v1alpha1_tls.yaml
   - memcached_v1alpha1_production.yaml
+  - memcached_v1alpha1_autoscaling.yaml

@@ -26,6 +26,7 @@
     "APIV",
     "apiserver",
     "appsv",
+    "autoscalingv",
     "backoff",
     "buildx",
     "certmanager",

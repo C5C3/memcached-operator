@@ -2,8 +2,8 @@
   "feature_id": "MO-0040",
   "title": "K001: Add AutoscalingSpec CRD types and webhooks",
   "slug": "k001-add-autoscalingspec-crd-types-and-webhooks",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "awaiting_external_review",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** backend\n**Priority:** critical\n**Source:** Proposed for 'Horizontal Pod Autoscaling\n\nNew spec.autoscaling'\n\nAdd the AutoscalingSpec struct to api/v1alpha1/memcached_types.go with fields: Enabled bool, MinReplicas *int32, MaxReplicas int32, Metrics []autoscalingv2.MetricSpec, Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior. Add optional *AutoscalingSpec field to MemcachedSpec. Implement defaulting webhook in api/v1alpha1/memcached_webhook.go: inject 80% CPU utilization metric when autoscaling enabled but Metrics is empty; inject 300s scaleDown stabilization window when Behavior is nil. Implement validation webhook in api/v1alpha1/memcached_validation_webhook.go: reject CRs where both spec.replicas is set and autoscaling.enabled=true; validate minReplicas <= maxReplicas; reject CPU metric usage without resources.requests.cpu on the Memcached container. Write unit tests covering: type serialization/deserialization, defaulting webhook injects correct defaults, defaulting webhook preserves user-specified values, validation webhook rejects mutual exclusivity violations, validation rejects min > max, validation rejects CPU metric without CPU requests.\n\n**Rationale:** This is the foundation layer - all other features depend on the CRD types being defined and webhooks enforcing invariants. Without correct types and admission control, the HPA reconciler cannot be built safely. The mutual exclusivity validation prevents conflicting scaling configurations that would cause operator/HPA fights over replica count.\n\n**Affected Areas:**\n- api/v1alpha1/memcached_types.go\n- api/v1alpha1/memcached_webhook.go\n- api/v1alpha1/memcached_validation_webhook.go\n- api/v1alpha1/memcached_types_test.go\n- api/v1alpha1/memcached_webhook_test.go\n- api/v1alpha1/memcached_validation_webhook_test.go",
   "stories": [
@@ -330,6 +330,7 @@
       "description": "In api/v1alpha1/memcached_types.go: (1) Add import for autoscalingv2 \"k8s.io/api/autoscaling/v2\". (2) Define AutoscalingSpec struct with fields: Enabled bool (json:\"enabled,omitempty\"), MinReplicas *int32 (json:\"minReplicas,omitempty,omitzero\", +kubebuilder:validation:Minimum=1), MaxReplicas int32 (json:\"maxReplicas,omitempty\", +kubebuilder:validation:Minimum=1), Metrics []autoscalingv2.MetricSpec (json:\"metrics,omitempty,omitzero\"), Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior (json:\"behavior,omitempty,omitzero\"). (3) Add Autoscaling *AutoscalingSpec field to MemcachedSpec (json:\"autoscaling,omitempty,omitzero\", +optional). (4) Run make generate to regenerate zz_generated.deepcopy.go. Follow existing patterns from MonitoringSpec and SecuritySpec for struct layout and kubebuilder markers.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -341,6 +342,7 @@
       "description": "In api/v1alpha1/memcached_types_test.go: Add tests following existing patterns (TestMemcachedConfig_ZeroValue, TestMemcachedConfig_AllFieldsSet). (1) TestAutoscalingSpec_ZeroValue: verify Enabled=false, MinReplicas=nil, MaxReplicas=0, Metrics=nil, Behavior=nil. (2) TestAutoscalingSpec_AllFieldsSet: create with all fields including autoscalingv2.MetricSpec (CPU utilization) and autoscalingv2.HorizontalPodAutoscalerBehavior, verify all values accessible. (3) TestAutoscalingSpec_DeepCopy: verify deep copy independence by mutating original's Metrics slice and Behavior pointer and asserting clone is unaffected. (4) TestMemcachedSpec_WithAutoscaling: create MemcachedSpec with Autoscaling field populated, verify non-nil. (5) TestMemcachedSpec_NilAutoscaling: verify nil when not set. Import autoscalingv2 \"k8s.io/api/autoscaling/v2\" and corev1.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -352,6 +354,7 @@
       "description": "In api/v1alpha1/memcached_webhook.go: (1) Add import for autoscalingv2 \"k8s.io/api/autoscaling/v2\". (2) Add constants: DefaultAutoscalingCPUUtilization = int32(80), DefaultScaleDownStabilizationSeconds = int32(300). (3) In Default() method, add section after HA defaults: if mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled { if len(mc.Spec.Autoscaling.Metrics) == 0 { inject CPU Resource metric with AverageUtilization=80 }; if mc.Spec.Autoscaling.Behavior == nil { create HorizontalPodAutoscalerBehavior with ScaleDown.StabilizationWindowSeconds=300 } }. Follow the opt-in pattern from monitoring/HA sections: only default sub-fields when the autoscaling section is non-nil AND enabled.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004"
@@ -363,6 +366,7 @@
       "description": "In api/v1alpha1/memcached_webhook_test.go: Add tests following existing pattern (table-driven, direct MemcachedCustomDefaulter.Default() calls). Tests: (1) TestMemcachedDefaulting_AutoscalingDefaultMetrics: enabled=true, empty metrics -> verify one CPU metric with averageUtilization=80. (2) TestMemcachedDefaulting_AutoscalingDefaultBehavior: enabled=true, nil behavior -> verify scaleDown stabilization=300. (3) TestMemcachedDefaulting_AutoscalingPreservesUserMetrics: enabled=true, user-specified metrics -> verify preserved. (4) TestMemcachedDefaulting_AutoscalingPreservesUserBehavior: enabled=true, user-specified behavior -> verify preserved. (5) TestMemcachedDefaulting_AutoscalingDisabledNoDefaults: enabled=false -> verify no metrics/behavior injected. (6) TestMemcachedDefaulting_NilAutoscalingStaysNil: nil autoscaling section -> verify stays nil. (7) TestMemcachedDefaulting_AutoscalingIdempotent: apply defaults twice, verify same result. (8) TestMemcachedDefaulting_AutoscalingBothDefaultsApplied: enabled=true, nil metrics AND nil behavior -> verify both defaults injected. Import autoscalingv2.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004"
@@ -374,6 +378,7 @@
       "description": "In api/v1alpha1/memcached_validation_webhook.go: (1) Add import for autoscalingv2 \"k8s.io/api/autoscaling/v2\". (2) Add validateAutoscaling(mc *Memcached) field.ErrorList function with three sub-validations: (a) validateAutoscalingReplicasMutualExclusivity: if mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled && mc.Spec.Replicas != nil -> field.Invalid on spec.replicas 'spec.replicas and spec.autoscaling.enabled are mutually exclusive'. (b) validateAutoscalingMinMaxReplicas: if mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled && mc.Spec.Autoscaling.MinReplicas != nil && *mc.Spec.Autoscaling.MinReplicas > mc.Spec.Autoscaling.MaxReplicas -> field.Invalid on spec.autoscaling.minReplicas. (c) validateAutoscalingCPURequests: if autoscaling enabled, iterate Metrics for Resource type with corev1.ResourceCPU and Target.Type=Utilization, if found and (resources nil OR requests nil OR cpu not in requests) -> field.Required on spec.resources.requests.cpu. (3) Wire into validateMemcached: allErrs = append(allErrs, validateAutoscaling(mc)...). Follow existing error aggregation and field path patterns.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006",
@@ -387,6 +392,7 @@
       "description": "In api/v1alpha1/memcached_validation_webhook_test.go: Add table-driven tests following existing patterns. (1) TestValidateAutoscalingReplicasMutualExclusivity: cases - replicas set + autoscaling enabled (rejected), replicas nil + autoscaling enabled (accepted), replicas set + autoscaling disabled (accepted), replicas set + autoscaling nil (accepted), replicas=0 pointer + autoscaling enabled (rejected, since pointer is non-nil). (2) TestValidateAutoscalingMinMaxReplicas: cases - min > max (rejected), min == max (accepted), min < max (accepted), min nil (accepted), autoscaling disabled (accepted). (3) TestValidateAutoscalingCPURequests: cases - CPU metric + no resources (rejected), CPU metric + no requests (rejected), CPU metric + no CPU request (rejected), CPU metric + CPU request set (accepted), memory metric only + no CPU request (accepted), no metrics (accepted), autoscaling disabled with CPU metric (accepted). (4) TestValidation_AutoscalingMultipleErrors: CR with both mutual exclusivity and min > max -> verify both errors present. (5) TestValidation_AutoscalingWithExistingErrors: CR with autoscaling violation + memory limit violation -> verify all errors present. (6) TestValidateAutoscaling_ErrorMessages: verify field paths and messages contain expected substrings. Import autoscalingv2.",
       "level": 3,
       "estimate_minutes": 30,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006",
@@ -400,6 +406,7 @@
       "description": "Create config/samples/memcached_v1alpha1_autoscaling.yaml with: apiVersion memcached.c5c3.io/v1alpha1, kind Memcached, name memcached-autoscaling, spec with autoscaling.enabled=true, minReplicas=2, maxReplicas=10, resources.requests.cpu=100m (needed for default CPU metric), resources.requests.memory=128Mi, resources.limits.memory=192Mi, memcached.maxMemoryMB=128. Note: spec.replicas must NOT be set (mutual exclusivity). Add to config/samples/kustomization.yaml resources list. In api/v1alpha1/sample_yaml_test.go, add TestSampleYAMLAutoscaling: load the file, verify spec.Autoscaling != nil, Autoscaling.Enabled=true, Autoscaling.MinReplicas != nil, Replicas == nil.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -411,6 +418,7 @@
       "description": "Run: make generate manifests. Verify: (1) zz_generated.deepcopy.go contains DeepCopyInto for AutoscalingSpec. (2) config/crd/bases/ CRD YAML includes spec.autoscaling schema with enabled, minReplicas, maxReplicas, metrics, behavior fields. (3) All tests pass: make test.",
       "level": 4,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002"
@@ -422,6 +430,7 @@
       "description": "In docs/reference/backend/memcached-crd-types.md: (1) Add 'autoscaling' row to MemcachedSpec table: Type *AutoscalingSpec, Required No, Default -, Description 'Horizontal pod autoscaling configuration'. (2) Add new ## AutoscalingSpec section (after SecuritySpec, before MemcachedStatus) with field table: Enabled bool, MinReplicas *int32 (Minimum: 1), MaxReplicas int32 (Minimum: 1), Metrics []autoscalingv2.MetricSpec, Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior. (3) Add YAML example showing autoscaling block. Follow the existing section format with field table, description, and skip condition note.",
       "level": 5,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -432,6 +441,7 @@
       "description": "In docs/reference/backend/defaulting-webhook.md: (1) Add new ### Autoscaling Fields (Opt-In) section after 'High Availability Fields' section. Document fields: spec.autoscaling.metrics (default: CPU 80% utilization, condition: when empty/nil and autoscaling enabled), spec.autoscaling.behavior.scaleDown.stabilizationWindowSeconds (default: 300, condition: when behavior nil and autoscaling enabled). (2) Add 'spec.autoscaling' row to Nil Struct Initialization table: 'Not initialized - remains nil; sub-field defaults only apply when enabled'. (3) Add CR example showing autoscaling with empty metrics/behavior before and after defaulting. Follow existing section format.",
       "level": 5,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -442,6 +452,7 @@
       "description": "In docs/reference/backend/validation-webhook.md: Add three new validation rule sections following existing format. (1) ### Replicas/Autoscaling Mutual Exclusivity: field spec.replicas, constraint 'must not be set when spec.autoscaling.enabled is true', skip condition, error example. (2) ### Autoscaling Min/Max Replicas: field spec.autoscaling.minReplicas, constraint 'must be <= maxReplicas when set', skip condition, error example. (3) ### CPU Metric Requires CPU Request: field spec.resources.requests.cpu, constraint 'required when autoscaling metrics include CPU utilization', skip condition, error example. Add rejected/accepted CR examples for each rule. Update the validateMemcached code listing to include validateAutoscaling call. Wire validateAutoscaling into the internal functions list.",
       "level": 5,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -452,6 +463,7 @@
       "description": "In docs/reference/crd-reference.md: Add 'autoscaling' row to the MemcachedSpec table with Type *AutoscalingSpec, Default --, Validation --, Description 'Horizontal pod autoscaling configuration'. Add a new ## AutoscalingSpec section with the field table matching memcached-crd-types.md. Link to the detailed reference doc.",
       "level": 5,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -600,6 +612,14 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T21:32:29.785402"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T21:32:34.694129"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T22:00:17.705733"
     }
   },
   "execution_history": [
@@ -613,6 +633,62 @@
           "name": "prepare",
           "duration": 248.83193564414978,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "23cb9c6c-d1f5-48a7-af64-b8f4b1bc1945",
+      "timestamp": "2026-02-21T21:59:33.512416",
+      "total_duration": 1521.0859971046448,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 189.41538882255554,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 147.26569509506226,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 161.52690815925598,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (2 tasks)",
+          "duration": 121.98536014556885,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 5 (4 tasks)",
+          "duration": 206.9697766304016,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0040] Code Review",
+          "duration": 300.68532538414,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0040] Improvements",
+          "duration": 279.45408844947815,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0040] Simplify",
+          "duration": 113.78345441818237,
+          "type": "simplify",
           "status": "done"
         }
       ]

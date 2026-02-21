@@ -1,0 +1,26 @@
+---
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  labels:
+    app.kubernetes.io/name: memcached-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: memcached-autoscaling
+  namespace: cache
+spec:
+  image: "memcached:1.6"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+    limits:
+      cpu: "2"
+      memory: 512Mi
+  memcached:
+    maxMemoryMB: 256
+    maxConnections: 2048
+    threads: 4
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -1093,4 +1094,505 @@ func TestValidateDelete_InvalidCRStillDeletes(t *testing.T) {
 	if warnings != nil {
 		t.Errorf("expected no warnings for delete, got: %v", warnings)
 	}
+}
+
+// --- REQ-005: Replicas/autoscaling mutual exclusivity ---
+
+func TestValidateAutoscalingReplicasMutualExclusivity(t *testing.T) {
+	replicas := int32(3)
+	zeroReplicas := int32(0)
+
+	tests := []struct {
+		name      string
+		mc        *Memcached
+		wantError bool
+	}{
+		{
+			name: "replicas set + autoscaling enabled (rejected)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Replicas: &replicas,
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "replicas nil + autoscaling enabled (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "replicas set + autoscaling disabled (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Replicas: &replicas,
+					Autoscaling: &AutoscalingSpec{
+						Enabled: false,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "replicas set + autoscaling nil (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Replicas: &replicas,
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "replicas=0 pointer + autoscaling enabled (rejected, pointer is non-nil)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Replicas: &zeroReplicas,
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantError: true,
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := v.ValidateCreate(context.Background(), tt.mc)
+			if (err != nil) != tt.wantError {
+				t.Errorf("wantError=%v, got err=%v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+// --- REQ-006: Autoscaling minReplicas/maxReplicas validation ---
+
+func TestValidateAutoscalingMinMaxReplicas(t *testing.T) {
+	min1 := int32(1)
+	min3 := int32(3)
+	min5 := int32(5)
+
+	tests := []struct {
+		name      string
+		mc        *Memcached
+		wantError bool
+	}{
+		{
+			name: "min > max (rejected)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MinReplicas: &min5,
+						MaxReplicas: 3,
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "min == max (accepted, fixed scaling)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MinReplicas: &min3,
+						MaxReplicas: 3,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "min < max (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MinReplicas: &min1,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "min nil (accepted, HPA defaults min to 1)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "autoscaling disabled skips min/max check",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     false,
+						MinReplicas: &min5,
+						MaxReplicas: 3,
+					},
+				},
+			},
+			wantError: false,
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := v.ValidateCreate(context.Background(), tt.mc)
+			if (err != nil) != tt.wantError {
+				t.Errorf("wantError=%v, got err=%v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+// --- REQ-007: CPU metric requires CPU requests ---
+
+func TestValidateAutoscalingCPURequests(t *testing.T) {
+	cpuUtilization := int32(80)
+	cpuMetric := []autoscalingv2.MetricSpec{
+		{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceCPU,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: &cpuUtilization,
+				},
+			},
+		},
+	}
+	memoryMetric := []autoscalingv2.MetricSpec{
+		{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceMemory,
+				Target: autoscalingv2.MetricTarget{
+					Type:               autoscalingv2.UtilizationMetricType,
+					AverageUtilization: &cpuUtilization,
+				},
+			},
+		},
+	}
+	cpuAverageValue := resource.MustParse("500m")
+	cpuAverageValueMetric := []autoscalingv2.MetricSpec{
+		{
+			Type: autoscalingv2.ResourceMetricSourceType,
+			Resource: &autoscalingv2.ResourceMetricSource{
+				Name: corev1.ResourceCPU,
+				Target: autoscalingv2.MetricTarget{
+					Type:         autoscalingv2.AverageValueMetricType,
+					AverageValue: &cpuAverageValue,
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name      string
+		mc        *Memcached
+		wantError bool
+	}{
+		{
+			name: "CPU metric + no resources (rejected)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+						Metrics:     cpuMetric,
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "CPU metric + no requests (rejected)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+						Metrics:     cpuMetric,
+					},
+					Resources: &corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("500m"),
+						},
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "CPU metric + no CPU request (rejected)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+						Metrics:     cpuMetric,
+					},
+					Resources: &corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("128Mi"),
+						},
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "CPU metric + CPU request set (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+						Metrics:     cpuMetric,
+					},
+					Resources: &corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "memory metric only + no CPU request (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+						Metrics:     memoryMetric,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "no metrics (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "CPU AverageValue metric + no CPU request (accepted, only Utilization requires it)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+						Metrics:     cpuAverageValueMetric,
+					},
+				},
+			},
+			wantError: false,
+		},
+		{
+			name: "autoscaling disabled with CPU metric (accepted)",
+			mc: &Memcached{
+				Spec: MemcachedSpec{
+					Autoscaling: &AutoscalingSpec{
+						Enabled: false,
+						Metrics: cpuMetric,
+					},
+				},
+			},
+			wantError: false,
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := v.ValidateCreate(context.Background(), tt.mc)
+			if (err != nil) != tt.wantError {
+				t.Errorf("wantError=%v, got err=%v", tt.wantError, err)
+			}
+		})
+	}
+}
+
+// --- REQ-008: Multiple autoscaling errors collected ---
+
+func TestValidation_AutoscalingMultipleErrors(t *testing.T) {
+	replicas := int32(3)
+	min5 := int32(5)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas: &replicas,
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MinReplicas: &min5,
+				MaxReplicas: 3,
+			},
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), mc)
+	if err == nil {
+		t.Fatal("expected error for multiple autoscaling violations")
+	}
+	errMsg := err.Error()
+	// Both mutual exclusivity and min > max errors should be present.
+	if !strings.Contains(errMsg, "mutually exclusive") {
+		t.Errorf("expected error to mention 'mutually exclusive', got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "minReplicas") {
+		t.Errorf("expected error to mention 'minReplicas', got: %s", errMsg)
+	}
+}
+
+func TestValidation_AutoscalingWithExistingErrors(t *testing.T) {
+	replicas := int32(3)
+	mc := &Memcached{
+		Spec: MemcachedSpec{
+			Replicas:  &replicas,
+			Memcached: &MemcachedConfig{MaxMemoryMB: 64},
+			Resources: &corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+			Autoscaling: &AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 10,
+			},
+		},
+	}
+
+	v := &MemcachedCustomValidator{}
+	_, err := v.ValidateCreate(context.Background(), mc)
+	if err == nil {
+		t.Fatal("expected error for combined violations")
+	}
+	errMsg := err.Error()
+	// Both memory limit and autoscaling mutual exclusivity errors should be present.
+	if !strings.Contains(errMsg, "memory") {
+		t.Errorf("expected error to contain 'memory', got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "mutually exclusive") {
+		t.Errorf("expected error to contain 'mutually exclusive', got: %s", errMsg)
+	}
+}
+
+func TestValidateAutoscaling_ErrorMessages(t *testing.T) {
+	t.Run("mutual exclusivity error includes field path", func(t *testing.T) {
+		replicas := int32(3)
+		mc := &Memcached{
+			Spec: MemcachedSpec{
+				Replicas: &replicas,
+				Autoscaling: &AutoscalingSpec{
+					Enabled:     true,
+					MaxReplicas: 10,
+				},
+			},
+		}
+		v := &MemcachedCustomValidator{}
+		_, err := v.ValidateCreate(context.Background(), mc)
+		if err == nil {
+			t.Fatal("expected error for mutual exclusivity")
+		}
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "spec.replicas") {
+			t.Errorf("expected error to reference spec.replicas, got: %s", errMsg)
+		}
+		if !strings.Contains(errMsg, "mutually exclusive") {
+			t.Errorf("expected error to mention 'mutually exclusive', got: %s", errMsg)
+		}
+	})
+
+	t.Run("minReplicas error includes both values", func(t *testing.T) {
+		min5 := int32(5)
+		mc := &Memcached{
+			Spec: MemcachedSpec{
+				Autoscaling: &AutoscalingSpec{
+					Enabled:     true,
+					MinReplicas: &min5,
+					MaxReplicas: 3,
+				},
+			},
+		}
+		v := &MemcachedCustomValidator{}
+		_, err := v.ValidateCreate(context.Background(), mc)
+		if err == nil {
+			t.Fatal("expected error for min > max")
+		}
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "spec.autoscaling.minReplicas") {
+			t.Errorf("expected error to reference spec.autoscaling.minReplicas, got: %s", errMsg)
+		}
+		if !strings.Contains(errMsg, "5") || !strings.Contains(errMsg, "3") {
+			t.Errorf("expected error to include both values (5 and 3), got: %s", errMsg)
+		}
+	})
+
+	t.Run("CPU request error includes field path", func(t *testing.T) {
+		cpuUtilization := int32(80)
+		mc := &Memcached{
+			Spec: MemcachedSpec{
+				Autoscaling: &AutoscalingSpec{
+					Enabled:     true,
+					MaxReplicas: 10,
+					Metrics: []autoscalingv2.MetricSpec{
+						{
+							Type: autoscalingv2.ResourceMetricSourceType,
+							Resource: &autoscalingv2.ResourceMetricSource{
+								Name: corev1.ResourceCPU,
+								Target: autoscalingv2.MetricTarget{
+									Type:               autoscalingv2.UtilizationMetricType,
+									AverageUtilization: &cpuUtilization,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		v := &MemcachedCustomValidator{}
+		_, err := v.ValidateCreate(context.Background(), mc)
+		if err == nil {
+			t.Fatal("expected error for CPU metric without CPU request")
+		}
+		errMsg := err.Error()
+		if !strings.Contains(errMsg, "spec.resources.requests.cpu") {
+			t.Errorf("expected error to reference spec.resources.requests.cpu, got: %s", errMsg)
+		}
+		if !strings.Contains(errMsg, "CPU utilization") {
+			t.Errorf("expected error to mention CPU utilization, got: %s", errMsg)
+		}
+	})
 }

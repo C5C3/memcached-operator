@@ -40,6 +40,7 @@ Defines the desired state of a Memcached cluster.
 | `highAvailability` | [`*HighAvailabilitySpec`](#highavailabilityspec) | No       | —                 | —                       | High-availability settings                     |
 | `monitoring`       | [`*MonitoringSpec`](#monitoringspec)             | No       | —                 | —                       | Monitoring and metrics configuration           |
 | `security`         | [`*SecuritySpec`](#securityspec)                 | No       | —                 | —                       | Security settings                              |
+| `autoscaling`      | [`*AutoscalingSpec`](#autoscalingspec)           | No       | —                 | —                       | Horizontal pod autoscaling configuration       |
 
 ---
 
@@ -151,6 +152,20 @@ Defines TLS encryption configuration for Memcached.
 
 ---
 
+## AutoscalingSpec
+
+Defines horizontal pod autoscaling configuration for Memcached. When `enabled` is `true`, the operator creates an HPA resource targeting the Memcached Deployment.
+
+| Field         | Type                                                             | Required | Default | Validation | Description                                                                                                                                                          |
+|---------------|------------------------------------------------------------------|----------|---------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `enabled`     | `bool`                                                           | No       | `false` | —          | Controls whether horizontal pod autoscaling is active                                                                                                                |
+| `minReplicas` | `*int32`                                                         | No       | —       | Minimum: 1 | Lower limit for the number of replicas. When nil, the HPA default (1) is used                                                                                        |
+| `maxReplicas` | `int32`                                                          | Yes      | —       | Minimum: 1 | Upper limit for the number of replicas                                                                                                                               |
+| `metrics`     | [`[]autoscalingv2.MetricSpec`][metric-spec]                      | No       | —       | —          | Specifications for calculating desired replica count. When empty and autoscaling is enabled, the defaulting webhook injects a CPU utilization metric targeting 80%   |
+| `behavior`    | [`*autoscalingv2.HorizontalPodAutoscalerBehavior`][hpa-behavior] | No       | —       | —          | Scaling behavior in both Up and Down directions. When nil and autoscaling is enabled, the defaulting webhook injects a scaleDown stabilization window of 300 seconds |
+
+---
+
 ## MemcachedStatus
 
 Defines the observed state of a Memcached cluster, updated by the reconciler via the status subresource.
@@ -219,6 +234,10 @@ spec:
       scrapeTimeout: "10s"
       additionalLabels:
         release: prometheus
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
   security:
     podSecurityContext:
       runAsNonRoot: true
@@ -256,3 +275,5 @@ This creates a single-replica Memcached pod with image `memcached:1.6`, 64 MB me
 [topology-spread]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#topologyspreadconstraint-v1-core
 [pod-security-context]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#podsecuritycontext-v1-core
 [security-context]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#securitycontext-v1-core
+[metric-spec]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#metricspec-v2-autoscaling
+[hpa-behavior]: https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.31/#horizontalpodautoscalerbehavior-v2-autoscaling

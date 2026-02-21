@@ -1,0 +1,140 @@
+{
+  "summary": "AutoscalingSpec CRD types, defaulting webhook, validation webhook, unit tests, sample YAML, and reference documentation for horizontal pod autoscaling. Types, webhooks, tests, and docs are structurally complete. However, the defaulting webhook unconditionally sets spec.replicas (and the CRD schema has +kubebuilder:default=1), which makes the mutual exclusivity validation always reject autoscaling CRs that omit replicas — rendering autoscaling broken end-to-end in production.",
+  "verdict": "BLOCKED",
+  "tests_checklist": [
+    {"item": "Tests exist and pass (make test)", "checked": true},
+    {"item": "Type zero-value and all-fields-set tests", "checked": true},
+    {"item": "DeepCopy independence test", "checked": true},
+    {"item": "Defaulting webhook injects CPU 80% metric", "checked": true},
+    {"item": "Defaulting webhook injects 300s scaleDown stabilization", "checked": true},
+    {"item": "Defaulting preserves user-specified metrics and behavior", "checked": true},
+    {"item": "Defaulting idempotent", "checked": true},
+    {"item": "Validation rejects replicas + autoscaling.enabled", "checked": true},
+    {"item": "Validation rejects minReplicas > maxReplicas", "checked": true},
+    {"item": "Validation rejects CPU utilization metric without CPU requests", "checked": true},
+    {"item": "Multiple errors aggregated in single response", "checked": true},
+    {"item": "Sample YAML test parses and validates", "checked": true},
+    {"item": "Edge case: CPU metric with AverageValue target (not Utilization) does NOT require CPU request", "checked": false},
+    {"item": "Edge case: sample YAML test asserts resources.requests.cpu is specifically present", "checked": false}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing patterns (opt-in defaulting, error aggregation, field paths)", "checked": true},
+    {"item": "Functions are small and single-responsibility", "checked": true},
+    {"item": "Named constants for default values (no magic numbers)", "checked": true},
+    {"item": "Clear naming (hasCPUUtilizationMetric, validateAutoscaling)", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "go vet passes", "checked": true},
+    {"item": "go fmt clean (committed file has alignment issue in const block)", "checked": false}
+  ],
+  "security_checklist": [
+    {"item": "All user inputs validated at admission boundary", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "Field errors use proper field paths (no information leakage)", "checked": true},
+    {"item": "Nil pointer guards on all optional fields", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible", "checked": true},
+    {"item": "AutoscalingSpec struct matches plan specification", "checked": true},
+    {"item": "Webhook registration is correct (WithDefaulter + WithValidator)", "checked": true},
+    {"item": "Defaulting/validation interaction is correct (defaulting does not break validation)", "checked": false}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unused types or fields", "checked": true},
+    {"item": "No over-engineered abstractions", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Validation errors detected early at admission", "checked": true},
+    {"item": "Errors aggregated (not short-circuited)", "checked": true},
+    {"item": "Field paths are specific and actionable", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All optional/pointer fields nil-checked before access", "checked": true},
+    {"item": "Slice range-based iteration (no index-out-of-bounds)", "checked": true},
+    {"item": "CRD markers enforce schema-level constraints (Minimum=1)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [
+    {
+      "severity": "BLOCKER",
+      "description": "Defaulting webhook unconditionally sets spec.replicas=1 when nil (line 53), AND the CRD schema has +kubebuilder:default=1 (types.go:270). Both mechanisms fire before the validation webhook. When a user submits a CR with autoscaling.enabled=true and omits spec.replicas, the CRD default sets replicas=1, then the validation webhook sees replicas!=nil and rejects the CR as violating mutual exclusivity. This makes autoscaling completely unusable in production. Unit tests pass only because they call validateAutoscaling() directly without running the defaulting pipeline first.",
+      "location": "api/v1alpha1/memcached_webhook.go:52-56, api/v1alpha1/memcached_types.go:270",
+      "fix": "Two changes required: (1) In memcached_webhook.go, guard the replicas default: `if mc.Spec.Replicas == nil && (mc.Spec.Autoscaling == nil || !mc.Spec.Autoscaling.Enabled)`. (2) Add explicit clearing in the autoscaling defaulting block: `mc.Spec.Replicas = nil` when autoscaling is enabled, to override the CRD schema default. The mutating webhook runs after CRD defaults, so this override is effective."
+    }
+  ],
+  "issues_found": [
+    {
+      "id": "B1",
+      "check_ids": ["C1", "C2", "FC4"],
+      "severity": "blocker",
+      "file": "api/v1alpha1/memcached_webhook.go:52-56",
+      "description": "spec.replicas defaulting (both CRD +kubebuilder:default=1 and webhook line 53) fires before validation. A CR with autoscaling.enabled=true that omits spec.replicas gets replicas=1 injected, then the mutual exclusivity validation rejects it. Autoscaling is broken end-to-end. The unit test 'replicas nil + autoscaling enabled (accepted)' passes only because it bypasses the defaulting pipeline.",
+      "fix": "Guard replicas defaulting: skip when autoscaling is enabled. In the autoscaling defaulting block, explicitly set mc.Spec.Replicas = nil to override the CRD schema default."
+    },
+    {
+      "id": "B2",
+      "check_ids": ["V3"],
+      "severity": "blocker",
+      "file": "api/v1alpha1/memcached_webhook.go:15-27",
+      "description": "go fmt reports formatting changes needed in the const block — committed file has misaligned constant declarations (DefaultServiceMonitorScrapeTimeout and the two new autoscaling constants use inconsistent column alignment). make test auto-fixed this but the committed file is not go fmt clean.",
+      "fix": "Run `go fmt ./api/v1alpha1/memcached_webhook.go` and commit the result."
+    },
+    {
+      "id": "M1",
+      "check_ids": ["TE2"],
+      "severity": "major",
+      "file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "description": "Missing test case: CPU metric with AverageValue target type (not Utilization) should NOT require resources.requests.cpu. The hasCPUUtilizationMetric() helper specifically checks UtilizationMetricType, but no test exercises this guard. A refactoring that broadens the check to all CPU metrics would silently break valid configurations.",
+      "fix": "Add test case in TestValidateAutoscalingCPURequests: CPU Resource metric with AverageValue target + no CPU request → accepted."
+    },
+    {
+      "id": "M2",
+      "check_ids": ["TE7"],
+      "severity": "major",
+      "file": "api/v1alpha1/sample_yaml_test.go:237-239",
+      "description": "TestSampleYAMLAutoscaling asserts spec.resources != nil but does not verify resources.requests.cpu is present. The sample YAML has requests.cpu: 500m (correct), but a future edit removing the CPU request would not be caught by this test, despite CPU requests being required for the default CPU utilization metric.",
+      "fix": "Add assertion: `if _, ok := memcached.Spec.Resources.Requests[corev1.ResourceCPU]; !ok { t.Error(...) }`"
+    },
+    {
+      "id": "M3",
+      "check_ids": ["DA3"],
+      "severity": "major",
+      "file": "docs/reference/backend/defaulting-webhook.md:252-253",
+      "description": "The 'After the webhook' example for autoscaling shows 'replicas: 1' in the post-defaulting output. This contradicts the validation rule: spec.replicas and autoscaling.enabled are mutually exclusive. The documented state would be rejected by the validation webhook. This is a consequence of blocker B1 but the doc example must also be fixed.",
+      "fix": "After fixing B1, update the example to omit spec.replicas from the post-defaulting output (since the webhook will skip replicas defaulting when autoscaling is enabled)."
+    },
+    {
+      "id": "N1",
+      "check_ids": ["Q3"],
+      "severity": "minor",
+      "file": "api/v1alpha1/memcached_webhook_test.go:884-913",
+      "description": "TestMemcachedDefaulting_AutoscalingBothDefaultsApplied is functionally identical to the combination of TestMemcachedDefaulting_AutoscalingDefaultMetrics and TestMemcachedDefaulting_AutoscalingDefaultBehavior — same input, same assertions. It adds no coverage.",
+      "fix": "Remove the duplicate test or make it test a meaningfully different scenario (e.g., verify that both defaults interact correctly with user-specified minReplicas/maxReplicas)."
+    }
+  ],
+  "suggested_improvements": [
+    "Add an integration-level test (or defaulting+validation chained test) that runs Default() followed by validateMemcached() to catch defaulting/validation interaction bugs like B1",
+    "Consider adding a TestValidateAutoscalingCPURequests case for CPU AverageValue metric to guard the UtilizationMetricType-specific check",
+    "Consider whether MaxReplicas should also have an explicit webhook-level validation for maxReplicas > 0 when autoscaling is enabled, as a defense-in-depth measure beyond the CRD schema Minimum=1 marker"
+  ],
+  "next_steps": [
+    "Fix blocker B1: Guard spec.replicas defaulting to skip when autoscaling is enabled, and explicitly clear spec.replicas in the autoscaling defaulting block",
+    "Fix blocker B2: Run go fmt on memcached_webhook.go and commit",
+    "Fix major M1: Add AverageValue CPU metric test case to validation webhook tests",
+    "Fix major M2: Add resources.requests.cpu assertion to TestSampleYAMLAutoscaling",
+    "Fix major M3: Update defaulting-webhook.md autoscaling example to omit spec.replicas after B1 is fixed",
+    "Re-run make test to verify all fixes pass"
+  ],
+  "metadata": {
+    "feature_id": "MO-0040",
+    "title": "K001: Add AutoscalingSpec CRD types and webhooks",
+    "date": "2026-02-21",
+    "verdict": "BLOCKED",
+    "blocking_count": 2,
+    "major_count": 3,
+    "minor_count": 1,
+    "tests_passed": true,
+    "go_vet_passed": true,
+    "go_fmt_clean": false
+  }
+}

@@ -4,6 +4,7 @@ package v1alpha1
 import (
 	"testing"
 
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -720,5 +721,166 @@ func TestMemcachedSpec_NilServiceSpec(t *testing.T) {
 	spec := MemcachedSpec{}
 	if spec.Service != nil {
 		t.Error("expected Service to be nil for empty spec")
+	}
+}
+
+// --- REQ-001: AutoscalingSpec ---
+
+func TestAutoscalingSpec_ZeroValue(t *testing.T) {
+	as := AutoscalingSpec{}
+	if as.Enabled {
+		t.Error("expected Enabled to be false for zero value")
+	}
+	if as.MinReplicas != nil {
+		t.Error("expected MinReplicas to be nil for zero value")
+	}
+	if as.MaxReplicas != 0 {
+		t.Error("expected MaxReplicas to be 0 for zero value")
+	}
+	if as.Metrics != nil {
+		t.Error("expected Metrics to be nil for zero value")
+	}
+	if as.Behavior != nil {
+		t.Error("expected Behavior to be nil for zero value")
+	}
+}
+
+func TestAutoscalingSpec_AllFieldsSet(t *testing.T) {
+	minReplicas := int32(2)
+	targetUtil := int32(80)
+	stabilizationWindow := int32(300)
+
+	as := AutoscalingSpec{
+		Enabled:     true,
+		MinReplicas: &minReplicas,
+		MaxReplicas: 10,
+		Metrics: []autoscalingv2.MetricSpec{
+			{
+				Type: autoscalingv2.ResourceMetricSourceType,
+				Resource: &autoscalingv2.ResourceMetricSource{
+					Name: corev1.ResourceCPU,
+					Target: autoscalingv2.MetricTarget{
+						Type:               autoscalingv2.UtilizationMetricType,
+						AverageUtilization: &targetUtil,
+					},
+				},
+			},
+		},
+		Behavior: &autoscalingv2.HorizontalPodAutoscalerBehavior{
+			ScaleDown: &autoscalingv2.HPAScalingRules{
+				StabilizationWindowSeconds: &stabilizationWindow,
+			},
+		},
+	}
+
+	if !as.Enabled {
+		t.Error("expected Enabled to be true")
+	}
+	if *as.MinReplicas != 2 {
+		t.Errorf("expected MinReplicas=2, got %d", *as.MinReplicas)
+	}
+	if as.MaxReplicas != 10 {
+		t.Errorf("expected MaxReplicas=10, got %d", as.MaxReplicas)
+	}
+	if len(as.Metrics) != 1 {
+		t.Fatalf("expected 1 metric, got %d", len(as.Metrics))
+	}
+	if as.Metrics[0].Type != autoscalingv2.ResourceMetricSourceType {
+		t.Errorf("expected metric type Resource, got %s", as.Metrics[0].Type)
+	}
+	if as.Metrics[0].Resource.Name != corev1.ResourceCPU {
+		t.Errorf("expected metric resource CPU, got %s", as.Metrics[0].Resource.Name)
+	}
+	if *as.Metrics[0].Resource.Target.AverageUtilization != 80 {
+		t.Errorf("expected averageUtilization=80, got %d", *as.Metrics[0].Resource.Target.AverageUtilization)
+	}
+	if as.Behavior == nil {
+		t.Fatal("expected Behavior to be non-nil")
+	}
+	if *as.Behavior.ScaleDown.StabilizationWindowSeconds != 300 {
+		t.Errorf("expected stabilizationWindowSeconds=300, got %d", *as.Behavior.ScaleDown.StabilizationWindowSeconds)
+	}
+}
+
+func TestAutoscalingSpec_DeepCopy(t *testing.T) {
+	minReplicas := int32(2)
+	targetUtil := int32(80)
+	stabilizationWindow := int32(300)
+
+	as := &AutoscalingSpec{
+		Enabled:     true,
+		MinReplicas: &minReplicas,
+		MaxReplicas: 10,
+		Metrics: []autoscalingv2.MetricSpec{
+			{
+				Type: autoscalingv2.ResourceMetricSourceType,
+				Resource: &autoscalingv2.ResourceMetricSource{
+					Name: corev1.ResourceCPU,
+					Target: autoscalingv2.MetricTarget{
+						Type:               autoscalingv2.UtilizationMetricType,
+						AverageUtilization: &targetUtil,
+					},
+				},
+			},
+		},
+		Behavior: &autoscalingv2.HorizontalPodAutoscalerBehavior{
+			ScaleDown: &autoscalingv2.HPAScalingRules{
+				StabilizationWindowSeconds: &stabilizationWindow,
+			},
+		},
+	}
+
+	clone := as.DeepCopy()
+	if clone == as {
+		t.Error("DeepCopy returned same pointer")
+	}
+
+	// Mutate original MinReplicas; clone must be unaffected.
+	*as.MinReplicas = 5
+	if *clone.MinReplicas != 2 {
+		t.Error("DeepCopy is not independent: MinReplicas was mutated")
+	}
+
+	// Mutate original Metrics slice; clone must be unaffected.
+	newUtil := int32(50)
+	as.Metrics[0].Resource.Target.AverageUtilization = &newUtil
+	if *clone.Metrics[0].Resource.Target.AverageUtilization != 80 {
+		t.Error("DeepCopy is not independent: Metrics AverageUtilization was mutated")
+	}
+
+	// Mutate original Behavior; clone must be unaffected.
+	newWindow := int32(600)
+	as.Behavior.ScaleDown.StabilizationWindowSeconds = &newWindow
+	if *clone.Behavior.ScaleDown.StabilizationWindowSeconds != 300 {
+		t.Error("DeepCopy is not independent: Behavior StabilizationWindowSeconds was mutated")
+	}
+}
+
+// --- REQ-002: MemcachedSpec with Autoscaling ---
+
+func TestMemcachedSpec_WithAutoscaling(t *testing.T) {
+	replicas := int32(1)
+	spec := MemcachedSpec{
+		Replicas: &replicas,
+		Autoscaling: &AutoscalingSpec{
+			Enabled:     true,
+			MaxReplicas: 10,
+		},
+	}
+	if spec.Autoscaling == nil {
+		t.Fatal("expected Autoscaling to be set")
+	}
+	if !spec.Autoscaling.Enabled {
+		t.Error("expected Autoscaling.Enabled to be true")
+	}
+	if spec.Autoscaling.MaxReplicas != 10 {
+		t.Errorf("expected Autoscaling.MaxReplicas=10, got %d", spec.Autoscaling.MaxReplicas)
+	}
+}
+
+func TestMemcachedSpec_NilAutoscaling(t *testing.T) {
+	spec := MemcachedSpec{}
+	if spec.Autoscaling != nil {
+		t.Error("expected Autoscaling to be nil for empty spec")
 	}
 }

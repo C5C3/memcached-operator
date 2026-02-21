@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -53,6 +54,7 @@ func validateMemcached(mc *Memcached) error {
 	allErrs = append(allErrs, validatePDB(mc)...)
 	allErrs = append(allErrs, validateGracefulShutdown(mc)...)
 	allErrs = append(allErrs, validateSecuritySecretRefs(mc)...)
+	allErrs = append(allErrs, validateAutoscaling(mc)...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -196,6 +198,71 @@ func validateGracefulShutdown(mc *Memcached) field.ErrorList {
 	}
 
 	return errs
+}
+
+// validateAutoscaling validates autoscaling configuration:
+// - spec.replicas and autoscaling.enabled are mutually exclusive.
+// - minReplicas must not exceed maxReplicas.
+// - CPU utilization metrics require resources.requests.cpu.
+func validateAutoscaling(mc *Memcached) field.ErrorList {
+	var errs field.ErrorList
+
+	if mc.Spec.Autoscaling == nil || !mc.Spec.Autoscaling.Enabled {
+		return errs
+	}
+
+	as := mc.Spec.Autoscaling
+	asPath := field.NewPath("spec", "autoscaling")
+
+	// REQ-005: Mutual exclusivity — spec.replicas and autoscaling.enabled cannot coexist.
+	if mc.Spec.Replicas != nil {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec", "replicas"),
+			*mc.Spec.Replicas,
+			"spec.replicas and spec.autoscaling.enabled are mutually exclusive",
+		))
+	}
+
+	// REQ-006: minReplicas must not exceed maxReplicas.
+	if as.MinReplicas != nil && *as.MinReplicas > as.MaxReplicas {
+		errs = append(errs, field.Invalid(
+			asPath.Child("minReplicas"),
+			*as.MinReplicas,
+			fmt.Sprintf("minReplicas (%d) must not exceed maxReplicas (%d)", *as.MinReplicas, as.MaxReplicas),
+		))
+	}
+
+	// REQ-007: CPU utilization metrics require resources.requests.cpu.
+	if hasCPUUtilizationMetric(as.Metrics) {
+		if mc.Spec.Resources == nil || mc.Spec.Resources.Requests == nil {
+			errs = append(errs, field.Required(
+				field.NewPath("spec", "resources", "requests", "cpu"),
+				"resources.requests.cpu is required when using CPU utilization metrics",
+			))
+		} else if _, ok := mc.Spec.Resources.Requests[corev1.ResourceCPU]; !ok {
+			errs = append(errs, field.Required(
+				field.NewPath("spec", "resources", "requests", "cpu"),
+				"resources.requests.cpu is required when using CPU utilization metrics",
+			))
+		}
+	}
+
+	return errs
+}
+
+// hasCPUUtilizationMetric returns true if any metric in the slice is a CPU Resource
+// metric with a Utilization target type.
+func hasCPUUtilizationMetric(metrics []autoscalingv2.MetricSpec) bool {
+	for i := range metrics {
+		m := &metrics[i]
+		if m.Type == autoscalingv2.ResourceMetricSourceType &&
+			m.Resource != nil &&
+			m.Resource.Name == corev1.ResourceCPU &&
+			m.Resource.Target.Type == autoscalingv2.UtilizationMetricType {
+			return true
+		}
+	}
+	return false
 }
 
 // Ensure the runtime.Object interface constraint is satisfied (used by apierrors.NewInvalid).

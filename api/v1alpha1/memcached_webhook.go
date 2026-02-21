@@ -4,6 +4,8 @@ package v1alpha1
 import (
 	"context"
 
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -11,15 +13,17 @@ import (
 
 // Default values applied by the webhook when fields are omitted.
 const (
-	DefaultReplicas                    = int32(1)
-	DefaultImage                       = "memcached:1.6"
-	DefaultMaxMemoryMB                 = int32(64)
-	DefaultMaxConnections              = int32(1024)
-	DefaultThreads                     = int32(4)
-	DefaultMaxItemSize                 = "1m"
-	DefaultExporterImage               = "prom/memcached-exporter:v0.15.4"
-	DefaultServiceMonitorInterval      = "30s"
-	DefaultServiceMonitorScrapeTimeout = "10s"
+	DefaultReplicas                      = int32(1)
+	DefaultImage                         = "memcached:1.6"
+	DefaultMaxMemoryMB                   = int32(64)
+	DefaultMaxConnections                = int32(1024)
+	DefaultThreads                       = int32(4)
+	DefaultMaxItemSize                   = "1m"
+	DefaultExporterImage                 = "prom/memcached-exporter:v0.15.4"
+	DefaultServiceMonitorInterval        = "30s"
+	DefaultServiceMonitorScrapeTimeout   = "10s"
+	DefaultAutoscalingCPUUtilization     = int32(80)
+	DefaultScaleDownStabilizationSeconds = int32(300)
 )
 
 // log is for logging in this package.
@@ -45,8 +49,10 @@ func SetupMemcachedWebhookWithManager(mgr ctrl.Manager) error {
 func (d *MemcachedCustomDefaulter) Default(ctx context.Context, mc *Memcached) error {
 	memcachedlog.Info("defaulting", "name", mc.GetName())
 
-	// REQ-001: Default replicas to 1 when nil.
-	if mc.Spec.Replicas == nil {
+	// REQ-001: Default replicas to 1 when nil, unless autoscaling is enabled
+	// (spec.replicas and autoscaling.enabled are mutually exclusive).
+	autoscalingEnabled := mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled
+	if mc.Spec.Replicas == nil && !autoscalingEnabled {
 		defaultReplicas := DefaultReplicas
 		mc.Spec.Replicas = &defaultReplicas
 	}
@@ -57,8 +63,27 @@ func (d *MemcachedCustomDefaulter) Default(ctx context.Context, mc *Memcached) e
 		mc.Spec.Image = &defaultImage
 	}
 
-	// REQ-003: Default memcached config fields.
-	// The memcached section is always initialized because its fields are core operational parameters.
+	defaultMemcachedConfig(mc)
+	defaultMonitoring(mc)
+
+	// REQ-005: Default highAvailability sub-fields only when the HA section already exists.
+	if mc.Spec.HighAvailability != nil {
+		if mc.Spec.HighAvailability.AntiAffinityPreset == nil {
+			defaultPreset := AntiAffinityPresetSoft
+			mc.Spec.HighAvailability.AntiAffinityPreset = &defaultPreset
+		}
+	}
+
+	if autoscalingEnabled {
+		defaultAutoscaling(mc)
+	}
+
+	return nil
+}
+
+// defaultMemcachedConfig initializes the memcached section and populates zero-valued fields.
+// The memcached section is always initialized because its fields are core operational parameters.
+func defaultMemcachedConfig(mc *Memcached) {
 	if mc.Spec.Memcached == nil {
 		mc.Spec.Memcached = &MemcachedConfig{}
 	}
@@ -75,32 +100,59 @@ func (d *MemcachedCustomDefaulter) Default(ctx context.Context, mc *Memcached) e
 		mc.Spec.Memcached.MaxItemSize = DefaultMaxItemSize
 	}
 	// Verbosity defaults to 0, which is the Go zero value — no action needed.
+}
 
-	// REQ-004: Default monitoring sub-fields only when the monitoring section already exists.
-	if mc.Spec.Monitoring != nil {
-		if mc.Spec.Monitoring.ExporterImage == nil {
-			defaultExporterImage := DefaultExporterImage
-			mc.Spec.Monitoring.ExporterImage = &defaultExporterImage
+// defaultMonitoring sets defaults for monitoring sub-fields only when the monitoring section already exists.
+func defaultMonitoring(mc *Memcached) {
+	if mc.Spec.Monitoring == nil {
+		return
+	}
+	if mc.Spec.Monitoring.ExporterImage == nil {
+		defaultExporterImage := DefaultExporterImage
+		mc.Spec.Monitoring.ExporterImage = &defaultExporterImage
+	}
+	if mc.Spec.Monitoring.ServiceMonitor != nil {
+		if mc.Spec.Monitoring.ServiceMonitor.Interval == "" {
+			mc.Spec.Monitoring.ServiceMonitor.Interval = DefaultServiceMonitorInterval
 		}
+		if mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout == "" {
+			mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout = DefaultServiceMonitorScrapeTimeout
+		}
+	}
+}
 
-		// REQ-009: Default serviceMonitor sub-fields when the serviceMonitor section exists.
-		if mc.Spec.Monitoring.ServiceMonitor != nil {
-			if mc.Spec.Monitoring.ServiceMonitor.Interval == "" {
-				mc.Spec.Monitoring.ServiceMonitor.Interval = DefaultServiceMonitorInterval
-			}
-			if mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout == "" {
-				mc.Spec.Monitoring.ServiceMonitor.ScrapeTimeout = DefaultServiceMonitorScrapeTimeout
-			}
+// defaultAutoscaling sets defaults for autoscaling sub-fields and clears spec.replicas.
+// Must only be called when autoscaling is enabled.
+func defaultAutoscaling(mc *Memcached) {
+	// Clear spec.replicas — it is mutually exclusive with autoscaling.enabled.
+	// The CRD schema default (+kubebuilder:default=1) may have set replicas before
+	// the webhook runs; clear it so validation does not reject the CR.
+	mc.Spec.Replicas = nil
+
+	// Inject 80% CPU utilization metric when Metrics is empty.
+	if len(mc.Spec.Autoscaling.Metrics) == 0 {
+		cpuUtilization := DefaultAutoscalingCPUUtilization
+		mc.Spec.Autoscaling.Metrics = []autoscalingv2.MetricSpec{
+			{
+				Type: autoscalingv2.ResourceMetricSourceType,
+				Resource: &autoscalingv2.ResourceMetricSource{
+					Name: corev1.ResourceCPU,
+					Target: autoscalingv2.MetricTarget{
+						Type:               autoscalingv2.UtilizationMetricType,
+						AverageUtilization: &cpuUtilization,
+					},
+				},
+			},
 		}
 	}
 
-	// REQ-005: Default highAvailability sub-fields only when the HA section already exists.
-	if mc.Spec.HighAvailability != nil {
-		if mc.Spec.HighAvailability.AntiAffinityPreset == nil {
-			defaultPreset := AntiAffinityPresetSoft
-			mc.Spec.HighAvailability.AntiAffinityPreset = &defaultPreset
+	// Inject scaleDown stabilization window when Behavior is nil.
+	if mc.Spec.Autoscaling.Behavior == nil {
+		stabilizationWindow := DefaultScaleDownStabilizationSeconds
+		mc.Spec.Autoscaling.Behavior = &autoscalingv2.HorizontalPodAutoscalerBehavior{
+			ScaleDown: &autoscalingv2.HPAScalingRules{
+				StabilizationWindowSeconds: &stabilizationWindow,
+			},
 		}
 	}
-
-	return nil
 }

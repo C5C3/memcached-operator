@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/yaml"
 )
 
@@ -199,6 +200,49 @@ func TestSampleYAMLProduction(t *testing.T) {
 	// Verify it has high availability configured
 	if memcached.Spec.HighAvailability == nil {
 		t.Error("expected spec.highAvailability to be set in production sample")
+	}
+}
+
+// TestSampleYAMLAutoscaling validates the autoscaling sample.
+func TestSampleYAMLAutoscaling(t *testing.T) {
+	memcached := loadSampleYAML(t, "memcached_v1alpha1_autoscaling.yaml")
+
+	// Basic metadata validation
+	if memcached.Name == "" {
+		t.Error("expected non-empty metadata.name")
+	}
+
+	// Verify autoscaling configuration
+	if memcached.Spec.Autoscaling == nil {
+		t.Fatal("expected spec.autoscaling to be set in autoscaling sample")
+	}
+	if !memcached.Spec.Autoscaling.Enabled {
+		t.Error("expected spec.autoscaling.enabled to be true in autoscaling sample")
+	}
+	if memcached.Spec.Autoscaling.MinReplicas == nil {
+		t.Fatal("expected spec.autoscaling.minReplicas to be set")
+	}
+	if *memcached.Spec.Autoscaling.MinReplicas != 2 {
+		t.Errorf("expected spec.autoscaling.minReplicas=2, got %d", *memcached.Spec.Autoscaling.MinReplicas)
+	}
+	if memcached.Spec.Autoscaling.MaxReplicas != 10 {
+		t.Errorf("expected spec.autoscaling.maxReplicas=10, got %d", memcached.Spec.Autoscaling.MaxReplicas)
+	}
+
+	// Verify replicas is NOT set (mutually exclusive with autoscaling.enabled)
+	if memcached.Spec.Replicas != nil {
+		t.Error("expected spec.replicas to be nil when autoscaling is enabled")
+	}
+
+	// Verify resources.requests.cpu is set (required for CPU utilization metrics)
+	if memcached.Spec.Resources == nil {
+		t.Fatal("expected spec.resources to be set for autoscaling with CPU metrics")
+	}
+	if memcached.Spec.Resources.Requests == nil {
+		t.Fatal("expected spec.resources.requests to be set")
+	}
+	if _, ok := memcached.Spec.Resources.Requests[corev1.ResourceCPU]; !ok {
+		t.Error("expected spec.resources.requests.cpu to be set (required for default CPU utilization metric)")
 	}
 }
 
