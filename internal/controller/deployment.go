@@ -322,10 +322,15 @@ func buildContainerSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.Secu
 func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, secretHash, restartTrigger string) {
 	labels := labelsForMemcached(mc.Name)
 
-	// Defaults.
-	replicas := int32(1)
-	if mc.Spec.Replicas != nil {
-		replicas = *mc.Spec.Replicas
+	// Determine replicas: nil when HPA is active (let HPA control scaling),
+	// otherwise use spec value or default.
+	var replicasPtr *int32
+	if !hpaEnabled(mc) {
+		replicas := int32(1)
+		if mc.Spec.Replicas != nil {
+			replicas = *mc.Spec.Replicas
+		}
+		replicasPtr = &replicas
 	}
 	image := "memcached:1.6"
 	if mc.Spec.Image != nil {
@@ -426,7 +431,7 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 
 	dep.Labels = labels
 	dep.Spec = appsv1.DeploymentSpec{
-		Replicas: &replicas,
+		Replicas: replicasPtr,
 		Selector: &metav1.LabelSelector{
 			MatchLabels: labels,
 		},

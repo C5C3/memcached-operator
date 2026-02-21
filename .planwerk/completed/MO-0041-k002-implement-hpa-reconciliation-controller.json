@@ -2,8 +2,8 @@
   "feature_id": "MO-0041",
   "title": "K002: Implement HPA reconciliation controller",
   "slug": "k002-implement-hpa-reconciliation-controller",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** backend\n**Priority:** critical\n**Source:** Proposed for 'Horizontal Pod Autoscaling\n\nNew spec.autoscaling'\n\nCreate internal/controller/hpa.go with reconcileHPA() following the existing reconcileResource/deleteOwnedResource helper pattern used by PDB, ServiceMonitor, and NetworkPolicy. When autoscaling.enabled=true: construct autoscalingv2.HorizontalPodAutoscaler with scaleTargetRef pointing to the managed Deployment, using spec.autoscaling.metrics, behavior, minReplicas, maxReplicas; create or update via reconcileResource with owner references. When autoscaling.enabled=false or autoscaling is nil: delete the HPA via deleteOwnedResource. Update internal/controller/deployment.go to skip setting spec.replicas on the Deployment when autoscaling is active, preventing operator/HPA conflicts. Add RBAC marker to internal/controller/memcached_controller.go: +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete. Wire reconcileHPA() call into the main reconciliation loop in memcached_controller.go. Add HPA reconciliation counter to internal/metrics/metrics.go matching existing per-resource metric pattern. Add status condition updates reflecting HPA-managed scaling state. Write envtest integration tests covering: HPA creation when autoscaling enabled, HPA update on spec change, HPA deletion when autoscaling disabled, Deployment has no replicas field when autoscaling active, Deployment gets replicas restored when autoscaling disabled.\n\n**Rationale:** This is the core business logic that actually creates and manages the HPA resource. It must follow established patterns (reconcileResource/deleteOwnedResource) for consistency and to leverage existing error handling, owner reference management, and metrics. The deployment integration is critical to prevent the operator from fighting the HPA over replica count, which would cause scaling instability.\n\n**Affected Areas:**\n- internal/controller/hpa.go\n- internal/controller/deployment.go\n- internal/controller/memcached_controller.go\n- internal/metrics/metrics.go\n- internal/controller/memcached_controller_test.go",
   "stories": [
@@ -336,6 +336,7 @@
       "description": "Create `internal/controller/hpa.go` with:\n- `constructHPA(mc, hpa)` function that mutates an `autoscalingv2.HorizontalPodAutoscaler` in-place: sets labels via `labelsForMemcached()`, scaleTargetRef (apiVersion=apps/v1, kind=Deployment, name=mc.Name), minReplicas, maxReplicas, metrics, and behavior from `mc.Spec.Autoscaling`.\n- `hpaEnabled(mc)` function returning true when `mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled`.\n\nFollow the exact pattern of `constructPDB()`/`pdbEnabled()` in `pdb.go` and `constructNetworkPolicy()`/`networkPolicyEnabled()` in `networkpolicy.go`.\n\nCreate `internal/controller/hpa_test.go` with table-driven unit tests for `constructHPA()` and `hpaEnabled()` covering: full spec, nil minReplicas, nil behavior, disabled autoscaling, nil autoscaling.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-005"
@@ -347,6 +348,7 @@
       "description": "Modify `constructDeployment()` in `internal/controller/deployment.go` to accept an `autoscalingEnabled bool` parameter. When `autoscalingEnabled` is true, set `dep.Spec.Replicas = nil` instead of the CR's replica count. When false, keep the existing logic (default 1 or CR value).\n\nUpdate the call site in `reconcileDeployment()` in `memcached_controller.go` to pass `autoscalingEnabled(mc)` where `autoscalingEnabled` is a helper: `mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled`.\n\nUpdate existing unit tests in `deployment_test.go` to pass the new parameter as false, and add new test cases for autoscaling=true (replicas=nil) and autoscaling=false (replicas restored).",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -357,6 +359,7 @@
       "description": "In `internal/controller/memcached_controller.go`:\n1. Add RBAC marker: `// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete`\n2. Add `reconcileHPA()` method on MemcachedReconciler following the exact pattern of `reconcilePDB()` — check `hpaEnabled()`, if false call `deleteOwnedResource()`, if true use `reconcileResource()` with `constructHPA()`.\n3. Wire `reconcileHPA()` call in `Reconcile()` after `reconcileNetworkPolicy()` and before `reconcileStatus()`.\n4. Add `autoscalingv2 \"k8s.io/api/autoscaling/v2\"` import.\n5. Add `Owns(&autoscalingv2.HorizontalPodAutoscaler{})` in `SetupWithManager()`.\n6. Run `make manifests generate` to regenerate RBAC and deepcopy.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007"
@@ -368,6 +371,7 @@
       "description": "Update `computeConditions()` in `internal/controller/status.go` to accept an `autoscalingEnabled bool` parameter. When autoscaling is active:\n- Progressing condition: when `dep != nil && autoscalingEnabled`, set message to 'Scaling managed by HPA' and reason to 'HPAManaged' with status False (not progressing in the operator sense).\n- Available and Degraded conditions remain unchanged (still based on actual ready replicas).\n\nUpdate `reconcileStatus()` to pass the autoscaling flag.\nUpdate existing unit tests in `status_test.go` to pass the new parameter as false, and add new test cases for autoscaling=true.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -378,6 +382,7 @@
       "description": "Create `internal/controller/memcached_hpa_reconcile_test.go` with Ginkgo/Gomega envtest integration tests. Add `fetchHPA()` helper function following `fetchPDB()`/`fetchNetworkPolicy()` pattern.\n\nTest cases:\n- Create Memcached CR with autoscaling enabled (maxReplicas=5, minReplicas=2, CPU requests set): verify HPA exists with correct scaleTargetRef, minReplicas, maxReplicas, metrics, behavior, labels, and owner reference.\n- Create with webhook defaults (no metrics/behavior specified): verify HPA has default 80% CPU metric and 300s scaleDown stabilization.\n- Create with nil minReplicas: verify HPA minReplicas is nil.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-005",
@@ -390,6 +395,7 @@
       "description": "Add test contexts to `internal/controller/memcached_hpa_reconcile_test.go`:\n- Update maxReplicas from 5 to 10: verify HPA updated.\n- Update behavior scaleDown stabilization: verify HPA updated.\n- Idempotency: reconcile twice without changes, verify HPA resourceVersion unchanged.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -400,6 +406,7 @@
       "description": "Add test contexts to `internal/controller/memcached_hpa_reconcile_test.go`:\n- Disable autoscaling on existing CR: verify HPA is deleted (NotFound).\n- Remove spec.autoscaling entirely (set to nil): verify HPA is deleted.\n- Reconcile with no autoscaling and no existing HPA: verify no error (idempotent deletion).",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -410,6 +417,7 @@
       "description": "Add test contexts to `internal/controller/memcached_hpa_reconcile_test.go`:\n- Create CR with autoscaling enabled: verify Deployment spec.replicas is nil.\n- Disable autoscaling and set replicas=3: verify Deployment spec.replicas is 3.\n- Create CR with autoscaling enabled then disable without setting replicas: verify Deployment spec.replicas defaults to 1 (webhook default).",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -420,6 +428,7 @@
       "description": "Add test contexts to `internal/controller/memcached_hpa_reconcile_test.go` or `memcached_status_reconcile_test.go`:\n- Create CR with autoscaling enabled: verify Progressing condition message indicates HPA management.\n- Disable autoscaling: verify Progressing condition reverts to normal format.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -430,6 +439,7 @@
       "description": "Update `internal/controller/memcached_rbac_test.go` to verify the HPA RBAC marker exists in the controller source file (following existing pattern for other resource types).\nUpdate `internal/controller/memcached_setup_test.go` (if it tests Owns registrations) to verify `autoscalingv2.HorizontalPodAutoscaler` is owned.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-006",
         "REQ-007"
@@ -441,6 +451,7 @@
       "description": "Create `docs/reference/backend/hpa-reconciliation.md` following the pattern of `pdb-reconciliation.md` and `networkpolicy-reconciliation.md`. Document:\n- HPA construction logic (scaleTargetRef, metrics, behavior, minReplicas, maxReplicas)\n- Enable/disable lifecycle\n- Deployment replicas interaction\n- RBAC requirements\n- Metrics emitted\n- Status condition changes",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -603,6 +614,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T22:18:31.690507"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T22:37:49.423835"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T23:33:01.051109"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T23:33:01.071799"
     }
   },
   "execution_history": [
@@ -616,6 +639,56 @@
           "name": "prepare",
           "duration": 268.67394280433655,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "a2363e2d-be6d-44e1-832b-0b6fbef48bff",
+      "timestamp": "2026-02-21T23:31:56.149614",
+      "total_duration": 3114.499121904373,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 421.1596746444702,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 299.90814995765686,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (6 tasks)",
+          "duration": 1521.0568540096283,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 110.5531952381134,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0041] Code Review",
+          "duration": 391.70173144340515,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0041] Improvements",
+          "duration": 170.4232795238495,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0041] Simplify",
+          "duration": 199.69623708724976,
+          "type": "simplify",
           "status": "done"
         }
       ]

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -39,6 +40,7 @@ type MemcachedReconciler struct {
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=monitoring.coreos.com,resources=servicemonitors,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=autoscaling,resources=horizontalpodautoscalers,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=events.k8s.io,resources=events,verbs=create;patch
@@ -84,6 +86,10 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	var missingSecrets []string
 	missingSecrets, reconcileErr = r.reconcileDeployment(ctx, memcached)
 	if reconcileErr != nil {
+		return ctrl.Result{}, reconcileErr
+	}
+
+	if reconcileErr = r.reconcileHPA(ctx, memcached); reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
 
@@ -133,6 +139,29 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
 		return nil
 	}, "Deployment")
 	return missing, err
+}
+
+// reconcileHPA ensures the HorizontalPodAutoscaler for the Memcached CR matches the desired state.
+// When autoscaling is disabled, it deletes any existing HPA owned by the CR.
+func (r *MemcachedReconciler) reconcileHPA(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+	if !hpaEnabled(mc) {
+		return r.deleteOwnedResource(ctx, &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
+		}, "HorizontalPodAutoscaler")
+	}
+
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      mc.Name,
+			Namespace: mc.Namespace,
+		},
+	}
+
+	_, err := r.reconcileResource(ctx, mc, hpa, func() error {
+		constructHPA(mc, hpa)
+		return nil
+	}, "HorizontalPodAutoscaler")
+	return err
 }
 
 // reconcileService ensures the headless Service for the Memcached CR matches the desired state.
@@ -226,6 +255,7 @@ func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&memcachedv1alpha1.Memcached{}).
 		Owns(&appsv1.Deployment{}).
+		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
 		Owns(&corev1.Service{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&networkingv1.NetworkPolicy{}).

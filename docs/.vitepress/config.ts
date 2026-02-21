@@ -48,6 +48,7 @@ export default defineConfig({
               { text: 'Deployment Reconciliation', link: '/reference/backend/deployment-reconciliation' },
               { text: 'Headless Service Reconciliation', link: '/reference/backend/headless-service-reconciliation' },
               { text: 'PDB Reconciliation', link: '/reference/backend/pdb-reconciliation' },
+              { text: 'HPA Reconciliation', link: '/reference/backend/hpa-reconciliation' },
               { text: 'ServiceMonitor Reconciliation', link: '/reference/backend/servicemonitor-reconciliation' },
               { text: 'NetworkPolicy Reconciliation', link: '/reference/backend/networkpolicy-reconciliation' },
               { text: 'Status Conditions & ObservedGeneration', link: '/reference/backend/status-conditions-observedgeneration' },

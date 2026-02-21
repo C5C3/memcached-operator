@@ -1,0 +1,121 @@
+{
+  "feature_id": "MO-0041",
+  "title": "K002: Implement HPA reconciliation controller",
+  "date": "2026-02-21",
+  "verdict": "BLOCKED",
+  "summary": "HPA reconciliation controller implementation follows established patterns (constructHPA/hpaEnabled/reconcileHPA matching PDB and NetworkPolicy), correctly delegates to reconcileResource/deleteOwnedResource, integrates Deployment replicas nil-out when HPA active, adds proper RBAC and Owns() registration, and includes comprehensive unit and integration tests covering all user stories. However, make lint fails on a changed file (hpa_test.go goimports formatting), which blocks merge per project standards.",
+  "tests_checklist": [
+    {"item": "V1: All tests in changed files pass (hpa_test.go, deployment_test.go, status_test.go, memcached_hpa_reconcile_test.go, memcached_rbac_test.go)", "checked": true},
+    {"item": "V1: make test succeeds end-to-end (5 pre-existing failures in unmodified files: 2 in memcached_envtest_integration_test.go, 3 in reconcile_resource_test.go)", "checked": false},
+    {"item": "V2: go vet passes", "checked": true},
+    {"item": "V3: make lint passes for changed files", "checked": false},
+    {"item": "TE1: Happy path tested — HPA creation with full spec, webhook defaults, nil minReplicas", "checked": true},
+    {"item": "TE2: Edge cases tested — nil autoscaling, disabled autoscaling, nil minReplicas, nil behavior, re-enable after disable", "checked": true},
+    {"item": "TE3: Deletion tested — disable toggle, nil spec, re-enable lifecycle", "checked": true},
+    {"item": "TE4: Tests independent — each test creates unique CR via uniqueName()", "checked": true},
+    {"item": "TE6: No over-mocking — envtest integration tests use real API server", "checked": true},
+    {"item": "TE7: Assertions specific — exact field values, owner refs, labels, resource versions", "checked": true},
+    {"item": "REQ-001: HPA creation when autoscaling enabled", "checked": true},
+    {"item": "REQ-002: HPA deletion when autoscaling disabled", "checked": true},
+    {"item": "REQ-003: HPA update on spec change and idempotency", "checked": true},
+    {"item": "REQ-004: Deployment replicas nil when HPA active (unit test verifies nil, integration test verifies Kubernetes storage default of 1)", "checked": true},
+    {"item": "REQ-005: HPA spec fields correctly mapped (scaleTargetRef, minReplicas, maxReplicas, metrics, behavior)", "checked": true},
+    {"item": "REQ-006: reconcileHPA wired into reconciliation loop with Owns() registration", "checked": true},
+    {"item": "REQ-007: RBAC marker present and verified in generated role.yaml", "checked": true},
+    {"item": "REQ-008: Status conditions reflect HPA-managed scaling state", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Q1: Functions do ONE thing — constructHPA (pure builder), hpaEnabled (guard), reconcileHPA (orchestrator)", "checked": true},
+    {"item": "Q2: Functions small — constructHPA 13 lines, hpaEnabled 1 line, reconcileHPA 18 lines", "checked": true},
+    {"item": "Q3: No code duplication — reuses reconcileResource/deleteOwnedResource/labelsForMemcached", "checked": true},
+    {"item": "Q4: Clear naming — follows established xEnabled/constructX/reconcileX convention", "checked": true},
+    {"item": "P1: Follows existing patterns — identical structure to pdb.go and networkpolicy.go", "checked": true},
+    {"item": "P2: Uses existing utilities — reconcileResource, deleteOwnedResource, labelsForMemcached, RecordReconcileResource", "checked": true},
+    {"item": "P5: File location matches conventions — hpa.go, hpa_test.go, memcached_hpa_reconcile_test.go", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "S1: No user input at API boundary — Kubernetes CRD validated by webhook", "checked": true},
+    {"item": "S3: No hardcoded secrets", "checked": true},
+    {"item": "S4: RBAC scoped to autoscaling/horizontalpodautoscalers with required verbs only", "checked": true},
+    {"item": "S5: No sensitive data in logs — only resource names and reconciliation status logged", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution follows simplest possible pattern — pure builder + guard + reconciler delegation", "checked": true},
+    {"item": "Owner references set via reconcileResource for automatic GC", "checked": true},
+    {"item": "Owns() registered for HPA watch — triggers reconcile on external HPA changes", "checked": true},
+    {"item": "Deployment replicas correctly nil-ed when HPA active to prevent operator/HPA conflict", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code — constructHPA is a minimal field mapper", "checked": true},
+    {"item": "No unnecessary abstractions — direct field assignment", "checked": true},
+    {"item": "No future-proofing — only implements what's needed", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "reconcileHPA returns error immediately on failure", "checked": true},
+    {"item": "hpaEnabled guard prevents constructHPA call with nil Autoscaling", "checked": true},
+    {"item": "deleteOwnedResource silently handles NotFound for idempotent deletion", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "hpaEnabled checks both nil outer pointer and Enabled field", "checked": true},
+    {"item": "computeConditions guards hpaActive && dep != nil before accessing dep.Status.Replicas", "checked": true},
+    {"item": "constructDeployment uses hpaEnabled guard before nil-ing replicas", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [
+    {
+      "severity": "LOW",
+      "description": "reconcileHPA is called immediately after reconcileDeployment (line 92) rather than after reconcileNetworkPolicy as specified in the task description. The current position is functionally correct and arguably superior (HPA closest to its dependency), but deviates from the explicit task ordering specification.",
+      "location": "internal/controller/memcached_controller.go:92",
+      "fix": "Either move reconcileHPA to after reconcileNetworkPolicy (line 108) to match spec, or document the rationale for the current ordering."
+    }
+  ],
+  "issues_found": [
+    {
+      "id": "V3-001",
+      "severity": "blocker",
+      "check_id": "V3",
+      "file": "internal/controller/hpa_test.go",
+      "line": 9,
+      "description": "goimports formatting violation: import \"k8s.io/api/core/v1\" is not properly formatted. make lint fails with: 'File is not properly formatted (goimports)'.",
+      "fix": "Run 'goimports -w internal/controller/hpa_test.go' or fix import grouping/aliasing to match project convention (e.g., corev1 \"k8s.io/api/core/v1\" with proper group separation)."
+    },
+    {
+      "id": "DA3-001",
+      "severity": "minor",
+      "check_id": "DA3",
+      "file": "docs/reference/backend/hpa-reconciliation.md",
+      "line": 50,
+      "description": "Type column in CRD Field Path table lists behavior as '*autoscalingv2.HPAScalingBehavior' but the actual Go type is '*autoscalingv2.HorizontalPodAutoscalerBehavior'. The code block at line 40 in the same file has the correct type name, creating an inconsistency within the document.",
+      "fix": "Change '*autoscalingv2.HPAScalingBehavior' to '*autoscalingv2.HorizontalPodAutoscalerBehavior' in the table at line 50."
+    },
+    {
+      "id": "D2-001",
+      "severity": "minor",
+      "check_id": "D2",
+      "file": "internal/controller/hpa.go",
+      "line": 12,
+      "description": "constructHPA has an implicit precondition that mc.Spec.Autoscaling must not be nil (would panic at line 21). The guard is in hpaEnabled() which callers use, but the precondition is not documented on the function.",
+      "fix": "Add a comment: '// Precondition: mc.Spec.Autoscaling must not be nil (guarded by hpaEnabled).' This matches the implicit contract in constructPDB and constructNetworkPolicy."
+    },
+    {
+      "id": "TE2-001",
+      "severity": "minor",
+      "check_id": "TE2",
+      "file": "internal/controller/memcached_hpa_reconcile_test.go",
+      "line": 295,
+      "description": "Missing explicit idempotent deletion test: reconcile twice with autoscaling disabled to verify deleteOwnedResource handles NotFound silently on second call. Task 3.3 specifies this scenario. The current tests only reconcile once with autoscaling disabled.",
+      "fix": "Add test case that creates a CR without autoscaling, reconciles once, then reconciles again, and verifies no error and no HPA exists."
+    }
+  ],
+  "suggested_improvements": [
+    "Add 'Reconciliation Order' subsection to docs/reference/backend/hpa-reconciliation.md (present in peer docs networkpolicy-reconciliation.md and pdb-reconciliation.md but missing from HPA doc)",
+    "Consider adding integration test for reconcile_resource_total metric counter with resource_kind=HorizontalPodAutoscaler (the metric is automatically recorded by reconcileResource, but no test verifies this for HPA specifically)",
+    "The 5 pre-existing test failures (2 in memcached_envtest_integration_test.go for zero-replica status conditions, 3 in reconcile_resource_test.go for metric counters) should be investigated separately — they are not caused by this feature but make test fails"
+  ],
+  "next_steps": [
+    "Fix blocking lint error: run 'goimports -w internal/controller/hpa_test.go' to fix import formatting in hpa_test.go:9",
+    "Fix doc typo: change '*autoscalingv2.HPAScalingBehavior' to '*autoscalingv2.HorizontalPodAutoscalerBehavior' in hpa-reconciliation.md line 50",
+    "Re-run 'make lint' to verify clean output for all changed files",
+    "Re-request review after fixing the blocker"
+  ]
+}

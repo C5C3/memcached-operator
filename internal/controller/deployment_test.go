@@ -3355,3 +3355,93 @@ func TestAnnotationKeyConstants(t *testing.T) {
 		t.Errorf("AnnotationRestartTrigger = %q, want %q", AnnotationRestartTrigger, "memcached.c5c3.io/restart-trigger")
 	}
 }
+
+func TestConstructDeployment_HPAReplicas(t *testing.T) {
+	tests := []struct {
+		name         string
+		mc           *memcachedv1alpha1.Memcached
+		wantReplicas *int32
+	}{
+		{
+			name: "HPA disabled with replicas set",
+			mc: &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1alpha1.MemcachedSpec{
+					Replicas: int32Ptr(5),
+				},
+			},
+			wantReplicas: int32Ptr(5),
+		},
+		{
+			name: "HPA disabled with replicas nil uses default",
+			mc: &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1alpha1.MemcachedSpec{},
+			},
+			wantReplicas: int32Ptr(1),
+		},
+		{
+			name: "HPA enabled with replicas set returns nil",
+			mc: &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1alpha1.MemcachedSpec{
+					Replicas: int32Ptr(5),
+					Autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantReplicas: nil,
+		},
+		{
+			name: "HPA enabled with replicas nil returns nil",
+			mc: &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1alpha1.MemcachedSpec{
+					Autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+						Enabled:     true,
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantReplicas: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dep := &appsv1.Deployment{}
+			constructDeployment(tt.mc, dep, "", "")
+
+			gotReplicas := dep.Spec.Replicas
+
+			if tt.wantReplicas == nil {
+				if gotReplicas != nil {
+					t.Errorf("expected Replicas to be nil, got %d", *gotReplicas)
+				}
+				return
+			}
+
+			if gotReplicas == nil {
+				t.Fatalf("expected Replicas to be %d, got nil", *tt.wantReplicas)
+			}
+
+			if *gotReplicas != *tt.wantReplicas {
+				t.Errorf("Replicas = %d, want %d", *gotReplicas, *tt.wantReplicas)
+			}
+		})
+	}
+}

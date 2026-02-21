@@ -121,7 +121,7 @@ func TestComputeConditions(t *testing.T) {
 				},
 			}
 
-			conditions := computeConditions(mc, tt.dep, nil)
+			conditions := computeConditions(mc, tt.dep, nil, false)
 
 			assertCondition(t, conditions, ConditionTypeAvailable, tt.wantAvailable, tt.availReason)
 			assertCondition(t, conditions, ConditionTypeProgressing, tt.wantProgress, tt.progressReason)
@@ -137,7 +137,7 @@ func TestComputeConditions_ReturnsThreeConditions(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(1, 1, 1), nil)
+	conditions := computeConditions(mc, depWithStatus(1, 1, 1), nil, false)
 
 	if len(conditions) != 3 {
 		t.Fatalf("expected 3 conditions, got %d", len(conditions))
@@ -161,7 +161,7 @@ func TestComputeConditions_MessagesAreNonEmpty(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(1, 2, 3), nil)
+	conditions := computeConditions(mc, depWithStatus(1, 2, 3), nil, false)
 
 	for _, c := range conditions {
 		if c.Message == "" {
@@ -180,7 +180,7 @@ func TestComputeConditions_ObservedGeneration(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(2, 3, 3), nil)
+	conditions := computeConditions(mc, depWithStatus(2, 3, 3), nil, false)
 
 	for _, c := range conditions {
 		if c.ObservedGeneration != 5 {
@@ -199,7 +199,7 @@ func TestComputeConditions_ObservedGeneration_NilDeployment(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, nil, nil)
+	conditions := computeConditions(mc, nil, nil, false)
 
 	for _, c := range conditions {
 		if c.ObservedGeneration != 3 {
@@ -226,7 +226,7 @@ func TestComputeConditions_SecretNotFound_SingleMissing(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret"})
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret"}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
 	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "sasl-secret")
@@ -239,7 +239,7 @@ func TestComputeConditions_SecretNotFound_MultipleMissing(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret", "tls-secret"})
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret", "tls-secret"}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
 	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "sasl-secret")
@@ -254,7 +254,7 @@ func TestComputeConditions_SecretNotFound_PrecedenceOverReplica(t *testing.T) {
 	}
 
 	// All replicas ready, but missing secrets should still trigger Degraded=True with SecretNotFound.
-	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"my-secret"})
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"my-secret"}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
 }
@@ -266,7 +266,7 @@ func TestComputeConditions_NoMissingSecrets_NilSlice(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(3, 3, 3), nil)
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), nil, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
 }
@@ -278,9 +278,78 @@ func TestComputeConditions_NoMissingSecrets_EmptySlice(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{})
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+}
+
+func TestComputeConditions_HPAActive_UsesDeploymentReplicas(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(2), // CR says 2, but HPA scaled to 5
+		},
+	}
+
+	// Deployment has 5 total replicas (HPA-managed), all ready and updated.
+	conditions := computeConditions(mc, depWithStatus(5, 5, 5), nil, true)
+
+	// When HPA is active, desired=5 (from dep.Status.Replicas), not 2 (from spec).
+	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionTrue, ConditionReasonAvailable)
+	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionFalse, ConditionReasonProgressingComplete)
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+	assertConditionMessageContains(t, conditions, ConditionTypeAvailable, "HPA-managed")
+}
+
+func TestComputeConditions_HPAActive_PartiallyReady(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(2),
+		},
+	}
+
+	// HPA scaled to 5, only 3 ready.
+	conditions := computeConditions(mc, depWithStatus(3, 5, 5), nil, true)
+
+	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionTrue, ConditionReasonAvailable)
+	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionFalse, ConditionReasonProgressingComplete)
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonDegraded)
+	assertConditionMessageContains(t, conditions, ConditionTypeAvailable, "HPA-managed")
+}
+
+func TestComputeConditions_HPAActive_NilDeployment(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(2),
+		},
+	}
+
+	// HPA active but deployment not yet created — falls back to spec replicas.
+	conditions := computeConditions(mc, nil, nil, true)
+
+	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionFalse, ConditionReasonUnavailable)
+	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionTrue, ConditionReasonProgressing)
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonDegraded)
+}
+
+func TestComputeConditions_HPAInactive_IgnoresDeploymentTotal(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+		},
+	}
+
+	// HPA inactive, spec says 3, dep has 3 ready.
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), nil, false)
+
+	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionTrue, ConditionReasonAvailable)
+	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionFalse, ConditionReasonProgressingComplete)
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+	// Should NOT have "HPA-managed" in message when HPA is inactive.
+	for _, c := range conditions {
+		if c.Type == ConditionTypeAvailable && strings.Contains(c.Message, "HPA-managed") {
+			t.Error("Available message should not mention HPA-managed when HPA is inactive")
+		}
+	}
 }
 
 func TestConditionReasonSecretNotFound_Constant(t *testing.T) {

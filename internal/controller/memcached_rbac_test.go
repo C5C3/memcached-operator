@@ -98,8 +98,8 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 			Expect(role.Name).To(Equal("manager-role"))
 		})
 
-		It("should have exactly 10 rules to prevent permission creep", func() {
-			Expect(role.Rules).To(HaveLen(10), "unexpected number of rules — update this test if a new rule is legitimately needed")
+		It("should have exactly 11 rules to prevent permission creep", func() {
+			Expect(role.Rules).To(HaveLen(11), "unexpected number of rules — update this test if a new rule is legitimately needed")
 		})
 	})
 
@@ -133,6 +133,7 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 				Expect(sortedVerbs(rule.Verbs)).To(Equal(fullCRUDVerbs))
 			},
 			Entry("Deployments", "apps", "deployments"),
+			Entry("HorizontalPodAutoscalers", "autoscaling", "horizontalpodautoscalers"),
 			Entry("Services", "", "services"),
 			Entry("PodDisruptionBudgets", "policy", "poddisruptionbudgets"),
 			Entry("NetworkPolicies", "networking.k8s.io", "networkpolicies"),

@@ -303,7 +303,6 @@ func TestCRDSchemaDefaultValues(t *testing.T) {
 		path         []string
 		expectedJSON string
 	}{
-		{"spec.replicas default=1", []string{"spec", "replicas"}, "1"},
 		{"spec.image default=memcached:1.6", []string{"spec", "image"}, `"memcached:1.6"`},
 		{"spec.memcached.maxMemoryMB default=64", []string{"spec", "memcached", "maxMemoryMB"}, "64"},
 		{"spec.memcached.maxConnections default=1024", []string{"spec", "memcached", "maxConnections"}, "1024"},

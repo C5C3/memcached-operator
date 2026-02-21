@@ -265,9 +265,10 @@ type ServiceSpec struct {
 // MemcachedSpec defines the desired state of Memcached.
 type MemcachedSpec struct {
 	// Replicas is the number of Memcached pods.
+	// Defaults to 1 (applied by the webhook, not the CRD schema, to avoid
+	// conflict with autoscaling.enabled which clears replicas to nil).
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=64
-	// +kubebuilder:default=1
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty,omitzero"`
 

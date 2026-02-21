@@ -1082,8 +1082,10 @@ spec:
                     type: object
                 type: object
               replicas:
-                default: 1
-                description: Replicas is the number of Memcached pods.
+                description: |-
+                  Replicas is the number of Memcached pods.
+                  Defaults to 1 (applied by the webhook, not the CRD schema, to avoid
+                  conflict with autoscaling.enabled which clears replicas to nil).
                 format: int32
                 maximum: 64
                 minimum: 0

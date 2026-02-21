@@ -42,10 +42,18 @@ const (
 // computeConditions derives status conditions from the Memcached spec and the current Deployment status.
 // If dep is nil (Deployment not yet created), it reports unavailable/progressing/degraded.
 // When missingSecrets is non-empty, the Degraded condition is set to SecretNotFound regardless of replica counts.
-func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, missingSecrets []string) []metav1.Condition {
-	desiredReplicas := int32(1)
-	if mc.Spec.Replicas != nil {
-		desiredReplicas = *mc.Spec.Replicas
+// When hpaActive is true, the desired replica count is sourced from the Deployment status (HPA-managed)
+// rather than from mc.Spec.Replicas.
+func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, missingSecrets []string, hpaActive bool) []metav1.Condition {
+	var desiredReplicas int32
+	if hpaActive && dep != nil {
+		// HPA controls replicas — use the Deployment's current total as the desired count.
+		desiredReplicas = dep.Status.Replicas
+	} else {
+		desiredReplicas = int32(1)
+		if mc.Spec.Replicas != nil {
+			desiredReplicas = *mc.Spec.Replicas
+		}
 	}
 
 	var readyReplicas, updatedReplicas, totalReplicas int32
@@ -64,11 +72,15 @@ func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, 
 	if available {
 		availableStatus, availableReason = metav1.ConditionTrue, ConditionReasonAvailable
 	}
+	availableMsg := fmt.Sprintf("%d/%d replicas are ready", readyReplicas, desiredReplicas)
+	if hpaActive {
+		availableMsg += " (HPA-managed)"
+	}
 	conditions = append(conditions, metav1.Condition{
 		Type:               ConditionTypeAvailable,
 		Status:             availableStatus,
 		Reason:             availableReason,
-		Message:            fmt.Sprintf("%d/%d replicas are ready", readyReplicas, desiredReplicas),
+		Message:            availableMsg,
 		LastTransitionTime: now,
 		ObservedGeneration: mc.Generation,
 	})
@@ -144,7 +156,7 @@ func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcached
 	}
 
 	// Compute new conditions.
-	newConditions := computeConditions(mc, dep, missingSecrets)
+	newConditions := computeConditions(mc, dep, missingSecrets, hpaEnabled(mc))
 	for _, c := range newConditions {
 		meta.SetStatusCondition(&mc.Status.Conditions, c)
 	}
