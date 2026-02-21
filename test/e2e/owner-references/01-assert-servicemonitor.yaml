@@ -1,0 +1,15 @@
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: test-owner-refs
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-owner-refs
+    app.kubernetes.io/managed-by: memcached-operator
+  ownerReferences:
+    - apiVersion: memcached.c5c3.io/v1alpha1
+      kind: Memcached
+      name: test-owner-refs
+      controller: true
+      blockOwnerDeletion: true

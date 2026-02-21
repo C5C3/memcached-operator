@@ -5,8 +5,8 @@ validates the Memcached operator against a real kind cluster, covering
 deployment, scaling, configuration changes, monitoring, PDB management,
 graceful rolling updates, webhook validation, garbage collection, SASL
 authentication, TLS encryption, mutual TLS (mTLS), NetworkPolicy lifecycle,
-Service annotation propagation, status degraded detection, and scale-to-zero
-behavior.
+Service annotation propagation, status degraded detection, scale-to-zero
+behavior, and owner reference GC chain validation.
 
 **Source**: `test/e2e/`
 
@@ -256,6 +256,14 @@ test/e2e/
 │   ├── 02-patch-scale-zero.yaml    # Patch replicas to 0
 │   ├── 03-assert-deployment.yaml   # Deployment.spec.replicas=0
 │   └── 03-assert-status.yaml       # Available=False, Degraded=False, readyReplicas=0
+├── owner-references/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with all features enabled (test-owner-refs)
+│   ├── 01-assert-deployment.yaml   # Deployment ownerReferences assertion
+│   ├── 01-assert-service.yaml      # Service ownerReferences assertion
+│   ├── 01-assert-pdb.yaml          # PDB ownerReferences assertion
+│   ├── 01-assert-networkpolicy.yaml # NetworkPolicy ownerReferences assertion
+│   └── 01-assert-servicemonitor.yaml # ServiceMonitor ownerReferences assertion
 └── resources/
     ├── memcached-minimal.yaml
     ├── assert-deployment.yaml
@@ -666,6 +674,34 @@ state before scaling down.
 was updated to return `Available=False` when `desiredReplicas=0` (previously
 scale-to-zero incorrectly reported `Available=True`).
 
+### 21. Owner References GC Chain (MO-0036 REQ-OR-001 through REQ-OR-006)
+
+**Directory**: `test/e2e/owner-references/`
+
+Verifies that all child resources created by the operator have correct
+`ownerReferences` pointing to the parent Memcached CR with `controller=true` and
+`blockOwnerDeletion=true`. This validates the mechanism (ownerReferences set on
+creation) separately from the cr-deletion test that validates the outcome
+(resources cleaned up on deletion).
+
+| Step                                | Operation                                 | Assertion                                                                                         |
+|-------------------------------------|-------------------------------------------|---------------------------------------------------------------------------------------------------|
+| create-memcached-with-all-features  | `apply` 00-memcached.yaml                | CR with monitoring, PDB, and NetworkPolicy enabled (`test-owner-refs`)                            |
+| assert-deployment-owner-reference   | `assert` 01-assert-deployment.yaml       | Deployment ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true |
+| assert-service-owner-reference      | `assert` 01-assert-service.yaml          | Service ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                 |
+| assert-pdb-owner-reference          | `assert` 01-assert-pdb.yaml             | PDB ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                     |
+| assert-networkpolicy-owner-reference | `assert` 01-assert-networkpolicy.yaml   | NetworkPolicy ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true           |
+| assert-servicemonitor-owner-reference | `assert` 01-assert-servicemonitor.yaml | ServiceMonitor ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true          |
+
+The test does **not** delete the CR or assert resource cleanup — that is covered by
+the cr-deletion test (scenario 8). This separation allows pinpointing whether a GC
+failure is due to missing ownerReferences or a different Kubernetes issue.
+
+**CRD fields tested** (indirectly via ownerReferences on child resources):
+- `spec.monitoring.enabled` — Creates ServiceMonitor with ownerReference
+- `spec.highAvailability.podDisruptionBudget.enabled` — Creates PDB with ownerReference
+- `spec.security.networkPolicy.enabled` — Creates NetworkPolicy with ownerReference
+
 ---
 
 ## Test Patterns
@@ -840,6 +876,19 @@ verify runtime protocol behavior. This means:
 | REQ-E2E-SZ-002   | Scale-to-zero sets Deployment replicas to 0                        | scale-to-zero            | Deployment.spec.replicas=0 after patching CR                                                                        |
 | REQ-CTL-SZ-001   | computeConditions returns Available=False when desiredReplicas=0   | (unit test)              | Unit test in status_test.go verifies Available=False for 0 desired, 0 ready replicas                                |
 | REQ-DOC-001      | Documentation updated with new test entries                        | (this document)          | status-degraded and scale-to-zero sections, file structure, requirement coverage matrix                             |
+
+### Owner References GC Chain E2E Tests (MO-0036)
+
+| REQ-ID           | Requirement                                                        | Test Scenario            | Key Assertions                                                                                                      |
+|------------------|--------------------------------------------------------------------|--------------------------|---------------------------------------------------------------------------------------------------------------------|
+| REQ-OR-001       | Memcached CR with all features enabled                             | owner-references         | CR with monitoring, PDB, and NetworkPolicy enabled; Deployment reaches readyReplicas=2                              |
+| REQ-OR-002       | Deployment ownerReferences set correctly                           | owner-references         | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true |
+| REQ-OR-003       | Service ownerReferences set correctly                              | owner-references         | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true   |
+| REQ-OR-004       | PDB ownerReferences set correctly                                  | owner-references         | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
+| REQ-OR-005       | NetworkPolicy ownerReferences set correctly                        | owner-references         | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
+| REQ-OR-006       | ServiceMonitor ownerReferences set correctly                       | owner-references         | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
+| REQ-OR-007       | Single test with CR creation and 5 assertion steps                 | owner-references         | One chainsaw-test.yaml with create + 5 individual assertion steps; does NOT delete CR                               |
+| REQ-OR-008       | Documentation updated with owner-references test                   | (this document)          | File structure, test scenario section, requirement coverage matrix all include owner-references                      |
 
 ---
 

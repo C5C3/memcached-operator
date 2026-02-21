@@ -1,0 +1,21 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-owner-refs
+  ownerReferences:
+    - apiVersion: memcached.c5c3.io/v1alpha1
+      kind: Memcached
+      name: test-owner-refs
+      controller: true
+      blockOwnerDeletion: true
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: memcached
+      app.kubernetes.io/instance: test-owner-refs
+      app.kubernetes.io/managed-by: memcached-operator
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 11211

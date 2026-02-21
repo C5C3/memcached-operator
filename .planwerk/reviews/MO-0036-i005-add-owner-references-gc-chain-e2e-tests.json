@@ -1,0 +1,51 @@
+{
+  "feature_id": "MO-0036",
+  "title": "I005: Add owner references GC chain E2E tests",
+  "date": "2026-02-21",
+  "summary": "Adds a comprehensive Chainsaw E2E test (test/e2e/owner-references/) that validates ownerReferences on all 5 operator-managed child resources (Deployment, Service, PDB, NetworkPolicy, ServiceMonitor). The test creates a Memcached CR with all optional features enabled, then asserts each child resource has correct ownerReferences (kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true). Complements the existing cr-deletion test by validating the GC mechanism rather than the outcome. Documentation updated with file structure, test scenario, and requirement coverage matrix.",
+  "verdict": "APPROVED",
+  "tests_checklist": [
+    {"item": "E2E test files exist (chainsaw-test.yaml + 6 resource YAMLs)", "checked": true},
+    {"item": "All 5 resource types assert ownerReferences with correct fields", "checked": true},
+    {"item": "CR enables all optional features to produce all 5 resource types", "checked": true},
+    {"item": "Test does NOT delete CR (mechanism-only validation)", "checked": true},
+    {"item": "Test follows apply-then-assert pattern with separate assertion steps", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing Chainsaw test conventions (file naming, timeouts, structure)", "checked": true},
+    {"item": "CR YAML matches existing patterns (cr-deletion/00-memcached.yaml)", "checked": true},
+    {"item": "Assertion files use partial object matching (minimal, focused assertions)", "checked": true},
+    {"item": "Each assertion step is separate for precise failure identification", "checked": true},
+    {"item": "No unnecessary or duplicated files", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No secrets or credentials in test YAML files", "checked": true},
+    {"item": "Test uses minimal resource requests safe for kind clusters", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal — YAML-only, no Go code changes needed", "checked": true},
+    {"item": "Clear separation of concerns: owner-references tests mechanism, cr-deletion tests outcome", "checked": true},
+    {"item": "Test complements rather than duplicates existing cr-deletion test", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated assertion patterns — each file is unique per resource type", "checked": true},
+    {"item": "No over-engineering — assertions focus on ownerReferences with minimal additional fields", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Deployment assertion includes readyReplicas:2 to confirm stable state before other assertions", "checked": true},
+    {"item": "Separate assertion steps allow Chainsaw to report exactly which resource failed", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Timeouts match project defaults (apply:30s, assert:120s, error:30s)", "checked": true},
+    {"item": "Resource requests minimal enough for CI kind clusters", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "Minor: Service assertion (01-assert-service.yaml) could additionally assert port 11211 as specified in the plan (task 1.3), though this is already covered by other tests",
+    "Minor: NetworkPolicy assertion (01-assert-networkpolicy.yaml) could additionally assert ingress port 11211 as specified in the plan (task 1.5), though the network-policy test already validates this extensively",
+    "Minor: ServiceMonitor assertion (01-assert-servicemonitor.yaml) could additionally assert standard labels (app.kubernetes.io/name, instance, managed-by) as specified in the plan (task 1.6), matching the cr-deletion ServiceMonitor assertion pattern"
+  ],
+  "next_steps": []
+}

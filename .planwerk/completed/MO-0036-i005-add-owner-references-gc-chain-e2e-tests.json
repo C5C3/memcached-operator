@@ -2,8 +2,8 @@
   "feature_id": "MO-0036",
   "title": "I005: Add owner references GC chain E2E tests",
   "slug": "i005-add-owner-references-gc-chain-e2e-tests",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** testing\n**Priority:** medium\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 1 comprehensive Chainsaw E2E test that validates owner references on ALL operator-managed resources:\n\n**test/e2e/owner-references/**: Create a CR with monitoring + PDB + NetworkPolicy all enabled to maximize child resource creation. Explicitly assert `ownerReferences` on every child resource:\n- Deployment: ownerReference with correct owner UID, kind=Memcached, name matches CR\n- Service: same ownerReference assertions\n- PodDisruptionBudget: same ownerReference assertions\n- NetworkPolicy: same ownerReference assertions\n- ServiceMonitor: same ownerReference assertions\n\nThis validates the Kubernetes garbage collection chain — when the parent CR is deleted, all child resources must be cleaned up. The existing cr-deletion test verifies deletion happens, but this test explicitly verifies the mechanism (ownerReferences) is correctly set on creation.\n\n**Rationale:** Owner references are the foundation of Kubernetes garbage collection. If any child resource lacks correct ownerReferences, it becomes orphaned on CR deletion, leading to resource leaks. The existing cr-deletion test only checks the end result, not the mechanism. Explicit ownerReference validation catches bugs in new resource creation code paths before they cause orphaned resources in production.\n\n**Affected Areas:**\n- test/e2e/owner-references/chainsaw-test.yaml",
   "stories": [
@@ -271,6 +271,7 @@
       "description": "Create `test/e2e/owner-references/00-memcached.yaml` — a Memcached CR named `test-owner-refs` with monitoring enabled (serviceMonitor with additionalLabels), PDB enabled (minAvailable: 1), and NetworkPolicy enabled. Use minimal resource requests (cpu:50m, memory:64Mi) matching existing test patterns from cr-deletion/00-memcached.yaml. Set replicas: 2 to exercise PDB meaningfully.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-OR-001"
       ]
@@ -281,6 +282,7 @@
       "description": "Create `test/e2e/owner-references/01-assert-deployment.yaml` — partial Deployment object asserting metadata.ownerReferences array contains entry with kind: Memcached, apiVersion: memcached.c5c3.io/v1alpha1, name: test-owner-refs, controller: true, blockOwnerDeletion: true. Also assert replicas: 2 and readyReplicas: 2 in status to confirm Deployment is healthy.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-OR-002"
       ]
@@ -291,6 +293,7 @@
       "description": "Create `test/e2e/owner-references/01-assert-service.yaml` — partial Service object asserting metadata.ownerReferences with same fields as Deployment assertion. Also assert clusterIP: None and port 11211 to confirm correct Service type.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-OR-003"
       ]
@@ -301,6 +304,7 @@
       "description": "Create `test/e2e/owner-references/01-assert-pdb.yaml` — partial PodDisruptionBudget object asserting metadata.ownerReferences with same fields. Also assert spec.minAvailable: 1.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-OR-004"
       ]
@@ -311,6 +315,7 @@
       "description": "Create `test/e2e/owner-references/01-assert-networkpolicy.yaml` — partial NetworkPolicy object asserting metadata.ownerReferences with same fields. Also assert podSelector matchLabels and ingress port 11211.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-OR-005"
       ]
@@ -321,6 +326,7 @@
       "description": "Create `test/e2e/owner-references/01-assert-servicemonitor.yaml` — partial ServiceMonitor object asserting metadata.ownerReferences with same fields. Also assert standard labels (app.kubernetes.io/name: memcached, app.kubernetes.io/instance: test-owner-refs, app.kubernetes.io/managed-by: memcached-operator).",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-OR-006"
       ]
@@ -331,6 +337,7 @@
       "description": "Create `test/e2e/owner-references/chainsaw-test.yaml` with test name 'owner-references'. Steps: (1) apply 00-memcached.yaml, (2) assert Deployment ready (01-assert-deployment.yaml), (3) assert Service ownerReferences (01-assert-service.yaml), (4) assert PDB ownerReferences (01-assert-pdb.yaml), (5) assert NetworkPolicy ownerReferences (01-assert-networkpolicy.yaml), (6) assert ServiceMonitor ownerReferences (01-assert-servicemonitor.yaml). Use standard timeouts: apply:30s, assert:120s. Description references owner reference GC chain validation.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-OR-001",
         "REQ-OR-002",
@@ -347,6 +354,7 @@
       "description": "Update `docs/reference/backend/chainsaw-e2e-tests.md`: (1) Add owner-references/ to the file structure table with all 7 files listed, (2) Add a test scenario section documenting the test description, steps, and what each assertion validates (ownerReferences fields), (3) Update the requirement coverage matrix to include owner-references test covering GC chain validation for all 5 resource types. Follow the existing documentation format and heading structure.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-OR-008"
       ]
@@ -433,6 +441,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T09:07:48.923298"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T09:10:20.706642"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T09:24:07.937153"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T09:24:07.958518"
     }
   },
   "execution_history": [
@@ -446,6 +466,50 @@
           "name": "prepare",
           "duration": 236.98080134391785,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "4747c175-114f-4ee7-a3b0-745d1c808668",
+      "timestamp": "2026-02-21T09:19:53.024934",
+      "total_duration": 443.30045533180237,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (6 tasks)",
+          "duration": 104.77860641479492,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 138.2106592655182,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 21.25274157524109,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0036] Code Review",
+          "duration": 95.39567446708679,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0036] Improvements",
+          "duration": 34.406320095062256,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0036] Simplify",
+          "duration": 49.25645351409912,
+          "type": "simplify",
           "status": "done"
         }
       ]

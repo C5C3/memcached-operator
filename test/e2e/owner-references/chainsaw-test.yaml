@@ -1,0 +1,41 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: owner-references
+spec:
+  description: >
+    Verify that all child resources (Deployment, Service, PDB, NetworkPolicy,
+    ServiceMonitor) have correct ownerReferences pointing to the parent
+    Memcached CR with controller=true and blockOwnerDeletion=true,
+    ensuring the Kubernetes GC chain works correctly (REQ-OR-001 through
+    REQ-OR-006).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    error: 30s
+  steps:
+    - name: create-memcached-with-all-features
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-deployment-owner-reference
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: assert-service-owner-reference
+      try:
+        - assert:
+            file: 01-assert-service.yaml
+    - name: assert-pdb-owner-reference
+      try:
+        - assert:
+            file: 01-assert-pdb.yaml
+    - name: assert-networkpolicy-owner-reference
+      try:
+        - assert:
+            file: 01-assert-networkpolicy.yaml
+    - name: assert-servicemonitor-owner-reference
+      try:
+        - assert:
+            file: 01-assert-servicemonitor.yaml
