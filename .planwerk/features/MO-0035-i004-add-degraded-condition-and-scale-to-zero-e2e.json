@@ -1,0 +1,486 @@
+{
+  "feature_id": "MO-0035",
+  "title": "I004: Add degraded condition and scale-to-zero E2E tests",
+  "slug": "i004-add-degraded-condition-and-scale-to-zero-e2e",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 2 Chainsaw E2E tests covering operator status reporting and edge-case lifecycle:\n\n1. **test/e2e/status-degraded/**: Apply CR with a non-existent/invalid container image. Assert status conditions show `Degraded=True` and `Available=False`. This validates the operator's error detection and status reporting path.\n\n2. **test/e2e/scale-to-zero/**: Create a working CR, then patch `replicas: 0`. Assert Deployment has 0 replicas, status shows `readyReplicas: 0`, and condition `Available=False`. This validates the boundary case where the operator must correctly report unavailability.\n\nBoth tests validate status condition logic which is critical for monitoring/alerting integrations that depend on CR status.\n\n**Rationale:** Status conditions are the primary interface for external monitoring systems (Prometheus alerts, GitOps health checks). A bug in degraded/unavailable reporting would leave operators blind to cluster issues. Scale-to-zero is a valid operational pattern (cost saving) that must correctly report unavailability.\n\n**Affected Areas:**\n- test/e2e/status-degraded/chainsaw-test.yaml\n- test/e2e/scale-to-zero/chainsaw-test.yaml",
+  "stories": [
+    {
+      "title": "Operator reports Degraded status for invalid container image",
+      "role": "SRE/platform operator",
+      "want": "the Memcached CR status to show Degraded=True and Available=False when a non-existent container image is specified",
+      "so_that": "Prometheus alerts and GitOps health checks detect broken deployments automatically without manual inspection",
+      "criteria": [
+        "Applying a CR with image 'memcached:nonexistent-tag-does-not-exist' results in status condition Degraded=True with reason 'Degraded'",
+        "The same CR shows status condition Available=False with reason 'Unavailable'",
+        "status.readyReplicas is 0 because no pods can start with the invalid image",
+        "The Deployment is created but pods remain in ImagePullBackOff (operator reports degraded based on readyReplicas < desiredReplicas)"
+      ]
+    },
+    {
+      "title": "Operator reports unavailability when scaled to zero replicas",
+      "role": "SRE/platform operator",
+      "want": "the Memcached CR status to show Available=False and readyReplicas=0 when replicas is set to 0",
+      "so_that": "monitoring systems correctly detect that no instances are serving traffic, even when scale-to-zero is intentional",
+      "criteria": [
+        "Starting from a healthy CR with 1 replica and Available=True, patching replicas to 0 results in Deployment.spec.replicas=0",
+        "Status condition Available=False with reason 'Unavailable' (0 replicas cannot serve traffic)",
+        "Status condition Degraded=False with reason 'NotDegraded' (0 desired and 0 ready is not degraded)",
+        "status.readyReplicas is 0"
+      ]
+    },
+    {
+      "title": "E2E tests follow existing Chainsaw conventions",
+      "role": "developer",
+      "want": "the new E2E tests to follow the same Chainsaw patterns as all existing tests",
+      "so_that": "the test suite remains consistent and maintainable",
+      "criteria": [
+        "Test directories use kebab-case names: status-degraded, scale-to-zero",
+        "YAML files follow the numbered naming convention: 00-memcached.yaml, 01-assert-*.yaml, 02-patch-*.yaml, 03-assert-*.yaml",
+        "CR names follow the test-{name} convention: test-degraded, test-scale-zero",
+        "Chainsaw test definitions use v1alpha1 API with description referencing requirement IDs",
+        "Standard timeouts are used: apply=30s, assert=120s, delete=30s"
+      ]
+    },
+    {
+      "title": "Scale-to-zero controller logic correctly reports Available=False",
+      "role": "developer",
+      "want": "the computeConditions function to report Available=False when desiredReplicas is 0",
+      "so_that": "the E2E test can assert the correct behavior and monitoring integrations get accurate status",
+      "criteria": [
+        "computeConditions returns Available=False when desiredReplicas=0 and readyReplicas=0",
+        "computeConditions returns Degraded=False when desiredReplicas=0 (scale-to-zero is not degraded)",
+        "computeConditions returns Progressing=False when the Deployment exists and totalReplicas=0, updatedReplicas=0",
+        "Existing unit tests for computeConditions are updated to reflect the new Available behavior for 0 replicas",
+        "All existing E2E tests continue to pass (no regression)"
+      ]
+    },
+    {
+      "title": "E2E test documentation is updated with new test entries",
+      "role": "developer",
+      "want": "the Chainsaw E2E test reference documentation to include entries for status-degraded and scale-to-zero tests",
+      "so_that": "the test suite documentation remains complete and future contributors understand what is covered",
+      "criteria": [
+        "docs/reference/backend/chainsaw-e2e-tests.md includes a section for status-degraded test with step table",
+        "docs/reference/backend/chainsaw-e2e-tests.md includes a section for scale-to-zero test with step table",
+        "The Requirement Coverage Matrix is updated with MO-0035 entries",
+        "The file structure section lists the new test directories and their files",
+        "Known limitations section is updated if any new limitations exist"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-E2E-SD-001",
+      "description": "The status-degraded E2E test SHALL apply a Memcached CR with a non-existent container image and assert Degraded=True",
+      "priority": "SHALL",
+      "rationale": "Validates the operator correctly detects and reports when pods cannot start due to an invalid image, which is the primary degraded detection path",
+      "scenarios": [
+        {
+          "name": "Invalid image triggers Degraded=True",
+          "when": "a Memcached CR is created with image 'memcached:nonexistent-tag-does-not-exist' and replicas=1",
+          "then": "the CR status condition Degraded has status 'True' and reason 'Degraded'",
+          "and_then": [
+            "the condition message contains '0/1 replicas are ready'"
+          ]
+        },
+        {
+          "name": "Invalid image triggers Available=False",
+          "when": "a Memcached CR is created with a non-existent image",
+          "then": "the CR status condition Available has status 'False' and reason 'Unavailable'",
+          "and_then": [
+            "readyReplicas is 0"
+          ]
+        },
+        {
+          "name": "Deployment is created despite invalid image",
+          "when": "a Memcached CR is created with a non-existent image",
+          "then": "a Deployment resource exists with the specified image and correct labels",
+          "and_then": [
+            "the Deployment has replicas=1 in spec but readyReplicas=0 in status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-SD-002",
+      "description": "The status-degraded E2E test SHALL assert all three status conditions are set correctly for an invalid image scenario",
+      "priority": "SHALL",
+      "rationale": "Complete condition coverage ensures monitoring systems get a consistent view of the resource state",
+      "scenarios": [
+        {
+          "name": "All conditions present for degraded state",
+          "when": "a Memcached CR with an invalid image reaches degraded state",
+          "then": "status.conditions contains exactly three conditions: Available=False, Progressing=True, Degraded=True",
+          "and_then": [
+            "each condition has the correct reason string"
+          ]
+        },
+        {
+          "name": "Progressing is True for pending deployment",
+          "when": "a Memcached CR is created with a non-existent image and pods cannot become ready",
+          "then": "the Progressing condition has status 'True' because readyReplicas < desiredReplicas",
+          "and_then": [
+            "reason is 'Progressing'"
+          ]
+        },
+        {
+          "name": "readyReplicas is 0",
+          "when": "a Memcached CR is created with a non-existent image",
+          "then": "status.readyReplicas is 0",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-SZ-001",
+      "description": "The scale-to-zero E2E test SHALL create a healthy CR then patch replicas to 0 and assert Available=False",
+      "priority": "SHALL",
+      "rationale": "Scale-to-zero is a valid operational pattern; the operator must correctly report that no pods are serving traffic",
+      "scenarios": [
+        {
+          "name": "Healthy CR starts with Available=True",
+          "when": "a Memcached CR is created with replicas=1 and a valid image",
+          "then": "the CR status shows Available=True, readyReplicas=1",
+          "and_then": [
+            "the Deployment has 1 ready replica"
+          ]
+        },
+        {
+          "name": "Scale to zero makes Available=False",
+          "when": "the CR is patched with replicas=0",
+          "then": "the CR status condition Available has status 'False' and reason 'Unavailable'",
+          "and_then": [
+            "status.readyReplicas is 0"
+          ]
+        },
+        {
+          "name": "Scale to zero does not trigger Degraded",
+          "when": "the CR is patched with replicas=0 and 0 pods are running",
+          "then": "the CR status condition Degraded has status 'False' and reason 'NotDegraded'",
+          "and_then": [
+            "scale-to-zero is intentional, not an error condition"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-SZ-002",
+      "description": "The scale-to-zero E2E test SHALL verify the Deployment has 0 replicas after patching",
+      "priority": "SHALL",
+      "rationale": "The Deployment is the actual workload; verifying its spec confirms the operator translated the CR change",
+      "scenarios": [
+        {
+          "name": "Deployment scaled to 0",
+          "when": "the CR is patched with replicas=0",
+          "then": "the Deployment.spec.replicas is 0",
+          "and_then": [
+            "the Deployment has correct labels matching the CR"
+          ]
+        },
+        {
+          "name": "Deployment status reflects 0 replicas",
+          "when": "the Deployment has scaled down to 0 replicas",
+          "then": "Deployment.status.readyReplicas is 0 (or absent)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-CTL-SZ-001",
+      "description": "The computeConditions function SHALL return Available=False when desiredReplicas is 0",
+      "priority": "SHALL",
+      "rationale": "Current code returns Available=True for desiredReplicas==0, but 0 replicas cannot serve traffic. This must be corrected for the E2E test to pass and for correct monitoring semantics",
+      "scenarios": [
+        {
+          "name": "Zero replicas desired means not available",
+          "when": "computeConditions is called with desiredReplicas=0 and a Deployment with 0 ready replicas",
+          "then": "the Available condition has status=False and reason='Unavailable'",
+          "and_then": [
+            "the message indicates '0/0 replicas are ready'"
+          ]
+        },
+        {
+          "name": "Zero replicas desired is not degraded",
+          "when": "computeConditions is called with desiredReplicas=0",
+          "then": "the Degraded condition has status=False and reason='NotDegraded'",
+          "and_then": [
+            "degraded only applies when desiredReplicas > 0"
+          ]
+        },
+        {
+          "name": "Existing behavior unchanged for desiredReplicas > 0",
+          "when": "computeConditions is called with desiredReplicas=3 and readyReplicas=3",
+          "then": "Available=True, Degraded=False, Progressing=False (same as before)",
+          "and_then": [
+            "no regression in existing behavior"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-CONV-001",
+      "description": "Both new E2E tests SHALL follow the established Chainsaw file structure and naming conventions",
+      "priority": "SHALL",
+      "rationale": "Consistency across the test suite reduces cognitive load and maintenance burden",
+      "scenarios": [
+        {
+          "name": "File naming follows convention",
+          "when": "a new test directory is created",
+          "then": "files are named with numeric prefixes: 00-memcached.yaml, 01-assert-*.yaml, 02-patch-*.yaml, 03-assert-*.yaml",
+          "and_then": [
+            "the chainsaw-test.yaml uses apiVersion chainsaw.kyverno.io/v1alpha1"
+          ]
+        },
+        {
+          "name": "CR naming follows convention",
+          "when": "a test CR is created",
+          "then": "the CR name follows the pattern 'test-{test-name}' (e.g., test-degraded, test-scale-zero)",
+          "and_then": [
+            "labels include app.kubernetes.io/name, app.kubernetes.io/instance, app.kubernetes.io/managed-by"
+          ]
+        },
+        {
+          "name": "Timeouts match global configuration",
+          "when": "a chainsaw-test.yaml defines timeouts",
+          "then": "apply=30s, assert=120s, delete=30s are used consistently",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-SD-003",
+      "description": "The status-degraded test SHALL use a non-pullable image tag to reliably trigger degraded state",
+      "priority": "SHALL",
+      "rationale": "The test must reliably fail image pull without depending on external registries being unreachable. A tag like 'memcached:nonexistent-tag-does-not-exist' on the standard Docker Hub registry will fail ErrImagePull/ImagePullBackOff consistently",
+      "scenarios": [
+        {
+          "name": "Image tag does not exist",
+          "when": "a CR specifies image 'memcached:nonexistent-tag-does-not-exist'",
+          "then": "pods enter ImagePullBackOff state and readyReplicas remains 0",
+          "and_then": [
+            "the operator detects 0 ready replicas and sets Degraded=True"
+          ]
+        },
+        {
+          "name": "Test does not depend on external registry being down",
+          "when": "the test runs in any kind cluster with internet access",
+          "then": "the invalid tag consistently fails to pull because the tag does not exist",
+          "and_then": [
+            "the test is deterministic and not flaky"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-DOC-001",
+      "description": "The chainsaw-e2e-tests.md reference documentation SHALL be updated with entries for both new tests",
+      "priority": "SHALL",
+      "rationale": "The documentation is the single source of truth for understanding the E2E test suite",
+      "scenarios": [
+        {
+          "name": "Status-degraded test documented",
+          "when": "a developer reads chainsaw-e2e-tests.md",
+          "then": "there is a section for status-degraded with step table, CRD fields tested, and directory listing",
+          "and_then": [
+            "requirement IDs REQ-E2E-SD-001 through SD-003 are in the coverage matrix"
+          ]
+        },
+        {
+          "name": "Scale-to-zero test documented",
+          "when": "a developer reads chainsaw-e2e-tests.md",
+          "then": "there is a section for scale-to-zero with step table, CRD fields tested, and directory listing",
+          "and_then": [
+            "requirement IDs REQ-E2E-SZ-001 and SZ-002 are in the coverage matrix"
+          ]
+        },
+        {
+          "name": "Known limitations updated",
+          "when": "a developer reads the Known Limitations section",
+          "then": "any new limitations for the status-degraded or scale-to-zero tests are documented",
+          "and_then": [
+            "e.g., status-degraded depends on image pull failure timing within assert timeout"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Fix computeConditions to return Available=False when desiredReplicas=0 and update unit tests (REQ-CTL-SZ-001)",
+      "description": "In internal/controller/status.go, change line 59 from `available := readyReplicas > 0 || desiredReplicas == 0` to `available := readyReplicas > 0`. This means scale-to-zero correctly reports Available=False (no pods serving traffic). Update the existing unit tests in internal/controller/status_test.go to reflect the new behavior: the test case for desiredReplicas=0 should now expect Available=False instead of Available=True. Also update internal/controller/memcached_status_reconcile_test.go if it contains relevant test cases. Verify with `go test ./internal/controller/...`.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-CTL-SZ-001"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create status-degraded E2E test directory and chainsaw-test.yaml (REQ-E2E-SD-001, REQ-E2E-SD-002, REQ-E2E-CONV-001)",
+      "description": "Create test/e2e/status-degraded/chainsaw-test.yaml with 3 steps: (1) create-memcached-cr: apply 00-memcached.yaml, (2) assert-deployment-created: assert 01-assert-deployment.yaml, (3) assert-status-degraded: assert 01-assert-status.yaml. Use standard timeouts (apply:30s, assert:120s, delete:30s). Description references REQ-E2E-SD-001, REQ-E2E-SD-002.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-E2E-SD-001",
+        "REQ-E2E-SD-002",
+        "REQ-E2E-CONV-001"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Create status-degraded CR and assertion YAML files (REQ-E2E-SD-001, REQ-E2E-SD-003)",
+      "description": "Create three files in test/e2e/status-degraded/: (1) 00-memcached.yaml — Memcached CR named 'test-degraded' with replicas=1, image='memcached:nonexistent-tag-does-not-exist', resources (50m/64Mi requests, 100m/128Mi limits), memcached config (maxMemoryMB=64, threads=4). (2) 01-assert-deployment.yaml — Partial Deployment assertion with name 'test-degraded', correct labels, replicas=1, container image matches the invalid tag. (3) 01-assert-status.yaml — Partial Memcached CR assertion with readyReplicas=0, conditions: Available=False/Unavailable, Degraded=True/Degraded. Follow the exact YAML structure from test/e2e/basic-deployment/02-assert-status.yaml for the status assertion format.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-E2E-SD-001",
+        "REQ-E2E-SD-003"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Create scale-to-zero E2E test directory and chainsaw-test.yaml (REQ-E2E-SZ-001, REQ-E2E-SZ-002, REQ-E2E-CONV-001)",
+      "description": "Create test/e2e/scale-to-zero/chainsaw-test.yaml with 5 steps: (1) create-memcached-cr: apply 00-memcached.yaml, (2) assert-initial-status: assert 01-assert-status-available.yaml (Available=True, readyReplicas=1), (3) scale-to-zero: patch 02-patch-scale-zero.yaml, (4) assert-deployment-scaled: assert 03-assert-deployment.yaml (replicas=0), (5) assert-status-unavailable: assert 03-assert-status.yaml (Available=False, readyReplicas=0, Degraded=False). Use standard timeouts.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-E2E-SZ-001",
+        "REQ-E2E-SZ-002",
+        "REQ-E2E-CONV-001"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Create scale-to-zero CR, patch, and assertion YAML files (REQ-E2E-SZ-001, REQ-E2E-SZ-002)",
+      "description": "Create five files in test/e2e/scale-to-zero/: (1) 00-memcached.yaml — Memcached CR named 'test-scale-zero' with replicas=1, image='memcached:1.6', resources (50m/64Mi requests, 100m/128Mi limits), memcached config (maxMemoryMB=64, threads=4). (2) 01-assert-status-available.yaml — Partial Memcached CR assertion: readyReplicas=1, Available=True/Available, Progressing=False/ProgressingComplete, Degraded=False/NotDegraded. (3) 02-patch-scale-zero.yaml — Patch setting spec.replicas=0 on 'test-scale-zero'. (4) 03-assert-deployment.yaml — Partial Deployment assertion: name='test-scale-zero', spec.replicas=0, correct labels. (5) 03-assert-status.yaml — Partial Memcached CR assertion: readyReplicas=0, Available=False/Unavailable, Degraded=False/NotDegraded.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-E2E-SZ-001",
+        "REQ-E2E-SZ-002"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Update chainsaw-e2e-tests.md with status-degraded and scale-to-zero test documentation (REQ-DOC-001)",
+      "description": "Update docs/reference/backend/chainsaw-e2e-tests.md: (1) Add section '20. Status Degraded (MO-0035 REQ-E2E-SD-001, REQ-E2E-SD-002)' with directory, description, step table (create-memcached-cr, assert-deployment-created, assert-status-degraded), CRD fields tested (spec.image, status.conditions, status.readyReplicas). (2) Add section '21. Scale to Zero (MO-0035 REQ-E2E-SZ-001, REQ-E2E-SZ-002)' with directory, description, step table (create-memcached-cr, assert-initial-status, scale-to-zero, assert-deployment-scaled, assert-status-unavailable), CRD fields tested (spec.replicas, status.conditions, status.readyReplicas). (3) Add MO-0035 requirement coverage matrix rows. (4) Update file structure listing. (5) Add known limitation: status-degraded test timing depends on operator reconcile detecting 0 ready replicas within the 120s assert timeout; scale-to-zero depends on controller reporting Available=False for 0 desired replicas (controller fix in status.go). (6) Update overview paragraph to mention status degradation and scale-to-zero.",
+      "level": 4,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-DOC-001"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "test/e2e/status-degraded/chainsaw-test.yaml",
+      "test_function": "assert-status-degraded",
+      "story": "Operator reports Degraded status for invalid container image",
+      "expected": "Status conditions show Degraded=True with reason 'Degraded' and Available=False with reason 'Unavailable', readyReplicas=0",
+      "requirement_id": "REQ-E2E-SD-001"
+    },
+    {
+      "test_file": "test/e2e/status-degraded/chainsaw-test.yaml",
+      "test_function": "assert-deployment-created",
+      "story": "Operator reports Degraded status for invalid container image",
+      "expected": "Deployment exists with invalid image and correct labels despite pods not being ready",
+      "requirement_id": "REQ-E2E-SD-002"
+    },
+    {
+      "test_file": "test/e2e/scale-to-zero/chainsaw-test.yaml",
+      "test_function": "assert-initial-status",
+      "story": "Operator reports unavailability when scaled to zero replicas",
+      "expected": "Starting state has Available=True, readyReplicas=1 before scaling",
+      "requirement_id": "REQ-E2E-SZ-001"
+    },
+    {
+      "test_file": "test/e2e/scale-to-zero/chainsaw-test.yaml",
+      "test_function": "assert-status-unavailable",
+      "story": "Operator reports unavailability when scaled to zero replicas",
+      "expected": "After patching replicas=0: Available=False, Degraded=False, readyReplicas=0",
+      "requirement_id": "REQ-E2E-SZ-001"
+    },
+    {
+      "test_file": "test/e2e/scale-to-zero/chainsaw-test.yaml",
+      "test_function": "assert-deployment-scaled",
+      "story": "Operator reports unavailability when scaled to zero replicas",
+      "expected": "Deployment.spec.replicas is 0 after patching the CR",
+      "requirement_id": "REQ-E2E-SZ-002"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_ZeroDesiredReplicas",
+      "story": "Scale-to-zero controller logic correctly reports Available=False",
+      "expected": "computeConditions returns Available=False when desiredReplicas=0 and readyReplicas=0",
+      "requirement_id": "REQ-CTL-SZ-001"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_HealthyState (regression)",
+      "story": "Scale-to-zero controller logic correctly reports Available=False",
+      "expected": "Existing tests for desiredReplicas>0 scenarios continue to pass with no behavior change",
+      "requirement_id": "REQ-CTL-SZ-001"
+    },
+    {
+      "test_file": "test/e2e/status-degraded/chainsaw-test.yaml",
+      "test_function": "Full test scenario",
+      "story": "E2E tests follow existing Chainsaw conventions",
+      "expected": "Test uses v1alpha1 API, standard timeouts, numbered file convention, test-degraded CR name",
+      "requirement_id": "REQ-E2E-CONV-001"
+    },
+    {
+      "test_file": "test/e2e/scale-to-zero/chainsaw-test.yaml",
+      "test_function": "Full test scenario",
+      "story": "E2E tests follow existing Chainsaw conventions",
+      "expected": "Test uses v1alpha1 API, standard timeouts, numbered file convention, test-scale-zero CR name, apply-assert-patch-assert flow",
+      "requirement_id": "REQ-E2E-CONV-001"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "Controller fix: status.go line 59 changed from `available := readyReplicas > 0 || desiredReplicas == 0` to `available := readyReplicas > 0`; no other lines changed in status.go",
+    "Unit tests: All existing tests in status_test.go and memcached_status_reconcile_test.go pass after the controller change; test cases for 0 replicas updated to expect Available=False",
+    "status-degraded test: chainsaw-test.yaml has 3 steps (apply, assert-deployment, assert-status); 00-memcached.yaml uses 'memcached:nonexistent-tag-does-not-exist'; 01-assert-status.yaml asserts Degraded=True, Available=False, readyReplicas=0",
+    "scale-to-zero test: chainsaw-test.yaml has 5 steps (apply, assert-initial, patch, assert-deployment, assert-status); 02-patch-scale-zero.yaml patches replicas=0; 03-assert-status.yaml asserts Available=False, Degraded=False, readyReplicas=0",
+    "Conventions: All YAML files follow numbered naming, CR names are test-degraded and test-scale-zero, standard labels used, timeouts match existing tests (apply=30s, assert=120s, delete=30s)",
+    "Documentation: chainsaw-e2e-tests.md updated with sections for both tests, file structure listing, MO-0035 requirement coverage matrix entries, and any new known limitations",
+    "No scope creep: Only status.go controller logic changed (1 line), only test/e2e/status-degraded/ and test/e2e/scale-to-zero/ directories created, only docs/reference/backend/chainsaw-e2e-tests.md documentation updated",
+    "go vet and existing go tests pass: `go vet ./...` and `go test ./internal/controller/...` succeed after the controller change"
+  ],
+  "implementation_notes": "The feature requires 2 E2E tests plus a small controller fix:\n\n**Controller change (prerequisite):** In `internal/controller/status.go`, the `computeConditions` function currently has `available := readyReplicas > 0 || desiredReplicas == 0` which means scale-to-zero reports Available=True. The fix is to change this to `available := readyReplicas > 0`. This correctly means: Available=True only when there are actually ready pods serving traffic. Scale-to-zero (0 desired, 0 ready) → Available=False. Normal operation (3 desired, 3 ready) → Available=True. Degraded state (1 desired, 0 ready) → Available=False. The Degraded condition already correctly handles 0 desired: `degraded := desiredReplicas > 0 && readyReplicas < desiredReplicas` returns false when desiredReplicas=0.\n\n**Status-degraded test:** Single-phase test — apply a CR with a bad image, wait for the operator to reconcile, assert the status conditions. The operator will create the Deployment, but pods will fail to pull the image. The Deployment.status.readyReplicas will be 0, triggering Degraded=True and Available=False in the operator's status computation.\n\n**Scale-to-zero test:** Two-phase test — first apply a healthy CR and assert it reaches Available=True, then patch replicas to 0 and assert it transitions to Available=False with readyReplicas=0 and Degraded=False.\n\n**Potential pitfall:** The status-degraded test depends on the operator requeuing and detecting the degraded state within the 120s assert timeout. Since the operator watches Deployment status changes, this should trigger quickly once the Deployment controller reports 0 ready replicas.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:27:34.055156"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:41:34.571951"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:46:35.229364"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "b46b2b1e-e5ac-4f82-a335-078032a19214",
+      "timestamp": "2026-02-21T08:46:35.229403",
+      "total_duration": 296.8471941947937,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 296.8471941947937,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
