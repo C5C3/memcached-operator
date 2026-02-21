@@ -1,0 +1,448 @@
+{
+  "feature_id": "MO-0034",
+  "title": "I003: Add deployment config E2E tests for PDB and args",
+  "slug": "i003-add-deployment-config-e2e-tests-for-pdb-and",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 5 Chainsaw E2E tests covering Deployment-level configuration features:\n\n1. **test/e2e/pdb-max-unavailable/**: Create PDB with `maxUnavailable: 1` (vs existing test that uses `minAvailable`). Assert PDB spec has `maxUnavailable` field set correctly.\n\n2. **test/e2e/verbosity-and-extra-args/**: Test `verbosity: 1` produces `-v` arg, `verbosity: 2` produces `-vv` arg, and `extraArgs: [\"-o\", \"modern\"]` appears in container args.\n\n3. **test/e2e/custom-exporter-image/**: Enable monitoring with custom `exporterImage`, assert exporter sidecar container uses the specified image instead of default.\n\n4. **test/e2e/security-contexts/**: Apply CR with `podSecurityContext` (runAsNonRoot, fsGroup) and `containerSecurityContext` (readOnlyRootFilesystem, allowPrivilegeEscalation: false). Assert both contexts propagated correctly to Deployment pod/container specs.\n\n5. **test/e2e/anti-affinity-hard/**: Apply CR with `antiAffinityPreset: hard`. Assert Deployment has `requiredDuringSchedulingIgnoredDuringExecution` pod anti-affinity rule (vs soft/preferred).\n\nAll tests are straightforward apply-and-assert patterns on Deployment spec fields.\n\n**Rationale:** These 5 features each modify Deployment spec fields and currently have zero E2E validation. Security contexts and anti-affinity are production-critical for hardened deployments. Verbosity/extraArgs bugs would silently misconfigure Memcached. PDB maxUnavailable is a distinct code path from the tested minAvailable variant.\n\n**Affected Areas:**\n- test/e2e/pdb-max-unavailable/chainsaw-test.yaml\n- test/e2e/verbosity-and-extra-args/chainsaw-test.yaml\n- test/e2e/custom-exporter-image/chainsaw-test.yaml\n- test/e2e/security-contexts/chainsaw-test.yaml\n- test/e2e/anti-affinity-hard/chainsaw-test.yaml",
+  "stories": [
+    {
+      "title": "Operator validates PDB maxUnavailable configuration end-to-end",
+      "role": "platform engineer",
+      "want": "to configure PDB with maxUnavailable instead of minAvailable and have the operator create the PDB correctly",
+      "so_that": "I can use either PDB strategy depending on my availability requirements",
+      "criteria": [
+        "Memcached CR with `highAvailability.podDisruptionBudget.maxUnavailable: 1` creates a PDB with `spec.maxUnavailable: 1`",
+        "The PDB does NOT have a `minAvailable` field when `maxUnavailable` is set",
+        "PDB has correct labels: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator",
+        "PDB selector matchLabels match the Deployment pod labels"
+      ]
+    },
+    {
+      "title": "Operator propagates verbosity and extraArgs to memcached container",
+      "role": "platform engineer",
+      "want": "to configure memcached verbosity levels and extra arguments via the CR and have them appear in container args",
+      "so_that": "I can debug memcached issues with verbose logging and pass custom flags without modifying the operator",
+      "criteria": [
+        "CR with `memcached.verbosity: 1` produces container arg `-v` after the standard args",
+        "Patching to `memcached.verbosity: 2` produces container arg `-vv` instead of `-v`",
+        "CR with `memcached.extraArgs: [\"-o\", \"modern\"]` appends `-o` and `modern` to the end of container args",
+        "Standard args (-m, -c, -t, -I) remain unchanged when verbosity and extraArgs are set"
+      ]
+    },
+    {
+      "title": "Operator uses custom exporter image when specified",
+      "role": "platform engineer",
+      "want": "to override the default memcached-exporter image with a custom one",
+      "so_that": "I can use my organization's private registry or a specific exporter version",
+      "criteria": [
+        "CR with `monitoring.enabled: true` and `monitoring.exporterImage: quay.io/example/memcached-exporter:v0.15.0` creates exporter sidecar with that image",
+        "The exporter container name is `exporter` and has metrics port 9150",
+        "Default image `prom/memcached-exporter:v0.15.4` is NOT used when custom image is specified"
+      ]
+    },
+    {
+      "title": "Operator propagates pod and container security contexts to Deployment",
+      "role": "security engineer",
+      "want": "to set podSecurityContext and containerSecurityContext on the Memcached CR and have them propagated to the Deployment",
+      "so_that": "I can enforce security policies like non-root execution and read-only filesystems",
+      "criteria": [
+        "CR with `security.podSecurityContext.runAsNonRoot: true` and `security.podSecurityContext.fsGroup: 1000` sets both fields on the Deployment pod spec",
+        "CR with `security.containerSecurityContext.readOnlyRootFilesystem: true` and `security.containerSecurityContext.allowPrivilegeEscalation: false` sets both fields on the memcached container",
+        "Container security context is also applied to the exporter sidecar when monitoring is enabled",
+        "Deployment becomes ready with the security contexts applied"
+      ]
+    },
+    {
+      "title": "Operator configures hard anti-affinity on Deployment",
+      "role": "platform engineer",
+      "want": "to set antiAffinityPreset to hard and have the Deployment use requiredDuringSchedulingIgnoredDuringExecution",
+      "so_that": "I can guarantee memcached pods are spread across different nodes for high availability",
+      "criteria": [
+        "CR with `highAvailability.antiAffinityPreset: hard` sets `requiredDuringSchedulingIgnoredDuringExecution` on the Deployment pod anti-affinity",
+        "The anti-affinity rule uses topologyKey `kubernetes.io/hostname`",
+        "The anti-affinity labelSelector matches `app.kubernetes.io/name: memcached` and `app.kubernetes.io/instance: <cr-name>`",
+        "No `preferredDuringSchedulingIgnoredDuringExecution` rules are present (only hard/required)"
+      ]
+    },
+    {
+      "title": "E2E test documentation is updated with new test scenarios",
+      "role": "developer",
+      "want": "the Chainsaw E2E test reference documentation to include all 5 new test scenarios",
+      "so_that": "other developers can understand what is tested and how to run/extend the tests",
+      "criteria": [
+        "docs/reference/backend/chainsaw-e2e-tests.md includes entries for all 5 new test directories",
+        "Each entry describes the test steps and what is asserted",
+        "The requirement coverage matrix is updated to reflect new coverage"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL create a PDB with maxUnavailable when configured in the CR, with minAvailable absent",
+      "priority": "SHALL",
+      "rationale": "maxUnavailable is a distinct PDB strategy from minAvailable; the operator must support both code paths correctly",
+      "scenarios": [
+        {
+          "name": "PDB created with maxUnavailable",
+          "when": "a Memcached CR is applied with highAvailability.podDisruptionBudget.enabled=true and maxUnavailable=1",
+          "then": "the PDB spec has maxUnavailable=1 and minAvailable is absent",
+          "and_then": [
+            "PDB has correct labels and selector matching pod labels"
+          ]
+        },
+        {
+          "name": "PDB does not include minAvailable when maxUnavailable is set",
+          "when": "the PDB is created with maxUnavailable configuration",
+          "then": "the PDB spec does NOT contain a minAvailable field",
+          "and_then": [
+            "only maxUnavailable is present in the PDB spec"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The operator SHALL translate verbosity level 1 to -v and level 2 to -vv in memcached container args",
+      "priority": "SHALL",
+      "rationale": "Verbosity flags are critical for debugging; incorrect mapping would silently misconfigure memcached logging",
+      "scenarios": [
+        {
+          "name": "Verbosity 1 produces -v flag",
+          "when": "a Memcached CR is applied with memcached.verbosity=1",
+          "then": "the memcached container args contain -v after the standard args (-m, -c, -t, -I)",
+          "and_then": [
+            "standard args remain unchanged"
+          ]
+        },
+        {
+          "name": "Verbosity 2 produces -vv flag",
+          "when": "the Memcached CR is patched to memcached.verbosity=2",
+          "then": "the memcached container args contain -vv (not -v)",
+          "and_then": [
+            "standard args remain unchanged"
+          ]
+        },
+        {
+          "name": "Default verbosity 0 has no verbosity flag",
+          "when": "a Memcached CR has default verbosity (0)",
+          "then": "no -v or -vv flag appears in container args",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The operator SHALL append extraArgs to the end of memcached container arguments",
+      "priority": "SHALL",
+      "rationale": "extraArgs allows users to pass custom memcached flags without operator changes; they must appear after built-in args",
+      "scenarios": [
+        {
+          "name": "ExtraArgs appended to container args",
+          "when": "a Memcached CR is applied with memcached.extraArgs=[\"-o\", \"modern\"]",
+          "then": "the container args end with -o and modern after all standard and verbosity args",
+          "and_then": [
+            "standard args (-m, -c, -t, -I) precede extraArgs"
+          ]
+        },
+        {
+          "name": "ExtraArgs and verbosity coexist",
+          "when": "both verbosity and extraArgs are set",
+          "then": "verbosity flag appears before extraArgs in the args list",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The operator SHALL use a custom exporter image when monitoring.exporterImage is specified",
+      "priority": "SHALL",
+      "rationale": "Organizations need to use private registries or specific exporter versions",
+      "scenarios": [
+        {
+          "name": "Custom exporter image used",
+          "when": "a Memcached CR has monitoring.enabled=true and monitoring.exporterImage set to a custom image",
+          "then": "the exporter sidecar container uses the custom image, not the default prom/memcached-exporter:v0.15.4",
+          "and_then": [
+            "exporter container has name 'exporter' and metrics port 9150"
+          ]
+        },
+        {
+          "name": "Exporter sidecar has correct ports",
+          "when": "monitoring is enabled with custom image",
+          "then": "the exporter container exposes port 9150 named 'metrics' with TCP protocol",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The operator SHALL propagate podSecurityContext to the Deployment pod spec",
+      "priority": "SHALL",
+      "rationale": "Pod security contexts are production-critical for hardened deployments and compliance",
+      "scenarios": [
+        {
+          "name": "Pod security context propagated",
+          "when": "a Memcached CR is applied with security.podSecurityContext.runAsNonRoot=true and fsGroup=1000",
+          "then": "the Deployment pod spec has securityContext.runAsNonRoot=true and securityContext.fsGroup=1000",
+          "and_then": [
+            "Deployment becomes ready with security context applied"
+          ]
+        },
+        {
+          "name": "No pod security context when not specified",
+          "when": "a Memcached CR has no security.podSecurityContext",
+          "then": "the Deployment pod spec has no securityContext set",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The operator SHALL propagate containerSecurityContext to both memcached and exporter containers",
+      "priority": "SHALL",
+      "rationale": "Container security contexts enforce least-privilege for all containers in the pod",
+      "scenarios": [
+        {
+          "name": "Container security context on memcached container",
+          "when": "a Memcached CR is applied with security.containerSecurityContext.readOnlyRootFilesystem=true and allowPrivilegeEscalation=false",
+          "then": "the memcached container has securityContext with those fields set",
+          "and_then": []
+        },
+        {
+          "name": "Container security context on exporter sidecar",
+          "when": "monitoring is enabled alongside containerSecurityContext",
+          "then": "the exporter container also has the same containerSecurityContext applied",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator SHALL configure requiredDuringSchedulingIgnoredDuringExecution when antiAffinityPreset is hard",
+      "priority": "SHALL",
+      "rationale": "Hard anti-affinity guarantees pod distribution across nodes, critical for HA production deployments",
+      "scenarios": [
+        {
+          "name": "Hard anti-affinity creates required scheduling rule",
+          "when": "a Memcached CR is applied with highAvailability.antiAffinityPreset=hard",
+          "then": "the Deployment pod spec has affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution with topologyKey kubernetes.io/hostname",
+          "and_then": [
+            "labelSelector matches app.kubernetes.io/name=memcached and app.kubernetes.io/instance=<cr-name>"
+          ]
+        },
+        {
+          "name": "No preferred rules present with hard preset",
+          "when": "antiAffinityPreset is set to hard",
+          "then": "preferredDuringSchedulingIgnoredDuringExecution is empty or absent",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The E2E test documentation SHALL be updated to cover all 5 new test scenarios",
+      "priority": "SHALL",
+      "rationale": "Documentation must stay in sync with test coverage for developer onboarding and maintenance",
+      "scenarios": [
+        {
+          "name": "Documentation includes all new tests",
+          "when": "a developer reads docs/reference/backend/chainsaw-e2e-tests.md",
+          "then": "entries exist for pdb-max-unavailable, verbosity-and-extra-args, custom-exporter-image, security-contexts, and anti-affinity-hard",
+          "and_then": [
+            "each entry describes the test steps and assertions"
+          ]
+        },
+        {
+          "name": "Requirement coverage matrix updated",
+          "when": "reviewing the coverage matrix in the documentation",
+          "then": "new tests are mapped to the requirements they validate",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create PDB maxUnavailable E2E test (REQ-001)",
+      "description": "Create test/e2e/pdb-max-unavailable/ directory with: 00-memcached.yaml (CR with replicas=3, highAvailability.podDisruptionBudget.enabled=true, maxUnavailable=1), 01-assert-deployment.yaml (Deployment ready with 3 replicas), 01-assert-pdb.yaml (PDB with maxUnavailable=1, no minAvailable, correct labels and selector), chainsaw-test.yaml (steps: apply CR, assert deployment ready, assert PDB). Follow exact pattern from test/e2e/pdb-creation/.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create verbosity and extraArgs E2E test (REQ-002, REQ-003)",
+      "description": "Create test/e2e/verbosity-and-extra-args/ directory with: 00-memcached.yaml (CR with verbosity=1, extraArgs=[\"-o\", \"modern\"]), 01-assert-deployment.yaml (assert container args contain -v, -o, modern after standard args -m 64 -c 1024 -t 4 -I 1m), 02-patch-verbosity.yaml (patch verbosity to 2), 03-assert-deployment.yaml (assert args now have -vv instead of -v, extraArgs still present), chainsaw-test.yaml (steps: apply, assert v1 args, patch verbosity, assert v2 args). Follow pattern from test/e2e/configuration-changes/.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create custom exporter image E2E test (REQ-004)",
+      "description": "Create test/e2e/custom-exporter-image/ directory with: 00-memcached.yaml (CR with monitoring.enabled=true, monitoring.exporterImage='quay.io/example/memcached-exporter:v0.15.0', monitoring.serviceMonitor with additionalLabels), 01-assert-deployment.yaml (assert exporter container has image quay.io/example/memcached-exporter:v0.15.0, name 'exporter', metrics port 9150), chainsaw-test.yaml (steps: apply, assert deployment with custom image). Follow pattern from test/e2e/monitoring-toggle/.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Create security contexts E2E test (REQ-005, REQ-006)",
+      "description": "Create test/e2e/security-contexts/ directory with: 00-memcached.yaml (CR with security.podSecurityContext: runAsNonRoot=true, fsGroup=1000; security.containerSecurityContext: readOnlyRootFilesystem=true, allowPrivilegeEscalation=false; monitoring.enabled=true to verify exporter also gets containerSecurityContext), 01-assert-deployment.yaml (assert pod spec has securityContext with runAsNonRoot and fsGroup; memcached container has securityContext with readOnlyRootFilesystem and allowPrivilegeEscalation; exporter container also has same securityContext), chainsaw-test.yaml (steps: apply, assert deployment). Follow pattern from test/e2e/basic-deployment/.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Create hard anti-affinity E2E test (REQ-007)",
+      "description": "Create test/e2e/anti-affinity-hard/ directory with: 00-memcached.yaml (CR with replicas=2, highAvailability.antiAffinityPreset='hard'), 01-assert-deployment.yaml (assert Deployment has affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution with topologyKey 'kubernetes.io/hostname' and labelSelector matching app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>), chainsaw-test.yaml (steps: apply, assert deployment with anti-affinity). Follow pattern from test/e2e/basic-deployment/.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Update E2E test documentation with 5 new test scenarios (REQ-008)",
+      "description": "Update docs/reference/backend/chainsaw-e2e-tests.md to add entries for all 5 new tests: pdb-max-unavailable, verbosity-and-extra-args, custom-exporter-image, security-contexts, anti-affinity-hard. Each entry must describe the test flow (apply/assert/patch steps) and what is validated. Update the requirement coverage matrix and the file structure section. Follow the existing documentation format.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "test/e2e/pdb-max-unavailable/chainsaw-test.yaml",
+      "test_function": "pdb-max-unavailable",
+      "story": "Operator validates PDB maxUnavailable configuration end-to-end",
+      "expected": "PDB created with maxUnavailable=1, no minAvailable, correct labels and selector",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "test/e2e/pdb-max-unavailable/01-assert-pdb.yaml",
+      "test_function": "assert-pdb-max-unavailable-spec",
+      "story": "Operator validates PDB maxUnavailable configuration end-to-end",
+      "expected": "PDB spec has maxUnavailable: 1 and does not have minAvailable",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "test/e2e/verbosity-and-extra-args/chainsaw-test.yaml",
+      "test_function": "verbosity-and-extra-args",
+      "story": "Operator propagates verbosity and extraArgs to memcached container",
+      "expected": "Container args include -v with verbosity=1 and -o modern from extraArgs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "test/e2e/verbosity-and-extra-args/03-assert-deployment.yaml",
+      "test_function": "assert-verbosity-2-args",
+      "story": "Operator propagates verbosity and extraArgs to memcached container",
+      "expected": "After patching to verbosity=2, container args include -vv (not -v) and extraArgs still present",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "test/e2e/custom-exporter-image/chainsaw-test.yaml",
+      "test_function": "custom-exporter-image",
+      "story": "Operator uses custom exporter image when specified",
+      "expected": "Exporter sidecar uses custom image quay.io/example/memcached-exporter:v0.15.0 instead of default",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "test/e2e/custom-exporter-image/01-assert-deployment.yaml",
+      "test_function": "assert-custom-exporter-image",
+      "story": "Operator uses custom exporter image when specified",
+      "expected": "Exporter container image is quay.io/example/memcached-exporter:v0.15.0 with metrics port 9150",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "test/e2e/security-contexts/chainsaw-test.yaml",
+      "test_function": "security-contexts",
+      "story": "Operator propagates pod and container security contexts to Deployment",
+      "expected": "Pod securityContext has runAsNonRoot and fsGroup; container securityContext has readOnlyRootFilesystem and allowPrivilegeEscalation=false",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "test/e2e/security-contexts/01-assert-deployment.yaml",
+      "test_function": "assert-security-contexts-on-both-containers",
+      "story": "Operator propagates pod and container security contexts to Deployment",
+      "expected": "Both memcached and exporter containers have containerSecurityContext applied; pod has podSecurityContext",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "test/e2e/anti-affinity-hard/chainsaw-test.yaml",
+      "test_function": "anti-affinity-hard",
+      "story": "Operator configures hard anti-affinity on Deployment",
+      "expected": "Deployment has requiredDuringSchedulingIgnoredDuringExecution with topologyKey kubernetes.io/hostname",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "test/e2e/anti-affinity-hard/01-assert-deployment.yaml",
+      "test_function": "assert-hard-anti-affinity-rule",
+      "story": "Operator configures hard anti-affinity on Deployment",
+      "expected": "Anti-affinity labelSelector matches app.kubernetes.io/name=memcached and instance label",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 5 Chainsaw E2E tests follow the exact file structure and naming conventions of existing tests (00-memcached.yaml, 01-assert-*.yaml, chainsaw-test.yaml)",
+    "All chainsaw-test.yaml files use the standard timeouts: apply=30s, assert=120s, delete=30s",
+    "PDB maxUnavailable assertion explicitly verifies maxUnavailable=1 is present and minAvailable is absent",
+    "Verbosity test covers both verbosity=1 (-v) and verbosity=2 (-vv) via apply-assert-patch-assert pattern",
+    "Security contexts test validates propagation to BOTH memcached and exporter containers (monitoring enabled)",
+    "Anti-affinity test asserts requiredDuringSchedulingIgnoredDuringExecution with correct topologyKey and labelSelector",
+    "All Memcached CRs use the standard apiVersion memcached.c5c3.io/v1alpha1 and include resource requests/limits",
+    "All assertions use partial object matching — only asserting fields relevant to the test, not full Deployment spec",
+    "Documentation in docs/reference/backend/chainsaw-e2e-tests.md is updated with all 5 new test scenarios",
+    "CR names follow the test-<feature> convention (e.g., test-pdb-maxunavail, test-verbosity, test-custom-exporter, test-security-ctx, test-anti-affinity)"
+  ],
+  "implementation_notes": "All 5 tests follow the straightforward apply-and-assert Chainsaw pattern already established in the codebase.\n\n**Patterns to follow:**\n- test/e2e/pdb-creation/ for PDB maxUnavailable test structure\n- test/e2e/configuration-changes/ for the patch-and-reassert pattern (verbosity test)\n- test/e2e/monitoring-toggle/ for exporter sidecar assertion patterns\n- test/e2e/basic-deployment/ for simple deployment assertion patterns\n\n**Key implementation details:**\n- PDB maxUnavailable: The operator's constructPDB (internal/controller/pdb.go:24-38) uses a switch statement — when maxUnavailable is set, minAvailable is explicitly cleared. The assertion YAML should only have maxUnavailable in spec.\n- Verbosity mapping: deployment.go:62-68 maps verbosity 1→-v, 2→-vv. Args order is: standard (-m, -c, -t, -I), then verbosity, then SASL/TLS, then extraArgs.\n- ExtraArgs: deployment.go:87-90 appends extraArgs at the very end of container args.\n- Custom exporter image: deployment.go:187-190 checks monitoring.ExporterImage pointer.\n- Security contexts: deployment.go:297-311 passes through directly from CR spec. Container security context is applied to BOTH memcached (line 381) and exporter (line 406) containers.\n- Anti-affinity hard: deployment.go:124-134 creates RequiredDuringSchedulingIgnoredDuringExecution with kubernetes.io/hostname topologyKey.\n\n**CR naming:** Use descriptive test- prefixed names: test-pdb-maxunavail, test-verbosity, test-custom-exporter, test-security-ctx, test-anti-affinity.\n\n**Standard labels** on all assertions: app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator.\n\n**Security contexts test** must enable monitoring to verify containerSecurityContext propagates to the exporter sidecar (line 406 in deployment.go).",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:27:34.054601"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:12:22.479263"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:18:40.368972"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "695c39b7-c4ec-4386-9064-cfa4e43f3e97",
+      "timestamp": "2026-02-21T08:18:40.368999",
+      "total_duration": 374.4775149822235,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 374.4775149822235,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
