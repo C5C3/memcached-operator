@@ -4,7 +4,8 @@ Reference documentation for the Kyverno Chainsaw end-to-end test suite that
 validates the Memcached operator against a real kind cluster, covering
 deployment, scaling, configuration changes, monitoring, PDB management,
 graceful rolling updates, webhook validation, garbage collection, SASL
-authentication, TLS encryption, and mutual TLS (mTLS).
+authentication, TLS encryption, mutual TLS (mTLS), NetworkPolicy lifecycle,
+and Service annotation propagation.
 
 **Source**: `test/e2e/`
 
@@ -192,6 +193,27 @@ test/e2e/
 │   ├── 02-assert-deployment.yaml   # mTLS volume (ca.crt), args (ssl_ca_cert)
 │   ├── 02-assert-service.yaml      # Service TLS port assertion
 │   └── 03-assert-status.yaml       # Status condition assertions
+├── network-policy/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with networkPolicy.enabled: true
+│   ├── 01-assert-deployment.yaml   # Deployment ready assertion
+│   ├── 01-assert-networkpolicy.yaml # NetworkPolicy with podSelector, port 11211
+│   ├── 02-patch-allowed-sources.yaml # Patch allowedSources with podSelector
+│   ├── 03-assert-networkpolicy-allowed-sources.yaml # NetworkPolicy with from peer
+│   ├── 04-cert-manager.yaml        # Self-signed Issuer + Certificate
+│   ├── 04-assert-certificate-ready.yaml # Certificate Ready=True assertion
+│   ├── 05-patch-enable-tls-monitoring.yaml # Enable TLS and monitoring
+│   ├── 06-assert-networkpolicy-all-ports.yaml # Ports 11211, 11212, 9150
+│   ├── 07-patch-disable-networkpolicy.yaml # Disable networkPolicy
+│   └── 08-error-networkpolicy-gone.yaml # NetworkPolicy deleted assertion
+├── service-annotations/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with service.annotations
+│   ├── 01-assert-service.yaml      # Service with custom annotations
+│   ├── 02-patch-update-annotations.yaml # Patch with new annotations
+│   ├── 03-assert-service-updated.yaml # Service with updated annotations
+│   ├── 04-patch-remove-annotations.yaml # Remove annotations (service: null)
+│   └── 05-assert-service-no-annotations.yaml # Service without annotations
 └── resources/
     ├── memcached-minimal.yaml
     ├── assert-deployment.yaml
@@ -415,6 +437,58 @@ verification.
 `tls.key`, `ca.crt`) instead of two, and the container args include an
 additional `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`.
 
+### 12. NetworkPolicy Lifecycle (MO-0033 REQ-E2E-NP-001 through NP-005)
+
+**Directory**: `test/e2e/network-policy/`
+
+Verifies the full NetworkPolicy lifecycle: creation with correct podSelector and
+ingress port 11211, allowedSources propagation, port adaptation when TLS and
+monitoring are enabled (11211, 11212, 9150), and deletion when networkPolicy is
+disabled.
+
+| Step                              | Operation                                        | Assertion                                                                                         |
+|-----------------------------------|--------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| create-memcached-with-networkpolicy | `apply` 00-memcached.yaml                      | CR with `security.networkPolicy.enabled: true` (`test-netpol`)                                    |
+| assert-deployment-ready           | `assert` 01-assert-deployment.yaml               | Deployment with correct labels                                                                    |
+| assert-networkpolicy-created      | `assert` 01-assert-networkpolicy.yaml            | NetworkPolicy with podSelector matching operator labels, policyTypes: [Ingress], port 11211/TCP   |
+| patch-allowed-sources             | `patch` 02-patch-allowed-sources.yaml            | Add `allowedSources` with podSelector `app: allowed-client`                                       |
+| assert-networkpolicy-allowed-sources | `assert` 03-assert-networkpolicy-allowed-sources.yaml | NetworkPolicy ingress `from` field contains podSelector with `app: allowed-client`             |
+| create-cert-manager-resources     | `apply` 04-cert-manager.yaml                     | Self-signed Issuer + Certificate (secretName: `test-netpol-certs`)                                |
+| assert-certificate-ready          | `assert` 04-assert-certificate-ready.yaml        | Certificate status Ready=True                                                                     |
+| patch-enable-tls-monitoring       | `patch` 05-patch-enable-tls-monitoring.yaml      | Enable TLS (`certificateSecretRef.name: test-netpol-certs`) and monitoring                        |
+| assert-networkpolicy-all-ports    | `assert` 06-assert-networkpolicy-all-ports.yaml  | NetworkPolicy ingress ports: 11211/TCP, 11212/TCP, 9150/TCP; `from` peer preserved                |
+| disable-networkpolicy             | `patch` 07-patch-disable-networkpolicy.yaml      | Patch `security.networkPolicy.enabled: false`                                                     |
+| assert-networkpolicy-deleted      | `error` 08-error-networkpolicy-gone.yaml         | NetworkPolicy resource no longer exists                                                           |
+
+**Prerequisite**: cert-manager must be installed in the cluster (required for the
+TLS port adaptation step).
+
+**CRD fields tested**:
+- `spec.security.networkPolicy.enabled` — Enables/disables the NetworkPolicy
+- `spec.security.networkPolicy.allowedSources` — Configures ingress `from` peers
+- `spec.security.tls.enabled` — Adds port 11212 to the NetworkPolicy
+- `spec.monitoring.enabled` — Adds port 9150 to the NetworkPolicy
+
+### 13. Service Annotations (MO-0033 REQ-E2E-SA-001, REQ-E2E-SA-002)
+
+**Directory**: `test/e2e/service-annotations/`
+
+Verifies that custom annotations defined in `spec.service.annotations` are
+propagated to the managed headless Service, that updating annotations propagates
+the changes, and that removing annotations clears them from the Service.
+
+| Step                         | Operation                                | Assertion                                                                                                                 |
+|------------------------------|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| create-memcached-with-annotations | `apply` 00-memcached.yaml          | CR with two annotations: `external-dns.alpha.kubernetes.io/hostname` and `service.beta.kubernetes.io/aws-load-balancer-internal` (`test-svc-ann`) |
+| assert-service-has-annotations | `assert` 01-assert-service.yaml        | Service has both custom annotations, correct labels, headless (clusterIP: None), port 11211                               |
+| update-annotations           | `patch` 02-patch-update-annotations.yaml | Replace annotations with `external-dns.alpha.kubernetes.io/hostname: memcached-updated.example.com` and `prometheus.io/scrape: "true"` |
+| assert-service-annotations-updated | `assert` 03-assert-service-updated.yaml | Service annotations contain the updated key-value pairs                                                              |
+| remove-annotations           | `patch` 04-patch-remove-annotations.yaml | Patch `spec.service: null` to remove all annotations                                                                      |
+| assert-service-no-annotations | `assert` 05-assert-service-no-annotations.yaml | Service has correct labels and spec; JMESPath expression asserts annotations are absent or empty                     |
+
+**CRD fields tested**:
+- `spec.service.annotations` — Custom annotations propagated to the managed Service
+
 ---
 
 ## Test Patterns
@@ -554,6 +628,19 @@ verify runtime protocol behavior. This means:
 | MO-0032-008 | Security tests follow Chainsaw conventions                     | All security tests  | Numbered YAML files, apply/assert flow, partial object matching, standard timeouts, `test-{name}` CR naming        |
 | MO-0032-009 | Tests are spec-level assertions only (no runtime verification) | All security tests  | Assertions on Deployment spec, Service spec, CR status — no pod logs or protocol connections                       |
 
+### Network & Service E2E Tests (MO-0033)
+
+| REQ-ID           | Requirement                                                        | Test Scenario       | Key Assertions                                                                                                      |
+|------------------|--------------------------------------------------------------------|---------------------|---------------------------------------------------------------------------------------------------------------------|
+| REQ-E2E-NP-001  | NetworkPolicy creation with podSelector and port 11211             | network-policy      | NetworkPolicy with operator labels, policyTypes: [Ingress], ingress port 11211/TCP                                  |
+| REQ-E2E-NP-002  | allowedSources propagation to NetworkPolicy ingress from field     | network-policy      | Ingress `from` contains podSelector with `app: allowed-client`                                                      |
+| REQ-E2E-NP-003  | TLS port 11212 added to NetworkPolicy when TLS enabled             | network-policy      | Ingress ports include 11211/TCP, 11212/TCP, 9150/TCP after enabling TLS and monitoring                              |
+| REQ-E2E-NP-004  | NetworkPolicy deleted when networkPolicy disabled                  | network-policy      | Error assertion confirms NetworkPolicy no longer exists after disabling                                             |
+| REQ-E2E-NP-005  | Monitoring port 9150 added to NetworkPolicy when monitoring enabled | network-policy      | Ingress ports include 9150/TCP alongside 11211/TCP and 11212/TCP                                                    |
+| REQ-E2E-SA-001  | Service annotations propagated from CR spec                        | service-annotations | Service metadata.annotations contains custom annotations, labels and headless spec preserved                        |
+| REQ-E2E-SA-002  | Service annotations cleared when removed from CR spec              | service-annotations | Service metadata.annotations empty after patching `spec.service: null`, Service spec unchanged                      |
+| REQ-E2E-DOC-001 | Documentation updated with new test entries                        | (this document)     | network-policy and service-annotations sections, file structure, requirement coverage matrix                         |
+
 ---
 
 ## Known Limitations
@@ -567,6 +654,7 @@ verify runtime protocol behavior. This means:
 | No runtime protocol testing | SASL/TLS/mTLS tests verify Deployment spec, not actual memcached protocol | By design: tests are fast, deterministic, and need no memcached client |
 | Certificate issuance delay  | cert-manager may take time to issue certificates in CI   | Explicit `assert-certificate-ready` step waits for Ready=True within 120s |
 | No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw partial matching asserts presence of fields but cannot assert absence; the TLS test does not verify that `ssl_ca_cert` is absent when `enableClientCert` is false | The mTLS test provides the complementary positive assertion that `ssl_ca_cert` is present only when `enableClientCert: true`; combined, the two tests confirm correct conditional behavior |
+| Annotation removal uses JMESPath absence check | The service-annotations test uses a JMESPath expression to positively assert that annotations are absent or empty after removal | This upgrades confidence over simple field omission: the assertion actively fails if annotations remain on the Service |
 
 ---
 

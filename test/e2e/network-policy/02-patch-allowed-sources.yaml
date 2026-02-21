@@ -1,0 +1,13 @@
+---
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-netpol
+spec:
+  security:
+    networkPolicy:
+      enabled: true
+      allowedSources:
+        - podSelector:
+            matchLabels:
+              app: allowed-client

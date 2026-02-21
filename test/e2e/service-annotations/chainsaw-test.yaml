@@ -1,0 +1,40 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: service-annotations
+spec:
+  description: >
+    Verify that custom annotations defined in spec.service.annotations are
+    propagated to the headless Service, that updating annotations propagates
+    the changes, and that removing annotations clears them from the Service
+    (REQ-E2E-SA-001, REQ-E2E-SA-002).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-annotations
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-service-has-annotations
+      try:
+        - assert:
+            file: 01-assert-service.yaml
+    - name: update-annotations
+      try:
+        - patch:
+            file: 02-patch-update-annotations.yaml
+    - name: assert-service-annotations-updated
+      try:
+        - assert:
+            file: 03-assert-service-updated.yaml
+    - name: remove-annotations
+      try:
+        - patch:
+            file: 04-patch-remove-annotations.yaml
+    - name: assert-service-no-annotations
+      try:
+        - assert:
+            file: 05-assert-service-no-annotations.yaml

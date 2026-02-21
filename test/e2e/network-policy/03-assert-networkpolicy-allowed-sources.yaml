@@ -1,0 +1,25 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-netpol
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-netpol
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: memcached
+      app.kubernetes.io/instance: test-netpol
+      app.kubernetes.io/managed-by: memcached-operator
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 11211
+      from:
+        - podSelector:
+            matchLabels:
+              app: allowed-client

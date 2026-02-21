@@ -1,0 +1,61 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: network-policy
+spec:
+  description: >
+    Verify NetworkPolicy lifecycle: creation with correct podSelector and port 11211
+    (REQ-E2E-NP-001), allowedSources propagation (REQ-E2E-NP-002),
+    port adaptation with TLS and monitoring (REQ-E2E-NP-003, REQ-E2E-NP-005),
+    and deletion on disable (REQ-E2E-NP-004).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+    error: 30s
+  steps:
+    - name: create-memcached-with-networkpolicy
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-deployment-ready
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: assert-networkpolicy-created
+      try:
+        - assert:
+            file: 01-assert-networkpolicy.yaml
+    - name: patch-allowed-sources
+      try:
+        - patch:
+            file: 02-patch-allowed-sources.yaml
+    - name: assert-networkpolicy-allowed-sources
+      try:
+        - assert:
+            file: 03-assert-networkpolicy-allowed-sources.yaml
+    - name: create-cert-manager-resources
+      try:
+        - apply:
+            file: 04-cert-manager.yaml
+    - name: assert-certificate-ready
+      try:
+        - assert:
+            file: 04-assert-certificate-ready.yaml
+    - name: patch-enable-tls-monitoring
+      try:
+        - patch:
+            file: 05-patch-enable-tls-monitoring.yaml
+    - name: assert-networkpolicy-all-ports
+      try:
+        - assert:
+            file: 06-assert-networkpolicy-all-ports.yaml
+    - name: disable-networkpolicy
+      try:
+        - patch:
+            file: 07-patch-disable-networkpolicy.yaml
+    - name: assert-networkpolicy-deleted
+      try:
+        - error:
+            file: 08-error-networkpolicy-gone.yaml
