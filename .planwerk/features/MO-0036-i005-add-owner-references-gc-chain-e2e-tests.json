@@ -1,0 +1,454 @@
+{
+  "feature_id": "MO-0036",
+  "title": "I005: Add owner references GC chain E2E tests",
+  "slug": "i005-add-owner-references-gc-chain-e2e-tests",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** testing\n**Priority:** medium\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 1 comprehensive Chainsaw E2E test that validates owner references on ALL operator-managed resources:\n\n**test/e2e/owner-references/**: Create a CR with monitoring + PDB + NetworkPolicy all enabled to maximize child resource creation. Explicitly assert `ownerReferences` on every child resource:\n- Deployment: ownerReference with correct owner UID, kind=Memcached, name matches CR\n- Service: same ownerReference assertions\n- PodDisruptionBudget: same ownerReference assertions\n- NetworkPolicy: same ownerReference assertions\n- ServiceMonitor: same ownerReference assertions\n\nThis validates the Kubernetes garbage collection chain — when the parent CR is deleted, all child resources must be cleaned up. The existing cr-deletion test verifies deletion happens, but this test explicitly verifies the mechanism (ownerReferences) is correctly set on creation.\n\n**Rationale:** Owner references are the foundation of Kubernetes garbage collection. If any child resource lacks correct ownerReferences, it becomes orphaned on CR deletion, leading to resource leaks. The existing cr-deletion test only checks the end result, not the mechanism. Explicit ownerReference validation catches bugs in new resource creation code paths before they cause orphaned resources in production.\n\n**Affected Areas:**\n- test/e2e/owner-references/chainsaw-test.yaml",
+  "stories": [
+    {
+      "title": "Operator developer verifies GC chain is correctly set on all child resources",
+      "role": "operator developer",
+      "want": "to run an E2E test that asserts ownerReferences on every operator-managed resource",
+      "so_that": "I can catch missing ownerReferences before they cause orphaned resources in production",
+      "criteria": [
+        "Chainsaw test creates a Memcached CR with monitoring, PDB, and NetworkPolicy all enabled",
+        "Assertions verify ownerReferences on Deployment, Service, PDB, NetworkPolicy, and ServiceMonitor",
+        "Each ownerReference assertion checks kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name matches CR, controller=true, blockOwnerDeletion=true",
+        "Test passes when run via `make test-e2e` against a kind cluster with operator deployed"
+      ]
+    },
+    {
+      "title": "Operator developer detects missing ownerReferences on new resource types",
+      "role": "operator developer",
+      "want": "the E2E test to fail if a new child resource is created without SetControllerReference",
+      "so_that": "regressions in owner reference setup are caught during CI before merge",
+      "criteria": [
+        "If Deployment is missing ownerReferences, the Deployment assertion step fails with a clear Chainsaw error",
+        "If ServiceMonitor is missing ownerReferences, the ServiceMonitor assertion step fails",
+        "If NetworkPolicy is missing ownerReferences, the NetworkPolicy assertion step fails",
+        "Failure message indicates which resource and which field did not match"
+      ]
+    },
+    {
+      "title": "Operator developer distinguishes GC mechanism test from GC outcome test",
+      "role": "operator developer",
+      "want": "the owner-references test to validate the mechanism (ownerReferences set on creation) separately from the cr-deletion test that validates the outcome (resources cleaned up on deletion)",
+      "so_that": "I can pinpoint whether a GC failure is due to missing ownerReferences or a different Kubernetes issue",
+      "criteria": [
+        "owner-references test only asserts ownerReferences are set — does NOT delete the CR",
+        "cr-deletion test remains unchanged and continues to test deletion behavior",
+        "Both tests can run independently in any order"
+      ]
+    },
+    {
+      "title": "Operator developer sees all 5 managed resources validated in a single test",
+      "role": "operator developer",
+      "want": "one comprehensive test that covers all 5 resource types rather than separate tests per resource",
+      "so_that": "I get full GC chain coverage without test suite bloat",
+      "criteria": [
+        "Single chainsaw-test.yaml with one CR creation and 5 assertion steps",
+        "CR enables all optional features (monitoring, PDB, NetworkPolicy) to maximize child resource count",
+        "Test follows existing naming conventions: test/e2e/owner-references/ directory",
+        "Test name in metadata is 'owner-references'"
+      ]
+    },
+    {
+      "title": "E2E documentation is updated to include the owner-references test",
+      "role": "operator developer",
+      "want": "the Chainsaw E2E reference documentation updated with the new owner-references test",
+      "so_that": "the docs remain complete and accurate for all test scenarios",
+      "criteria": [
+        "docs/reference/backend/chainsaw-e2e-tests.md includes the owner-references test in the file structure table",
+        "Test description and step breakdown documented following existing doc format",
+        "Requirement coverage matrix updated to reference owner-references test"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-OR-001",
+      "description": "The test SHALL create a Memcached CR that enables monitoring, PDB, and NetworkPolicy to produce all 5 managed resource types",
+      "priority": "SHALL",
+      "rationale": "All 5 resource types must exist so their ownerReferences can be asserted",
+      "scenarios": [
+        {
+          "name": "CR enables all optional features",
+          "when": "the 00-memcached.yaml is applied to the cluster",
+          "then": "the operator creates Deployment, Service, PDB, NetworkPolicy, and ServiceMonitor",
+          "and_then": [
+            "all 5 resources exist in the test namespace with name matching CR name"
+          ]
+        },
+        {
+          "name": "CR uses minimal resource requirements",
+          "when": "the CR is applied",
+          "then": "resource requests/limits are small enough for kind cluster (cpu:50m, memory:64Mi)",
+          "and_then": [
+            "pods can schedule on a resource-constrained kind node"
+          ]
+        },
+        {
+          "name": "Deployment reaches ready state",
+          "when": "the CR is applied and pods are scheduled",
+          "then": "the Deployment shows readyReplicas matching spec.replicas within 120s assert timeout",
+          "and_then": [
+            "subsequent ownerReference assertions run against stable resources"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-OR-002",
+      "description": "The test SHALL assert ownerReferences on the Deployment include kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name matching CR, controller=true, blockOwnerDeletion=true",
+      "priority": "SHALL",
+      "rationale": "Deployment is the primary child resource; missing ownerReferences would orphan pods and ReplicaSets",
+      "scenarios": [
+        {
+          "name": "Deployment has correct ownerReference",
+          "when": "the Deployment is created by the operator",
+          "then": "metadata.ownerReferences contains an entry with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+          "and_then": [
+            "Chainsaw partial match succeeds for the ownerReferences array"
+          ]
+        },
+        {
+          "name": "Deployment assertion fails if ownerReference is missing",
+          "when": "the Deployment exists but lacks ownerReferences (hypothetical regression)",
+          "then": "the Chainsaw assert step fails with timeout waiting for ownerReferences to appear",
+          "and_then": [
+            "test reports failure on the assert-deployment step"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-OR-003",
+      "description": "The test SHALL assert ownerReferences on the Service with the same fields as REQ-OR-002",
+      "priority": "SHALL",
+      "rationale": "Orphaned headless Service would leave stale DNS entries for deleted Memcached instances",
+      "scenarios": [
+        {
+          "name": "Service has correct ownerReference",
+          "when": "the Service is created by the operator",
+          "then": "metadata.ownerReferences contains an entry with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+          "and_then": [
+            "Chainsaw partial match succeeds"
+          ]
+        },
+        {
+          "name": "Service assertion covers headless ClusterIP",
+          "when": "the Service assertion file is evaluated",
+          "then": "it also asserts clusterIP=None to confirm correct Service type alongside ownerReferences",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-OR-004",
+      "description": "The test SHALL assert ownerReferences on the PodDisruptionBudget with the same fields as REQ-OR-002",
+      "priority": "SHALL",
+      "rationale": "Orphaned PDB would incorrectly constrain node drains for a non-existent workload",
+      "scenarios": [
+        {
+          "name": "PDB has correct ownerReference",
+          "when": "the PDB is created by the operator",
+          "then": "metadata.ownerReferences contains an entry with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+          "and_then": [
+            "Chainsaw partial match succeeds"
+          ]
+        },
+        {
+          "name": "PDB spec is also validated",
+          "when": "the PDB assertion file is evaluated",
+          "then": "it asserts minAvailable: 1 alongside ownerReferences to confirm correct PDB configuration",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-OR-005",
+      "description": "The test SHALL assert ownerReferences on the NetworkPolicy with the same fields as REQ-OR-002",
+      "priority": "SHALL",
+      "rationale": "Orphaned NetworkPolicy would block traffic to pods that no longer exist or, worse, apply to unrelated pods",
+      "scenarios": [
+        {
+          "name": "NetworkPolicy has correct ownerReference",
+          "when": "the NetworkPolicy is created by the operator",
+          "then": "metadata.ownerReferences contains an entry with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+          "and_then": [
+            "Chainsaw partial match succeeds"
+          ]
+        },
+        {
+          "name": "NetworkPolicy spec is also validated",
+          "when": "the NetworkPolicy assertion file is evaluated",
+          "then": "it asserts podSelector and ingress port 11211 alongside ownerReferences",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-OR-006",
+      "description": "The test SHALL assert ownerReferences on the ServiceMonitor with the same fields as REQ-OR-002",
+      "priority": "SHALL",
+      "rationale": "Orphaned ServiceMonitor would generate scrape errors in Prometheus for non-existent targets",
+      "scenarios": [
+        {
+          "name": "ServiceMonitor has correct ownerReference",
+          "when": "the ServiceMonitor is created by the operator",
+          "then": "metadata.ownerReferences contains an entry with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+          "and_then": [
+            "Chainsaw partial match succeeds"
+          ]
+        },
+        {
+          "name": "ServiceMonitor labels are also validated",
+          "when": "the ServiceMonitor assertion file is evaluated",
+          "then": "it asserts standard labels (app.kubernetes.io/name, instance, managed-by) alongside ownerReferences",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-OR-007",
+      "description": "The test SHALL follow existing Chainsaw test conventions: file naming (00-/01- prefixes), timeout configuration, and partial object matching",
+      "priority": "SHALL",
+      "rationale": "Consistency with existing 21 tests ensures maintainability and predictable behavior",
+      "scenarios": [
+        {
+          "name": "Files follow naming convention",
+          "when": "the test directory is listed",
+          "then": "it contains chainsaw-test.yaml, 00-memcached.yaml, and 01-assert-*.yaml files following existing prefix conventions",
+          "and_then": []
+        },
+        {
+          "name": "Timeouts match project defaults",
+          "when": "the chainsaw-test.yaml is parsed",
+          "then": "timeouts are apply:30s, assert:120s, delete:30s, error:30s matching .chainsaw.yaml and existing tests",
+          "and_then": []
+        },
+        {
+          "name": "Test uses partial object matching",
+          "when": "assertion files are evaluated by Chainsaw",
+          "then": "only specified fields are validated (ownerReferences, key metadata, key spec fields) — not the full resource spec",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-OR-008",
+      "description": "The E2E reference documentation SHALL be updated to include the owner-references test scenario",
+      "priority": "SHALL",
+      "rationale": "docs/reference/backend/chainsaw-e2e-tests.md must remain the authoritative reference for all E2E tests",
+      "scenarios": [
+        {
+          "name": "File structure table updated",
+          "when": "a developer reads the E2E test documentation",
+          "then": "the file structure section lists test/e2e/owner-references/ with all files and their purposes",
+          "and_then": []
+        },
+        {
+          "name": "Test scenario documented",
+          "when": "a developer reads the test scenario section",
+          "then": "owner-references test is documented with description, steps, and what each assertion validates",
+          "and_then": []
+        },
+        {
+          "name": "Requirement coverage updated",
+          "when": "a developer reviews the coverage matrix",
+          "then": "the owner-references test is listed as covering ownerReference validation for all 5 resource types",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create Memcached CR YAML with all features enabled (REQ-OR-001)",
+      "description": "Create `test/e2e/owner-references/00-memcached.yaml` — a Memcached CR named `test-owner-refs` with monitoring enabled (serviceMonitor with additionalLabels), PDB enabled (minAvailable: 1), and NetworkPolicy enabled. Use minimal resource requests (cpu:50m, memory:64Mi) matching existing test patterns from cr-deletion/00-memcached.yaml. Set replicas: 2 to exercise PDB meaningfully.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-OR-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create Deployment ownerReferences assertion file (REQ-OR-002)",
+      "description": "Create `test/e2e/owner-references/01-assert-deployment.yaml` — partial Deployment object asserting metadata.ownerReferences array contains entry with kind: Memcached, apiVersion: memcached.c5c3.io/v1alpha1, name: test-owner-refs, controller: true, blockOwnerDeletion: true. Also assert replicas: 2 and readyReplicas: 2 in status to confirm Deployment is healthy.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-OR-002"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create Service ownerReferences assertion file (REQ-OR-003)",
+      "description": "Create `test/e2e/owner-references/01-assert-service.yaml` — partial Service object asserting metadata.ownerReferences with same fields as Deployment assertion. Also assert clusterIP: None and port 11211 to confirm correct Service type.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-OR-003"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Create PDB ownerReferences assertion file (REQ-OR-004)",
+      "description": "Create `test/e2e/owner-references/01-assert-pdb.yaml` — partial PodDisruptionBudget object asserting metadata.ownerReferences with same fields. Also assert spec.minAvailable: 1.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-OR-004"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Create NetworkPolicy ownerReferences assertion file (REQ-OR-005)",
+      "description": "Create `test/e2e/owner-references/01-assert-networkpolicy.yaml` — partial NetworkPolicy object asserting metadata.ownerReferences with same fields. Also assert podSelector matchLabels and ingress port 11211.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-OR-005"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Create ServiceMonitor ownerReferences assertion file (REQ-OR-006)",
+      "description": "Create `test/e2e/owner-references/01-assert-servicemonitor.yaml` — partial ServiceMonitor object asserting metadata.ownerReferences with same fields. Also assert standard labels (app.kubernetes.io/name: memcached, app.kubernetes.io/instance: test-owner-refs, app.kubernetes.io/managed-by: memcached-operator).",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-OR-006"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create chainsaw-test.yaml orchestrating CR creation and all 5 assertions (REQ-OR-007)",
+      "description": "Create `test/e2e/owner-references/chainsaw-test.yaml` with test name 'owner-references'. Steps: (1) apply 00-memcached.yaml, (2) assert Deployment ready (01-assert-deployment.yaml), (3) assert Service ownerReferences (01-assert-service.yaml), (4) assert PDB ownerReferences (01-assert-pdb.yaml), (5) assert NetworkPolicy ownerReferences (01-assert-networkpolicy.yaml), (6) assert ServiceMonitor ownerReferences (01-assert-servicemonitor.yaml). Use standard timeouts: apply:30s, assert:120s. Description references owner reference GC chain validation.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-OR-001",
+        "REQ-OR-002",
+        "REQ-OR-003",
+        "REQ-OR-004",
+        "REQ-OR-005",
+        "REQ-OR-006",
+        "REQ-OR-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Update E2E reference documentation with owner-references test (REQ-OR-008)",
+      "description": "Update `docs/reference/backend/chainsaw-e2e-tests.md`: (1) Add owner-references/ to the file structure table with all 7 files listed, (2) Add a test scenario section documenting the test description, steps, and what each assertion validates (ownerReferences fields), (3) Update the requirement coverage matrix to include owner-references test covering GC chain validation for all 5 resource types. Follow the existing documentation format and heading structure.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-OR-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "test/e2e/owner-references/chainsaw-test.yaml",
+      "test_function": "step: assert-deployment-owner-reference",
+      "story": "Operator developer verifies GC chain is correctly set on all child resources",
+      "expected": "Deployment metadata.ownerReferences contains entry with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+      "requirement_id": "REQ-OR-002"
+    },
+    {
+      "test_file": "test/e2e/owner-references/chainsaw-test.yaml",
+      "test_function": "step: assert-service-owner-reference",
+      "story": "Operator developer verifies GC chain is correctly set on all child resources",
+      "expected": "Service metadata.ownerReferences contains entry with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+      "requirement_id": "REQ-OR-003"
+    },
+    {
+      "test_file": "test/e2e/owner-references/chainsaw-test.yaml",
+      "test_function": "step: assert-pdb-owner-reference",
+      "story": "Operator developer verifies GC chain is correctly set on all child resources",
+      "expected": "PodDisruptionBudget metadata.ownerReferences contains entry with kind=Memcached, controller=true, blockOwnerDeletion=true",
+      "requirement_id": "REQ-OR-004"
+    },
+    {
+      "test_file": "test/e2e/owner-references/chainsaw-test.yaml",
+      "test_function": "step: assert-networkpolicy-owner-reference",
+      "story": "Operator developer verifies GC chain is correctly set on all child resources",
+      "expected": "NetworkPolicy metadata.ownerReferences contains entry with kind=Memcached, controller=true, blockOwnerDeletion=true",
+      "requirement_id": "REQ-OR-005"
+    },
+    {
+      "test_file": "test/e2e/owner-references/chainsaw-test.yaml",
+      "test_function": "step: assert-servicemonitor-owner-reference",
+      "story": "Operator developer verifies GC chain is correctly set on all child resources",
+      "expected": "ServiceMonitor metadata.ownerReferences contains entry with kind=Memcached, controller=true, blockOwnerDeletion=true",
+      "requirement_id": "REQ-OR-006"
+    },
+    {
+      "test_file": "test/e2e/owner-references/chainsaw-test.yaml",
+      "test_function": "step: create-memcached-with-all-features",
+      "story": "Operator developer sees all 5 managed resources validated in a single test",
+      "expected": "CR with monitoring+PDB+NetworkPolicy enabled is applied successfully, Deployment reaches readyReplicas=2",
+      "requirement_id": "REQ-OR-001"
+    },
+    {
+      "test_file": "test/e2e/owner-references/chainsaw-test.yaml",
+      "test_function": "full test run",
+      "story": "Operator developer distinguishes GC mechanism test from GC outcome test",
+      "expected": "Test only asserts ownerReferences are set on creation — does NOT delete the CR or assert resource cleanup",
+      "requirement_id": "REQ-OR-007"
+    },
+    {
+      "test_file": "docs/reference/backend/chainsaw-e2e-tests.md",
+      "test_function": "documentation update",
+      "story": "E2E documentation is updated to include the owner-references test",
+      "expected": "File structure table, test scenario section, and requirement coverage matrix all include owner-references test",
+      "requirement_id": "REQ-OR-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All 5 assertion files (Deployment, Service, PDB, NetworkPolicy, ServiceMonitor) assert ownerReferences with kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true",
+    "CR YAML enables monitoring (enabled: true, serviceMonitor with additionalLabels), PDB (enabled: true, minAvailable: 1), and NetworkPolicy (enabled: true) to produce all 5 resource types",
+    "Test follows existing Chainsaw conventions: file naming (00-/01- prefixes), timeout values (apply:30s, assert:120s), partial object matching, test metadata name format",
+    "Test does NOT delete the CR — it only validates ownerReferences are set on creation, complementing the existing cr-deletion test",
+    "Resource requests are minimal (cpu:50m, memory:64Mi) to ensure pods can schedule on resource-constrained kind clusters",
+    "docs/reference/backend/chainsaw-e2e-tests.md is updated with file structure, test scenario description, and requirement coverage for the owner-references test"
+  ],
+  "implementation_notes": "This test validates the mechanism (ownerReferences) rather than the outcome (garbage collection) of Kubernetes resource cleanup. The operator sets ownerReferences via `controllerutil.SetControllerReference()` in `internal/controller/reconcile_resource.go:46` for ALL managed resources. Chainsaw's partial object matching allows asserting specific ownerReferences fields without knowing the UID at test-write time — Chainsaw matches array entries by matching fields, so we assert kind, apiVersion, name, controller, and blockOwnerDeletion. The UID is dynamic and cannot be hardcoded, but Chainsaw will verify the ownerReference entry exists with all specified fields regardless of UID value. The CR is modeled after `test/e2e/cr-deletion/00-memcached.yaml` but adds NetworkPolicy enablement (`security.networkPolicy.enabled: true`) to cover all 5 resource types. Test name `test-owner-refs` follows the `test-{feature}` naming pattern used across all E2E tests.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:27:34.055719"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T09:03:46.521518"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T09:07:48.923298"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "ba0d52d0-d1ae-4e98-8237-84e619db26c4",
+      "timestamp": "2026-02-21T09:07:48.923325",
+      "total_duration": 236.98080134391785,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 236.98080134391785,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
