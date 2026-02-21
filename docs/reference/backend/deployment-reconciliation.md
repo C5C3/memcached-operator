@@ -105,9 +105,13 @@ Produces: `["-m", "128", "-c", "1024", "-t", "4", "-I", "1m", "-o", "modern", "-
 
 ## Deployment Construction
 
-`constructDeployment(mc *Memcached, dep *Deployment)` sets the desired state of
-the Deployment in-place. It is called within the `controllerutil.CreateOrUpdate`
-mutate function so that both creation and updates use identical logic.
+`constructDeployment(mc *Memcached, dep *Deployment, secretHash, restartTrigger string)`
+sets the desired state of the Deployment in-place. It is called within the
+`controllerutil.CreateOrUpdate` mutate function so that both creation and updates
+use identical logic. The `secretHash` and `restartTrigger` parameters are written
+as pod template annotations (`memcached.c5c3.io/secret-hash` and
+`memcached.c5c3.io/restart-trigger` respectively), causing Kubernetes to roll
+pods when these values change.
 
 ### Spec Defaults
 
@@ -265,11 +269,19 @@ generated from the RBAC marker on the controller:
 
 ## Reconciliation Method
 
-`reconcileDeployment(ctx, mc *Memcached)` on `MemcachedReconciler` ensures the
-Deployment matches the desired state:
+`reconcileDeployment(ctx, mc *Memcached) ([]string, error)` on
+`MemcachedReconciler` ensures the Deployment matches the desired state. It
+fetches referenced Secrets, computes a hash for rolling-update annotations, reads
+the restart-trigger annotation from the CR, and passes everything to
+`constructDeployment`. It returns the names of any missing Secrets for use by
+status reconciliation.
 
 ```go
-func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) ([]string, error) {
+    found, missing := fetchReferencedSecrets(ctx, r.Client, mc)
+    secretHash := computeSecretHash(found...)
+    restartTrigger := mc.Annotations[AnnotationRestartTrigger]
+
     dep := &appsv1.Deployment{
         ObjectMeta: metav1.ObjectMeta{
             Name:      mc.Name,
@@ -277,16 +289,11 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
         },
     }
 
-    result, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {
-        constructDeployment(mc, dep)
-        return controllerutil.SetControllerReference(mc, dep, r.Scheme)
-    })
-    if err != nil {
-        return fmt.Errorf("reconciling Deployment: %w", err)
-    }
-
-    logger.Info("Deployment reconciled", "name", dep.Name, "operation", result)
-    return nil
+    _, err := r.reconcileResource(ctx, mc, dep, func() error {
+        constructDeployment(mc, dep, secretHash, restartTrigger)
+        return nil
+    }, "Deployment")
+    return missing, err
 }
 ```
 
@@ -353,7 +360,14 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
         return ctrl.Result{}, err
     }
 
-    if err := r.reconcileDeployment(ctx, memcached); err != nil {
+    missingSecrets, err := r.reconcileDeployment(ctx, memcached)
+    if err != nil {
+        return ctrl.Result{}, err
+    }
+
+    // ... reconcileService, reconcilePDB, reconcileServiceMonitor, reconcileNetworkPolicy ...
+
+    if err := r.reconcileStatus(ctx, memcached, missingSecrets); err != nil {
         return ctrl.Result{}, err
     }
 
@@ -365,7 +379,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 |-------------------------------|----------------------|----------------------------------------------------------|
 | CR not found (deleted)        | `ctrl.Result{}, nil` | No requeue; owner ref cascade handles Deployment cleanup |
 | CR fetch fails                | `ctrl.Result{}, err` | Requeue with exponential backoff                         |
-| Deployment reconcile succeeds | `ctrl.Result{}, nil` | No requeue                                               |
+| Deployment reconcile succeeds | `ctrl.Result{}, nil` | No requeue; missing Secrets forwarded to status          |
 | Deployment reconcile fails    | `ctrl.Result{}, err` | Requeue with exponential backoff                         |
 
 ---
@@ -386,11 +400,18 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
                ▼
   ┌─────────────────────────────┐
   │  reconcileDeployment        │
+  │  → returns missingSecrets   │
+  │                             │
+  │  1. fetchReferencedSecrets  │
+  │  2. computeSecretHash       │
+  │  3. Read restart-trigger    │
   │                             │
   │  CreateOrUpdate:            │
   │    ┌──────────────────────┐ │
   │    │ Mutate function      │ │
   │    │  constructDeployment │ │
+  │    │  (secretHash,        │ │
+  │    │   restartTrigger)    │ │
   │    │  SetControllerRef    │ │
   │    └──────────────────────┘ │
   │                             │
@@ -405,6 +426,9 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
   │  ├─ Strategy: RollingUpdate│
   │  ├─ Volumes: SASL (if on)  │
   │  ├─ VolumeMounts: SASL     │
+  │  ├─ PodAnnotations:        │
+  │  │  ├─ secret-hash         │
+  │  │  └─ restart-trigger     │
   │  └─ OwnerRef → Memcached CR│
   └─────────────────────────────┘
 ```

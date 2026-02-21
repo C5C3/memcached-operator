@@ -58,7 +58,7 @@ func TestReconcileDeployment_CreatesDeployment(t *testing.T) {
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
 
-	if err := r.reconcileDeployment(context.Background(), mc); err != nil {
+	if _, err := r.reconcileDeployment(context.Background(), mc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -126,7 +126,7 @@ func TestReconcileDeployment_UpdatesExistingDeployment(t *testing.T) {
 	c := newFakeClient(mc, existingDep)
 	r := newTestReconciler(c)
 
-	if err := r.reconcileDeployment(context.Background(), mc); err != nil {
+	if _, err := r.reconcileDeployment(context.Background(), mc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -150,7 +150,7 @@ func TestReconcileDeployment_SetsContainerImage(t *testing.T) {
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
 
-	if err := r.reconcileDeployment(context.Background(), mc); err != nil {
+	if _, err := r.reconcileDeployment(context.Background(), mc); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

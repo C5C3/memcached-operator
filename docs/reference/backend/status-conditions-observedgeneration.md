@@ -94,16 +94,23 @@ Indicates whether a rollout or scaling operation is in progress.
 
 ### Degraded
 
-Indicates whether the instance has fewer ready replicas than desired.
+Indicates whether the instance has fewer ready replicas than desired, or whether
+referenced Secrets are missing.
 
-| Status  | Reason        | When                                          |
-|---------|---------------|-----------------------------------------------|
-| `True`  | `Degraded`    | `readyReplicas < desired` and `desired > 0`   |
-| `True`  | `Degraded`    | Deployment does not exist and `desired > 0`   |
-| `False` | `NotDegraded` | `readyReplicas == desired`                    |
-| `False` | `NotDegraded` | `desired == 0` (intentionally scaled to zero) |
+| Status  | Reason            | When                                              |
+|---------|-------------------|---------------------------------------------------|
+| `True`  | `SecretNotFound`  | One or more referenced Secrets are missing         |
+| `True`  | `Degraded`        | `readyReplicas < desired` and `desired > 0`        |
+| `True`  | `Degraded`        | Deployment does not exist and `desired > 0`        |
+| `False` | `NotDegraded`     | `readyReplicas == desired` and no missing Secrets  |
+| `False` | `NotDegraded`     | `desired == 0` (intentionally scaled to zero)      |
+
+`SecretNotFound` takes precedence over replica-based degraded status. When any
+referenced Secret (SASL credentials or TLS certificate) cannot be fetched, the
+Degraded condition is set to `SecretNotFound` regardless of replica counts.
 
 **Message format**:
+- When Secrets missing: `"Referenced Secrets not found: <name1>, <name2>"`
 - When Deployment is nil: `"Waiting for deployment to be created"`
 - When degraded: `"Only <ready>/<desired> replicas are ready"`
 - When not degraded: `"All <desired> desired replicas are ready"`
@@ -157,18 +164,21 @@ Defined in `internal/controller/status.go`:
 | `ConditionReasonProgressingComplete` | `"ProgressingComplete"` |
 | `ConditionReasonDegraded`            | `"Degraded"`            |
 | `ConditionReasonNotDegraded`         | `"NotDegraded"`         |
+| `ConditionReasonSecretNotFound`      | `"SecretNotFound"`      |
 
 ---
 
 ## Reconciliation Method
 
-`reconcileStatus(ctx, mc *Memcached)` on `MemcachedReconciler` performs the
-status update:
+`reconcileStatus(ctx, mc *Memcached, missingSecrets []string)` on
+`MemcachedReconciler` performs the status update. The `missingSecrets` parameter
+is the list of Secret names that could not be fetched during deployment
+reconciliation (returned by `reconcileDeployment`).
 
 ```go
-func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1alpha1.Memcached, missingSecrets []string) error {
     // 1. Fetch the current Deployment (nil if not found)
-    // 2. Compute conditions from Deployment status
+    // 2. Compute conditions from Deployment status and missingSecrets
     // 3. Apply conditions via meta.SetStatusCondition
     // 4. Set readyReplicas from Deployment (0 if nil)
     // 5. Set observedGeneration from mc.Generation
@@ -197,11 +207,15 @@ reconciliation:
 ```go
 func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // 1. Fetch Memcached CR
-    // 2. reconcileDeployment  ← resource convergence
-    // 3. reconcileService     ← resource convergence
-    // 4. reconcileStatus      ← status update (last)
+    // 2. missingSecrets, err := reconcileDeployment  ← resource convergence + secret resolution
+    // 3. reconcileService                             ← resource convergence
+    // 4. reconcileStatus(ctx, mc, missingSecrets)     ← status update (last)
 }
 ```
+
+`reconcileDeployment` returns the list of missing Secret names alongside the
+error, so they can be forwarded to `reconcileStatus` for the `SecretNotFound`
+condition.
 
 This ordering ensures:
 - Resources converge even if status update fails on a subsequent requeue.
@@ -232,9 +246,11 @@ This ordering ensures:
   │     └─ NotFound → nil       │
   │                             │
   │  2. computeConditions       │
+  │     (with missingSecrets)   │
   │     ├─ Available            │
   │     ├─ Progressing          │
-  │     └─ Degraded             │
+  │     └─ Degraded /           │
+  │        SecretNotFound       │
   │                             │
   │  3. meta.SetStatusCondition │
   │     (preserves transition   │

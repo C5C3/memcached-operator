@@ -4,6 +4,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,11 +36,13 @@ const (
 	ConditionReasonProgressingComplete = "ProgressingComplete"
 	ConditionReasonDegraded            = "Degraded"
 	ConditionReasonNotDegraded         = "NotDegraded"
+	ConditionReasonSecretNotFound      = "SecretNotFound"
 )
 
 // computeConditions derives status conditions from the Memcached spec and the current Deployment status.
 // If dep is nil (Deployment not yet created), it reports unavailable/progressing/degraded.
-func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) []metav1.Condition {
+// When missingSecrets is non-empty, the Degraded condition is set to SecretNotFound regardless of replica counts.
+func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, missingSecrets []string) []metav1.Condition {
 	desiredReplicas := int32(1)
 	if mc.Spec.Replicas != nil {
 		desiredReplicas = *mc.Spec.Replicas
@@ -91,16 +94,25 @@ func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) 
 		ObservedGeneration: mc.Generation,
 	})
 
-	// Degraded: true when ready < desired and desired > 0.
-	// (When dep is nil, readyReplicas is 0, so this naturally covers that case.)
-	degraded := desiredReplicas > 0 && readyReplicas < desiredReplicas
-	degradedStatus, degradedReason := metav1.ConditionFalse, ConditionReasonNotDegraded
-	degradedMsg := fmt.Sprintf("All %d desired replicas are ready", desiredReplicas)
-	if degraded {
-		degradedStatus, degradedReason = metav1.ConditionTrue, ConditionReasonDegraded
-		degradedMsg = "Waiting for deployment to be created"
-		if dep != nil {
-			degradedMsg = fmt.Sprintf("Only %d/%d replicas are ready", readyReplicas, desiredReplicas)
+	// Degraded: SecretNotFound takes precedence over replica-based degraded.
+	var degradedStatus metav1.ConditionStatus
+	var degradedReason, degradedMsg string
+	if len(missingSecrets) > 0 {
+		degradedStatus = metav1.ConditionTrue
+		degradedReason = ConditionReasonSecretNotFound
+		degradedMsg = fmt.Sprintf("Referenced Secrets not found: %s", strings.Join(missingSecrets, ", "))
+	} else {
+		// Replica-based degraded: true when ready < desired and desired > 0.
+		// (When dep is nil, readyReplicas is 0, so this naturally covers that case.)
+		degraded := desiredReplicas > 0 && readyReplicas < desiredReplicas
+		degradedStatus, degradedReason = metav1.ConditionFalse, ConditionReasonNotDegraded
+		degradedMsg = fmt.Sprintf("All %d desired replicas are ready", desiredReplicas)
+		if degraded {
+			degradedStatus, degradedReason = metav1.ConditionTrue, ConditionReasonDegraded
+			degradedMsg = "Waiting for deployment to be created"
+			if dep != nil {
+				degradedMsg = fmt.Sprintf("Only %d/%d replicas are ready", readyReplicas, desiredReplicas)
+			}
 		}
 	}
 	conditions = append(conditions, metav1.Condition{
@@ -116,7 +128,8 @@ func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) 
 }
 
 // reconcileStatus fetches the owned Deployment, computes conditions, and updates the Memcached status.
-func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+// missingSecrets is the list of Secret names that could not be found during deployment reconciliation.
+func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1alpha1.Memcached, missingSecrets []string) error {
 	logger := log.FromContext(ctx)
 
 	// Fetch the current Deployment.
@@ -131,7 +144,7 @@ func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcached
 	}
 
 	// Compute new conditions.
-	newConditions := computeConditions(mc, dep)
+	newConditions := computeConditions(mc, dep, missingSecrets)
 	for _, c := range newConditions {
 		meta.SetStatusCondition(&mc.Status.Conditions, c)
 	}

@@ -208,6 +208,12 @@ func buildExporterContainer(mc *memcachedv1alpha1.Memcached) *corev1.Container {
 	}
 }
 
+// AnnotationSecretHash is the Pod template annotation key for the computed secret hash.
+const AnnotationSecretHash = "memcached.c5c3.io/secret-hash"
+
+// AnnotationRestartTrigger is the Pod template annotation key for the manual restart trigger.
+const AnnotationRestartTrigger = "memcached.c5c3.io/restart-trigger"
+
 // saslVolumeName is the name used for the SASL credentials volume.
 const saslVolumeName = "sasl-credentials"
 
@@ -312,7 +318,8 @@ func buildContainerSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.Secu
 
 // constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
 // It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
-func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) {
+// secretHash and restartTrigger are propagated as Pod template annotations to trigger rolling updates.
+func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, secretHash, restartTrigger string) {
 	labels := labelsForMemcached(mc.Name)
 
 	// Defaults.
@@ -415,6 +422,8 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 		volumes = append(volumes, *v)
 	}
 
+	podAnnotations := buildPodAnnotations(secretHash, restartTrigger)
+
 	dep.Labels = labels
 	dep.Spec = appsv1.DeploymentSpec{
 		Replicas: &replicas,
@@ -430,7 +439,8 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: labels,
+				Labels:      labels,
+				Annotations: podAnnotations,
 			},
 			Spec: corev1.PodSpec{
 				Affinity:                      affinity,
@@ -442,4 +452,20 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 			},
 		},
 	}
+}
+
+// buildPodAnnotations returns Pod template annotations for secret-hash and restart-trigger.
+// Returns nil if both values are empty.
+func buildPodAnnotations(secretHash, restartTrigger string) map[string]string {
+	if secretHash == "" && restartTrigger == "" {
+		return nil
+	}
+	annotations := make(map[string]string)
+	if secretHash != "" {
+		annotations[AnnotationSecretHash] = secretHash
+	}
+	if restartTrigger != "" {
+		annotations[AnnotationRestartTrigger] = restartTrigger
+	}
+	return annotations
 }

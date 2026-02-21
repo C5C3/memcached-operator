@@ -2,8 +2,8 @@
   "feature_id": "MO-0038",
   "title": "J002: Propagate annotations and add Degraded status",
   "slug": "j002-propagate-annotations-and-add-degraded-status",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "awaiting_external_review",
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** backend\n**Priority:** critical\n**Source:** Proposed for 'Secret Rotation & Rolling Restart\n\n  Automatic'\n\nWire the secret hash and restart trigger into the Deployment and status conditions:\n\n**Deployment changes (`internal/controller/deployment.go`):**\n- Extend `constructDeployment` to accept `secretHash string` and `restartTrigger string` parameters\n- Set `dep.Spec.Template.ObjectMeta.Annotations[\"memcached.c5c3.io/secret-hash\"]` with the computed hash\n- Set `dep.Spec.Template.ObjectMeta.Annotations[\"memcached.c5c3.io/restart-trigger\"]` with the trigger value from the CR\n- When either annotation value changes, Kubernetes automatically triggers a rolling update\n\n**Status changes (`internal/controller/status.go`):**\n- Add constant `ConditionReasonSecretNotFound = \"SecretNotFound\"`\n- Extend `computeConditions` to accept `missingSecrets []string` parameter\n- When `missingSecrets` is non-empty, set `Degraded=True` with reason `SecretNotFound` and message listing the missing Secret names\n\n**Controller wiring (`internal/controller/memcached_controller.go`):**\n- In `reconcileDeployment`: call `fetchReferencedSecrets` to get Secrets + missing names, call `computeSecretHash` on found Secrets\n- Read `memcached.c5c3.io/restart-trigger` from `mc.Annotations`\n- Pass `secretHash` and `restartTrigger` to `constructDeployment`\n- Pass `missingSecrets` to condition/status logic\n- In `SetupWithManager`: add `.Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(ctx, mgr.GetClient())))` to watch Secret changes\n\n**Test updates:**\n- `internal/controller/deployment_test.go`: Add cases verifying `secret-hash` and `restart-trigger` annotations appear on Pod template; verify annotations are empty/absent when no Secrets referenced\n- `internal/controller/status_test.go`: Add cases for `SecretNotFound` Degraded condition when Secrets are missing; verify no Degraded condition when all Secrets are found\n\n**Rationale:** This is the integration layer connecting the hash computation to the actual rolling restart mechanism. Without it, even with correct hash computation, Secret changes would not trigger Pod restarts. The Degraded condition provides critical operational visibility — operators need to know immediately when a referenced Secret is missing, rather than debugging failed Pod mounts after the fact.\n\n**Affected Areas:**\n- internal/controller/deployment.go\n- internal/controller/deployment_test.go\n- internal/controller/status.go\n- internal/controller/status_test.go\n- internal/controller/memcached_controller.go",
   "stories": [
@@ -300,6 +300,7 @@
       "description": "In `internal/controller/deployment.go`, change `constructDeployment(mc *Memcached, dep *Deployment)` to `constructDeployment(mc *Memcached, dep *Deployment, secretHash string, restartTrigger string)`. Before setting `dep.Spec`, build an annotations map: if secretHash is non-empty, add `memcached.c5c3.io/secret-hash`; if restartTrigger is non-empty, add `memcached.c5c3.io/restart-trigger`. Set `dep.Spec.Template.ObjectMeta.Annotations` to the map (or leave nil if both are empty). Define annotation key constants `AnnotationSecretHash` and `AnnotationRestartTrigger` at the top of the file.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -312,6 +313,7 @@
       "description": "In `internal/controller/memcached_controller.go`, update the `reconcileDeployment` method's call to `constructDeployment(mc, dep)` to `constructDeployment(mc, dep, \"\", \"\")` temporarily. This keeps existing behavior while the signature changes. Also update any test files that call `constructDeployment` directly — search for all call sites in `deployment_test.go` and add `\"\", \"\"` arguments. Run `go vet` to confirm compilation.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -322,6 +324,7 @@
       "description": "In `internal/controller/deployment_test.go`, add table-driven test `TestConstructDeployment_SecretHashAnnotation` with cases: (1) non-empty secretHash sets annotation, (2) empty secretHash results in no annotation, (3) both secretHash and restartTrigger set results in both annotations, (4) only restartTrigger set results in only that annotation, (5) both empty results in nil annotations map. Verify annotation keys are exactly `memcached.c5c3.io/secret-hash` and `memcached.c5c3.io/restart-trigger`. Follow existing test patterns (table-driven, direct assertion).",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -334,6 +337,7 @@
       "description": "In `internal/controller/status.go`: (1) Add `ConditionReasonSecretNotFound = \"SecretNotFound\"` to the condition reason constants block. (2) Change `computeConditions(mc *Memcached, dep *Deployment)` to `computeConditions(mc *Memcached, dep *Deployment, missingSecrets []string)`. (3) Before the existing degraded logic, add: if len(missingSecrets) > 0, set Degraded=True, Reason=SecretNotFound, Message listing the missing names (e.g., `fmt.Sprintf(\"Referenced Secrets not found: %s\", strings.Join(missingSecrets, \", \"))`), and skip the replica-based degraded check. (4) Update the call in `reconcileStatus` to pass `nil` for now: `computeConditions(mc, dep, nil)`. This keeps existing behavior.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004"
@@ -345,6 +349,7 @@
       "description": "In `internal/controller/status_test.go`, update all existing calls to `computeConditions(mc, tt.dep)` to `computeConditions(mc, tt.dep, nil)`. Run existing tests to verify they pass unchanged. This task ensures backward compatibility with the new signature before adding new test cases.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -355,6 +360,7 @@
       "description": "In `internal/controller/status_test.go`, add tests: (1) `TestComputeConditions_SecretNotFound_SingleMissing`: missingSecrets=[\"sasl-secret\"], verify Degraded=True, Reason=SecretNotFound, Message contains \"sasl-secret\". (2) `TestComputeConditions_SecretNotFound_MultipleMissing`: missingSecrets=[\"sasl-secret\", \"tls-secret\"], verify Message contains both names. (3) `TestComputeConditions_SecretNotFound_PrecedenceOverReplica`: missingSecrets non-empty with all replicas ready, verify Degraded=True with SecretNotFound (not NotDegraded). (4) `TestComputeConditions_NoMissingSecrets_NilSlice`: missingSecrets=nil, verify existing behavior unchanged. (5) `TestComputeConditions_NoMissingSecrets_EmptySlice`: missingSecrets=[]string{}, verify existing behavior unchanged.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004"
@@ -366,6 +372,7 @@
       "description": "In `internal/controller/memcached_controller.go`, modify `reconcileDeployment`: (1) Before the reconcileResource call, call `found, missing := fetchReferencedSecrets(ctx, r.Client, mc)`. (2) Call `secretHash := computeSecretHash(found...)`. (3) Read `restartTrigger := mc.Annotations[\"memcached.c5c3.io/restart-trigger\"]` (safe for nil map in Go — returns empty string). (4) Update the constructDeployment call to pass secretHash and restartTrigger. (5) Change reconcileDeployment return signature to `([]string, error)` returning `missing` alongside the error, so the caller can pass missingSecrets to status. Update the Reconcile method's call to capture the missing list.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -376,6 +383,7 @@
       "description": "In `internal/controller/memcached_controller.go`: (1) Modify `reconcileStatus` to accept `missingSecrets []string` parameter: `reconcileStatus(ctx, mc, missingSecrets)`. (2) Pass missingSecrets to `computeConditions(mc, dep, missingSecrets)`. (3) In the Reconcile method, pass the missingSecrets captured from reconcileDeployment to reconcileStatus. Update any other call sites of reconcileStatus if they exist.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -386,20 +394,8 @@
       "description": "In `internal/controller/memcached_controller.go`, modify `SetupWithManager`: add `.Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(mgr.GetClient())))` to the controller builder chain. Add necessary imports for `handler` package (`sigs.k8s.io/controller-runtime/pkg/handler`). Note: the existing mapSecretToMemcached function takes `c client.Client` and returns `handler.MapFunc`, matching this usage.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
-        "REQ-007"
-      ]
-    },
-    {
-      "id": "4.1",
-      "title": "Write reference documentation for deployment annotation propagation and Degraded SecretNotFound (REQ-001 through REQ-009)",
-      "description": "Create `docs/reference/backend/deployment-annotation-propagation.md` covering: (1) The two Pod template annotations (secret-hash and restart-trigger), their keys, and what triggers a rolling update. (2) The constructDeployment signature change and annotation-setting logic. (3) The Degraded SecretNotFound condition: when it triggers, message format, precedence over replica-based degraded. (4) The reconcileDeployment wiring: fetchReferencedSecrets → computeSecretHash → constructDeployment flow. (5) The Secret watch in SetupWithManager. (6) Example CR YAML with annotations and resulting Deployment YAML. Follow existing doc patterns in docs/reference/backend/.",
-      "level": 4,
-      "estimate_minutes": 20,
-      "requirements": [
-        "REQ-001",
-        "REQ-003",
-        "REQ-005",
         "REQ-007"
       ]
     }
@@ -523,6 +519,14 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T19:13:33.752312"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T20:11:13.283817"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T20:33:47.917123"
     }
   },
   "execution_history": [
@@ -536,6 +540,50 @@
           "name": "prepare",
           "duration": 231.21296501159668,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "05e2bc14-3008-4c98-86bc-97d811a924fe",
+      "timestamp": "2026-02-21T20:33:20.798346",
+      "total_duration": 1171.2364897727966,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 301.9026916027069,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 184.52408719062805,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 147.0358922481537,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0038] Code Review",
+          "duration": 158.79780411720276,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0038] Improvements",
+          "duration": 183.08279824256897,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0038] Simplify",
+          "duration": 195.89321637153625,
+          "type": "simplify",
           "status": "done"
         }
       ]

@@ -219,7 +219,7 @@ func TestConstructDeployment_MinimalSpec(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// Replicas defaults to 1.
 	if dep.Spec.Replicas == nil || *dep.Spec.Replicas != 1 {
@@ -319,7 +319,7 @@ func TestConstructDeployment_CustomSpec(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	if *dep.Spec.Replicas != 5 {
 		t.Errorf("expected 5 replicas, got %d", *dep.Spec.Replicas)
@@ -359,7 +359,7 @@ func TestConstructDeployment_ContainerPort(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	containers := dep.Spec.Template.Spec.Containers
 	if len(containers) != 1 {
@@ -389,7 +389,7 @@ func TestConstructDeployment_Probes(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -467,7 +467,7 @@ func TestConstructDeployment_Resources(t *testing.T) {
 			}
 			dep := &appsv1.Deployment{}
 
-			constructDeployment(mc, dep)
+			constructDeployment(mc, dep, "", "")
 
 			container := dep.Spec.Template.Spec.Containers[0]
 			if tt.wantEmpty {
@@ -707,7 +707,7 @@ func TestConstructDeployment_AntiAffinity(t *testing.T) {
 			}
 			dep := &appsv1.Deployment{}
 
-			constructDeployment(mc, dep)
+			constructDeployment(mc, dep, "", "")
 
 			tt.check(t, dep.Spec.Template.Spec.Affinity)
 		})
@@ -834,7 +834,7 @@ func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
 	if len(tsc) != 1 {
@@ -855,7 +855,7 @@ func TestConstructDeployment_TopologySpreadConstraints_NilHA(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	if dep.Spec.Template.Spec.TopologySpreadConstraints != nil {
 		t.Errorf("expected nil TopologySpreadConstraints, got %v", dep.Spec.Template.Spec.TopologySpreadConstraints)
@@ -874,7 +874,7 @@ func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// Verify anti-affinity is set.
 	if dep.Spec.Template.Spec.Affinity == nil || dep.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
@@ -901,7 +901,7 @@ func TestConstructDeployment_RollingUpdateStrategy(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	strategy := dep.Spec.Strategy
 	if strategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
@@ -1090,7 +1090,7 @@ func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 	if container.Lifecycle == nil {
@@ -1125,7 +1125,7 @@ func TestConstructDeployment_GracefulShutdownDisabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 	if container.Lifecycle != nil {
@@ -1153,7 +1153,7 @@ func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// Verify anti-affinity.
 	if dep.Spec.Template.Spec.Affinity == nil || dep.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
@@ -1334,7 +1334,7 @@ func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	containers := dep.Spec.Template.Spec.Containers
 	if len(containers) != 2 {
@@ -1355,7 +1355,7 @@ func TestConstructDeployment_MonitoringDisabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	containers := dep.Spec.Template.Spec.Containers
 	if len(containers) != 1 {
@@ -1488,7 +1488,7 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// Pod security context.
 	podSC := dep.Spec.Template.Spec.SecurityContext
@@ -1522,7 +1522,7 @@ func TestConstructDeployment_SecurityContextsNil(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	if dep.Spec.Template.Spec.SecurityContext != nil {
 		t.Errorf("expected nil pod SecurityContext, got %+v", dep.Spec.Template.Spec.SecurityContext)
@@ -1551,7 +1551,7 @@ func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	if len(dep.Spec.Template.Spec.Containers) != 2 {
 		t.Fatalf("expected 2 containers, got %d", len(dep.Spec.Template.Spec.Containers))
@@ -1814,7 +1814,7 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// Verify -Y flag in args.
 	container := dep.Spec.Template.Spec.Containers[0]
@@ -1880,7 +1880,7 @@ func TestConstructDeployment_SASLDisabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -1921,7 +1921,7 @@ func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// 2 containers: memcached + exporter.
 	if len(dep.Spec.Template.Spec.Containers) != 2 {
@@ -1969,7 +1969,7 @@ func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -2054,7 +2054,7 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -2447,7 +2447,7 @@ func TestConstructDeployment_TLSEnabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -2529,7 +2529,7 @@ func TestConstructDeployment_TLSDisabled(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -2581,7 +2581,7 @@ func TestConstructDeployment_TLSWithSASL(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -2661,7 +2661,7 @@ func TestConstructDeployment_TLSPort(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	container := dep.Spec.Template.Spec.Containers[0]
 
@@ -2719,7 +2719,7 @@ func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) 
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// 2 containers: memcached + exporter.
 	if len(dep.Spec.Template.Spec.Containers) != 2 {
@@ -2858,7 +2858,7 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 		},
 	}
 	dep := &appsv1.Deployment{}
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 	return dep
 }
 
@@ -3159,7 +3159,7 @@ func TestConstructDeployment_ZeroReplicas(t *testing.T) {
 	}
 	dep := &appsv1.Deployment{}
 
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	if dep.Spec.Replicas == nil {
 		t.Fatal("expected non-nil Replicas")
@@ -3235,14 +3235,123 @@ func TestConstructDeployment_Idempotent(t *testing.T) {
 	dep := &appsv1.Deployment{}
 
 	// First call.
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 	firstSpec := *dep.Spec.DeepCopy()
 
 	// Second call on the same Deployment object.
-	constructDeployment(mc, dep)
+	constructDeployment(mc, dep, "", "")
 
 	// Verify full spec is identical after the second call.
 	if !reflect.DeepEqual(firstSpec, dep.Spec) {
 		t.Errorf("Deployment spec changed between calls:\nfirst:  %+v\nsecond: %+v", firstSpec, dep.Spec)
+	}
+}
+
+func TestConstructDeployment_Annotations(t *testing.T) {
+	tests := []struct {
+		name               string
+		secretHash         string
+		restartTrigger     string
+		wantAnnotations    map[string]string
+		wantAnnotationsNil bool
+	}{
+		{
+			name:       "non-empty secretHash sets annotation",
+			secretHash: "abc123",
+			wantAnnotations: map[string]string{
+				AnnotationSecretHash: "abc123",
+			},
+		},
+		{
+			name:               "empty secretHash results in no annotation",
+			secretHash:         "",
+			wantAnnotationsNil: true,
+		},
+		{
+			name:           "non-empty restartTrigger sets annotation",
+			restartTrigger: "2024-01-15T10:00:00Z",
+			wantAnnotations: map[string]string{
+				AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
+			},
+		},
+		{
+			name:               "empty restartTrigger results in no annotation",
+			restartTrigger:     "",
+			wantAnnotationsNil: true,
+		},
+		{
+			name:           "both secretHash and restartTrigger set",
+			secretHash:     "abc123",
+			restartTrigger: "2024-01-15T10:00:00Z",
+			wantAnnotations: map[string]string{
+				AnnotationSecretHash:     "abc123",
+				AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
+			},
+		},
+		{
+			name:               "both empty results in nil annotations map",
+			secretHash:         "",
+			restartTrigger:     "",
+			wantAnnotationsNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1alpha1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1alpha1.MemcachedSpec{},
+			}
+			dep := &appsv1.Deployment{}
+
+			constructDeployment(mc, dep, tt.secretHash, tt.restartTrigger)
+
+			annotations := dep.Spec.Template.Annotations
+
+			if tt.wantAnnotationsNil {
+				if annotations != nil {
+					t.Errorf("expected nil annotations, got %v", annotations)
+				}
+				return
+			}
+
+			if annotations == nil {
+				t.Fatal("expected non-nil annotations, got nil")
+			}
+
+			if len(annotations) != len(tt.wantAnnotations) {
+				t.Errorf("expected %d annotations, got %d: %v", len(tt.wantAnnotations), len(annotations), annotations)
+			}
+
+			for key, wantVal := range tt.wantAnnotations {
+				gotVal, ok := annotations[key]
+				if !ok {
+					t.Errorf("missing annotation %q", key)
+					continue
+				}
+				if gotVal != wantVal {
+					t.Errorf("annotation %q = %q, want %q", key, gotVal, wantVal)
+				}
+			}
+
+			// Verify no unexpected annotation keys.
+			for key := range annotations {
+				if _, ok := tt.wantAnnotations[key]; !ok {
+					t.Errorf("unexpected annotation %q = %q", key, annotations[key])
+				}
+			}
+		})
+	}
+}
+
+func TestAnnotationKeyConstants(t *testing.T) {
+	if AnnotationSecretHash != "memcached.c5c3.io/secret-hash" {
+		t.Errorf("AnnotationSecretHash = %q, want %q", AnnotationSecretHash, "memcached.c5c3.io/secret-hash")
+	}
+	if AnnotationRestartTrigger != "memcached.c5c3.io/restart-trigger" {
+		t.Errorf("AnnotationRestartTrigger = %q, want %q", AnnotationRestartTrigger, "memcached.c5c3.io/restart-trigger")
 	}
 }

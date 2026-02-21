@@ -2,6 +2,7 @@
 package controller
 
 import (
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -120,7 +121,7 @@ func TestComputeConditions(t *testing.T) {
 				},
 			}
 
-			conditions := computeConditions(mc, tt.dep)
+			conditions := computeConditions(mc, tt.dep, nil)
 
 			assertCondition(t, conditions, ConditionTypeAvailable, tt.wantAvailable, tt.availReason)
 			assertCondition(t, conditions, ConditionTypeProgressing, tt.wantProgress, tt.progressReason)
@@ -136,7 +137,7 @@ func TestComputeConditions_ReturnsThreeConditions(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(1, 1, 1))
+	conditions := computeConditions(mc, depWithStatus(1, 1, 1), nil)
 
 	if len(conditions) != 3 {
 		t.Fatalf("expected 3 conditions, got %d", len(conditions))
@@ -160,7 +161,7 @@ func TestComputeConditions_MessagesAreNonEmpty(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(1, 2, 3))
+	conditions := computeConditions(mc, depWithStatus(1, 2, 3), nil)
 
 	for _, c := range conditions {
 		if c.Message == "" {
@@ -179,7 +180,7 @@ func TestComputeConditions_ObservedGeneration(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, depWithStatus(2, 3, 3))
+	conditions := computeConditions(mc, depWithStatus(2, 3, 3), nil)
 
 	for _, c := range conditions {
 		if c.ObservedGeneration != 5 {
@@ -198,7 +199,7 @@ func TestComputeConditions_ObservedGeneration_NilDeployment(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, nil)
+	conditions := computeConditions(mc, nil, nil)
 
 	for _, c := range conditions {
 		if c.ObservedGeneration != 3 {
@@ -216,6 +217,90 @@ func depWithStatus(ready, updated, total int32) *appsv1.Deployment {
 			Replicas:        total,
 		},
 	}
+}
+
+func TestComputeConditions_SecretNotFound_SingleMissing(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+		},
+	}
+
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret"})
+
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
+	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "sasl-secret")
+}
+
+func TestComputeConditions_SecretNotFound_MultipleMissing(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+		},
+	}
+
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret", "tls-secret"})
+
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
+	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "sasl-secret")
+	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "tls-secret")
+}
+
+func TestComputeConditions_SecretNotFound_PrecedenceOverReplica(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+		},
+	}
+
+	// All replicas ready, but missing secrets should still trigger Degraded=True with SecretNotFound.
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"my-secret"})
+
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
+}
+
+func TestComputeConditions_NoMissingSecrets_NilSlice(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+		},
+	}
+
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), nil)
+
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+}
+
+func TestComputeConditions_NoMissingSecrets_EmptySlice(t *testing.T) {
+	mc := &memcachedv1alpha1.Memcached{
+		Spec: memcachedv1alpha1.MemcachedSpec{
+			Replicas: int32Ptr(3),
+		},
+	}
+
+	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{})
+
+	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+}
+
+func TestConditionReasonSecretNotFound_Constant(t *testing.T) {
+	if ConditionReasonSecretNotFound != "SecretNotFound" {
+		t.Errorf("ConditionReasonSecretNotFound = %q, want %q", ConditionReasonSecretNotFound, "SecretNotFound")
+	}
+}
+
+// assertConditionMessageContains checks that a condition's message contains the given substring.
+func assertConditionMessageContains(t *testing.T, conditions []metav1.Condition, condType, substr string) {
+	t.Helper()
+	for _, c := range conditions {
+		if c.Type == condType {
+			if !strings.Contains(c.Message, substr) {
+				t.Errorf("condition %q: message %q does not contain %q", condType, c.Message, substr)
+			}
+			return
+		}
+	}
+	t.Errorf("condition %q not found", condType)
 }
 
 // assertCondition checks that a condition with the given type, status, and reason exists.

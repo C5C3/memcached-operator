@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -80,7 +81,9 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	metrics.RecordInstanceInfo(memcached.Name, memcached.Namespace, image, desiredReplicas)
 
-	if reconcileErr = r.reconcileDeployment(ctx, memcached); reconcileErr != nil {
+	var missingSecrets []string
+	missingSecrets, reconcileErr = r.reconcileDeployment(ctx, memcached)
+	if reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
 
@@ -100,7 +103,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, reconcileErr
 	}
 
-	if reconcileErr = r.reconcileStatus(ctx, memcached); reconcileErr != nil {
+	if reconcileErr = r.reconcileStatus(ctx, memcached, missingSecrets); reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
 
@@ -110,8 +113,14 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // reconcileDeployment ensures the Deployment for the Memcached CR matches the desired state.
-// It uses reconcileResource for idempotent create/update with conflict retries.
-func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+// It fetches referenced Secrets, computes a hash for rolling-update annotations, reads the
+// restart-trigger annotation from the CR, and passes everything to constructDeployment.
+// It returns the names of any missing Secrets for use by status reconciliation.
+func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) ([]string, error) {
+	found, missing := fetchReferencedSecrets(ctx, r.Client, mc)
+	secretHash := computeSecretHash(found...)
+	restartTrigger := mc.Annotations[AnnotationRestartTrigger]
+
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mc.Name,
@@ -120,10 +129,10 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
 	}
 
 	_, err := r.reconcileResource(ctx, mc, dep, func() error {
-		constructDeployment(mc, dep)
+		constructDeployment(mc, dep, secretHash, restartTrigger)
 		return nil
 	}, "Deployment")
-	return err
+	return missing, err
 }
 
 // reconcileService ensures the headless Service for the Memcached CR matches the desired state.
@@ -221,6 +230,7 @@ func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Owns(&monitoringv1.ServiceMonitor{}).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(mgr.GetClient()))).
 		Named("memcached").
 		Complete(r)
 }

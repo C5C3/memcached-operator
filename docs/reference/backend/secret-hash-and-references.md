@@ -189,27 +189,44 @@ never evaluated, ensuring correct multi-tenant behavior.
 
 ---
 
-## Integration Point
+## Integration into Reconciliation Loop
 
-These three functions are designed for integration into the reconciliation loop
-(a separate feature). The intended usage pattern is:
+These three functions are integrated into the reconciliation loop as follows:
+
+- **`mapSecretToMemcached`** is registered as a `Watches` handler in
+  `SetupWithManager`, so Secret changes trigger reconciliation of referencing
+  Memcached CRs.
+- **`fetchReferencedSecrets`** is called at the start of `reconcileDeployment`
+  to resolve Secret refs and identify missing Secrets.
+- **`computeSecretHash`** computes a SHA-256 hash over the fetched Secrets,
+  which is passed to `constructDeployment` along with the restart-trigger
+  annotation value from the CR.
+
+The flow within `reconcileDeployment`:
 
 ```text
 Secret updated
       │
       ▼
-mapSecretToMemcached    ← watch handler triggers reconcile
+mapSecretToMemcached          ← watch handler triggers reconcile
       │
       ▼
-fetchReferencedSecrets  ← reconciler resolves Secret refs
+reconcileDeployment
+  ├─ fetchReferencedSecrets   ← resolves Secret refs → found + missing
+  ├─ computeSecretHash        ← hash over found Secrets
+  ├─ read restart-trigger     ← from CR annotations
+  └─ constructDeployment      ← writes hash + trigger as pod annotations
       │
       ▼
-computeSecretHash       ← reconciler computes hash for annotation
+Pod template annotations changed → Kubernetes rolls pods
       │
       ▼
-Compare with existing annotation → update Deployment if changed
+missing Secrets returned → reconcileStatus sets SecretNotFound condition
 ```
 
-The hash is intended to be stored as a pod template annotation on the
-Deployment, causing Kubernetes to roll pods when the hash changes (indicating
-Secret content was modified).
+The hash is stored as the `memcached.c5c3.io/secret-hash` pod template
+annotation on the Deployment, and the restart trigger as
+`memcached.c5c3.io/restart-trigger`. Changes to either value cause Kubernetes
+to roll pods. Missing Secret names are returned by `reconcileDeployment` and
+forwarded to `reconcileStatus`, which sets a `Degraded` condition with reason
+`SecretNotFound`.
