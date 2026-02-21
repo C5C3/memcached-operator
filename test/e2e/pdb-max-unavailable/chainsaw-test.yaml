@@ -1,0 +1,35 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: pdb-max-unavailable
+spec:
+  description: >
+    Verify that configuring PDB with maxUnavailable (instead of minAvailable)
+    creates a PodDisruptionBudget with the correct maxUnavailable setting,
+    and that updating maxUnavailable propagates to the PDB (REQ-001).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-pdb-max-unavailable
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-deployment-ready
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: assert-pdb-max-unavailable
+      try:
+        - assert:
+            file: 01-assert-pdb.yaml
+    - name: update-max-unavailable
+      try:
+        - patch:
+            file: 02-patch-max-unavailable.yaml
+    - name: assert-pdb-updated
+      try:
+        - assert:
+            file: 03-assert-pdb-updated.yaml

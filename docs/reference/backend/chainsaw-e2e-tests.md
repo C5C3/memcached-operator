@@ -214,6 +214,35 @@ test/e2e/
 │   ├── 03-assert-service-updated.yaml # Service with updated annotations
 │   ├── 04-patch-remove-annotations.yaml # Remove annotations (service: null)
 │   └── 05-assert-service-no-annotations.yaml # Service without annotations
+├── pdb-max-unavailable/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with PDB maxUnavailable=1 (replicas=3)
+│   ├── 01-assert-deployment.yaml   # Deployment ready assertion
+│   ├── 01-assert-pdb.yaml          # PDB with maxUnavailable=1
+│   ├── 02-patch-max-unavailable.yaml # Patch maxUnavailable to 2
+│   └── 03-assert-pdb-updated.yaml  # PDB with maxUnavailable=2
+├── verbosity-extra-args/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with verbosity=1 and extraArgs
+│   ├── 01-assert-deployment.yaml   # Args with -v and -o modern
+│   ├── 02-patch-config.yaml        # Patch verbosity=2, new extraArgs
+│   └── 03-assert-deployment.yaml   # Args with -vv and new extraArgs
+├── custom-exporter-image/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with custom exporterImage
+│   ├── 01-assert-deployment.yaml   # Exporter with custom image
+│   ├── 02-patch-exporter-image.yaml # Patch to default exporter image
+│   └── 03-assert-deployment.yaml   # Exporter with updated image
+├── security-contexts/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with pod and container security contexts
+│   ├── 01-assert-deployment.yaml   # Security contexts on pod and container
+│   ├── 02-patch-security-contexts.yaml # Patch with runAsUser=1000
+│   └── 03-assert-deployment.yaml   # Updated security contexts
+├── hard-anti-affinity/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with antiAffinityPreset=hard
+│   └── 01-assert-deployment.yaml   # requiredDuringScheduling anti-affinity
 └── resources/
     ├── memcached-minimal.yaml
     ├── assert-deployment.yaml
@@ -489,6 +518,98 @@ the changes, and that removing annotations clears them from the Service.
 **CRD fields tested**:
 - `spec.service.annotations` — Custom annotations propagated to the managed Service
 
+### 14. PDB maxUnavailable (MO-0034 REQ-001)
+
+**Directory**: `test/e2e/pdb-max-unavailable/`
+
+Verifies that configuring PDB with `maxUnavailable` (instead of `minAvailable`)
+creates a PodDisruptionBudget with the correct `maxUnavailable` setting, and that
+updating it propagates to the PDB.
+
+| Step                                    | Operation                        | Assertion                                                  |
+|-----------------------------------------|----------------------------------|------------------------------------------------------------|
+| create-memcached-with-pdb-max-unavailable | `apply` 00-memcached.yaml     | CR with replicas=3, PDB enabled, maxUnavailable=1          |
+| assert-deployment-ready                 | `assert` 01-assert-deployment    | Deployment with 3 replicas                                 |
+| assert-pdb-max-unavailable              | `assert` 01-assert-pdb          | PDB with maxUnavailable=1, correct selector, labels        |
+| update-max-unavailable                  | `patch` maxUnavailable=2         | —                                                          |
+| assert-pdb-updated                      | `assert` 03-assert-pdb-updated  | PDB with maxUnavailable=2                                  |
+
+**CRD fields tested**:
+- `spec.highAvailability.podDisruptionBudget.enabled` — Enables the PDB
+- `spec.highAvailability.podDisruptionBudget.maxUnavailable` — Sets maxUnavailable on the PDB
+
+### 15. Verbosity and Extra Args (MO-0034 REQ-002, REQ-003)
+
+**Directory**: `test/e2e/verbosity-extra-args/`
+
+Verifies that setting `memcached.verbosity` and `memcached.extraArgs` propagates
+to the Deployment container args, and that updating them triggers a rolling update
+with the correct args.
+
+| Step                                         | Operation                                         | Assertion                                             |
+|----------------------------------------------|----------------------------------------------------|-------------------------------------------------------|
+| create-memcached-with-verbosity-and-extra-args | `apply` 00-memcached.yaml                       | CR with verbosity=1, extraArgs=["-o", "modern"]       |
+| assert-initial-args                          | `assert` 01-assert-deployment                      | Args include `-v -o modern` after standard flags      |
+| update-verbosity-and-extra-args              | `patch` verbosity=2, extraArgs=["--max-reqs-per-event", "20"] | —                                          |
+| assert-updated-args                          | `assert` 03-assert-deployment                      | Args include `-vv --max-reqs-per-event 20`            |
+
+**CRD fields tested**:
+- `spec.memcached.verbosity` — Controls verbosity flag (0=none, 1=-v, 2=-vv)
+- `spec.memcached.extraArgs` — Additional command-line arguments appended after standard flags
+
+### 16. Custom Exporter Image (MO-0034 REQ-004)
+
+**Directory**: `test/e2e/custom-exporter-image/`
+
+Verifies that specifying a custom exporter image in the monitoring config uses
+that image for the exporter sidecar instead of the default.
+
+| Step                               | Operation                              | Assertion                                                      |
+|------------------------------------|----------------------------------------|----------------------------------------------------------------|
+| create-memcached-with-custom-exporter | `apply` 00-memcached.yaml          | CR with monitoring enabled, exporterImage=v0.14.0              |
+| assert-custom-exporter-image       | `assert` 01-assert-deployment          | Exporter sidecar uses custom image v0.14.0                     |
+| update-exporter-image              | `patch` exporterImage=v0.15.4          | —                                                              |
+| assert-updated-exporter-image      | `assert` 03-assert-deployment          | Exporter sidecar uses updated image v0.15.4                    |
+
+**CRD fields tested**:
+- `spec.monitoring.enabled` — Enables the exporter sidecar
+- `spec.monitoring.exporterImage` — Custom image for the exporter sidecar
+
+### 17. Security Contexts (MO-0034 REQ-005, REQ-006)
+
+**Directory**: `test/e2e/security-contexts/`
+
+Verifies that custom pod and container security contexts defined in
+`spec.security` are propagated to the Deployment pod template, and that
+updating them triggers a rolling update with the new settings.
+
+| Step                                    | Operation                                      | Assertion                                                  |
+|-----------------------------------------|------------------------------------------------|------------------------------------------------------------|
+| create-memcached-with-security-contexts | `apply` 00-memcached.yaml                     | CR with runAsNonRoot, readOnlyRootFilesystem, drop ALL     |
+| assert-security-contexts                | `assert` 01-assert-deployment                  | Pod and container security contexts match CR spec          |
+| update-security-contexts                | `patch` runAsUser=1000, fsGroup=1000           | —                                                          |
+| assert-updated-security-contexts        | `assert` 03-assert-deployment                  | Updated security contexts with runAsUser=1000              |
+
+**CRD fields tested**:
+- `spec.security.podSecurityContext` — Pod-level security context (runAsNonRoot, fsGroup)
+- `spec.security.containerSecurityContext` — Container-level security context (readOnlyRootFilesystem, capabilities)
+
+### 18. Hard Anti-Affinity (MO-0034 REQ-007)
+
+**Directory**: `test/e2e/hard-anti-affinity/`
+
+Verifies that setting `antiAffinityPreset` to `"hard"` configures
+`requiredDuringSchedulingIgnoredDuringExecution` pod anti-affinity on the
+Deployment, with the correct topology key and label selector.
+
+| Step                                      | Operation                  | Assertion                                                                           |
+|-------------------------------------------|----------------------------|-------------------------------------------------------------------------------------|
+| create-memcached-with-hard-anti-affinity  | `apply` 00-memcached.yaml | CR with antiAffinityPreset="hard"                                                   |
+| assert-hard-anti-affinity                 | `assert` 01-assert-deployment | requiredDuringScheduling anti-affinity with topologyKey and instance label selector |
+
+**CRD fields tested**:
+- `spec.highAvailability.antiAffinityPreset` — Controls pod anti-affinity ("soft" or "hard")
+
 ---
 
 ## Test Patterns
@@ -641,6 +762,18 @@ verify runtime protocol behavior. This means:
 | REQ-E2E-SA-002  | Service annotations cleared when removed from CR spec              | service-annotations | Service metadata.annotations empty after patching `spec.service: null`, Service spec unchanged                      |
 | REQ-E2E-DOC-001 | Documentation updated with new test entries                        | (this document)     | network-policy and service-annotations sections, file structure, requirement coverage matrix                         |
 
+### Deployment Config E2E Tests (MO-0034)
+
+| REQ-ID           | Requirement                                                        | Test Scenario            | Key Assertions                                                                                                      |
+|------------------|--------------------------------------------------------------------|--------------------------|---------------------------------------------------------------------------------------------------------------------|
+| MO-0034-001      | PDB with maxUnavailable creates correct PDB and supports updates   | pdb-max-unavailable      | PDB with maxUnavailable=1, correct selector/labels; update to maxUnavailable=2 propagates                           |
+| MO-0034-002      | Verbosity level propagates to container args (-v, -vv)             | verbosity-extra-args     | Args include `-v` for verbosity=1, `-vv` for verbosity=2, placed after standard flags                              |
+| MO-0034-003      | extraArgs appended to container args after standard flags          | verbosity-extra-args     | Args include `-o modern` after standard flags; update to new extraArgs propagates                                   |
+| MO-0034-004      | Custom exporter image used for monitoring sidecar                  | custom-exporter-image    | Exporter sidecar uses custom image v0.14.0; update to v0.15.4 propagates                                           |
+| MO-0034-005      | Pod security context propagated to Deployment                      | security-contexts        | Pod securityContext with runAsNonRoot, fsGroup; update to runAsUser=1000 propagates                                 |
+| MO-0034-006      | Container security context propagated to Deployment                | security-contexts        | Container securityContext with readOnlyRootFilesystem, drop ALL; update propagates                                  |
+| MO-0034-007      | Hard anti-affinity creates requiredDuringScheduling affinity       | hard-anti-affinity       | requiredDuringSchedulingIgnoredDuringExecution with topologyKey and instance label selector                          |
+
 ---
 
 ## Known Limitations
@@ -655,6 +788,7 @@ verify runtime protocol behavior. This means:
 | Certificate issuance delay  | cert-manager may take time to issue certificates in CI   | Explicit `assert-certificate-ready` step waits for Ready=True within 120s |
 | No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw partial matching asserts presence of fields but cannot assert absence; the TLS test does not verify that `ssl_ca_cert` is absent when `enableClientCert` is false | The mTLS test provides the complementary positive assertion that `ssl_ca_cert` is present only when `enableClientCert: true`; combined, the two tests confirm correct conditional behavior |
 | Annotation removal uses JMESPath absence check | The service-annotations test uses a JMESPath expression to positively assert that annotations are absent or empty after removal | This upgrades confidence over simple field omission: the assertion actively fails if annotations remain on the Service |
+| Hard anti-affinity with single-node kind | The hard-anti-affinity test uses replicas=1 to avoid scheduling failures on single-node kind clusters; the test verifies the Deployment spec, not scheduling behavior | The spec-level assertion confirms the operator correctly translates `antiAffinityPreset: hard` to `requiredDuringSchedulingIgnoredDuringExecution` |
 
 ---
 

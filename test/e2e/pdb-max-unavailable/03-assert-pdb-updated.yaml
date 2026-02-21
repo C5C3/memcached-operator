@@ -1,0 +1,16 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: test-pdb-maxu
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-pdb-maxu
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  maxUnavailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memcached
+      app.kubernetes.io/instance: test-pdb-maxu
+      app.kubernetes.io/managed-by: memcached-operator

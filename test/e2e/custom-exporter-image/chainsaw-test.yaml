@@ -1,0 +1,31 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: custom-exporter-image
+spec:
+  description: >
+    Verify that specifying a custom exporter image in the monitoring config
+    uses that image for the exporter sidecar instead of the default
+    prom/memcached-exporter:v0.15.4 (REQ-004).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-custom-exporter
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-custom-exporter-image
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: update-exporter-image
+      try:
+        - patch:
+            file: 02-patch-exporter-image.yaml
+    - name: assert-updated-exporter-image
+      try:
+        - assert:
+            file: 03-assert-deployment.yaml

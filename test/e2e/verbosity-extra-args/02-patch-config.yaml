@@ -1,0 +1,11 @@
+---
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-verbosity
+spec:
+  memcached:
+    verbosity: 2
+    extraArgs:
+      - "--max-reqs-per-event"
+      - "20"

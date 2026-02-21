@@ -1,0 +1,24 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: hard-anti-affinity
+spec:
+  description: >
+    Verify that setting antiAffinityPreset to "hard" configures
+    requiredDuringSchedulingIgnoredDuringExecution pod anti-affinity
+    on the Deployment, with the correct topology key and label selector
+    (REQ-007).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-hard-anti-affinity
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-hard-anti-affinity
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml

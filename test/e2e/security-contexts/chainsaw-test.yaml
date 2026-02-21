@@ -1,0 +1,32 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: security-contexts
+spec:
+  description: >
+    Verify that custom pod and container security contexts defined in
+    spec.security are propagated to the Deployment pod template, and that
+    updating them triggers a rolling update with the new settings (REQ-005,
+    REQ-006).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-security-contexts
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-security-contexts
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: update-security-contexts
+      try:
+        - patch:
+            file: 02-patch-security-contexts.yaml
+    - name: assert-updated-security-contexts
+      try:
+        - assert:
+            file: 03-assert-deployment.yaml

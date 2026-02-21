@@ -1,0 +1,8 @@
+---
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-exporter
+spec:
+  monitoring:
+    exporterImage: "prom/memcached-exporter:v0.15.4"

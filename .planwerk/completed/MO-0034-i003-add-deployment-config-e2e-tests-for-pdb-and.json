@@ -2,8 +2,8 @@
   "feature_id": "MO-0034",
   "title": "I003: Add deployment config E2E tests for PDB and args",
   "slug": "i003-add-deployment-config-e2e-tests-for-pdb-and",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 5 Chainsaw E2E tests covering Deployment-level configuration features:\n\n1. **test/e2e/pdb-max-unavailable/**: Create PDB with `maxUnavailable: 1` (vs existing test that uses `minAvailable`). Assert PDB spec has `maxUnavailable` field set correctly.\n\n2. **test/e2e/verbosity-and-extra-args/**: Test `verbosity: 1` produces `-v` arg, `verbosity: 2` produces `-vv` arg, and `extraArgs: [\"-o\", \"modern\"]` appears in container args.\n\n3. **test/e2e/custom-exporter-image/**: Enable monitoring with custom `exporterImage`, assert exporter sidecar container uses the specified image instead of default.\n\n4. **test/e2e/security-contexts/**: Apply CR with `podSecurityContext` (runAsNonRoot, fsGroup) and `containerSecurityContext` (readOnlyRootFilesystem, allowPrivilegeEscalation: false). Assert both contexts propagated correctly to Deployment pod/container specs.\n\n5. **test/e2e/anti-affinity-hard/**: Apply CR with `antiAffinityPreset: hard`. Assert Deployment has `requiredDuringSchedulingIgnoredDuringExecution` pod anti-affinity rule (vs soft/preferred).\n\nAll tests are straightforward apply-and-assert patterns on Deployment spec fields.\n\n**Rationale:** These 5 features each modify Deployment spec fields and currently have zero E2E validation. Security contexts and anti-affinity are production-critical for hardened deployments. Verbosity/extraArgs bugs would silently misconfigure Memcached. PDB maxUnavailable is a distinct code path from the tested minAvailable variant.\n\n**Affected Areas:**\n- test/e2e/pdb-max-unavailable/chainsaw-test.yaml\n- test/e2e/verbosity-and-extra-args/chainsaw-test.yaml\n- test/e2e/custom-exporter-image/chainsaw-test.yaml\n- test/e2e/security-contexts/chainsaw-test.yaml\n- test/e2e/anti-affinity-hard/chainsaw-test.yaml",
   "stories": [
@@ -271,6 +271,7 @@
       "description": "Create test/e2e/pdb-max-unavailable/ directory with: 00-memcached.yaml (CR with replicas=3, highAvailability.podDisruptionBudget.enabled=true, maxUnavailable=1), 01-assert-deployment.yaml (Deployment ready with 3 replicas), 01-assert-pdb.yaml (PDB with maxUnavailable=1, no minAvailable, correct labels and selector), chainsaw-test.yaml (steps: apply CR, assert deployment ready, assert PDB). Follow exact pattern from test/e2e/pdb-creation/.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -281,6 +282,7 @@
       "description": "Create test/e2e/verbosity-and-extra-args/ directory with: 00-memcached.yaml (CR with verbosity=1, extraArgs=[\"-o\", \"modern\"]), 01-assert-deployment.yaml (assert container args contain -v, -o, modern after standard args -m 64 -c 1024 -t 4 -I 1m), 02-patch-verbosity.yaml (patch verbosity to 2), 03-assert-deployment.yaml (assert args now have -vv instead of -v, extraArgs still present), chainsaw-test.yaml (steps: apply, assert v1 args, patch verbosity, assert v2 args). Follow pattern from test/e2e/configuration-changes/.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003"
@@ -292,6 +294,7 @@
       "description": "Create test/e2e/custom-exporter-image/ directory with: 00-memcached.yaml (CR with monitoring.enabled=true, monitoring.exporterImage='quay.io/example/memcached-exporter:v0.15.0', monitoring.serviceMonitor with additionalLabels), 01-assert-deployment.yaml (assert exporter container has image quay.io/example/memcached-exporter:v0.15.0, name 'exporter', metrics port 9150), chainsaw-test.yaml (steps: apply, assert deployment with custom image). Follow pattern from test/e2e/monitoring-toggle/.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -302,6 +305,7 @@
       "description": "Create test/e2e/security-contexts/ directory with: 00-memcached.yaml (CR with security.podSecurityContext: runAsNonRoot=true, fsGroup=1000; security.containerSecurityContext: readOnlyRootFilesystem=true, allowPrivilegeEscalation=false; monitoring.enabled=true to verify exporter also gets containerSecurityContext), 01-assert-deployment.yaml (assert pod spec has securityContext with runAsNonRoot and fsGroup; memcached container has securityContext with readOnlyRootFilesystem and allowPrivilegeEscalation; exporter container also has same securityContext), chainsaw-test.yaml (steps: apply, assert deployment). Follow pattern from test/e2e/basic-deployment/.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006"
@@ -313,6 +317,7 @@
       "description": "Create test/e2e/anti-affinity-hard/ directory with: 00-memcached.yaml (CR with replicas=2, highAvailability.antiAffinityPreset='hard'), 01-assert-deployment.yaml (assert Deployment has affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution with topologyKey 'kubernetes.io/hostname' and labelSelector matching app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>), chainsaw-test.yaml (steps: apply, assert deployment with anti-affinity). Follow pattern from test/e2e/basic-deployment/.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -323,6 +328,7 @@
       "description": "Update docs/reference/backend/chainsaw-e2e-tests.md to add entries for all 5 new tests: pdb-max-unavailable, verbosity-and-extra-args, custom-exporter-image, security-contexts, anti-affinity-hard. Each entry must describe the test flow (apply/assert/patch steps) and what is validated. Update the requirement coverage matrix and the file structure section. Follow the existing documentation format.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -427,6 +433,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T08:18:40.368972"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:19:30.918386"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:41:19.268190"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:41:19.282449"
     }
   },
   "execution_history": [
@@ -440,6 +458,44 @@
           "name": "prepare",
           "duration": 374.4775149822235,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "d8a66ff1-cb8d-4d57-825b-49ef52019afd",
+      "timestamp": "2026-02-21T08:33:12.695689",
+      "total_duration": 694.6176950931549,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (5 tasks)",
+          "duration": 264.63031220436096,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 31.833767652511597,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0034] Code Review",
+          "duration": 173.93620371818542,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0034] Improvements",
+          "duration": 77.17263913154602,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0034] Simplify",
+          "duration": 147.0447723865509,
+          "type": "simplify",
           "status": "done"
         }
       ]

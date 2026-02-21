@@ -1,0 +1,107 @@
+{
+  "summary": "5 Chainsaw E2E tests added for Deployment-level config features (PDB maxUnavailable, verbosity/extraArgs, custom exporter image, security contexts, hard anti-affinity) plus documentation. 4 of 5 tests are complete and correct. The security-contexts test is missing monitoring enablement and exporter container assertions required by REQ-006.",
+  "verdict": "NEEDS_CHANGES",
+  "tests_checklist": [
+    {"item": "All 5 test directories exist with correct file structure (00-memcached.yaml, 01-assert-*.yaml, chainsaw-test.yaml)", "checked": true},
+    {"item": "All chainsaw-test.yaml use standard timeouts (apply=30s, assert=120s, delete=30s)", "checked": true},
+    {"item": "PDB test asserts maxUnavailable=1 present and patch to maxUnavailable=2", "checked": true},
+    {"item": "Verbosity test covers verbosity=1 (-v) and verbosity=2 (-vv) via patch-assert", "checked": true},
+    {"item": "Custom exporter image test validates image change via patch-assert", "checked": true},
+    {"item": "Security contexts test validates propagation to BOTH memcached and exporter containers", "checked": false},
+    {"item": "Anti-affinity test asserts requiredDuringSchedulingIgnoredDuringExecution with correct topology and labels", "checked": true},
+    {"item": "All CRs use apiVersion memcached.c5c3.io/v1alpha1 with resource requests/limits", "checked": true},
+    {"item": "All assertions use partial object matching", "checked": true},
+    {"item": "Documentation updated with all 5 new test scenarios", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing Chainsaw test patterns (file naming, step structure)", "checked": true},
+    {"item": "CR names follow test-<feature> convention", "checked": true},
+    {"item": "No duplication across test files", "checked": true},
+    {"item": "Test descriptions reference requirement IDs", "checked": true},
+    {"item": "Known limitations documented for single-node kind cluster", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No secrets or credentials in test fixtures", "checked": true},
+    {"item": "Test CRs use safe resource limits", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Tests are independent (no cross-test dependencies)", "checked": true},
+    {"item": "Each test directory is self-contained", "checked": true},
+    {"item": "Patch-assert pattern used where appropriate (4 of 5 tests)", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No unnecessary test files or assertions", "checked": true},
+    {"item": "No over-specified assertions (partial matching used)", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Tests assert deployment readiness before checking specific fields", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All external inputs validated (N/A for E2E test YAML)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "FC1-001",
+      "severity": "critical",
+      "check_id": "FC1, C2",
+      "file": "test/e2e/security-contexts/00-memcached.yaml",
+      "line": "6-29",
+      "description": "Security contexts test CR does not enable monitoring (missing `monitoring.enabled: true`). Task 1.4 explicitly requires 'monitoring.enabled=true to verify exporter also gets containerSecurityContext'. REQ-006 scenario 'Container security context on exporter sidecar' requires monitoring to be enabled so the exporter container exists and can be validated.",
+      "fix": "Add `monitoring: enabled: true` to spec in 00-memcached.yaml. Also add exporter image field if needed for the test to work."
+    },
+    {
+      "id": "FC1-002",
+      "severity": "critical",
+      "check_id": "FC1, C2",
+      "file": "test/e2e/security-contexts/01-assert-deployment.yaml",
+      "line": "12-20",
+      "description": "Assertion only validates memcached container securityContext. Missing assertion for exporter container securityContext. REQ-006 requires: 'the exporter container also has the same containerSecurityContext applied'. Review criteria states: 'Security contexts test validates propagation to BOTH memcached and exporter containers (monitoring enabled)'.",
+      "fix": "Add exporter container assertion with same securityContext fields (runAsNonRoot, readOnlyRootFilesystem, allowPrivilegeEscalation, capabilities.drop) to the containers list in the assertion."
+    },
+    {
+      "id": "FC1-003",
+      "severity": "critical",
+      "check_id": "FC1, C2",
+      "file": "test/e2e/security-contexts/03-assert-deployment.yaml",
+      "line": "13-22",
+      "description": "Post-patch assertion also only validates memcached container. Missing exporter container assertion after security context update.",
+      "fix": "Add exporter container with updated securityContext (including runAsUser: 1000) to the containers list in the post-patch assertion."
+    },
+    {
+      "id": "P1-001",
+      "severity": "minor",
+      "check_id": "P1",
+      "file": "test/e2e/custom-exporter-image/00-memcached.yaml",
+      "line": "21",
+      "description": "Exporter image 'prom/memcached-exporter:v0.14.0' differs from plan spec 'quay.io/example/memcached-exporter:v0.15.0'. The test still validates the custom image capability correctly using a different image reference. Acceptable deviation — real registry prefix is more realistic for E2E tests.",
+      "fix": "No fix needed. The test validates the same capability with a more realistic image reference."
+    },
+    {
+      "id": "P1-002",
+      "severity": "minor",
+      "check_id": "P1",
+      "file": "test/e2e/hard-anti-affinity/00-memcached.yaml",
+      "line": "7",
+      "description": "Uses replicas=1 instead of replicas=2 from plan. This is documented as a known limitation in the docs (single-node kind cluster). Acceptable deviation.",
+      "fix": "No fix needed. Known limitation is documented."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider adding a 02-patch step to the security-contexts test that also patches monitoring.enabled from true to false, to verify security contexts survive exporter removal",
+    "Consider adding a negative assertion to the PDB test to explicitly verify minAvailable is absent (Chainsaw limitation — partial matching cannot assert field absence, but a JMESPath expression could)"
+  ],
+  "next_steps": [
+    "Fix security-contexts/00-memcached.yaml: add monitoring.enabled=true and monitoring.exporterImage",
+    "Fix security-contexts/01-assert-deployment.yaml: add exporter container with securityContext assertion",
+    "Fix security-contexts/03-assert-deployment.yaml: add exporter container with updated securityContext assertion",
+    "Re-request review after REQ-006 exporter sidecar coverage is added"
+  ],
+  "metadata": {
+    "feature_id": "MO-0034",
+    "title": "I003: Add deployment config E2E tests for PDB and args",
+    "date": "2026-02-21",
+    "verdict": "NEEDS_CHANGES"
+  }
+}

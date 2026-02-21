@@ -1,0 +1,22 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-verbosity
+spec:
+  template:
+    spec:
+      containers:
+        - name: memcached
+          args:
+            - "-m"
+            - "64"
+            - "-c"
+            - "1024"
+            - "-t"
+            - "4"
+            - "-I"
+            - "1m"
+            - "-v"
+            - "-o"
+            - "modern"

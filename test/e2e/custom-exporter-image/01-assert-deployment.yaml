@@ -1,0 +1,20 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-exporter
+spec:
+  template:
+    spec:
+      containers:
+        - name: memcached
+          ports:
+            - name: memcached
+              containerPort: 11211
+              protocol: TCP
+        - name: exporter
+          image: "prom/memcached-exporter:v0.14.0"
+          ports:
+            - name: metrics
+              containerPort: 9150
+              protocol: TCP

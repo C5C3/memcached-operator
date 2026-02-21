@@ -1,0 +1,9 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-pdb-maxu
+spec:
+  replicas: 3
+status:
+  readyReplicas: 3

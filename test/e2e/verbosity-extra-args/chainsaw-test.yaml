@@ -1,0 +1,31 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: verbosity-extra-args
+spec:
+  description: >
+    Verify that setting memcached verbosity level and extraArgs propagates
+    to the Deployment container args, and that updating them triggers
+    a rolling update with the correct args (REQ-002, REQ-003).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-verbosity-and-extra-args
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-initial-args
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: update-verbosity-and-extra-args
+      try:
+        - patch:
+            file: 02-patch-config.yaml
+    - name: assert-updated-args
+      try:
+        - assert:
+            file: 03-assert-deployment.yaml
