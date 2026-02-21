@@ -12,7 +12,17 @@ This guide covers installing the Memcached Operator on a Kubernetes cluster, ver
 - **Prometheus Operator CRDs** installed (optional, required only if you plan to
   use `ServiceMonitor` resources for monitoring)
 
-To verify your cluster meets these requirements:
+#### Install cert-manager
+
+If cert-manager is not yet installed on your cluster, install it before
+deploying the operator:
+
+```bash
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+kubectl wait --for=condition=Available deployment --all -n cert-manager --timeout=120s
+```
+
+#### Verify prerequisites
 
 ```bash
 # Check Kubernetes version
