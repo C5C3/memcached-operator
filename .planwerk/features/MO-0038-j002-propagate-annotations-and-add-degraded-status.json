@@ -1,0 +1,544 @@
+{
+  "feature_id": "MO-0038",
+  "title": "J002: Propagate annotations and add Degraded status",
+  "slug": "j002-propagate-annotations-and-add-degraded-status",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** backend\n**Priority:** critical\n**Source:** Proposed for 'Secret Rotation & Rolling Restart\n\n  Automatic'\n\nWire the secret hash and restart trigger into the Deployment and status conditions:\n\n**Deployment changes (`internal/controller/deployment.go`):**\n- Extend `constructDeployment` to accept `secretHash string` and `restartTrigger string` parameters\n- Set `dep.Spec.Template.ObjectMeta.Annotations[\"memcached.c5c3.io/secret-hash\"]` with the computed hash\n- Set `dep.Spec.Template.ObjectMeta.Annotations[\"memcached.c5c3.io/restart-trigger\"]` with the trigger value from the CR\n- When either annotation value changes, Kubernetes automatically triggers a rolling update\n\n**Status changes (`internal/controller/status.go`):**\n- Add constant `ConditionReasonSecretNotFound = \"SecretNotFound\"`\n- Extend `computeConditions` to accept `missingSecrets []string` parameter\n- When `missingSecrets` is non-empty, set `Degraded=True` with reason `SecretNotFound` and message listing the missing Secret names\n\n**Controller wiring (`internal/controller/memcached_controller.go`):**\n- In `reconcileDeployment`: call `fetchReferencedSecrets` to get Secrets + missing names, call `computeSecretHash` on found Secrets\n- Read `memcached.c5c3.io/restart-trigger` from `mc.Annotations`\n- Pass `secretHash` and `restartTrigger` to `constructDeployment`\n- Pass `missingSecrets` to condition/status logic\n- In `SetupWithManager`: add `.Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(ctx, mgr.GetClient())))` to watch Secret changes\n\n**Test updates:**\n- `internal/controller/deployment_test.go`: Add cases verifying `secret-hash` and `restart-trigger` annotations appear on Pod template; verify annotations are empty/absent when no Secrets referenced\n- `internal/controller/status_test.go`: Add cases for `SecretNotFound` Degraded condition when Secrets are missing; verify no Degraded condition when all Secrets are found\n\n**Rationale:** This is the integration layer connecting the hash computation to the actual rolling restart mechanism. Without it, even with correct hash computation, Secret changes would not trigger Pod restarts. The Degraded condition provides critical operational visibility — operators need to know immediately when a referenced Secret is missing, rather than debugging failed Pod mounts after the fact.\n\n**Affected Areas:**\n- internal/controller/deployment.go\n- internal/controller/deployment_test.go\n- internal/controller/status.go\n- internal/controller/status_test.go\n- internal/controller/memcached_controller.go",
+  "stories": [
+    {
+      "title": "Operator detects Secret content changes and triggers rolling restart",
+      "role": "cluster operator",
+      "want": "the Memcached Deployment pods to automatically restart when a referenced SASL or TLS Secret's data changes",
+      "so_that": "certificate rotations and credential updates take effect without manual intervention",
+      "criteria": [
+        "When a referenced Secret's .data changes, the computed SHA-256 hash annotation on the Pod template updates",
+        "The changed Pod template annotation causes Kubernetes to perform a rolling update",
+        "The hash is deterministic: same Secret data always produces the same annotation value",
+        "When no Secrets are referenced (no SASL/TLS), the secret-hash annotation is absent or empty"
+      ]
+    },
+    {
+      "title": "Operator propagates restart-trigger annotation for manual restarts",
+      "role": "cluster operator",
+      "want": "to trigger a manual rolling restart by setting the memcached.c5c3.io/restart-trigger annotation on the Memcached CR",
+      "so_that": "I can force a pod restart without modifying the spec (e.g., to pick up ConfigMap changes or debug issues)",
+      "criteria": [
+        "The value of memcached.c5c3.io/restart-trigger from the CR's metadata.annotations is propagated to the Pod template annotations",
+        "Changing the restart-trigger annotation value triggers a rolling update",
+        "When the annotation is absent on the CR, the restart-trigger annotation is absent or empty on the Pod template",
+        "The restart-trigger annotation coexists with the secret-hash annotation without interference"
+      ]
+    },
+    {
+      "title": "Operator reports Degraded status when a referenced Secret is missing",
+      "role": "cluster operator",
+      "want": "the Memcached CR status to show a Degraded condition with reason SecretNotFound when a referenced Secret does not exist",
+      "so_that": "I can immediately identify misconfigured Secret references instead of debugging failed pod mounts",
+      "criteria": [
+        "When one or more referenced Secrets are missing, Degraded=True with reason SecretNotFound",
+        "The Degraded condition message lists the names of the missing Secrets",
+        "When all referenced Secrets exist, the Degraded condition is not set to SecretNotFound (existing replica-based degraded logic still applies)",
+        "When no Secrets are referenced, the Degraded condition behaves as before (replica-based only)"
+      ]
+    },
+    {
+      "title": "Controller watches Secret changes and re-reconciles affected Memcached CRs",
+      "role": "system",
+      "want": "Secret change events to trigger reconciliation of Memcached CRs that reference the changed Secret",
+      "so_that": "the operator responds to external Secret updates (e.g., cert-manager rotation) without requiring CR modifications",
+      "criteria": [
+        "SetupWithManager includes a .Watches call for corev1.Secret with EnqueueRequestsFromMapFunc",
+        "The map function uses the existing mapSecretToMemcached helper to resolve affected CRs",
+        "Only Memcached CRs in the same namespace as the Secret are enqueued",
+        "Secrets not referenced by any Memcached CR produce no reconcile requests"
+      ]
+    },
+    {
+      "title": "Deployment reconciliation integrates secret fetching and hash computation",
+      "role": "developer",
+      "want": "the reconcileDeployment method to wire fetchReferencedSecrets, computeSecretHash, and the restart-trigger annotation into the constructDeployment call",
+      "so_that": "all secret-related logic flows through the existing reconciliation pipeline with minimal disruption",
+      "criteria": [
+        "reconcileDeployment calls fetchReferencedSecrets before constructDeployment",
+        "reconcileDeployment calls computeSecretHash on the found Secrets",
+        "reconcileDeployment reads memcached.c5c3.io/restart-trigger from mc.Annotations",
+        "reconcileDeployment passes secretHash and restartTrigger to constructDeployment",
+        "reconcileDeployment returns missingSecrets for use by status reconciliation"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "constructDeployment SHALL accept secretHash and restartTrigger string parameters and set them as Pod template annotations",
+      "priority": "SHALL",
+      "rationale": "Pod template annotation changes cause Kubernetes to trigger rolling updates, which is the mechanism for applying Secret changes to running pods",
+      "scenarios": [
+        {
+          "name": "Secret hash annotation set when Secrets are referenced",
+          "when": "constructDeployment is called with a non-empty secretHash string",
+          "then": "dep.Spec.Template.ObjectMeta.Annotations[\"memcached.c5c3.io/secret-hash\"] equals the provided hash value",
+          "and_then": []
+        },
+        {
+          "name": "Secret hash annotation absent when no Secrets referenced",
+          "when": "constructDeployment is called with an empty secretHash string",
+          "then": "the memcached.c5c3.io/secret-hash annotation is absent from the Pod template annotations (or the annotations map is nil/empty)",
+          "and_then": []
+        },
+        {
+          "name": "Restart trigger annotation set when CR has annotation",
+          "when": "constructDeployment is called with a non-empty restartTrigger string",
+          "then": "dep.Spec.Template.ObjectMeta.Annotations[\"memcached.c5c3.io/restart-trigger\"] equals the provided trigger value",
+          "and_then": []
+        },
+        {
+          "name": "Restart trigger annotation absent when CR has no annotation",
+          "when": "constructDeployment is called with an empty restartTrigger string",
+          "then": "the memcached.c5c3.io/restart-trigger annotation is absent from the Pod template annotations",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "constructDeployment SHALL only create the annotations map when at least one annotation value is non-empty",
+      "priority": "SHALL",
+      "rationale": "Avoid creating an empty annotations map on the Pod template which could cause unnecessary Deployment updates on every reconciliation",
+      "scenarios": [
+        {
+          "name": "Both annotations non-empty creates map with both entries",
+          "when": "constructDeployment is called with both secretHash and restartTrigger non-empty",
+          "then": "Pod template annotations map contains exactly both annotation keys with their values",
+          "and_then": []
+        },
+        {
+          "name": "Only secretHash non-empty creates map with one entry",
+          "when": "constructDeployment is called with secretHash non-empty and restartTrigger empty",
+          "then": "Pod template annotations map contains only the secret-hash key",
+          "and_then": []
+        },
+        {
+          "name": "Both empty results in no annotations map",
+          "when": "constructDeployment is called with both secretHash and restartTrigger empty",
+          "then": "Pod template ObjectMeta.Annotations is nil (no annotations map created)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "computeConditions SHALL accept a missingSecrets parameter and set Degraded=True with reason SecretNotFound when the list is non-empty",
+      "priority": "SHALL",
+      "rationale": "Operators need immediate visibility when referenced Secrets are missing, rather than debugging failed pod mounts after the fact",
+      "scenarios": [
+        {
+          "name": "Missing secrets triggers SecretNotFound Degraded condition",
+          "when": "computeConditions is called with missingSecrets=[\"my-sasl-secret\"]",
+          "then": "the Degraded condition has Status=True, Reason=SecretNotFound",
+          "and_then": [
+            "the Message contains \"my-sasl-secret\""
+          ]
+        },
+        {
+          "name": "Multiple missing secrets listed in message",
+          "when": "computeConditions is called with missingSecrets=[\"sasl-secret\", \"tls-secret\"]",
+          "then": "the Degraded condition has Status=True, Reason=SecretNotFound",
+          "and_then": [
+            "the Message contains both \"sasl-secret\" and \"tls-secret\""
+          ]
+        },
+        {
+          "name": "No missing secrets falls through to replica-based degraded logic",
+          "when": "computeConditions is called with missingSecrets=nil or empty, and all replicas are ready",
+          "then": "the Degraded condition has Status=False, Reason=NotDegraded",
+          "and_then": []
+        },
+        {
+          "name": "SecretNotFound takes precedence over replica-based degraded",
+          "when": "computeConditions is called with missingSecrets non-empty, even if all replicas are ready",
+          "then": "the Degraded condition has Status=True, Reason=SecretNotFound (not Degraded)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The ConditionReasonSecretNotFound constant SHALL be added to status.go",
+      "priority": "SHALL",
+      "rationale": "Consistent constant naming following existing pattern (ConditionReasonAvailable, ConditionReasonDegraded, etc.)",
+      "scenarios": [
+        {
+          "name": "Constant defined with correct value",
+          "when": "the status.go file is compiled",
+          "then": "ConditionReasonSecretNotFound has value \"SecretNotFound\"",
+          "and_then": []
+        },
+        {
+          "name": "Constant used in computeConditions",
+          "when": "missingSecrets is non-empty in computeConditions",
+          "then": "the Degraded condition's Reason field uses ConditionReasonSecretNotFound",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "reconcileDeployment SHALL call fetchReferencedSecrets and computeSecretHash, and pass results to constructDeployment",
+      "priority": "SHALL",
+      "rationale": "This is the integration point connecting secret hash computation to the Deployment annotation that triggers rolling updates",
+      "scenarios": [
+        {
+          "name": "Secrets fetched and hash computed before constructDeployment",
+          "when": "reconcileDeployment runs for a Memcached CR with SASL enabled and the Secret exists",
+          "then": "constructDeployment receives the computed secretHash string",
+          "and_then": [
+            "the Pod template carries the computed hash as an annotation"
+          ]
+        },
+        {
+          "name": "Missing secrets are captured for status reporting",
+          "when": "reconcileDeployment runs for a Memcached CR with a missing Secret reference",
+          "then": "the missing secret names are available for the status reconciliation step",
+          "and_then": []
+        },
+        {
+          "name": "Restart trigger read from CR annotations",
+          "when": "the Memcached CR has annotation memcached.c5c3.io/restart-trigger=2024-01-15T10:00:00Z",
+          "then": "constructDeployment receives restartTrigger=\"2024-01-15T10:00:00Z\"",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "reconcileStatus SHALL pass missingSecrets to computeConditions",
+      "priority": "SHALL",
+      "rationale": "The Degraded condition for missing Secrets must be set during status reconciliation using the missing secrets discovered during deployment reconciliation",
+      "scenarios": [
+        {
+          "name": "Missing secrets propagated from reconcile to status",
+          "when": "reconcileDeployment identified missing secrets and reconcileStatus runs",
+          "then": "computeConditions receives the missingSecrets list from reconcileDeployment",
+          "and_then": []
+        },
+        {
+          "name": "No missing secrets results in normal status computation",
+          "when": "all referenced Secrets exist",
+          "then": "computeConditions receives nil/empty missingSecrets and computes conditions based on replica counts only",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "SetupWithManager SHALL add a Watches call for corev1.Secret using mapSecretToMemcached",
+      "priority": "SHALL",
+      "rationale": "Without the Secret watch, the controller would not be notified when referenced Secrets change, defeating the purpose of hash-based rolling restart",
+      "scenarios": [
+        {
+          "name": "Secret watch registered in SetupWithManager",
+          "when": "SetupWithManager is called",
+          "then": "the controller builder includes .Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(mgr.GetClient())))",
+          "and_then": []
+        },
+        {
+          "name": "Secret change triggers reconciliation of referencing CR",
+          "when": "a Secret referenced by a Memcached CR is updated",
+          "then": "the Memcached CR is enqueued for reconciliation",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "Existing constructDeployment callers and tests SHALL continue to work with the new signature",
+      "priority": "SHALL",
+      "rationale": "The signature change must not break existing tests or the reconcileDeployment call site",
+      "scenarios": [
+        {
+          "name": "Existing unit tests for constructDeployment pass with empty hash and trigger",
+          "when": "existing tests call constructDeployment with empty secretHash and restartTrigger",
+          "then": "all existing test assertions continue to pass",
+          "and_then": []
+        },
+        {
+          "name": "Existing status tests pass with nil missingSecrets",
+          "when": "existing tests call computeConditions with nil missingSecrets",
+          "then": "all existing test assertions continue to pass",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The annotation keys SHALL use the memcached.c5c3.io domain prefix",
+      "priority": "SHALL",
+      "rationale": "Following Kubernetes annotation conventions, operator-specific annotations use a domain prefix to avoid collisions",
+      "scenarios": [
+        {
+          "name": "Secret hash annotation uses correct key",
+          "when": "secretHash is set on the Deployment",
+          "then": "the annotation key is exactly memcached.c5c3.io/secret-hash",
+          "and_then": []
+        },
+        {
+          "name": "Restart trigger annotation uses correct key",
+          "when": "restartTrigger is set on the Deployment",
+          "then": "the annotation key is exactly memcached.c5c3.io/restart-trigger",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Extend constructDeployment signature and set Pod template annotations (REQ-001, REQ-002, REQ-009)",
+      "description": "In `internal/controller/deployment.go`, change `constructDeployment(mc *Memcached, dep *Deployment)` to `constructDeployment(mc *Memcached, dep *Deployment, secretHash string, restartTrigger string)`. Before setting `dep.Spec`, build an annotations map: if secretHash is non-empty, add `memcached.c5c3.io/secret-hash`; if restartTrigger is non-empty, add `memcached.c5c3.io/restart-trigger`. Set `dep.Spec.Template.ObjectMeta.Annotations` to the map (or leave nil if both are empty). Define annotation key constants `AnnotationSecretHash` and `AnnotationRestartTrigger` at the top of the file.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Update all existing constructDeployment call sites to pass empty strings (REQ-008)",
+      "description": "In `internal/controller/memcached_controller.go`, update the `reconcileDeployment` method's call to `constructDeployment(mc, dep)` to `constructDeployment(mc, dep, \"\", \"\")` temporarily. This keeps existing behavior while the signature changes. Also update any test files that call `constructDeployment` directly — search for all call sites in `deployment_test.go` and add `\"\", \"\"` arguments. Run `go vet` to confirm compilation.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add deployment annotation unit tests (REQ-001, REQ-002, REQ-009)",
+      "description": "In `internal/controller/deployment_test.go`, add table-driven test `TestConstructDeployment_SecretHashAnnotation` with cases: (1) non-empty secretHash sets annotation, (2) empty secretHash results in no annotation, (3) both secretHash and restartTrigger set results in both annotations, (4) only restartTrigger set results in only that annotation, (5) both empty results in nil annotations map. Verify annotation keys are exactly `memcached.c5c3.io/secret-hash` and `memcached.c5c3.io/restart-trigger`. Follow existing test patterns (table-driven, direct assertion).",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add ConditionReasonSecretNotFound constant and extend computeConditions signature (REQ-003, REQ-004)",
+      "description": "In `internal/controller/status.go`: (1) Add `ConditionReasonSecretNotFound = \"SecretNotFound\"` to the condition reason constants block. (2) Change `computeConditions(mc *Memcached, dep *Deployment)` to `computeConditions(mc *Memcached, dep *Deployment, missingSecrets []string)`. (3) Before the existing degraded logic, add: if len(missingSecrets) > 0, set Degraded=True, Reason=SecretNotFound, Message listing the missing names (e.g., `fmt.Sprintf(\"Referenced Secrets not found: %s\", strings.Join(missingSecrets, \", \"))`), and skip the replica-based degraded check. (4) Update the call in `reconcileStatus` to pass `nil` for now: `computeConditions(mc, dep, nil)`. This keeps existing behavior.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Update existing computeConditions call sites and tests (REQ-008)",
+      "description": "In `internal/controller/status_test.go`, update all existing calls to `computeConditions(mc, tt.dep)` to `computeConditions(mc, tt.dep, nil)`. Run existing tests to verify they pass unchanged. This task ensures backward compatibility with the new signature before adding new test cases.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Add status condition unit tests for SecretNotFound (REQ-003, REQ-004)",
+      "description": "In `internal/controller/status_test.go`, add tests: (1) `TestComputeConditions_SecretNotFound_SingleMissing`: missingSecrets=[\"sasl-secret\"], verify Degraded=True, Reason=SecretNotFound, Message contains \"sasl-secret\". (2) `TestComputeConditions_SecretNotFound_MultipleMissing`: missingSecrets=[\"sasl-secret\", \"tls-secret\"], verify Message contains both names. (3) `TestComputeConditions_SecretNotFound_PrecedenceOverReplica`: missingSecrets non-empty with all replicas ready, verify Degraded=True with SecretNotFound (not NotDegraded). (4) `TestComputeConditions_NoMissingSecrets_NilSlice`: missingSecrets=nil, verify existing behavior unchanged. (5) `TestComputeConditions_NoMissingSecrets_EmptySlice`: missingSecrets=[]string{}, verify existing behavior unchanged.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Wire fetchReferencedSecrets and computeSecretHash into reconcileDeployment (REQ-005)",
+      "description": "In `internal/controller/memcached_controller.go`, modify `reconcileDeployment`: (1) Before the reconcileResource call, call `found, missing := fetchReferencedSecrets(ctx, r.Client, mc)`. (2) Call `secretHash := computeSecretHash(found...)`. (3) Read `restartTrigger := mc.Annotations[\"memcached.c5c3.io/restart-trigger\"]` (safe for nil map in Go — returns empty string). (4) Update the constructDeployment call to pass secretHash and restartTrigger. (5) Change reconcileDeployment return signature to `([]string, error)` returning `missing` alongside the error, so the caller can pass missingSecrets to status. Update the Reconcile method's call to capture the missing list.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Wire missingSecrets into reconcileStatus (REQ-006)",
+      "description": "In `internal/controller/memcached_controller.go`: (1) Modify `reconcileStatus` to accept `missingSecrets []string` parameter: `reconcileStatus(ctx, mc, missingSecrets)`. (2) Pass missingSecrets to `computeConditions(mc, dep, missingSecrets)`. (3) In the Reconcile method, pass the missingSecrets captured from reconcileDeployment to reconcileStatus. Update any other call sites of reconcileStatus if they exist.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Add Secret watch to SetupWithManager (REQ-007)",
+      "description": "In `internal/controller/memcached_controller.go`, modify `SetupWithManager`: add `.Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(mgr.GetClient())))` to the controller builder chain. Add necessary imports for `handler` package (`sigs.k8s.io/controller-runtime/pkg/handler`). Note: the existing mapSecretToMemcached function takes `c client.Client` and returns `handler.MapFunc`, matching this usage.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for deployment annotation propagation and Degraded SecretNotFound (REQ-001 through REQ-009)",
+      "description": "Create `docs/reference/backend/deployment-annotation-propagation.md` covering: (1) The two Pod template annotations (secret-hash and restart-trigger), their keys, and what triggers a rolling update. (2) The constructDeployment signature change and annotation-setting logic. (3) The Degraded SecretNotFound condition: when it triggers, message format, precedence over replica-based degraded. (4) The reconcileDeployment wiring: fetchReferencedSecrets → computeSecretHash → constructDeployment flow. (5) The Secret watch in SetupWithManager. (6) Example CR YAML with annotations and resulting Deployment YAML. Follow existing doc patterns in docs/reference/backend/.",
+      "level": 4,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-005",
+        "REQ-007"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_SecretHashAnnotation_NonEmpty",
+      "story": "Operator detects Secret content changes and triggers rolling restart",
+      "expected": "When secretHash is non-empty, Pod template annotation memcached.c5c3.io/secret-hash is set to the hash value",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_SecretHashAnnotation_Empty",
+      "story": "Operator detects Secret content changes and triggers rolling restart",
+      "expected": "When secretHash is empty, the memcached.c5c3.io/secret-hash annotation is absent from Pod template",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_RestartTriggerAnnotation_NonEmpty",
+      "story": "Operator propagates restart-trigger annotation for manual restarts",
+      "expected": "When restartTrigger is non-empty, Pod template annotation memcached.c5c3.io/restart-trigger is set to the trigger value",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_RestartTriggerAnnotation_Empty",
+      "story": "Operator propagates restart-trigger annotation for manual restarts",
+      "expected": "When restartTrigger is empty, the memcached.c5c3.io/restart-trigger annotation is absent from Pod template",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_BothAnnotations",
+      "story": "Operator detects Secret content changes and triggers rolling restart",
+      "expected": "When both secretHash and restartTrigger are non-empty, both annotations are present on the Pod template",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_NoAnnotationsWhenBothEmpty",
+      "story": "Operator detects Secret content changes and triggers rolling restart",
+      "expected": "When both secretHash and restartTrigger are empty, Pod template annotations map is nil",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_SecretNotFound_SingleMissing",
+      "story": "Operator reports Degraded status when a referenced Secret is missing",
+      "expected": "Degraded condition Status=True, Reason=SecretNotFound, Message contains the missing Secret name",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_SecretNotFound_MultipleMissing",
+      "story": "Operator reports Degraded status when a referenced Secret is missing",
+      "expected": "Degraded condition Message contains all missing Secret names",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_SecretNotFound_PrecedenceOverReplica",
+      "story": "Operator reports Degraded status when a referenced Secret is missing",
+      "expected": "When missingSecrets is non-empty and all replicas are ready, Degraded=True with Reason=SecretNotFound (overrides replica-based NotDegraded)",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_NoMissingSecrets_NilSlice",
+      "story": "Operator reports Degraded status when a referenced Secret is missing",
+      "expected": "With nil missingSecrets and all replicas ready, Degraded=False with Reason=NotDegraded (existing behavior preserved)",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_NoMissingSecrets_EmptySlice",
+      "story": "Operator reports Degraded status when a referenced Secret is missing",
+      "expected": "With empty missingSecrets slice and all replicas ready, Degraded=False with Reason=NotDegraded (existing behavior preserved)",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestConditionReasonSecretNotFound_Constant",
+      "story": "Operator reports Degraded status when a referenced Secret is missing",
+      "expected": "ConditionReasonSecretNotFound constant equals \"SecretNotFound\"",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment_AnnotationKeyConstants",
+      "story": "Operator detects Secret content changes and triggers rolling restart",
+      "expected": "AnnotationSecretHash equals \"memcached.c5c3.io/secret-hash\" and AnnotationRestartTrigger equals \"memcached.c5c3.io/restart-trigger\"",
+      "requirement_id": "REQ-009"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All existing unit tests in deployment_test.go pass after constructDeployment signature change (go test ./internal/controller/ -run TestConstructDeployment)",
+    "All existing unit tests in status_test.go pass after computeConditions signature change (go test ./internal/controller/ -run TestComputeConditions)",
+    "New annotation tests verify both presence and absence of annotations on Pod template for all combinations of secretHash and restartTrigger",
+    "New SecretNotFound tests verify Degraded condition for single missing, multiple missing, precedence over replica-based, and no-missing cases",
+    "SetupWithManager includes .Watches for corev1.Secret with mapSecretToMemcached handler",
+    "reconcileDeployment integrates fetchReferencedSecrets, computeSecretHash, and CR annotation reading before constructDeployment call",
+    "missingSecrets flows from reconcileDeployment through Reconcile to reconcileStatus to computeConditions",
+    "go vet and golangci-lint pass with no new errors",
+    "Reference documentation created in docs/reference/backend/ following existing patterns"
+  ],
+  "implementation_notes": "## Architecture\n\nThis feature connects three existing helper functions (computeSecretHash, fetchReferencedSecrets, mapSecretToMemcached from secret.go) into the reconciliation pipeline.\n\n### Signature Changes\n\n1. **constructDeployment**: `(mc, dep)` → `(mc, dep, secretHash string, restartTrigger string)`. The new parameters are simple strings to avoid coupling deployment.go to Secret types. The function builds an annotations map only when at least one value is non-empty.\n\n2. **computeConditions**: `(mc, dep)` → `(mc, dep, missingSecrets []string)`. When missingSecrets is non-empty, the Degraded condition is set to SecretNotFound regardless of replica counts. This takes precedence because a missing Secret is a configuration error that won't resolve via scaling.\n\n3. **reconcileDeployment**: Return type changes from `error` to `([]string, error)` to pass missingSecrets upstream.\n\n4. **reconcileStatus**: `(ctx, mc)` → `(ctx, mc, missingSecrets []string)` to propagate to computeConditions.\n\n### Data Flow\n\n```\nReconcile\n  ├─ reconcileDeployment(ctx, mc)\n  │    ├─ fetchReferencedSecrets(ctx, r.Client, mc) → found, missing\n  │    ├─ computeSecretHash(found...) → secretHash\n  │    ├─ mc.Annotations[\"memcached.c5c3.io/restart-trigger\"] → restartTrigger\n  │    ├─ constructDeployment(mc, dep, secretHash, restartTrigger)\n  │    └─ return missing, err\n  ├─ reconcileStatus(ctx, mc, missing)\n  │    ├─ computeConditions(mc, dep, missing)\n  │    └─ ...\n```\n\n### Key Design Decisions\n\n- **Annotations map only when needed**: If both secretHash and restartTrigger are empty, no annotations map is set on the Pod template. This avoids no-op Deployment updates.\n- **SecretNotFound precedence**: Missing Secrets override replica-based Degraded because it's a config error, not a transient state.\n- **restartTrigger from CR annotations**: No CRD type change needed — the value lives as a standard Kubernetes annotation on the Memcached CR metadata.\n\n### Key Files\n\n- `internal/controller/deployment.go` — constructDeployment signature + annotation logic\n- `internal/controller/status.go` — computeConditions signature + SecretNotFound constant + condition logic\n- `internal/controller/memcached_controller.go` — reconcileDeployment wiring, reconcileStatus wiring, SetupWithManager Secret watch\n- `internal/controller/deployment_test.go` — annotation test cases\n- `internal/controller/status_test.go` — SecretNotFound test cases\n\n### Risks\n\n- **Large test file update**: deployment_test.go has 3200+ lines with many direct calls to constructDeployment. All must be updated with the two new arguments. This is mechanical but error-prone — use find-and-replace.\n- **Return type change on reconcileDeployment**: The Reconcile method must be updated to capture the new return value. The `if reconcileErr = r.reconcileDeployment(ctx, memcached); reconcileErr != nil` pattern needs adjustment.\n- **reconcileStatus signature change**: Check for any envtest integration tests that call reconcileStatus directly.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T15:48:10.849556"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T19:09:38.733768"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T19:13:33.752312"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "bd441dcf-0357-4b9f-a9f6-470f5ecee3bc",
+      "timestamp": "2026-02-21T19:13:33.752339",
+      "total_duration": 231.21296501159668,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 231.21296501159668,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
