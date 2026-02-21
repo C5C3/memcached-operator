@@ -1,0 +1,621 @@
+{
+  "feature_id": "MO-0040",
+  "title": "K001: Add AutoscalingSpec CRD types and webhooks",
+  "slug": "k001-add-autoscalingspec-crd-types-and-webhooks",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** backend\n**Priority:** critical\n**Source:** Proposed for 'Horizontal Pod Autoscaling\n\nNew spec.autoscaling'\n\nAdd the AutoscalingSpec struct to api/v1alpha1/memcached_types.go with fields: Enabled bool, MinReplicas *int32, MaxReplicas int32, Metrics []autoscalingv2.MetricSpec, Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior. Add optional *AutoscalingSpec field to MemcachedSpec. Implement defaulting webhook in api/v1alpha1/memcached_webhook.go: inject 80% CPU utilization metric when autoscaling enabled but Metrics is empty; inject 300s scaleDown stabilization window when Behavior is nil. Implement validation webhook in api/v1alpha1/memcached_validation_webhook.go: reject CRs where both spec.replicas is set and autoscaling.enabled=true; validate minReplicas <= maxReplicas; reject CPU metric usage without resources.requests.cpu on the Memcached container. Write unit tests covering: type serialization/deserialization, defaulting webhook injects correct defaults, defaulting webhook preserves user-specified values, validation webhook rejects mutual exclusivity violations, validation rejects min > max, validation rejects CPU metric without CPU requests.\n\n**Rationale:** This is the foundation layer - all other features depend on the CRD types being defined and webhooks enforcing invariants. Without correct types and admission control, the HPA reconciler cannot be built safely. The mutual exclusivity validation prevents conflicting scaling configurations that would cause operator/HPA fights over replica count.\n\n**Affected Areas:**\n- api/v1alpha1/memcached_types.go\n- api/v1alpha1/memcached_webhook.go\n- api/v1alpha1/memcached_validation_webhook.go\n- api/v1alpha1/memcached_types_test.go\n- api/v1alpha1/memcached_webhook_test.go\n- api/v1alpha1/memcached_validation_webhook_test.go",
+  "stories": [
+    {
+      "title": "Operator user enables horizontal pod autoscaling for a Memcached cluster",
+      "role": "cluster operator",
+      "want": "to add an autoscaling block to my Memcached CR spec that configures HPA-based scaling",
+      "so_that": "the Memcached cluster scales automatically based on resource utilization without manual replica adjustments",
+      "criteria": [
+        "spec.autoscaling field is accepted on the Memcached CR with Enabled, MinReplicas, MaxReplicas, Metrics, and Behavior sub-fields",
+        "AutoscalingSpec struct serializes to/from JSON correctly including all nested autoscalingv2 types",
+        "DeepCopy on AutoscalingSpec produces an independent clone that is not affected by mutations to the original",
+        "The Memcached CR with autoscaling enabled passes validation when spec.replicas is not set"
+      ]
+    },
+    {
+      "title": "Operator receives sensible autoscaling defaults when fields are omitted",
+      "role": "cluster operator",
+      "want": "the defaulting webhook to inject cache-friendly defaults when I enable autoscaling without specifying metrics or behavior",
+      "so_that": "I get a working HPA configuration without needing to understand autoscaling/v2 MetricSpec details",
+      "criteria": [
+        "When autoscaling.enabled=true and Metrics is empty, the webhook injects a CPU utilization metric targeting 80% average utilization",
+        "When autoscaling.enabled=true and Behavior is nil, the webhook injects a scaleDown stabilization window of 300 seconds",
+        "When autoscaling is nil or enabled=false, the webhook does not inject any autoscaling defaults",
+        "User-specified Metrics and Behavior values are preserved by the webhook (not overwritten)"
+      ]
+    },
+    {
+      "title": "Operator is prevented from setting both replicas and autoscaling",
+      "role": "cluster operator",
+      "want": "the validation webhook to reject my CR when I mistakenly set both spec.replicas and autoscaling.enabled=true",
+      "so_that": "I avoid conflicting scaling configurations where the operator and HPA fight over replica count",
+      "criteria": [
+        "CR with spec.replicas set (non-nil) AND autoscaling.enabled=true is rejected with a clear error mentioning mutual exclusivity",
+        "CR with spec.replicas nil AND autoscaling.enabled=true is accepted",
+        "CR with spec.replicas set AND autoscaling nil or disabled is accepted",
+        "The error message includes the field path spec.replicas and spec.autoscaling.enabled"
+      ]
+    },
+    {
+      "title": "Operator is prevented from invalid minReplicas/maxReplicas configuration",
+      "role": "cluster operator",
+      "want": "the validation webhook to reject my CR when minReplicas exceeds maxReplicas",
+      "so_that": "I cannot create an impossible autoscaling range that would cause HPA errors",
+      "criteria": [
+        "CR with autoscaling.minReplicas > autoscaling.maxReplicas is rejected",
+        "CR with autoscaling.minReplicas == autoscaling.maxReplicas is accepted (valid: fixed scaling)",
+        "CR with autoscaling.minReplicas < autoscaling.maxReplicas is accepted",
+        "CR with autoscaling.minReplicas nil is accepted (HPA uses default min=1)",
+        "The error message includes both minReplicas and maxReplicas values"
+      ]
+    },
+    {
+      "title": "Operator is prevented from using CPU metric without CPU requests",
+      "role": "cluster operator",
+      "want": "the validation webhook to reject my CR when a CPU utilization metric is specified but no resources.requests.cpu is set",
+      "so_that": "I avoid a broken HPA that cannot compute CPU utilization percentage without a CPU request baseline",
+      "criteria": [
+        "CR with CPU utilization metric AND no resources.requests.cpu is rejected",
+        "CR with CPU utilization metric AND resources.requests.cpu set is accepted",
+        "CR with non-CPU metrics only AND no resources.requests.cpu is accepted",
+        "The error message explains that resources.requests.cpu is required when using CPU utilization metrics"
+      ]
+    },
+    {
+      "title": "Documentation covers the new autoscaling CRD types and webhook behavior",
+      "role": "developer",
+      "want": "reference documentation for the AutoscalingSpec struct and its webhook defaults/validation rules",
+      "so_that": "I can understand and configure autoscaling without reading the source code",
+      "criteria": [
+        "docs/reference/backend/memcached-crd-types.md is updated with AutoscalingSpec field table",
+        "docs/reference/backend/defaulting-webhook.md is updated with autoscaling defaults section",
+        "docs/reference/backend/validation-webhook.md is updated with autoscaling validation rules",
+        "docs/reference/crd-reference.md is updated with autoscaling field in MemcachedSpec table"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The system SHALL define an AutoscalingSpec struct with fields Enabled (bool), MinReplicas (*int32), MaxReplicas (int32), Metrics ([]autoscalingv2.MetricSpec), and Behavior (*autoscalingv2.HorizontalPodAutoscalerBehavior)",
+      "priority": "SHALL",
+      "rationale": "Foundation type required by HPA reconciler and all dependent autoscaling features",
+      "scenarios": [
+        {
+          "name": "AutoscalingSpec zero value has correct defaults",
+          "when": "an AutoscalingSpec is created with zero value",
+          "then": "Enabled is false, MinReplicas is nil, MaxReplicas is 0, Metrics is nil, Behavior is nil",
+          "and_then": []
+        },
+        {
+          "name": "AutoscalingSpec with all fields set",
+          "when": "an AutoscalingSpec is created with all fields populated including autoscalingv2 types",
+          "then": "all fields are accessible and hold the assigned values",
+          "and_then": []
+        },
+        {
+          "name": "AutoscalingSpec serializes to JSON",
+          "when": "a Memcached CR with autoscaling block is marshaled to YAML/JSON",
+          "then": "the autoscaling fields appear under spec.autoscaling with correct JSON tags",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The system SHALL add an optional *AutoscalingSpec field to MemcachedSpec with json tag 'autoscaling' and appropriate kubebuilder markers",
+      "priority": "SHALL",
+      "rationale": "Integrates the new autoscaling type into the existing CRD schema",
+      "scenarios": [
+        {
+          "name": "MemcachedSpec with nil autoscaling",
+          "when": "a MemcachedSpec is created without autoscaling",
+          "then": "the Autoscaling field is nil and does not appear in serialized output",
+          "and_then": []
+        },
+        {
+          "name": "MemcachedSpec with autoscaling",
+          "when": "a MemcachedSpec is created with autoscaling block",
+          "then": "the Autoscaling field is non-nil and accessible",
+          "and_then": []
+        },
+        {
+          "name": "DeepCopy independence for autoscaling",
+          "when": "a Memcached CR with autoscaling is deep-copied and the original is mutated",
+          "then": "the clone is not affected by mutations to the original's autoscaling fields",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The defaulting webhook SHALL inject an 80% CPU average utilization metric when autoscaling.enabled=true and Metrics is empty/nil",
+      "priority": "SHALL",
+      "rationale": "Provides a cache-friendly default so operators get a working HPA without deep autoscaling knowledge",
+      "scenarios": [
+        {
+          "name": "Default CPU metric injected",
+          "when": "autoscaling.enabled=true and Metrics is nil/empty",
+          "then": "Metrics contains exactly one CPU Resource metric with averageUtilization=80",
+          "and_then": []
+        },
+        {
+          "name": "User metrics preserved",
+          "when": "autoscaling.enabled=true and Metrics is non-empty",
+          "then": "Metrics is unchanged by the webhook",
+          "and_then": []
+        },
+        {
+          "name": "Disabled autoscaling skips metric defaulting",
+          "when": "autoscaling is nil or autoscaling.enabled=false",
+          "then": "no metrics are injected",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The defaulting webhook SHALL inject a scaleDown stabilization window of 300 seconds when autoscaling.enabled=true and Behavior is nil",
+      "priority": "SHALL",
+      "rationale": "Prevents cache stampedes from aggressive scale-down by adding a 300s cooldown",
+      "scenarios": [
+        {
+          "name": "Default behavior injected",
+          "when": "autoscaling.enabled=true and Behavior is nil",
+          "then": "Behavior.ScaleDown.StabilizationWindowSeconds is set to 300",
+          "and_then": []
+        },
+        {
+          "name": "User behavior preserved",
+          "when": "autoscaling.enabled=true and Behavior is non-nil",
+          "then": "Behavior is unchanged by the webhook",
+          "and_then": []
+        },
+        {
+          "name": "Disabled autoscaling skips behavior defaulting",
+          "when": "autoscaling is nil or autoscaling.enabled=false",
+          "then": "no behavior is injected",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The validation webhook SHALL reject CRs where spec.replicas is set (non-nil) and autoscaling.enabled=true simultaneously",
+      "priority": "SHALL",
+      "rationale": "Mutual exclusivity prevents operator/HPA fights over replica count",
+      "scenarios": [
+        {
+          "name": "Mutual exclusivity violation rejected",
+          "when": "spec.replicas is non-nil AND autoscaling.enabled=true",
+          "then": "the webhook returns a field error referencing spec.replicas with a message about mutual exclusivity",
+          "and_then": []
+        },
+        {
+          "name": "Autoscaling without replicas accepted",
+          "when": "spec.replicas is nil AND autoscaling.enabled=true",
+          "then": "the webhook accepts the CR",
+          "and_then": []
+        },
+        {
+          "name": "Replicas without autoscaling accepted",
+          "when": "spec.replicas is set AND autoscaling is nil or disabled",
+          "then": "the webhook accepts the CR",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The validation webhook SHALL reject CRs where autoscaling.minReplicas is greater than autoscaling.maxReplicas",
+      "priority": "SHALL",
+      "rationale": "An invalid range would cause HPA to fail at runtime",
+      "scenarios": [
+        {
+          "name": "minReplicas > maxReplicas rejected",
+          "when": "autoscaling.minReplicas=5 and autoscaling.maxReplicas=3",
+          "then": "the webhook returns a field error on spec.autoscaling.minReplicas",
+          "and_then": []
+        },
+        {
+          "name": "minReplicas == maxReplicas accepted",
+          "when": "autoscaling.minReplicas=3 and autoscaling.maxReplicas=3",
+          "then": "the webhook accepts the CR (valid: fixed scaling)",
+          "and_then": []
+        },
+        {
+          "name": "minReplicas nil accepted",
+          "when": "autoscaling.minReplicas is nil and autoscaling.maxReplicas=10",
+          "then": "the webhook accepts the CR (HPA defaults min to 1)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The validation webhook SHALL reject CRs where autoscaling metrics include CPU utilization but spec.resources.requests.cpu is not set",
+      "priority": "SHALL",
+      "rationale": "HPA cannot compute CPU utilization percentage without a CPU request baseline; this causes HPA FailedComputeMetrics events",
+      "scenarios": [
+        {
+          "name": "CPU metric without CPU request rejected",
+          "when": "autoscaling metrics include CPU Resource type with utilization target AND resources.requests.cpu is not set",
+          "then": "the webhook returns a field error on spec.resources.requests.cpu",
+          "and_then": []
+        },
+        {
+          "name": "CPU metric with CPU request accepted",
+          "when": "autoscaling metrics include CPU utilization AND resources.requests.cpu is set",
+          "then": "the webhook accepts the CR",
+          "and_then": []
+        },
+        {
+          "name": "Non-CPU metrics without CPU request accepted",
+          "when": "autoscaling metrics include only memory or custom metrics AND resources.requests.cpu is not set",
+          "then": "the webhook accepts the CR",
+          "and_then": []
+        },
+        {
+          "name": "Disabled autoscaling skips CPU request check",
+          "when": "autoscaling is disabled and metrics contain CPU utilization",
+          "then": "the webhook accepts the CR (metrics are irrelevant when disabled)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The validation webhook SHALL aggregate all autoscaling validation errors into a single StatusError response",
+      "priority": "SHALL",
+      "rationale": "Consistent with existing webhook pattern: operators fix all issues in one pass",
+      "scenarios": [
+        {
+          "name": "Multiple autoscaling violations collected",
+          "when": "a CR has both mutual exclusivity violation AND min > max violation",
+          "then": "both errors are present in the single StatusError response",
+          "and_then": []
+        },
+        {
+          "name": "Autoscaling errors combined with existing validation errors",
+          "when": "a CR has autoscaling violations AND a memory limit violation",
+          "then": "all errors (autoscaling + memory) are present in the response",
+          "and_then": []
+        },
+        {
+          "name": "No autoscaling errors for valid CR",
+          "when": "a CR has valid autoscaling configuration",
+          "then": "no autoscaling-related errors are returned",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "Reference documentation SHALL be updated to cover AutoscalingSpec fields, webhook defaults, and validation rules",
+      "priority": "SHALL",
+      "rationale": "Operators need documentation to understand and configure autoscaling",
+      "scenarios": [
+        {
+          "name": "CRD types doc updated",
+          "when": "a developer reads docs/reference/backend/memcached-crd-types.md",
+          "then": "AutoscalingSpec field table and MemcachedSpec.Autoscaling entry are present",
+          "and_then": []
+        },
+        {
+          "name": "Defaulting webhook doc updated",
+          "when": "a developer reads docs/reference/backend/defaulting-webhook.md",
+          "then": "autoscaling defaults (CPU 80%, scaleDown 300s) are documented with examples",
+          "and_then": []
+        },
+        {
+          "name": "Validation webhook doc updated",
+          "when": "a developer reads docs/reference/backend/validation-webhook.md",
+          "then": "mutual exclusivity, min<=max, and CPU request validation rules are documented with examples",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add AutoscalingSpec struct and Autoscaling field to MemcachedSpec in memcached_types.go (REQ-001, REQ-002)",
+      "description": "In api/v1alpha1/memcached_types.go: (1) Add import for autoscalingv2 \"k8s.io/api/autoscaling/v2\". (2) Define AutoscalingSpec struct with fields: Enabled bool (json:\"enabled,omitempty\"), MinReplicas *int32 (json:\"minReplicas,omitempty,omitzero\", +kubebuilder:validation:Minimum=1), MaxReplicas int32 (json:\"maxReplicas,omitempty\", +kubebuilder:validation:Minimum=1), Metrics []autoscalingv2.MetricSpec (json:\"metrics,omitempty,omitzero\"), Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior (json:\"behavior,omitempty,omitzero\"). (3) Add Autoscaling *AutoscalingSpec field to MemcachedSpec (json:\"autoscaling,omitempty,omitzero\", +optional). (4) Run make generate to regenerate zz_generated.deepcopy.go. Follow existing patterns from MonitoringSpec and SecuritySpec for struct layout and kubebuilder markers.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add AutoscalingSpec type tests and DeepCopy tests in memcached_types_test.go (REQ-001, REQ-002)",
+      "description": "In api/v1alpha1/memcached_types_test.go: Add tests following existing patterns (TestMemcachedConfig_ZeroValue, TestMemcachedConfig_AllFieldsSet). (1) TestAutoscalingSpec_ZeroValue: verify Enabled=false, MinReplicas=nil, MaxReplicas=0, Metrics=nil, Behavior=nil. (2) TestAutoscalingSpec_AllFieldsSet: create with all fields including autoscalingv2.MetricSpec (CPU utilization) and autoscalingv2.HorizontalPodAutoscalerBehavior, verify all values accessible. (3) TestAutoscalingSpec_DeepCopy: verify deep copy independence by mutating original's Metrics slice and Behavior pointer and asserting clone is unaffected. (4) TestMemcachedSpec_WithAutoscaling: create MemcachedSpec with Autoscaling field populated, verify non-nil. (5) TestMemcachedSpec_NilAutoscaling: verify nil when not set. Import autoscalingv2 \"k8s.io/api/autoscaling/v2\" and corev1.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add autoscaling defaulting logic to memcached_webhook.go (REQ-003, REQ-004)",
+      "description": "In api/v1alpha1/memcached_webhook.go: (1) Add import for autoscalingv2 \"k8s.io/api/autoscaling/v2\". (2) Add constants: DefaultAutoscalingCPUUtilization = int32(80), DefaultScaleDownStabilizationSeconds = int32(300). (3) In Default() method, add section after HA defaults: if mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled { if len(mc.Spec.Autoscaling.Metrics) == 0 { inject CPU Resource metric with AverageUtilization=80 }; if mc.Spec.Autoscaling.Behavior == nil { create HorizontalPodAutoscalerBehavior with ScaleDown.StabilizationWindowSeconds=300 } }. Follow the opt-in pattern from monitoring/HA sections: only default sub-fields when the autoscaling section is non-nil AND enabled.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add autoscaling defaulting webhook tests in memcached_webhook_test.go (REQ-003, REQ-004)",
+      "description": "In api/v1alpha1/memcached_webhook_test.go: Add tests following existing pattern (table-driven, direct MemcachedCustomDefaulter.Default() calls). Tests: (1) TestMemcachedDefaulting_AutoscalingDefaultMetrics: enabled=true, empty metrics -> verify one CPU metric with averageUtilization=80. (2) TestMemcachedDefaulting_AutoscalingDefaultBehavior: enabled=true, nil behavior -> verify scaleDown stabilization=300. (3) TestMemcachedDefaulting_AutoscalingPreservesUserMetrics: enabled=true, user-specified metrics -> verify preserved. (4) TestMemcachedDefaulting_AutoscalingPreservesUserBehavior: enabled=true, user-specified behavior -> verify preserved. (5) TestMemcachedDefaulting_AutoscalingDisabledNoDefaults: enabled=false -> verify no metrics/behavior injected. (6) TestMemcachedDefaulting_NilAutoscalingStaysNil: nil autoscaling section -> verify stays nil. (7) TestMemcachedDefaulting_AutoscalingIdempotent: apply defaults twice, verify same result. (8) TestMemcachedDefaulting_AutoscalingBothDefaultsApplied: enabled=true, nil metrics AND nil behavior -> verify both defaults injected. Import autoscalingv2.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add autoscaling validation functions to memcached_validation_webhook.go (REQ-005, REQ-006, REQ-007, REQ-008)",
+      "description": "In api/v1alpha1/memcached_validation_webhook.go: (1) Add import for autoscalingv2 \"k8s.io/api/autoscaling/v2\". (2) Add validateAutoscaling(mc *Memcached) field.ErrorList function with three sub-validations: (a) validateAutoscalingReplicasMutualExclusivity: if mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled && mc.Spec.Replicas != nil -> field.Invalid on spec.replicas 'spec.replicas and spec.autoscaling.enabled are mutually exclusive'. (b) validateAutoscalingMinMaxReplicas: if mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled && mc.Spec.Autoscaling.MinReplicas != nil && *mc.Spec.Autoscaling.MinReplicas > mc.Spec.Autoscaling.MaxReplicas -> field.Invalid on spec.autoscaling.minReplicas. (c) validateAutoscalingCPURequests: if autoscaling enabled, iterate Metrics for Resource type with corev1.ResourceCPU and Target.Type=Utilization, if found and (resources nil OR requests nil OR cpu not in requests) -> field.Required on spec.resources.requests.cpu. (3) Wire into validateMemcached: allErrs = append(allErrs, validateAutoscaling(mc)...). Follow existing error aggregation and field path patterns.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add autoscaling validation webhook tests in memcached_validation_webhook_test.go (REQ-005, REQ-006, REQ-007, REQ-008)",
+      "description": "In api/v1alpha1/memcached_validation_webhook_test.go: Add table-driven tests following existing patterns. (1) TestValidateAutoscalingReplicasMutualExclusivity: cases - replicas set + autoscaling enabled (rejected), replicas nil + autoscaling enabled (accepted), replicas set + autoscaling disabled (accepted), replicas set + autoscaling nil (accepted), replicas=0 pointer + autoscaling enabled (rejected, since pointer is non-nil). (2) TestValidateAutoscalingMinMaxReplicas: cases - min > max (rejected), min == max (accepted), min < max (accepted), min nil (accepted), autoscaling disabled (accepted). (3) TestValidateAutoscalingCPURequests: cases - CPU metric + no resources (rejected), CPU metric + no requests (rejected), CPU metric + no CPU request (rejected), CPU metric + CPU request set (accepted), memory metric only + no CPU request (accepted), no metrics (accepted), autoscaling disabled with CPU metric (accepted). (4) TestValidation_AutoscalingMultipleErrors: CR with both mutual exclusivity and min > max -> verify both errors present. (5) TestValidation_AutoscalingWithExistingErrors: CR with autoscaling violation + memory limit violation -> verify all errors present. (6) TestValidateAutoscaling_ErrorMessages: verify field paths and messages contain expected substrings. Import autoscalingv2.",
+      "level": 3,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Add sample CR YAML for autoscaling and update sample_yaml_test.go (REQ-001, REQ-002)",
+      "description": "Create config/samples/memcached_v1alpha1_autoscaling.yaml with: apiVersion memcached.c5c3.io/v1alpha1, kind Memcached, name memcached-autoscaling, spec with autoscaling.enabled=true, minReplicas=2, maxReplicas=10, resources.requests.cpu=100m (needed for default CPU metric), resources.requests.memory=128Mi, resources.limits.memory=192Mi, memcached.maxMemoryMB=128. Note: spec.replicas must NOT be set (mutual exclusivity). Add to config/samples/kustomization.yaml resources list. In api/v1alpha1/sample_yaml_test.go, add TestSampleYAMLAutoscaling: load the file, verify spec.Autoscaling != nil, Autoscaling.Enabled=true, Autoscaling.MinReplicas != nil, Replicas == nil.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Run make generate manifests and verify deepcopy + CRD schema (REQ-001, REQ-002)",
+      "description": "Run: make generate manifests. Verify: (1) zz_generated.deepcopy.go contains DeepCopyInto for AutoscalingSpec. (2) config/crd/bases/ CRD YAML includes spec.autoscaling schema with enabled, minReplicas, maxReplicas, metrics, behavior fields. (3) All tests pass: make test.",
+      "level": 4,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Update docs/reference/backend/memcached-crd-types.md with AutoscalingSpec (REQ-009)",
+      "description": "In docs/reference/backend/memcached-crd-types.md: (1) Add 'autoscaling' row to MemcachedSpec table: Type *AutoscalingSpec, Required No, Default -, Description 'Horizontal pod autoscaling configuration'. (2) Add new ## AutoscalingSpec section (after SecuritySpec, before MemcachedStatus) with field table: Enabled bool, MinReplicas *int32 (Minimum: 1), MaxReplicas int32 (Minimum: 1), Metrics []autoscalingv2.MetricSpec, Behavior *autoscalingv2.HorizontalPodAutoscalerBehavior. (3) Add YAML example showing autoscaling block. Follow the existing section format with field table, description, and skip condition note.",
+      "level": 5,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "5.2",
+      "title": "Update docs/reference/backend/defaulting-webhook.md with autoscaling defaults (REQ-009)",
+      "description": "In docs/reference/backend/defaulting-webhook.md: (1) Add new ### Autoscaling Fields (Opt-In) section after 'High Availability Fields' section. Document fields: spec.autoscaling.metrics (default: CPU 80% utilization, condition: when empty/nil and autoscaling enabled), spec.autoscaling.behavior.scaleDown.stabilizationWindowSeconds (default: 300, condition: when behavior nil and autoscaling enabled). (2) Add 'spec.autoscaling' row to Nil Struct Initialization table: 'Not initialized - remains nil; sub-field defaults only apply when enabled'. (3) Add CR example showing autoscaling with empty metrics/behavior before and after defaulting. Follow existing section format.",
+      "level": 5,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "5.3",
+      "title": "Update docs/reference/backend/validation-webhook.md with autoscaling validation rules (REQ-009)",
+      "description": "In docs/reference/backend/validation-webhook.md: Add three new validation rule sections following existing format. (1) ### Replicas/Autoscaling Mutual Exclusivity: field spec.replicas, constraint 'must not be set when spec.autoscaling.enabled is true', skip condition, error example. (2) ### Autoscaling Min/Max Replicas: field spec.autoscaling.minReplicas, constraint 'must be <= maxReplicas when set', skip condition, error example. (3) ### CPU Metric Requires CPU Request: field spec.resources.requests.cpu, constraint 'required when autoscaling metrics include CPU utilization', skip condition, error example. Add rejected/accepted CR examples for each rule. Update the validateMemcached code listing to include validateAutoscaling call. Wire validateAutoscaling into the internal functions list.",
+      "level": 5,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "5.4",
+      "title": "Update docs/reference/crd-reference.md with autoscaling field (REQ-009)",
+      "description": "In docs/reference/crd-reference.md: Add 'autoscaling' row to the MemcachedSpec table with Type *AutoscalingSpec, Default --, Validation --, Description 'Horizontal pod autoscaling configuration'. Add a new ## AutoscalingSpec section with the field table matching memcached-crd-types.md. Link to the detailed reference doc.",
+      "level": 5,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-009"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "TestAutoscalingSpec_ZeroValue",
+      "story": "Operator user enables horizontal pod autoscaling for a Memcached cluster",
+      "expected": "AutoscalingSpec zero value should have Enabled=false, MinReplicas=nil, MaxReplicas=0, Metrics=nil, Behavior=nil",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "TestAutoscalingSpec_AllFieldsSet",
+      "story": "Operator user enables horizontal pod autoscaling for a Memcached cluster",
+      "expected": "AutoscalingSpec with all fields populated should store and return correct values for all autoscalingv2 types",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "TestAutoscalingSpec_DeepCopy",
+      "story": "Operator user enables horizontal pod autoscaling for a Memcached cluster",
+      "expected": "DeepCopy of AutoscalingSpec should produce an independent clone unaffected by mutations to original Metrics and Behavior",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_types_test.go",
+      "test_function": "TestMemcachedSpec_WithAutoscaling",
+      "story": "Operator user enables horizontal pod autoscaling for a Memcached cluster",
+      "expected": "MemcachedSpec.Autoscaling should be non-nil when populated and nil when omitted",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AutoscalingDefaultMetrics",
+      "story": "Operator receives sensible autoscaling defaults when fields are omitted",
+      "expected": "When autoscaling enabled with empty metrics, webhook should inject one CPU Resource metric with averageUtilization=80",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AutoscalingDefaultBehavior",
+      "story": "Operator receives sensible autoscaling defaults when fields are omitted",
+      "expected": "When autoscaling enabled with nil behavior, webhook should inject scaleDown stabilization window of 300 seconds",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AutoscalingPreservesUserMetrics",
+      "story": "Operator receives sensible autoscaling defaults when fields are omitted",
+      "expected": "User-specified metrics should be preserved and not overwritten by the webhook",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AutoscalingPreservesUserBehavior",
+      "story": "Operator receives sensible autoscaling defaults when fields are omitted",
+      "expected": "User-specified behavior should be preserved and not overwritten by the webhook",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_NilAutoscalingStaysNil",
+      "story": "Operator receives sensible autoscaling defaults when fields are omitted",
+      "expected": "Nil autoscaling section should not be initialized (opt-in pattern)",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateAutoscalingReplicasMutualExclusivity",
+      "story": "Operator is prevented from setting both replicas and autoscaling",
+      "expected": "Table-driven test: replicas+autoscaling=rejected, nil replicas+autoscaling=accepted, replicas+no autoscaling=accepted",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateAutoscalingMinMaxReplicas",
+      "story": "Operator is prevented from invalid minReplicas/maxReplicas configuration",
+      "expected": "Table-driven test: min>max=rejected, min==max=accepted, min<max=accepted, nil min=accepted",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateAutoscalingCPURequests",
+      "story": "Operator is prevented from using CPU metric without CPU requests",
+      "expected": "Table-driven test: CPU metric without CPU request=rejected, with CPU request=accepted, non-CPU metric=accepted",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_AutoscalingMultipleErrors",
+      "story": "Operator is prevented from setting both replicas and autoscaling",
+      "expected": "CR with both mutual exclusivity and min>max should return both errors in a single response",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateAutoscaling_ErrorMessages",
+      "story": "Operator is prevented from setting both replicas and autoscaling",
+      "expected": "Error messages should contain field paths (spec.replicas, spec.autoscaling.minReplicas, spec.resources.requests.cpu)",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "api/v1alpha1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLAutoscaling",
+      "story": "Operator user enables horizontal pod autoscaling for a Memcached cluster",
+      "expected": "Sample YAML should parse correctly with autoscaling enabled, replicas nil, and minReplicas set",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AutoscalingIdempotent",
+      "story": "Operator receives sensible autoscaling defaults when fields are omitted",
+      "expected": "Applying defaults twice should produce the same result (idempotent)",
+      "requirement_id": "REQ-003"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "AutoscalingSpec struct has all 5 fields (Enabled, MinReplicas, MaxReplicas, Metrics, Behavior) with correct types and JSON tags matching the feature description",
+    "Defaulting webhook injects 80% CPU utilization metric AND 300s scaleDown stabilization only when autoscaling is enabled and respective fields are nil/empty",
+    "Defaulting webhook preserves user-specified Metrics and Behavior values without modification",
+    "Validation webhook rejects mutual exclusivity (replicas + autoscaling.enabled) with field error on spec.replicas",
+    "Validation webhook rejects minReplicas > maxReplicas with field error including both values",
+    "Validation webhook rejects CPU utilization metric without resources.requests.cpu with field error on spec.resources.requests.cpu",
+    "All validation errors are aggregated into a single StatusError response (not short-circuited)",
+    "All tests pass: make test completes without failures",
+    "make generate manifests succeeds and zz_generated.deepcopy.go includes AutoscalingSpec",
+    "Sample CR YAML parses correctly and passes sample_yaml_test.go validation",
+    "Documentation updated in all 4 reference docs with field tables, examples, and validation rules",
+    "No modifications to files outside the affected_files list"
+  ],
+  "implementation_notes": "Architecture: AutoscalingSpec follows the same opt-in pattern as MonitoringSpec and SecuritySpec - a pointer field on MemcachedSpec that is nil by default. The defaulting webhook only touches sub-fields when the section is non-nil AND Enabled=true (stricter than monitoring which defaults even when disabled, because autoscaling defaults create actual resource objects). The validation webhook adds a new validateAutoscaling function wired into the existing validateMemcached aggregator. Key import: autoscalingv2 \"k8s.io/api/autoscaling/v2\" is already available in go.mod via k8s.io/api v0.35.0. The CPU metric check iterates []MetricSpec looking for Resource type with corev1.ResourceCPU and Target.Type == autoscalingv2.UtilizationMetricType. DeepCopy is auto-generated by controller-gen for the new struct. The sample CR must NOT set spec.replicas (mutual exclusivity). Tasks are ordered: types first (1.x), then defaulting webhook (2.x) which depends on types, then validation webhook (3.x) which depends on types, then sample/manifests (4.x), then docs (5.x).",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:10:15.868875"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T21:28:17.963463"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T21:32:29.785402"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "d3cca978-4f38-44fc-9a18-0c7e5c8937ee",
+      "timestamp": "2026-02-21T21:32:29.785430",
+      "total_duration": 248.83193564414978,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 248.83193564414978,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
