@@ -234,16 +234,51 @@ kubectl get memcached my-cache -o yaml
 A healthy instance shows `Available: True` and `Degraded: False` in its status
 conditions.
 
-### Using the sample CR
+### Test the connection
 
-The repository includes a more complete sample CR at
-`config/samples/memcached_v1alpha1_memcached.yaml` that demonstrates additional
-configuration options including resource limits, high availability, monitoring,
-and security contexts:
+Run a temporary pod to verify the Memcached instance is reachable:
 
 ```bash
-kubectl apply -f config/samples/memcached_v1alpha1_memcached.yaml
+kubectl run memcached-test --image=busybox:1.36 --rm -it --restart=Never -- \
+  sh -c 'echo "stats" | nc my-cache 11211'
 ```
+
+You should see Memcached statistics output including `STAT pid`, `STAT uptime`,
+etc. This confirms the cache is running and accepting connections.
+
+To set and retrieve a value:
+
+```bash
+kubectl run memcached-test --image=busybox:1.36 --rm -it --restart=Never -- \
+  sh -c 'printf "set hello 0 60 5\r\nworld\r\nget hello\r\nquit\r\n" | nc my-cache 11211'
+```
+
+Expected output:
+
+```text
+STORED
+VALUE hello 0 5
+world
+END
+```
+
+### Delete the instance
+
+To remove the Memcached instance and all its managed resources (Deployment,
+Service, PDB, etc.):
+
+```bash
+kubectl delete memcached my-cache
+```
+
+The operator automatically cleans up all owned resources via Kubernetes
+owner references.
+
+### More examples
+
+For advanced configurations including high availability, monitoring, TLS,
+SASL authentication, and NetworkPolicies, see the
+[Examples](examples.md) guide.
 
 ## Local Development Setup
 
