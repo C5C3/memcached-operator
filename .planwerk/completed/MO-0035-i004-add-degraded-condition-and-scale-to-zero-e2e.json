@@ -2,8 +2,8 @@
   "feature_id": "MO-0035",
   "title": "I004: Add degraded condition and scale-to-zero E2E tests",
   "slug": "i004-add-degraded-condition-and-scale-to-zero-e2e",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 2 Chainsaw E2E tests covering operator status reporting and edge-case lifecycle:\n\n1. **test/e2e/status-degraded/**: Apply CR with a non-existent/invalid container image. Assert status conditions show `Degraded=True` and `Available=False`. This validates the operator's error detection and status reporting path.\n\n2. **test/e2e/scale-to-zero/**: Create a working CR, then patch `replicas: 0`. Assert Deployment has 0 replicas, status shows `readyReplicas: 0`, and condition `Available=False`. This validates the boundary case where the operator must correctly report unavailability.\n\nBoth tests validate status condition logic which is critical for monitoring/alerting integrations that depend on CR status.\n\n**Rationale:** Status conditions are the primary interface for external monitoring systems (Prometheus alerts, GitOps health checks). A bug in degraded/unavailable reporting would leave operators blind to cluster issues. Scale-to-zero is a valid operational pattern (cost saving) that must correctly report unavailability.\n\n**Affected Areas:**\n- test/e2e/status-degraded/chainsaw-test.yaml\n- test/e2e/scale-to-zero/chainsaw-test.yaml",
   "stories": [
@@ -314,6 +314,7 @@
       "description": "In internal/controller/status.go, change line 59 from `available := readyReplicas > 0 || desiredReplicas == 0` to `available := readyReplicas > 0`. This means scale-to-zero correctly reports Available=False (no pods serving traffic). Update the existing unit tests in internal/controller/status_test.go to reflect the new behavior: the test case for desiredReplicas=0 should now expect Available=False instead of Available=True. Also update internal/controller/memcached_status_reconcile_test.go if it contains relevant test cases. Verify with `go test ./internal/controller/...`.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-CTL-SZ-001"
       ]
@@ -324,6 +325,7 @@
       "description": "Create test/e2e/status-degraded/chainsaw-test.yaml with 3 steps: (1) create-memcached-cr: apply 00-memcached.yaml, (2) assert-deployment-created: assert 01-assert-deployment.yaml, (3) assert-status-degraded: assert 01-assert-status.yaml. Use standard timeouts (apply:30s, assert:120s, delete:30s). Description references REQ-E2E-SD-001, REQ-E2E-SD-002.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-E2E-SD-001",
         "REQ-E2E-SD-002",
@@ -336,6 +338,7 @@
       "description": "Create three files in test/e2e/status-degraded/: (1) 00-memcached.yaml — Memcached CR named 'test-degraded' with replicas=1, image='memcached:nonexistent-tag-does-not-exist', resources (50m/64Mi requests, 100m/128Mi limits), memcached config (maxMemoryMB=64, threads=4). (2) 01-assert-deployment.yaml — Partial Deployment assertion with name 'test-degraded', correct labels, replicas=1, container image matches the invalid tag. (3) 01-assert-status.yaml — Partial Memcached CR assertion with readyReplicas=0, conditions: Available=False/Unavailable, Degraded=True/Degraded. Follow the exact YAML structure from test/e2e/basic-deployment/02-assert-status.yaml for the status assertion format.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-E2E-SD-001",
         "REQ-E2E-SD-003"
@@ -347,6 +350,7 @@
       "description": "Create test/e2e/scale-to-zero/chainsaw-test.yaml with 5 steps: (1) create-memcached-cr: apply 00-memcached.yaml, (2) assert-initial-status: assert 01-assert-status-available.yaml (Available=True, readyReplicas=1), (3) scale-to-zero: patch 02-patch-scale-zero.yaml, (4) assert-deployment-scaled: assert 03-assert-deployment.yaml (replicas=0), (5) assert-status-unavailable: assert 03-assert-status.yaml (Available=False, readyReplicas=0, Degraded=False). Use standard timeouts.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-E2E-SZ-001",
         "REQ-E2E-SZ-002",
@@ -359,6 +363,7 @@
       "description": "Create five files in test/e2e/scale-to-zero/: (1) 00-memcached.yaml — Memcached CR named 'test-scale-zero' with replicas=1, image='memcached:1.6', resources (50m/64Mi requests, 100m/128Mi limits), memcached config (maxMemoryMB=64, threads=4). (2) 01-assert-status-available.yaml — Partial Memcached CR assertion: readyReplicas=1, Available=True/Available, Progressing=False/ProgressingComplete, Degraded=False/NotDegraded. (3) 02-patch-scale-zero.yaml — Patch setting spec.replicas=0 on 'test-scale-zero'. (4) 03-assert-deployment.yaml — Partial Deployment assertion: name='test-scale-zero', spec.replicas=0, correct labels. (5) 03-assert-status.yaml — Partial Memcached CR assertion: readyReplicas=0, Available=False/Unavailable, Degraded=False/NotDegraded.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-E2E-SZ-001",
         "REQ-E2E-SZ-002"
@@ -370,6 +375,7 @@
       "description": "Update docs/reference/backend/chainsaw-e2e-tests.md: (1) Add section '20. Status Degraded (MO-0035 REQ-E2E-SD-001, REQ-E2E-SD-002)' with directory, description, step table (create-memcached-cr, assert-deployment-created, assert-status-degraded), CRD fields tested (spec.image, status.conditions, status.readyReplicas). (2) Add section '21. Scale to Zero (MO-0035 REQ-E2E-SZ-001, REQ-E2E-SZ-002)' with directory, description, step table (create-memcached-cr, assert-initial-status, scale-to-zero, assert-deployment-scaled, assert-status-unavailable), CRD fields tested (spec.replicas, status.conditions, status.readyReplicas). (3) Add MO-0035 requirement coverage matrix rows. (4) Update file structure listing. (5) Add known limitation: status-degraded test timing depends on operator reconcile detecting 0 ready replicas within the 120s assert timeout; scale-to-zero depends on controller reporting Available=False for 0 desired replicas (controller fix in status.go). (6) Update overview paragraph to mention status degradation and scale-to-zero.",
       "level": 4,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-DOC-001"
       ]
@@ -465,6 +471,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T08:46:35.229364"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T08:48:02.166288"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T09:03:27.953887"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T09:03:27.971407"
     }
   },
   "execution_history": [
@@ -478,6 +496,56 @@
           "name": "prepare",
           "duration": 296.8471941947937,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "75a07aa2-018a-4df4-92ec-732fd992462c",
+      "timestamp": "2026-02-21T09:01:13.334047",
+      "total_duration": 670.6786375045776,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (1 tasks)",
+          "duration": 161.96204018592834,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 102.3994493484497,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 58.44380044937134,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 85.04977607727051,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0035] Code Review",
+          "duration": 124.4688138961792,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0035] Improvements",
+          "duration": 72.89542865753174,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0035] Simplify",
+          "duration": 65.4593288898468,
+          "type": "simplify",
           "status": "done"
         }
       ]

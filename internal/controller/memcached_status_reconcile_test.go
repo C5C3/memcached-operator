@@ -146,7 +146,7 @@ var _ = Describe("Status Reconciliation", func() {
 	})
 
 	Context("scaled to zero replicas (REQ-003, REQ-005)", func() {
-		It("should set Available=True, Progressing=False, Degraded=False with 0 replicas", func() {
+		It("should set Available=False, Progressing=False, Degraded=False with 0 replicas", func() {
 			mc := validMemcached(uniqueName("status-zero"))
 			mc.Spec.Replicas = int32Ptr(0)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -159,7 +159,7 @@ var _ = Describe("Status Reconciliation", func() {
 
 			available := findCondition(mc.Status.Conditions, "Available")
 			Expect(available).NotTo(BeNil())
-			Expect(available.Status).To(Equal(metav1.ConditionTrue))
+			Expect(available.Status).To(Equal(metav1.ConditionFalse))
 
 			progressing := findCondition(mc.Status.Conditions, "Progressing")
 			Expect(progressing).NotTo(BeNil())

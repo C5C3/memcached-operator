@@ -5,7 +5,8 @@ validates the Memcached operator against a real kind cluster, covering
 deployment, scaling, configuration changes, monitoring, PDB management,
 graceful rolling updates, webhook validation, garbage collection, SASL
 authentication, TLS encryption, mutual TLS (mTLS), NetworkPolicy lifecycle,
-and Service annotation propagation.
+Service annotation propagation, status degraded detection, and scale-to-zero
+behavior.
 
 **Source**: `test/e2e/`
 
@@ -243,6 +244,18 @@ test/e2e/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with antiAffinityPreset=hard
 │   └── 01-assert-deployment.yaml   # requiredDuringScheduling anti-affinity
+├── status-degraded/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with non-existent image (test-degraded)
+│   ├── 01-assert-deployment.yaml   # Deployment created with invalid image
+│   └── 01-assert-status.yaml       # Degraded=True, Available=False, readyReplicas=0
+├── scale-to-zero/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with replicas=1 (test-scale-zero)
+│   ├── 01-assert-status-available.yaml # Initial Available=True, readyReplicas=1
+│   ├── 02-patch-scale-zero.yaml    # Patch replicas to 0
+│   ├── 03-assert-deployment.yaml   # Deployment.spec.replicas=0
+│   └── 03-assert-status.yaml       # Available=False, Degraded=False, readyReplicas=0
 └── resources/
     ├── memcached-minimal.yaml
     ├── assert-deployment.yaml
@@ -610,6 +623,49 @@ Deployment, with the correct topology key and label selector.
 **CRD fields tested**:
 - `spec.highAvailability.antiAffinityPreset` — Controls pod anti-affinity ("soft" or "hard")
 
+### 19. Status Degraded (MO-0035 REQ-E2E-SD-001, REQ-E2E-SD-002)
+
+**Directory**: `test/e2e/status-degraded/`
+
+Verifies that a Memcached CR with a non-existent container image reports
+`Degraded=True` and `Available=False` status conditions. The operator creates
+the Deployment, but pods fail to pull the image (ImagePullBackOff), causing
+`readyReplicas=0` and triggering the degraded status path.
+
+| Step                      | Operation                    | Assertion                                                                                      |
+|---------------------------|------------------------------|------------------------------------------------------------------------------------------------|
+| create-memcached-cr       | `apply` 00-memcached.yaml   | CR with image `memcached:nonexistent-tag-does-not-exist` (`test-degraded`)                     |
+| assert-deployment-created | `assert` 01-assert-deployment | Deployment exists with invalid image, correct labels, owner reference                          |
+| assert-status-degraded    | `assert` 01-assert-status    | Degraded=True (reason: Degraded), Available=False (reason: Unavailable), Progressing=True (reason: Progressing), readyReplicas=0 |
+
+**CRD fields tested**:
+- `spec.replicas` — Desired replica count (1)
+- `spec.image` — Non-existent image triggers degraded status
+
+### 20. Scale to Zero (MO-0035 REQ-E2E-SZ-001, REQ-E2E-SZ-002)
+
+**Directory**: `test/e2e/scale-to-zero/`
+
+Verifies that patching a healthy Memcached CR from `replicas=1` to `replicas=0`
+results in `Available=False`, `Degraded=False`, and `readyReplicas=0`. This is a
+two-phase apply-assert-patch-assert test that first confirms a healthy starting
+state before scaling down.
+
+| Step                    | Operation                          | Assertion                                                                  |
+|-------------------------|------------------------------------|----------------------------------------------------------------------------|
+| create-memcached-cr     | `apply` 00-memcached.yaml         | CR with replicas=1 (`test-scale-zero`)                                     |
+| assert-initial-status   | `assert` 01-assert-status-available | Available=True, readyReplicas=1                                            |
+| scale-to-zero           | `patch` 02-patch-scale-zero.yaml   | Patch `spec.replicas` to 0                                                 |
+| assert-deployment-scaled | `assert` 03-assert-deployment     | Deployment.spec.replicas=0                                                 |
+| assert-status-unavailable | `assert` 03-assert-status        | Available=False (Unavailable), Degraded=False (NotDegraded), readyReplicas=0 |
+
+**CRD fields tested**:
+- `spec.replicas` — Scale-to-zero behavior (patched from 1 to 0)
+
+**Controller change**: The `computeConditions` function in `internal/controller/status.go`
+was updated to return `Available=False` when `desiredReplicas=0` (previously
+scale-to-zero incorrectly reported `Available=True`).
+
 ---
 
 ## Test Patterns
@@ -774,6 +830,17 @@ verify runtime protocol behavior. This means:
 | MO-0034-006      | Container security context propagated to Deployment                | security-contexts        | Container securityContext with readOnlyRootFilesystem, drop ALL; update propagates                                  |
 | MO-0034-007      | Hard anti-affinity creates requiredDuringScheduling affinity       | hard-anti-affinity       | requiredDuringSchedulingIgnoredDuringExecution with topologyKey and instance label selector                          |
 
+### Status & Scale E2E Tests (MO-0035)
+
+| REQ-ID           | Requirement                                                        | Test Scenario            | Key Assertions                                                                                                      |
+|------------------|--------------------------------------------------------------------|--------------------------|---------------------------------------------------------------------------------------------------------------------|
+| REQ-E2E-SD-001   | Degraded status when non-existent image specified                  | status-degraded          | Degraded=True (Degraded), Available=False (Unavailable), readyReplicas=0                                            |
+| REQ-E2E-SD-002   | Deployment created despite invalid image                           | status-degraded          | Deployment exists with correct labels and owner reference, pods in ImagePullBackOff                                  |
+| REQ-E2E-SZ-001   | Scale-to-zero transitions Available to False                       | scale-to-zero            | After patching replicas=0: Available=False (Unavailable), Degraded=False (NotDegraded), readyReplicas=0             |
+| REQ-E2E-SZ-002   | Scale-to-zero sets Deployment replicas to 0                        | scale-to-zero            | Deployment.spec.replicas=0 after patching CR                                                                        |
+| REQ-CTL-SZ-001   | computeConditions returns Available=False when desiredReplicas=0   | (unit test)              | Unit test in status_test.go verifies Available=False for 0 desired, 0 ready replicas                                |
+| REQ-DOC-001      | Documentation updated with new test entries                        | (this document)          | status-degraded and scale-to-zero sections, file structure, requirement coverage matrix                             |
+
 ---
 
 ## Known Limitations
@@ -789,6 +856,8 @@ verify runtime protocol behavior. This means:
 | No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw partial matching asserts presence of fields but cannot assert absence; the TLS test does not verify that `ssl_ca_cert` is absent when `enableClientCert` is false | The mTLS test provides the complementary positive assertion that `ssl_ca_cert` is present only when `enableClientCert: true`; combined, the two tests confirm correct conditional behavior |
 | Annotation removal uses JMESPath absence check | The service-annotations test uses a JMESPath expression to positively assert that annotations are absent or empty after removal | This upgrades confidence over simple field omission: the assertion actively fails if annotations remain on the Service |
 | Hard anti-affinity with single-node kind | The hard-anti-affinity test uses replicas=1 to avoid scheduling failures on single-node kind clusters; the test verifies the Deployment spec, not scheduling behavior | The spec-level assertion confirms the operator correctly translates `antiAffinityPreset: hard` to `requiredDuringSchedulingIgnoredDuringExecution` |
+| Degraded test depends on image pull failure timing | The status-degraded test relies on the kubelet reporting ImagePullBackOff within the 120s assert timeout for the operator to detect readyReplicas=0 and set Degraded=True | The 120s timeout is generous; image pull failures are typically reported within seconds by the kubelet |
+| Scale-to-zero Available=False is a controller behavior change | The `computeConditions` function was changed to return Available=False when desiredReplicas=0; previously it returned Available=True for scale-to-zero | This is intentional: zero replicas cannot serve traffic, so Available=False is the correct semantic; existing tests updated accordingly |
 
 ---
 

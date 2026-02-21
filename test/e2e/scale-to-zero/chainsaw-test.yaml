@@ -1,0 +1,34 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: scale-to-zero
+spec:
+  description: >
+    Verify that patching a healthy Memcached CR to replicas=0 results in
+    Available=False, Degraded=False, and readyReplicas=0 (REQ-E2E-SZ-001, REQ-E2E-SZ-002).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-initial-status
+      try:
+        - assert:
+            file: 01-assert-status-available.yaml
+    - name: scale-to-zero
+      try:
+        - patch:
+            file: 02-patch-scale-zero.yaml
+    - name: assert-deployment-scaled
+      try:
+        - assert:
+            file: 03-assert-deployment.yaml
+    - name: assert-status-unavailable
+      try:
+        - assert:
+            file: 03-assert-status.yaml

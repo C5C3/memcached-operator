@@ -55,8 +55,8 @@ func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment) 
 	now := metav1.Now()
 	conditions := make([]metav1.Condition, 0, 3)
 
-	// Available: true when at least one replica is ready, or when 0 replicas are desired.
-	available := readyReplicas > 0 || desiredReplicas == 0
+	// Available: true only when at least one replica is ready and serving traffic.
+	available := readyReplicas > 0
 	availableStatus, availableReason := metav1.ConditionFalse, ConditionReasonUnavailable
 	if available {
 		availableStatus, availableReason = metav1.ConditionTrue, ConditionReasonAvailable

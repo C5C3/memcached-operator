@@ -1,0 +1,17 @@
+---
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-degraded
+status:
+  readyReplicas: 0
+  conditions:
+    - type: Available
+      status: "False"
+      reason: Unavailable
+    - type: Progressing
+      status: "True"
+      reason: Progressing
+    - type: Degraded
+      status: "True"
+      reason: Degraded

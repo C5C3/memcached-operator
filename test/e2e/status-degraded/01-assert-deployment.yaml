@@ -1,0 +1,26 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-degraded
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-degraded
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: memcached
+      app.kubernetes.io/instance: test-degraded
+      app.kubernetes.io/managed-by: memcached-operator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: memcached
+        app.kubernetes.io/instance: test-degraded
+        app.kubernetes.io/managed-by: memcached-operator
+    spec:
+      containers:
+        - name: memcached
+          image: "memcached:nonexistent-tag-does-not-exist"

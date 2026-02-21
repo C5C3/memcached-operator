@@ -1,0 +1,75 @@
+{
+  "feature_id": "MO-0035",
+  "title": "I004: Add degraded condition and scale-to-zero E2E tests",
+  "date": "2026-02-21",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "The implementation correctly adds the status.go controller fix (1-line change from `available := readyReplicas > 0 || desiredReplicas == 0` to `available := readyReplicas > 0`), two well-structured Chainsaw E2E tests (status-degraded and scale-to-zero), and comprehensive documentation updates. The unit test in status_test.go was correctly updated. However, the integration test in memcached_status_reconcile_test.go was NOT updated despite the plan task 1.1 explicitly requiring it — it still expects Available=True for zero replicas, which will fail when run with envtest. One minor doc inaccuracy exists in the CRD field reference.",
+  "tests_checklist": [
+    {"item": "Unit tests in status_test.go updated and pass (TestComputeConditions)", "checked": true},
+    {"item": "Integration test in memcached_status_reconcile_test.go updated for new behavior", "checked": false},
+    {"item": "go vet passes", "checked": true},
+    {"item": "E2E test status-degraded has correct structure (3 steps)", "checked": true},
+    {"item": "E2E test scale-to-zero has correct structure (5 steps)", "checked": true},
+    {"item": "E2E assertions match controller behavior", "checked": true},
+    {"item": "Edge cases covered (0 replicas, invalid image)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Controller change is minimal (1 line + comment update)", "checked": true},
+    {"item": "Follows existing Chainsaw test patterns", "checked": true},
+    {"item": "YAML files follow numbered naming convention", "checked": true},
+    {"item": "CR names follow test-{name} convention", "checked": true},
+    {"item": "Standard labels used in assertions", "checked": true},
+    {"item": "Timeouts match existing tests (apply=30s, assert=120s, delete=30s)", "checked": true},
+    {"item": "No code duplication", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No secrets or credentials in test files", "checked": true},
+    {"item": "No security-sensitive changes in controller code", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible", "checked": true},
+    {"item": "No scope creep beyond plan", "checked": true},
+    {"item": "Controller change is backward-compatible for monitoring semantics", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "Test files are minimal partial assertions", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Errors detected early (degraded status reports immediately)", "checked": true},
+    {"item": "E2E tests assert specific conditions not just absence of errors", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All external inputs validated (N/A for test-only changes)", "checked": true},
+    {"item": "Controller handles nil deployment case", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "C5-1",
+      "severity": "major",
+      "check_id": "C5",
+      "description": "Integration test memcached_status_reconcile_test.go NOT updated for controller behavior change. Line 149 test description says 'should set Available=True' and line 162 expects `metav1.ConditionTrue` for the Available condition when replicas=0. After the status.go change, computeConditions returns Available=False for desiredReplicas=0. This test will FAIL when run with envtest (requires etcd binary which is not available in this review environment, but will fail in CI). Plan task 1.1 explicitly states: 'Also update internal/controller/memcached_status_reconcile_test.go if it contains relevant test cases.'",
+      "location": "internal/controller/memcached_status_reconcile_test.go:149,162",
+      "fix": "Change line 149 from `It(\"should set Available=True, Progressing=False, Degraded=False with 0 replicas\"` to `It(\"should set Available=False, Progressing=False, Degraded=False with 0 replicas\"`. Change line 162 from `Expect(available.Status).To(Equal(metav1.ConditionTrue))` to `Expect(available.Status).To(Equal(metav1.ConditionFalse))`."
+    },
+    {
+      "id": "DA3-1",
+      "severity": "minor",
+      "check_id": "DA3",
+      "description": "Documentation section 19 (Status Degraded) at line 643 of chainsaw-e2e-tests.md lists CRD field as 'spec.memcached.image' but the actual CRD field is 'spec.image' (confirmed in api/v1alpha1/memcached_types.go:247 and all test CR YAML files).",
+      "location": "docs/reference/backend/chainsaw-e2e-tests.md:643",
+      "fix": "Change 'spec.memcached.image' to 'spec.image' in the CRD fields tested bullet point for section 19."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider adding a Progressing condition assertion to the status-degraded 01-assert-status.yaml (currently only asserts Available and Degraded, not Progressing=True which would be expected since updatedReplicas=0 < desiredReplicas=1). This would match the full three-condition coverage in the scale-to-zero test."
+  ],
+  "next_steps": [
+    "Fix memcached_status_reconcile_test.go lines 149 and 162 to expect Available=False for zero replicas",
+    "Fix docs/reference/backend/chainsaw-e2e-tests.md line 643: change 'spec.memcached.image' to 'spec.image'",
+    "Re-run `go test -run TestComputeConditions -v ./internal/controller/...` to confirm unit tests still pass after any changes"
+  ]
+}

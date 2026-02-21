@@ -1,0 +1,26 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: status-degraded
+spec:
+  description: >
+    Verify that a Memcached CR with a non-existent container image reports
+    Degraded=True and Available=False status conditions (REQ-E2E-SD-001, REQ-E2E-SD-002).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-deployment-created
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: assert-status-degraded
+      try:
+        - assert:
+            file: 01-assert-status.yaml
