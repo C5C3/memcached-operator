@@ -107,32 +107,41 @@ memcacheds.memcached.c5c3.io    2025-01-15T10:00:00Z
 
 ## Deploy the Operator
 
-Deploy the operator and all supporting resources to your cluster:
+### Option A: From a GitHub Release (recommended)
+
+Each release includes a ready-to-use `install.yaml` that contains all resources
+(CRDs, RBAC, Deployment, webhooks, cert-manager resources) in a single file:
+
+```bash
+kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/install.yaml
+```
+
+Replace `v0.1.0` with the desired version. Available releases are listed at
+[github.com/c5c3/memcached-operator/releases](https://github.com/c5c3/memcached-operator/releases).
+
+### Option B: From source
+
+If you have the repository cloned, you can deploy using the Makefile:
 
 ```bash
 make deploy IMG=ghcr.io/c5c3/memcached-operator:v0.1.0
 ```
 
-Replace `v0.1.0` with the desired version tag.
+Replace `v0.1.0` with the desired version tag. This builds the full manifest
+from `config/default/` using Kustomize and applies it to the cluster.
 
-This command performs the following steps:
+---
 
-1. Sets the controller manager image to the specified `IMG` in the Kustomize
-   overlay (`config/manager/`).
-2. Builds the full manifest from `config/default/` using Kustomize, which
-   includes:
-   - CRD definitions (`config/crd/`)
-   - RBAC resources: ClusterRole, ClusterRoleBinding, ServiceAccount
-     (`config/rbac/`)
-   - Operator Deployment in the `memcached-operator-system` namespace
-     (`config/manager/`)
-   - Webhook configurations: MutatingWebhookConfiguration and
-     ValidatingWebhookConfiguration (`config/webhook/`)
-   - cert-manager Certificate and Issuer for webhook TLS (`config/certmanager/`)
-3. Applies all resources to the cluster via `kubectl apply`.
+Both options install the following resources under the
+`memcached-operator-system` namespace with the `memcached-operator-` name
+prefix:
 
-All resources are created under the `memcached-operator-system` namespace with
-the `memcached-operator-` name prefix.
+- CRD definitions
+- RBAC resources: ClusterRole, ClusterRoleBinding, ServiceAccount
+- Operator Deployment with the controller manager
+- Webhook configurations (MutatingWebhookConfiguration,
+  ValidatingWebhookConfiguration)
+- cert-manager Certificate and Issuer for webhook TLS
 
 ## Verify the Installation
 
@@ -292,45 +301,23 @@ are created:
 kubectl get deployment,service,pdb -l app.kubernetes.io/managed-by=memcached-operator
 ```
 
-## Single-File Install
-
-For environments where you prefer a single manifest file (such as GitOps
-pipelines or air-gapped clusters), you can either download a pre-built manifest
-from a GitHub Release or generate one locally.
-
-### Option A: From a GitHub Release (recommended)
-
-Each release includes a ready-to-use `install.yaml`:
-
-```bash
-kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/install.yaml
-```
-
-Replace `v0.1.0` with the desired version.
-
-### Option B: Generate locally
-
-```bash
-make build-installer IMG=ghcr.io/c5c3/memcached-operator:v0.1.0
-kubectl apply -f dist/install.yaml
-```
-
-Both options produce an identical consolidated manifest containing all resources
-(CRDs, RBAC, operator Deployment, webhooks, cert-manager resources) in a single
-file.
-
 ## Uninstallation
 
 ### Remove all operator resources
 
-To remove the operator Deployment, RBAC, webhooks, cert-manager resources, and
-the CRDs:
+If you installed via the release manifest:
+
+```bash
+kubectl delete -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/install.yaml
+```
+
+If you installed from source:
 
 ```bash
 make undeploy
 ```
 
-This deletes all resources created by `make deploy`, including the
+Both commands remove all operator resources including the
 `memcached-operator-system` namespace.
 
 **Warning:** Removing the CRDs also deletes all `Memcached` custom resources and
@@ -346,10 +333,3 @@ To remove just the CRDs without removing the operator:
 make uninstall
 ```
 
-### Manual cleanup
-
-If you installed using the single-file method:
-
-```bash
-kubectl delete -f dist/install.yaml
-```
