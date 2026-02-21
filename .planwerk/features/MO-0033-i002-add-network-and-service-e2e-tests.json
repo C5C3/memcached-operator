@@ -1,0 +1,439 @@
+{
+  "feature_id": "MO-0033",
+  "title": "I002: Add network and service E2E tests",
+  "slug": "i002-add-network-and-service-e2e-tests",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'E2E tests with chainsaw are now working. Analysis'\n\nAdd 2 Chainsaw E2E tests covering network-level operator features:\n\n1. **test/e2e/network-policy/**: Multi-step test covering:\n   - Enable NetworkPolicy, assert resource created with correct podSelector and ingress port 11211\n   - Test `allowedSources` with a podSelector peer configuration\n   - Test port adaptation when TLS (port 11212) and monitoring (port 9150) are also enabled\n   - Disable NetworkPolicy via patch, assert NetworkPolicy resource deleted (lifecycle test)\n\n2. **test/e2e/service-annotations/**: Apply CR with `service.annotations` containing custom annotations. Assert Service metadata contains the custom annotations. Patch CR to remove annotations, assert annotations are cleared from Service.\n\nNetworkPolicy test focuses on resource creation/deletion verification only — no CNI enforcement testing (excluded per scope).\n\n**Rationale:** NetworkPolicy is a multi-step lifecycle feature (create/update/delete) that interacts with TLS and monitoring port configuration. Service annotations are user-facing and propagation bugs would break load balancer or DNS integrations. Both lack any E2E coverage.\n\n**Affected Areas:**\n- test/e2e/network-policy/chainsaw-test.yaml\n- test/e2e/service-annotations/chainsaw-test.yaml",
+  "stories": [
+    {
+      "title": "Operator creates NetworkPolicy with correct ingress rules when enabled",
+      "role": "cluster operator",
+      "want": "the operator to create a NetworkPolicy with the correct podSelector and ingress port 11211 when I enable networkPolicy in the CR spec",
+      "so_that": "Memcached pods are protected by a NetworkPolicy that matches the operator's intended ingress configuration",
+      "criteria": [
+        "NetworkPolicy resource exists in the same namespace with the same name as the Memcached CR",
+        "NetworkPolicy spec.podSelector.matchLabels contains app.kubernetes.io/name=memcached, app.kubernetes.io/instance=<cr-name>, app.kubernetes.io/managed-by=memcached-operator",
+        "NetworkPolicy has exactly one ingress rule with port 11211/TCP",
+        "NetworkPolicy policyTypes contains only 'Ingress'",
+        "NetworkPolicy metadata.labels match the standard operator label set"
+      ]
+    },
+    {
+      "title": "Operator adapts NetworkPolicy ports when TLS and monitoring are enabled alongside NetworkPolicy",
+      "role": "cluster operator",
+      "want": "the NetworkPolicy ingress ports to include TLS port 11212 and metrics port 9150 when those features are enabled",
+      "so_that": "the NetworkPolicy does not block TLS or monitoring traffic to Memcached pods",
+      "criteria": [
+        "When TLS is enabled, NetworkPolicy ingress rule includes port 11212/TCP in addition to 11211/TCP",
+        "When monitoring is enabled, NetworkPolicy ingress rule includes port 9150/TCP in addition to 11211/TCP",
+        "When both TLS and monitoring are enabled, all three ports (11211, 11212, 9150) are present in the ingress rule",
+        "All ports use TCP protocol"
+      ]
+    },
+    {
+      "title": "Operator restricts NetworkPolicy ingress to specified allowedSources",
+      "role": "cluster operator",
+      "want": "to configure allowedSources on the NetworkPolicy so only specific pods can reach Memcached",
+      "so_that": "I can restrict access to Memcached to only the application pods that need it",
+      "criteria": [
+        "When allowedSources contains a podSelector peer, the NetworkPolicy ingress rule 'from' field includes the podSelector",
+        "The podSelector matchLabels in the NetworkPolicy match exactly what was specified in allowedSources",
+        "The ingress rule 'from' field is present only when allowedSources is non-empty"
+      ]
+    },
+    {
+      "title": "Operator deletes NetworkPolicy when disabled via CR patch",
+      "role": "cluster operator",
+      "want": "the operator to delete the NetworkPolicy resource when I patch the CR to disable networkPolicy",
+      "so_that": "I can remove network restrictions without manually deleting NetworkPolicy resources",
+      "criteria": [
+        "After patching security.networkPolicy.enabled to false, the NetworkPolicy resource no longer exists",
+        "The Memcached CR and other managed resources (Deployment, Service) remain unaffected",
+        "Chainsaw error assertion confirms the NetworkPolicy is gone"
+      ]
+    },
+    {
+      "title": "Operator propagates custom annotations to the headless Service",
+      "role": "cluster operator",
+      "want": "custom annotations on spec.service.annotations to appear on the managed Service resource",
+      "so_that": "I can configure load balancer integrations, DNS providers, or other annotation-driven controllers",
+      "criteria": [
+        "Service metadata.annotations contains exactly the key-value pairs specified in spec.service.annotations",
+        "Multiple annotations are all propagated correctly",
+        "Standard operator labels remain on the Service metadata.labels"
+      ]
+    },
+    {
+      "title": "Operator clears annotations from Service when removed from CR",
+      "role": "cluster operator",
+      "want": "annotations to be removed from the Service when I patch the CR to remove spec.service.annotations",
+      "so_that": "stale annotations do not remain on the Service after configuration changes",
+      "criteria": [
+        "After patching to remove service.annotations, the Service metadata.annotations field is empty/nil",
+        "The Service continues to function correctly with correct ports and selector",
+        "The Memcached CR and Deployment remain unaffected"
+      ]
+    },
+    {
+      "title": "E2E test documentation is updated to reflect new test coverage",
+      "role": "developer",
+      "want": "the chainsaw-e2e-tests.md documentation to list the new network-policy and service-annotations tests",
+      "so_that": "the test catalog is complete and other developers can understand the E2E coverage",
+      "criteria": [
+        "docs/reference/backend/chainsaw-e2e-tests.md includes entries for network-policy test",
+        "docs/reference/backend/chainsaw-e2e-tests.md includes entries for service-annotations test",
+        "Each test entry describes the steps, files, and requirement coverage",
+        "The requirement coverage matrix is updated"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-E2E-NP-001",
+      "description": "The network-policy E2E test SHALL create a Memcached CR with security.networkPolicy.enabled=true and assert a NetworkPolicy resource is created with correct podSelector, policyTypes, and ingress port 11211/TCP",
+      "priority": "SHALL",
+      "rationale": "Validates the basic NetworkPolicy creation path end-to-end, covering the primary use case of enabling network restrictions",
+      "scenarios": [
+        {
+          "name": "NetworkPolicy created on CR apply",
+          "when": "a Memcached CR is applied with spec.security.networkPolicy.enabled: true",
+          "then": "a NetworkPolicy resource exists with metadata.name matching the CR name",
+          "and_then": [
+            "spec.podSelector.matchLabels contains app.kubernetes.io/name=memcached, app.kubernetes.io/instance=test-networkpolicy, app.kubernetes.io/managed-by=memcached-operator",
+            "spec.policyTypes contains Ingress",
+            "spec.ingress[0].ports contains port 11211 protocol TCP"
+          ]
+        },
+        {
+          "name": "NetworkPolicy has correct metadata labels",
+          "when": "the NetworkPolicy is created by the operator",
+          "then": "metadata.labels match the standard operator label set (app.kubernetes.io/name, instance, managed-by)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-NP-002",
+      "description": "The network-policy E2E test SHALL verify that allowedSources with a podSelector peer are propagated to the NetworkPolicy ingress from field",
+      "priority": "SHALL",
+      "rationale": "AllowedSources is the mechanism for restricting access to specific pods; must verify it propagates correctly",
+      "scenarios": [
+        {
+          "name": "AllowedSources podSelector propagated",
+          "when": "the Memcached CR is patched to add allowedSources with a podSelector peer (matchLabels: app=allowed-client)",
+          "then": "the NetworkPolicy ingress rule from field contains the podSelector with matchLabels app=allowed-client",
+          "and_then": []
+        },
+        {
+          "name": "Ingress ports unchanged when allowedSources added",
+          "when": "allowedSources are added to an existing NetworkPolicy",
+          "then": "the ingress ports remain 11211/TCP (from the base configuration)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-NP-003",
+      "description": "The network-policy E2E test SHALL verify that enabling TLS adds port 11212 and enabling monitoring adds port 9150 to the NetworkPolicy ingress rule",
+      "priority": "SHALL",
+      "rationale": "Port adaptation is critical — a NetworkPolicy that blocks TLS or metrics traffic would silently break those features",
+      "scenarios": [
+        {
+          "name": "TLS and monitoring ports added to NetworkPolicy",
+          "when": "the Memcached CR is patched to enable TLS (with cert-manager certificate) and monitoring alongside NetworkPolicy",
+          "then": "the NetworkPolicy ingress rule ports contain 11211/TCP, 11212/TCP, and 9150/TCP",
+          "and_then": []
+        },
+        {
+          "name": "All three ports present simultaneously",
+          "when": "TLS, monitoring, and NetworkPolicy are all enabled",
+          "then": "the NetworkPolicy has exactly 3 ports in its ingress rule",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-NP-004",
+      "description": "The network-policy E2E test SHALL verify that disabling NetworkPolicy via CR patch causes the NetworkPolicy resource to be deleted",
+      "priority": "SHALL",
+      "rationale": "Lifecycle management (deletion on disable) is a critical operator behavior that must be validated end-to-end",
+      "scenarios": [
+        {
+          "name": "NetworkPolicy deleted on disable",
+          "when": "the Memcached CR is patched with spec.security.networkPolicy.enabled: false",
+          "then": "the NetworkPolicy resource no longer exists (Chainsaw error assertion succeeds)",
+          "and_then": []
+        },
+        {
+          "name": "Other resources unaffected",
+          "when": "NetworkPolicy is disabled",
+          "then": "the Deployment and Service continue to exist and function",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-SA-001",
+      "description": "The service-annotations E2E test SHALL create a Memcached CR with spec.service.annotations and assert the Service metadata contains those annotations",
+      "priority": "SHALL",
+      "rationale": "Service annotations drive load balancer configuration, DNS, and other integrations — propagation bugs break production infrastructure",
+      "scenarios": [
+        {
+          "name": "Annotations propagated to Service",
+          "when": "a Memcached CR is applied with spec.service.annotations containing custom-annotation-key: custom-annotation-value and another-annotation: another-value",
+          "then": "the Service resource metadata.annotations contains both key-value pairs exactly",
+          "and_then": []
+        },
+        {
+          "name": "Service structure unaffected by annotations",
+          "when": "custom annotations are set",
+          "then": "the Service still has clusterIP: None, correct selector labels, and port 11211",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-SA-002",
+      "description": "The service-annotations E2E test SHALL verify that patching the CR to remove annotations causes them to be cleared from the Service",
+      "priority": "SHALL",
+      "rationale": "Stale annotations on Services can cause incorrect load balancer behavior or DNS misconfiguration",
+      "scenarios": [
+        {
+          "name": "Annotations cleared after removal patch",
+          "when": "the Memcached CR is patched to set spec.service to an empty object (removing annotations)",
+          "then": "the Service metadata.annotations field does not contain the previously set annotations",
+          "and_then": []
+        },
+        {
+          "name": "Service ports and selector unaffected",
+          "when": "annotations are removed",
+          "then": "the Service retains correct ports (11211), selector, and clusterIP: None",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-NP-005",
+      "description": "The network-policy E2E test SHALL require cert-manager Certificate and Issuer resources to be created before enabling TLS for the port-adaptation step",
+      "priority": "SHALL",
+      "rationale": "TLS enablement requires valid cert-manager resources; without them the operator cannot reconcile the TLS configuration correctly",
+      "scenarios": [
+        {
+          "name": "Cert-manager resources created and ready before TLS enablement",
+          "when": "the test reaches the TLS port-adaptation step",
+          "then": "cert-manager Issuer and Certificate resources exist and Certificate status is Ready=True",
+          "and_then": []
+        },
+        {
+          "name": "TLS Secret available for operator",
+          "when": "Certificate is Ready",
+          "then": "the referenced Secret exists and can be mounted by the operator-managed Deployment",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-E2E-DOC-001",
+      "description": "The chainsaw-e2e-tests.md documentation SHALL be updated to include the network-policy and service-annotations test entries",
+      "priority": "SHALL",
+      "rationale": "The test documentation must remain the single source of truth for E2E test coverage",
+      "scenarios": [
+        {
+          "name": "Network-policy test documented",
+          "when": "a developer reads docs/reference/backend/chainsaw-e2e-tests.md",
+          "then": "the document includes a section for the network-policy test with description, steps, files, and requirement references",
+          "and_then": []
+        },
+        {
+          "name": "Service-annotations test documented",
+          "when": "a developer reads docs/reference/backend/chainsaw-e2e-tests.md",
+          "then": "the document includes a section for the service-annotations test with description, steps, files, and requirement references",
+          "and_then": []
+        },
+        {
+          "name": "Requirement coverage matrix updated",
+          "when": "a developer checks the requirement coverage table",
+          "then": "NetworkPolicy lifecycle and service annotation propagation requirements are listed with their corresponding test names",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create network-policy E2E test: initial CR and NetworkPolicy assertion (REQ-E2E-NP-001)",
+      "description": "Create test/e2e/network-policy/ directory with chainsaw-test.yaml and initial step files. Create 00-memcached.yaml with a Memcached CR named test-networkpolicy that enables security.networkPolicy.enabled: true (using the standard minimal CR template with replicas: 1, image: memcached:1.6, resources, memcached config). Create 01-assert-networkpolicy.yaml that asserts a NetworkPolicy resource exists with: metadata.name: test-networkpolicy, metadata.labels matching standard operator labels, spec.podSelector.matchLabels matching standard labels, spec.policyTypes: [Ingress], and spec.ingress[0].ports containing port 11211/TCP. The chainsaw-test.yaml should have description referencing REQ-E2E-NP-001 through REQ-E2E-NP-004, standard timeouts (apply: 30s, assert: 120s, delete: 30s, error: 30s), and the first two steps: create-memcached-with-networkpolicy (apply 00-memcached.yaml) and assert-networkpolicy-created (assert 01-assert-networkpolicy.yaml). Follow the exact file naming and YAML structure conventions from existing tests like monitoring-toggle.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-E2E-NP-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create service-annotations E2E test: initial CR and Service annotation assertion (REQ-E2E-SA-001)",
+      "description": "Create test/e2e/service-annotations/ directory with chainsaw-test.yaml and initial step files. Create 00-memcached.yaml with a Memcached CR named test-service-annotations using the standard minimal CR template plus spec.service.annotations containing two custom annotations (e.g., custom-annotation.example.com/key: custom-value, another-annotation.example.com/test: another-value). Create 01-assert-service-annotations.yaml asserting the Service resource metadata.annotations contains both custom annotation key-value pairs. The chainsaw-test.yaml should have description referencing REQ-E2E-SA-001 and REQ-E2E-SA-002, standard timeouts, and steps: create-memcached-with-annotations (apply) and assert-service-annotations (assert). Follow existing test conventions.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-E2E-SA-001"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add allowedSources patch step to network-policy E2E test (REQ-E2E-NP-002)",
+      "description": "Add the allowedSources step to the existing network-policy chainsaw-test.yaml. Create 02-patch-allowed-sources.yaml that patches the test-networkpolicy CR to add spec.security.networkPolicy.allowedSources with a podSelector peer: matchLabels: { app: allowed-client }. Create 03-assert-networkpolicy-allowed-sources.yaml asserting the NetworkPolicy spec.ingress[0].from contains the podSelector with matchLabels app: allowed-client, and ingress ports still include 11211/TCP. Add two new steps to chainsaw-test.yaml: patch-allowed-sources (patch 02-patch-allowed-sources.yaml) and assert-networkpolicy-allowed-sources (assert 03-assert-networkpolicy-allowed-sources.yaml). Follow the monitoring-toggle pattern for patch files (only include the CR apiVersion, kind, metadata.name, and the changed spec fields).",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-E2E-NP-002"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add annotation removal patch step to service-annotations E2E test (REQ-E2E-SA-002)",
+      "description": "Add the annotation-removal step to the existing service-annotations chainsaw-test.yaml. Create 02-patch-remove-annotations.yaml that patches the test-service-annotations CR to set spec.service.annotations to an empty map (or null, removing annotations). Create 03-assert-service-no-annotations.yaml asserting the Service resource for test-service-annotations exists with correct ports (11211), selector, and clusterIP: None, but with the (x-kubernetes-preserve-unknown-fields or chainsaw partial matching) confirming annotations are not present. Since Chainsaw uses partial matching, we need to assert the Service structure is correct and then use a separate assertion or binding to verify annotations are cleared. Alternatively, assert the Service with no annotations field set (Chainsaw will match if the field is absent). Add two steps: patch-remove-annotations and assert-service-annotations-cleared. Follow the monitoring-toggle disable pattern.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-E2E-SA-002"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Add TLS+monitoring port adaptation step to network-policy E2E test (REQ-E2E-NP-003, REQ-E2E-NP-005)",
+      "description": "Add cert-manager setup and TLS+monitoring enablement to the network-policy test. Create 04-cert-manager.yaml with a self-signed Issuer (test-np-selfsigned) and Certificate (test-np-cert) with secretName test-np-certs and dnsNames [test-networkpolicy], following the exact pattern from tls-encryption/00-cert-manager.yaml. Create 04-assert-certificate-ready.yaml asserting Certificate test-np-cert has status.conditions[0].type=Ready, status=True (same pattern as tls-encryption/00-assert-certificate-ready.yaml). Create 05-patch-enable-tls-monitoring.yaml patching the test-networkpolicy CR to add spec.security.tls.enabled: true, spec.security.tls.certificateSecretRef.name: test-np-certs, and spec.monitoring.enabled: true. Create 06-assert-networkpolicy-all-ports.yaml asserting the NetworkPolicy ingress rule contains all three ports: 11211/TCP, 11212/TCP, and 9150/TCP. Add four steps to chainsaw-test.yaml: create-cert-manager-resources (apply 04-cert-manager.yaml), assert-certificate-ready (assert 04-assert-certificate-ready.yaml), patch-enable-tls-and-monitoring (patch 05-patch-enable-tls-monitoring.yaml), and assert-networkpolicy-all-ports (assert 06-assert-networkpolicy-all-ports.yaml).",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-E2E-NP-003",
+        "REQ-E2E-NP-005"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Add NetworkPolicy disable/deletion lifecycle step to network-policy E2E test (REQ-E2E-NP-004)",
+      "description": "Add the final lifecycle step to the network-policy test. Create 07-patch-disable-networkpolicy.yaml patching the test-networkpolicy CR to set spec.security.networkPolicy.enabled: false. Create 08-error-networkpolicy-gone.yaml as a minimal NetworkPolicy resource reference (apiVersion: networking.k8s.io/v1, kind: NetworkPolicy, metadata.name: test-networkpolicy) for the Chainsaw error assertion (which succeeds when the resource does NOT exist). Add two steps to chainsaw-test.yaml: disable-networkpolicy (patch 07-patch-disable-networkpolicy.yaml) and assert-networkpolicy-deleted (error 08-error-networkpolicy-gone.yaml). Follow the exact pattern from monitoring-toggle steps 'disable-monitoring' and 'assert-servicemonitor-deleted'. Verify the complete chainsaw-test.yaml has all steps in correct order: 1) create CR with NP, 2) assert NP created, 3) patch allowedSources, 4) assert allowedSources, 5) create cert-manager, 6) assert cert ready, 7) enable TLS+monitoring, 8) assert 3 ports, 9) disable NP, 10) assert NP gone.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-E2E-NP-004"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Update chainsaw-e2e-tests.md documentation with network-policy and service-annotations test entries (REQ-E2E-DOC-001)",
+      "description": "Update docs/reference/backend/chainsaw-e2e-tests.md to include documentation for both new E2E tests. Add a test scenario entry for network-policy test including: test name, directory path, description (multi-step lifecycle: create with podSelector and port 11211, add allowedSources peer, enable TLS+monitoring for port adaptation to 11211/11212/9150, disable and assert deletion), list of step files with descriptions, and requirement coverage. Add a test scenario entry for service-annotations test including: test name, directory, description (annotation propagation and removal lifecycle), step files, and requirement coverage. Update the requirement coverage matrix table to include NetworkPolicy lifecycle (REQ-E2E-NP-001 to NP-004) and service annotation propagation (REQ-E2E-SA-001, SA-002) mapped to the new test names. Update the test count in the overview section. Follow the exact formatting conventions of existing test entries in the document.",
+      "level": 5,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-E2E-DOC-001"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "test/e2e/network-policy/chainsaw-test.yaml",
+      "test_function": "step: assert-networkpolicy-created (01-assert-networkpolicy.yaml)",
+      "story": "Operator creates NetworkPolicy with correct ingress rules when enabled",
+      "expected": "NetworkPolicy exists with podSelector matching operator labels, policyTypes: [Ingress], and ingress port 11211/TCP",
+      "requirement_id": "REQ-E2E-NP-001"
+    },
+    {
+      "test_file": "test/e2e/network-policy/chainsaw-test.yaml",
+      "test_function": "step: assert-networkpolicy-allowed-sources (03-assert-networkpolicy-allowed-sources.yaml)",
+      "story": "Operator restricts NetworkPolicy ingress to specified allowedSources",
+      "expected": "NetworkPolicy ingress from field contains podSelector with matchLabels app: allowed-client",
+      "requirement_id": "REQ-E2E-NP-002"
+    },
+    {
+      "test_file": "test/e2e/network-policy/chainsaw-test.yaml",
+      "test_function": "step: assert-networkpolicy-all-ports (06-assert-networkpolicy-all-ports.yaml)",
+      "story": "Operator adapts NetworkPolicy ports when TLS and monitoring are enabled alongside NetworkPolicy",
+      "expected": "NetworkPolicy ingress ports include 11211/TCP, 11212/TCP, and 9150/TCP",
+      "requirement_id": "REQ-E2E-NP-003"
+    },
+    {
+      "test_file": "test/e2e/network-policy/chainsaw-test.yaml",
+      "test_function": "step: assert-certificate-ready (04-assert-certificate-ready.yaml)",
+      "story": "Operator adapts NetworkPolicy ports when TLS and monitoring are enabled alongside NetworkPolicy",
+      "expected": "cert-manager Certificate resource has status Ready=True before TLS is enabled",
+      "requirement_id": "REQ-E2E-NP-005"
+    },
+    {
+      "test_file": "test/e2e/network-policy/chainsaw-test.yaml",
+      "test_function": "step: assert-networkpolicy-deleted (08-error-networkpolicy-gone.yaml)",
+      "story": "Operator deletes NetworkPolicy when disabled via CR patch",
+      "expected": "NetworkPolicy resource does not exist after disabling (Chainsaw error assertion succeeds)",
+      "requirement_id": "REQ-E2E-NP-004"
+    },
+    {
+      "test_file": "test/e2e/service-annotations/chainsaw-test.yaml",
+      "test_function": "step: assert-service-annotations (01-assert-service-annotations.yaml)",
+      "story": "Operator propagates custom annotations to the headless Service",
+      "expected": "Service metadata.annotations contains both custom annotation key-value pairs",
+      "requirement_id": "REQ-E2E-SA-001"
+    },
+    {
+      "test_file": "test/e2e/service-annotations/chainsaw-test.yaml",
+      "test_function": "step: assert-service-annotations-cleared (03-assert-service-no-annotations.yaml)",
+      "story": "Operator clears annotations from Service when removed from CR",
+      "expected": "Service metadata.annotations does not contain previously set custom annotations",
+      "requirement_id": "REQ-E2E-SA-002"
+    },
+    {
+      "test_file": "docs/reference/backend/chainsaw-e2e-tests.md",
+      "test_function": "documentation review: network-policy and service-annotations sections exist",
+      "story": "E2E test documentation is updated to reflect new test coverage",
+      "expected": "Both new tests are documented with steps, files, and requirement coverage",
+      "requirement_id": "REQ-E2E-DOC-001"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All Chainsaw YAML files follow the established file naming convention: 00-*.yaml, 01-assert-*.yaml, 0N-patch-*.yaml, 0N-error-*-gone.yaml",
+    "NetworkPolicy assertion 01-assert-networkpolicy.yaml correctly specifies podSelector with all three standard labels, policyTypes: [Ingress], and ingress port 11211/TCP",
+    "NetworkPolicy port adaptation assertion 06-assert-networkpolicy-all-ports.yaml includes all three ports (11211, 11212, 9150) with TCP protocol",
+    "Cert-manager Issuer and Certificate in 04-cert-manager.yaml follow the exact pattern from tls-encryption/00-cert-manager.yaml with correct secretName and dnsNames",
+    "Deletion assertion 08-error-networkpolicy-gone.yaml uses the Chainsaw error operation pattern (minimal resource reference) matching monitoring-toggle/05-error-servicemonitor-gone.yaml",
+    "Service annotation assertion correctly verifies both custom annotations are propagated to Service metadata.annotations",
+    "Service annotation removal step correctly asserts annotations are cleared without breaking Service structure assertions",
+    "chainsaw-test.yaml files use standard timeouts (apply: 30s, assert: 120s, delete: 30s, error: 30s) and correct step ordering",
+    "docs/reference/backend/chainsaw-e2e-tests.md is updated with both new test entries, step descriptions, and requirement coverage matrix updates"
+  ],
+  "implementation_notes": "These are pure Chainsaw E2E test files (YAML only, no Go code). Follow the exact conventions established by existing tests: 1) chainsaw-test.yaml defines steps referencing resource files, 2) 00-*.yaml for initial resources, 01-assert-*.yaml for assertions, 0N-patch-*.yaml for patches, 0N-error-*-gone.yaml for deletion assertions. The network-policy test is the most complex, with 10 steps covering the full lifecycle: basic creation with podSelector+port 11211, allowedSources update with podSelector peer, cert-manager setup for TLS, TLS+monitoring port adaptation (11211/11212/9150), and disable/deletion. The service-annotations test is straightforward: apply CR with annotations, assert Service annotations, patch to remove, assert cleared. For annotation removal assertion, the Service should be asserted with its structural properties (ports, selector) and Chainsaw's partial matching means the absence of an annotations field in the assertion YAML will pass regardless. To verify annotations are actually gone, use a JMESPath binding or simply assert the Service with metadata containing no annotations key. The CR names follow the convention: test-networkpolicy and test-service-annotations.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:27:34.054046"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-20T23:55:21.000297"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T00:00:07.207500"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "2c2f9bdd-bfa2-4c66-a37c-03b55878c1c2",
+      "timestamp": "2026-02-21T00:00:07.207531",
+      "total_duration": 282.4121091365814,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 282.4121091365814,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
