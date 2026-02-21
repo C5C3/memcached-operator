@@ -75,6 +75,9 @@ auto_request = true
 [git]
 author = "Christian Berendt <berendt@23technologies.cloud>"
 co_author = ""
+trailers = [
+    "AI-assisted: Claude Code",
+]
 
 [github]
 # GitHub App ID from your app's settings page
@@ -93,3 +96,7 @@ api_base_url = "https://api.github.com"
 github_account = "berendt"
 name = "Christian Berendt"
 email = "berendt@23technologies.cloud"
+trailers = [
+    "On-behalf-of: @SAP christian.berendt@sap.com",
+    "Signed-off-by: Christian Berendt <berendt@23technologies.cloud>"
+]

@@ -97,13 +97,13 @@ Indicates whether a rollout or scaling operation is in progress.
 Indicates whether the instance has fewer ready replicas than desired, or whether
 referenced Secrets are missing.
 
-| Status  | Reason            | When                                              |
-|---------|-------------------|---------------------------------------------------|
-| `True`  | `SecretNotFound`  | One or more referenced Secrets are missing         |
-| `True`  | `Degraded`        | `readyReplicas < desired` and `desired > 0`        |
-| `True`  | `Degraded`        | Deployment does not exist and `desired > 0`        |
-| `False` | `NotDegraded`     | `readyReplicas == desired` and no missing Secrets  |
-| `False` | `NotDegraded`     | `desired == 0` (intentionally scaled to zero)      |
+| Status  | Reason           | When                                              |
+|---------|------------------|---------------------------------------------------|
+| `True`  | `SecretNotFound` | One or more referenced Secrets are missing        |
+| `True`  | `Degraded`       | `readyReplicas < desired` and `desired > 0`       |
+| `True`  | `Degraded`       | Deployment does not exist and `desired > 0`       |
+| `False` | `NotDegraded`    | `readyReplicas == desired` and no missing Secrets |
+| `False` | `NotDegraded`    | `desired == 0` (intentionally scaled to zero)     |
 
 `SecretNotFound` takes precedence over replica-based degraded status. When any
 referenced Secret (SASL credentials or TLS certificate) cannot be fetched, the

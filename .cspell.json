@@ -145,6 +145,8 @@
     "nolint",
     "nomtls",
     "nonroot",
+    "nosec",
+    "nosecret",
     "nosm",
     "objref",
     "objs",
