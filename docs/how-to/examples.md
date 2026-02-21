@@ -132,6 +132,45 @@ spec:
 
 **Prerequisites:** The Prometheus Operator CRDs must be installed in the cluster. See the [troubleshooting guide](troubleshooting.md#3-servicemonitor-not-created) if the ServiceMonitor is not created.
 
+**Verify the exporter is running:**
+
+```bash
+kubectl get pods -l app.kubernetes.io/instance=memcached-monitored
+```
+
+Each pod should show `2/2` in the READY column (memcached + exporter).
+
+**Query metrics manually:**
+
+```bash
+kubectl run metrics-test --image=busybox:1.36 --rm -it --restart=Never -- \
+  sh -c 'wget -qO- http://memcached-monitored:9150/metrics | grep ^memcached_'
+```
+
+This returns Memcached-specific metrics such as:
+
+```text
+memcached_up 1
+memcached_version{version="1.6.40"} 1
+memcached_uptime_seconds 274
+memcached_current_connections 3
+memcached_current_items 0
+memcached_current_bytes 0
+memcached_limit_bytes 6.7108864e+07
+memcached_max_connections 1024
+memcached_commands_total{command="get",status="hit"} 0
+memcached_commands_total{command="set",status="hit"} 0
+```
+
+**Verify the ServiceMonitor:**
+
+```bash
+kubectl get servicemonitor memcached-monitored
+```
+
+If Prometheus is installed, targets should appear automatically in the
+Prometheus UI under **Status > Targets**.
+
 ---
 
 ## 4. TLS-Enabled
@@ -377,9 +416,9 @@ kubectl create secret tls memcached-prod-tls -n cache \
 
 ---
 
-## 7. CobaltCore/Keystone Integration
+## 7. Keystone Integration
 
-Configured specifically for [OpenStack Keystone](https://docs.openstack.org/keystone/latest/) token caching in a [CobaltCore (C5C3)](https://github.com/c5c3/c5c3) Hosted Control Plane environment. Keystone uses [pymemcache](https://pymemcache.readthedocs.io/) with the `HashClient`, which connects to individual Memcached pods via the headless Service DNS records.
+Configured specifically for [OpenStack Keystone](https://docs.openstack.org/keystone/latest/) token caching. Keystone uses [pymemcache](https://pymemcache.readthedocs.io/) with the `HashClient`, which connects to individual Memcached pods via the headless Service DNS records.
 
 ```yaml
 apiVersion: memcached.c5c3.io/v1alpha1
