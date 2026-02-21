@@ -19,6 +19,7 @@ const (
 	testExporterContainer = "exporter"
 	testExporterImage     = "my-registry/memcached-exporter:v1.0.0"
 	testSASLSecret        = "my-sasl-secret"
+	testSASLSecretName    = "sasl-secret"
 	testTLSSecret         = "my-tls-secret"
 	testCPU100m           = "100m"
 	testMem128Mi          = "128Mi"
@@ -2022,8 +2023,8 @@ func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
 	if len(dep.Spec.Template.Spec.Volumes) != 1 {
 		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
 	}
-	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-secret" {
-		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-secret")
+	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != testSASLSecretName {
+		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, testSASLSecretName)
 	}
 }
 
@@ -2102,8 +2103,8 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	if len(dep.Spec.Template.Spec.Volumes) != 1 {
 		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
 	}
-	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-secret" {
-		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-secret")
+	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != testSASLSecretName {
+		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, testSASLSecretName)
 	}
 }
 

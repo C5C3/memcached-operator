@@ -23,8 +23,9 @@ import (
 )
 
 const (
-	testInstanceName = "test-mc"
-	testMetricsPort  = "metrics"
+	testInstanceName     = "test-mc"
+	testMetricsPort      = "metrics"
+	testDefaultNamespace = "default"
 )
 
 // testSchemeWithMonitoring returns a scheme that includes core types, Memcached, and monitoring/v1.
@@ -51,7 +52,7 @@ func newTestReconcilerWithMonitoring(c client.Client) *MemcachedReconciler {
 
 func TestReconcileDeployment_CreatesDeployment(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -62,7 +63,7 @@ func TestReconcileDeployment_CreatesDeployment(t *testing.T) {
 	}
 
 	dep := &appsv1.Deployment{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, dep); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, dep); err != nil {
 		t.Fatalf("failed to get created deployment: %v", err)
 	}
 
@@ -70,8 +71,8 @@ func TestReconcileDeployment_CreatesDeployment(t *testing.T) {
 	if dep.Name != testInstanceName {
 		t.Errorf("deployment name = %q, want %q", dep.Name, testInstanceName)
 	}
-	if dep.Namespace != "default" {
-		t.Errorf("deployment namespace = %q, want %q", dep.Namespace, "default")
+	if dep.Namespace != testDefaultNamespace {
+		t.Errorf("deployment namespace = %q, want %q", dep.Namespace, testDefaultNamespace)
 	}
 
 	// Verify labels.
@@ -103,13 +104,13 @@ func TestReconcileDeployment_CreatesDeployment(t *testing.T) {
 func TestReconcileDeployment_UpdatesExistingDeployment(t *testing.T) {
 	replicas3 := int32(3)
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{Replicas: &replicas3},
 	}
 	// Create an existing deployment with different replicas.
 	replicas1 := int32(1)
 	existingDep := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas1,
 			Selector: &metav1.LabelSelector{
@@ -130,7 +131,7 @@ func TestReconcileDeployment_UpdatesExistingDeployment(t *testing.T) {
 	}
 
 	dep := &appsv1.Deployment{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, dep); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, dep); err != nil {
 		t.Fatalf("failed to get deployment: %v", err)
 	}
 
@@ -143,7 +144,7 @@ func TestReconcileDeployment_UpdatesExistingDeployment(t *testing.T) {
 func TestReconcileDeployment_SetsContainerImage(t *testing.T) {
 	customImage := "memcached:1.7-alpine"
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "img-mc", Namespace: "default", UID: "uid-2"},
+		ObjectMeta: metav1.ObjectMeta{Name: "img-mc", Namespace: testDefaultNamespace, UID: "uid-2"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{Image: &customImage},
 	}
 	c := newFakeClient(mc)
@@ -154,7 +155,7 @@ func TestReconcileDeployment_SetsContainerImage(t *testing.T) {
 	}
 
 	dep := &appsv1.Deployment{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: "img-mc", Namespace: "default"}, dep); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: "img-mc", Namespace: testDefaultNamespace}, dep); err != nil {
 		t.Fatalf("failed to get deployment: %v", err)
 	}
 
@@ -170,7 +171,7 @@ func TestReconcileDeployment_SetsContainerImage(t *testing.T) {
 
 func TestReconcileService_CreatesService(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -181,7 +182,7 @@ func TestReconcileService_CreatesService(t *testing.T) {
 	}
 
 	svc := &corev1.Service{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, svc); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, svc); err != nil {
 		t.Fatalf("failed to get created service: %v", err)
 	}
 
@@ -189,8 +190,8 @@ func TestReconcileService_CreatesService(t *testing.T) {
 	if svc.Name != testInstanceName {
 		t.Errorf("service name = %q, want %q", svc.Name, testInstanceName)
 	}
-	if svc.Namespace != "default" {
-		t.Errorf("service namespace = %q, want %q", svc.Namespace, "default")
+	if svc.Namespace != testDefaultNamespace {
+		t.Errorf("service namespace = %q, want %q", svc.Namespace, testDefaultNamespace)
 	}
 
 	// Verify headless.
@@ -217,11 +218,11 @@ func TestReconcileService_CreatesService(t *testing.T) {
 
 func TestReconcileService_UpdatesExistingService(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{Name: "old-port", Port: 9999},
@@ -236,7 +237,7 @@ func TestReconcileService_UpdatesExistingService(t *testing.T) {
 	}
 
 	svc := &corev1.Service{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, svc); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, svc); err != nil {
 		t.Fatalf("failed to get service: %v", err)
 	}
 
@@ -250,7 +251,7 @@ func TestReconcileService_UpdatesExistingService(t *testing.T) {
 
 func TestReconcilePDB_SkipsWhenDisabled(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -262,7 +263,7 @@ func TestReconcilePDB_SkipsWhenDisabled(t *testing.T) {
 
 	// Verify no PDB was created.
 	pdb := &policyv1.PodDisruptionBudget{}
-	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, pdb)
+	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, pdb)
 	if err == nil {
 		t.Error("expected PDB to not be created when disabled")
 	}
@@ -270,7 +271,7 @@ func TestReconcilePDB_SkipsWhenDisabled(t *testing.T) {
 
 func TestReconcilePDB_CreatesPDB(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec: memcachedv1alpha1.MemcachedSpec{
 			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
@@ -288,7 +289,7 @@ func TestReconcilePDB_CreatesPDB(t *testing.T) {
 	}
 
 	pdb := &policyv1.PodDisruptionBudget{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, pdb); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, pdb); err != nil {
 		t.Fatalf("failed to get created PDB: %v", err)
 	}
 
@@ -313,7 +314,7 @@ func TestReconcilePDB_CreatesPDB(t *testing.T) {
 
 func TestReconcilePDB_UpdatesExistingPDB(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec: memcachedv1alpha1.MemcachedSpec{
 			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
@@ -326,7 +327,7 @@ func TestReconcilePDB_UpdatesExistingPDB(t *testing.T) {
 	// Existing PDB with different settings.
 	existingMinAvail := intstr.FromInt32(2)
 	existingPDB := &policyv1.PodDisruptionBudget{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace},
 		Spec: policyv1.PodDisruptionBudgetSpec{
 			MinAvailable: &existingMinAvail,
 		},
@@ -339,7 +340,7 @@ func TestReconcilePDB_UpdatesExistingPDB(t *testing.T) {
 	}
 
 	pdb := &policyv1.PodDisruptionBudget{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, pdb); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, pdb); err != nil {
 		t.Fatalf("failed to get PDB: %v", err)
 	}
 
@@ -356,7 +357,7 @@ func TestReconcilePDB_UpdatesExistingPDB(t *testing.T) {
 
 func TestReconcileServiceMonitor_SkipsWhenDisabled(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{},
 	}
 	c := newFakeClientWithMonitoring(mc)
@@ -368,7 +369,7 @@ func TestReconcileServiceMonitor_SkipsWhenDisabled(t *testing.T) {
 
 	// Verify no ServiceMonitor was created.
 	sm := &monitoringv1.ServiceMonitor{}
-	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, sm)
+	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, sm)
 	if err == nil {
 		t.Error("expected ServiceMonitor to not be created when disabled")
 	}
@@ -376,7 +377,7 @@ func TestReconcileServiceMonitor_SkipsWhenDisabled(t *testing.T) {
 
 func TestReconcileServiceMonitor_CreatesServiceMonitor(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec: memcachedv1alpha1.MemcachedSpec{
 			Monitoring: &memcachedv1alpha1.MonitoringSpec{
 				Enabled: true,
@@ -394,7 +395,7 @@ func TestReconcileServiceMonitor_CreatesServiceMonitor(t *testing.T) {
 	}
 
 	sm := &monitoringv1.ServiceMonitor{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, sm); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, sm); err != nil {
 		t.Fatalf("failed to get created ServiceMonitor: %v", err)
 	}
 
@@ -425,7 +426,7 @@ func TestReconcileServiceMonitor_CreatesServiceMonitor(t *testing.T) {
 
 func TestReconcileServiceMonitor_SkipsWhenMonitoringEnabledButNoServiceMonitorSpec(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec: memcachedv1alpha1.MemcachedSpec{
 			Monitoring: &memcachedv1alpha1.MonitoringSpec{
 				Enabled: true,
@@ -442,7 +443,7 @@ func TestReconcileServiceMonitor_SkipsWhenMonitoringEnabledButNoServiceMonitorSp
 
 	// Verify no ServiceMonitor was created.
 	sm := &monitoringv1.ServiceMonitor{}
-	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, sm)
+	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, sm)
 	if err == nil {
 		t.Error("expected ServiceMonitor to not be created when ServiceMonitor spec is nil")
 	}
@@ -452,7 +453,7 @@ func TestReconcileServiceMonitor_SkipsWhenMonitoringEnabledButNoServiceMonitorSp
 
 func TestReconcileNetworkPolicy_SkipsWhenDisabled(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec:       memcachedv1alpha1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -464,7 +465,7 @@ func TestReconcileNetworkPolicy_SkipsWhenDisabled(t *testing.T) {
 
 	// Verify no NetworkPolicy was created.
 	np := &networkingv1.NetworkPolicy{}
-	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, np)
+	err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, np)
 	if err == nil {
 		t.Error("expected NetworkPolicy to not be created when disabled")
 	}
@@ -472,7 +473,7 @@ func TestReconcileNetworkPolicy_SkipsWhenDisabled(t *testing.T) {
 
 func TestReconcileNetworkPolicy_CreatesNetworkPolicy(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec: memcachedv1alpha1.MemcachedSpec{
 			Security: &memcachedv1alpha1.SecuritySpec{
 				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
@@ -489,7 +490,7 @@ func TestReconcileNetworkPolicy_CreatesNetworkPolicy(t *testing.T) {
 	}
 
 	np := &networkingv1.NetworkPolicy{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, np); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, np); err != nil {
 		t.Fatalf("failed to get created NetworkPolicy: %v", err)
 	}
 
@@ -525,7 +526,7 @@ func TestReconcileNetworkPolicy_CreatesNetworkPolicy(t *testing.T) {
 
 func TestReconcileNetworkPolicy_UpdatesExistingNetworkPolicy(t *testing.T) {
 	mc := &memcachedv1alpha1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default", UID: "uid-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
 		Spec: memcachedv1alpha1.MemcachedSpec{
 			Monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: true},
 			Security: &memcachedv1alpha1.SecuritySpec{
@@ -537,7 +538,7 @@ func TestReconcileNetworkPolicy_UpdatesExistingNetworkPolicy(t *testing.T) {
 	}
 	// Existing policy with only memcached port.
 	existingNP := &networkingv1.NetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace},
 		Spec: networkingv1.NetworkPolicySpec{
 			Ingress: []networkingv1.NetworkPolicyIngressRule{
 				{
@@ -556,7 +557,7 @@ func TestReconcileNetworkPolicy_UpdatesExistingNetworkPolicy(t *testing.T) {
 	}
 
 	np := &networkingv1.NetworkPolicy{}
-	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: "default"}, np); err != nil {
+	if err := c.Get(context.Background(), client.ObjectKey{Name: testInstanceName, Namespace: testDefaultNamespace}, np); err != nil {
 		t.Fatalf("failed to get network policy: %v", err)
 	}
 

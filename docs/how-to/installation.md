@@ -352,4 +352,3 @@ To remove just the CRDs without removing the operator:
 ```bash
 make uninstall
 ```
-

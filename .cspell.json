@@ -49,6 +49,7 @@
     "custimg",
     "custint",
     "custto",
+    "Dedup",
     "deepcopy",
     "determ",
     "distroless",
