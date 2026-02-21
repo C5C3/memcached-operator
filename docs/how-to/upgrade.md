@@ -142,7 +142,14 @@ deployment "memcached-operator-controller-manager" successfully rolled out
 
 ### Single-file upgrade
 
-If you use the single-file installation method:
+If you use the single-file installation method, apply the manifest directly from
+the GitHub Release:
+
+```bash
+kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/<new-version>/install.yaml
+```
+
+Or generate it locally:
 
 ```bash
 make build-installer IMG=ghcr.io/c5c3/memcached-operator:<new-version>

@@ -1,8 +1,17 @@
 # Memcached Operator
 
+[![CI](https://github.com/c5c3/memcached-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/c5c3/memcached-operator/actions/workflows/ci.yml)
+[![Release](https://github.com/c5c3/memcached-operator/actions/workflows/release.yml/badge.svg)](https://github.com/c5c3/memcached-operator/actions/workflows/release.yml)
+
 A Kubernetes operator for managing Memcached clusters, built with
 [Operator SDK](https://sdk.operatorframework.io/) (Go) and
 [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime).
+
+Container images are published to GHCR:
+
+```text
+ghcr.io/c5c3/memcached-operator:latest
+```
 
 Part of the [CobaltCore (C5C3)](https://github.com/c5c3/c5c3) ecosystem — a
 Kubernetes-native OpenStack distribution for operating Hosted Control Planes on

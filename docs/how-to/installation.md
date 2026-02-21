@@ -63,13 +63,15 @@ kustomize build config/crd | kubectl apply -f -
 
 ### Option C: From a release artifact
 
-Apply the CRD manifest directly from a GitHub release:
+Apply the CRD manifest directly from a GitHub Release:
 
 ```bash
 kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/memcached.c5c3.io_memcacheds.yaml
 ```
 
-Replace `v0.1.0` with the version you want to install.
+Replace `v0.1.0` with the version you want to install. Available releases are
+listed at
+[github.com/c5c3/memcached-operator/releases](https://github.com/c5c3/memcached-operator/releases).
 
 ### Verify CRD installation
 
@@ -274,21 +276,29 @@ kubectl get deployment,service,pdb -l app.kubernetes.io/managed-by=memcached-ope
 ## Single-File Install
 
 For environments where you prefer a single manifest file (such as GitOps
-pipelines or air-gapped clusters), generate a consolidated install manifest:
+pipelines or air-gapped clusters), you can either download a pre-built manifest
+from a GitHub Release or generate one locally.
+
+### Option A: From a GitHub Release (recommended)
+
+Each release includes a ready-to-use `install.yaml`:
+
+```bash
+kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/install.yaml
+```
+
+Replace `v0.1.0` with the desired version.
+
+### Option B: Generate locally
 
 ```bash
 make build-installer IMG=ghcr.io/c5c3/memcached-operator:v0.1.0
-```
-
-This creates `dist/install.yaml` containing all resources (CRDs, RBAC, operator
-Deployment, webhooks, cert-manager resources) in a single file. Apply it with:
-
-```bash
 kubectl apply -f dist/install.yaml
 ```
 
-This is equivalent to running `make deploy` but packages everything into one
-file for easier distribution.
+Both options produce an identical consolidated manifest containing all resources
+(CRDs, RBAC, operator Deployment, webhooks, cert-manager resources) in a single
+file.
 
 ## Uninstallation
 

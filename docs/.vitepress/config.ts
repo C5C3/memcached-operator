@@ -67,6 +67,7 @@ export default defineConfig({
               { text: 'envtest Integration Tests', link: '/reference/backend/envtest-integration-tests' },
               { text: 'Chainsaw E2E Tests', link: '/reference/backend/chainsaw-e2e-tests' },
               { text: 'CI Pipeline', link: '/reference/backend/ci-pipeline' },
+              { text: 'Release Workflow', link: '/reference/backend/release-workflow' },
               { text: 'Multi-Stage Dockerfile', link: '/reference/backend/multi-stage-dockerfile' },
               { text: 'Kustomize Deployment Manifests', link: '/reference/backend/kustomize-deployment-manifests' }
             ]
