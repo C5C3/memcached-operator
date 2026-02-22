@@ -1,0 +1,21 @@
+---
+apiVersion: memcached.c5c3.io/v1alpha1
+kind: Memcached
+metadata:
+  name: test-autoscaling-update
+spec:
+  image: "memcached:1.6"
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "64Mi"
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+  memcached:
+    maxMemoryMB: 64
+    threads: 4
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5

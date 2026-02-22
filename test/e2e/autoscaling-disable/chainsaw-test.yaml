@@ -1,0 +1,36 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: autoscaling-disable
+spec:
+  description: >
+    Verify that disabling autoscaling on a Memcached CR deletes the HPA
+    and that setting spec.replicas takes effect on the Deployment
+    (MO-0042 REQ-002, REQ-006, REQ-007).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+    error: 30s
+  steps:
+    - name: create-memcached-with-autoscaling
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-hpa-created
+      try:
+        - assert:
+            file: 01-assert-hpa.yaml
+    - name: disable-autoscaling
+      try:
+        - patch:
+            file: 02-patch-disable.yaml
+    - name: assert-hpa-deleted
+      try:
+        - error:
+            file: 03-error-hpa-gone.yaml
+    - name: assert-deployment-replicas
+      try:
+        - assert:
+            file: 03-assert-deployment.yaml

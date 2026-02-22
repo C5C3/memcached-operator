@@ -1,0 +1,33 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: autoscaling-enable
+spec:
+  description: >
+    Verify that creating a Memcached CR with autoscaling.enabled=true produces
+    an HPA with the correct scaleTargetRef, minReplicas, maxReplicas, default
+    CPU metric, and default scaleDown behavior. The Deployment must exist but
+    must NOT have a hardcoded replica count (HPA controls replicas)
+    (MO-0042 REQ-001, REQ-006, REQ-007).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-hpa-created
+      try:
+        - assert:
+            file: 01-assert-hpa.yaml
+    - name: assert-deployment-created
+      try:
+        - assert:
+            file: 01-assert-deployment.yaml
+    - name: assert-status-available
+      try:
+        - assert:
+            file: 02-assert-status.yaml

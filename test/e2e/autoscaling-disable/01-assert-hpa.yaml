@@ -1,0 +1,16 @@
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: test-autoscaling-disable
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-autoscaling-disable
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  minReplicas: 2
+  maxReplicas: 10
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: test-autoscaling-disable

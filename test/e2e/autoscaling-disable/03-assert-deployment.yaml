@@ -1,0 +1,9 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-autoscaling-disable
+spec:
+  replicas: 3
+status:
+  readyReplicas: 3

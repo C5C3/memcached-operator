@@ -1,0 +1,31 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: autoscaling-update
+spec:
+  description: >
+    Verify that updating autoscaling minReplicas and maxReplicas on a Memcached CR
+    propagates the changes to the HorizontalPodAutoscaler
+    (MO-0042 REQ-004, REQ-006, REQ-007).
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+  steps:
+    - name: create-memcached-with-autoscaling
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-initial-hpa
+      try:
+        - assert:
+            file: 01-assert-hpa.yaml
+    - name: update-autoscaling-bounds
+      try:
+        - patch:
+            file: 02-patch-update.yaml
+    - name: assert-hpa-updated
+      try:
+        - assert:
+            file: 03-assert-hpa-updated.yaml

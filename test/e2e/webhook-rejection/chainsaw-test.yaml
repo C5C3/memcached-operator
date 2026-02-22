@@ -8,7 +8,8 @@ spec:
     Verify that the validating webhook rejects invalid Memcached CRs:
     memory limit too low, PDB with both/neither minAvailable and maxUnavailable,
     PDB minAvailable >= replicas, graceful shutdown with invalid timing,
-    and security features without secret refs (REQ-006, REQ-007, REQ-008, REQ-009).
+    security features without secret refs, and autoscaling validation
+    (REQ-005, REQ-006, REQ-007, REQ-008, REQ-009).
   timeouts:
     apply: 30s
     assert: 120s
@@ -60,6 +61,27 @@ spec:
       try:
         - apply:
             file: 06-invalid-pdb-min-ge-replicas.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-autoscaling-replicas-conflict
+      try:
+        - apply:
+            file: 07-invalid-autoscaling-replicas-conflict.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-autoscaling-min-gt-max
+      try:
+        - apply:
+            file: 08-invalid-autoscaling-min-gt-max.yaml
+            expect:
+              - check:
+                  ($error != null): true
+    - name: reject-autoscaling-cpu-no-request
+      try:
+        - apply:
+            file: 09-invalid-autoscaling-cpu-no-request.yaml
             expect:
               - check:
                   ($error != null): true

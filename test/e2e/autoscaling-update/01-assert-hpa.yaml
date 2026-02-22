@@ -1,0 +1,16 @@
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: test-autoscaling-update
+  labels:
+    app.kubernetes.io/name: memcached
+    app.kubernetes.io/instance: test-autoscaling-update
+    app.kubernetes.io/managed-by: memcached-operator
+spec:
+  minReplicas: 2
+  maxReplicas: 5
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: test-autoscaling-update

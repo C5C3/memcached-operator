@@ -2,8 +2,8 @@
   "feature_id": "MO-0042",
   "title": "K003: Add E2E Chainsaw tests and sample autoscaling CR",
   "slug": "k003-add-e2e-chainsaw-tests-and-sample",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'Horizontal Pod Autoscaling\n\nNew spec.autoscaling'\n\nCreate Chainsaw E2E test cases following existing test patterns: (1) autoscaling enable test - apply Memcached CR with autoscaling.enabled=true, assert HPA is created with correct scaleTargetRef, metrics, and behavior defaults; (2) autoscaling disable test - update CR to disable autoscaling and set spec.replicas, assert HPA is deleted and Deployment replicas are set; (3) mutual exclusivity rejection test - apply CR with both spec.replicas and autoscaling.enabled=true, assert admission webhook rejects it; (4) autoscaling update test - modify metrics/behavior on existing autoscaled CR, assert HPA is updated. Create sample CR at config/samples/memcached_v1alpha1_autoscaling.yaml demonstrating the autoscaling block with enabled=true, minReplicas=2, maxReplicas=10, and the default CPU metric.\n\n**Rationale:** E2E tests validate the full lifecycle in a real cluster environment, catching integration issues that unit and envtest tests miss (e.g., webhook certificate wiring, RBAC permissions, HPA controller interaction). The sample CR serves as documentation and is used by the Chainsaw tests. Without E2E coverage, regressions in the admission-to-reconciliation pipeline would go undetected.\n\n**Affected Areas:**\n- test/e2e/\n- config/samples/memcached_v1alpha1_autoscaling.yaml",
   "stories": [
@@ -312,6 +312,7 @@
       "description": "Create test/e2e/autoscaling-enable/ directory with: chainsaw-test.yaml (test name: autoscaling-enable, description referencing REQ-001), 00-memcached.yaml (Memcached CR named test-autoscaling-enable with autoscaling.enabled=true, minReplicas=2, maxReplicas=10, resources.requests.cpu=500m, no explicit metrics/behavior so webhook defaults apply), 01-assert-deployment.yaml (Deployment exists with no spec.replicas set, status.readyReplicas present), 01-assert-hpa.yaml (HPA with scaleTargetRef pointing to Deployment test-autoscaling-enable, minReplicas=2, maxReplicas=10, CPU utilization metric at 80%, scaleDown stabilization 300s, standard operator labels). Follow the exact YAML structure from test/e2e/pdb-creation/ and test/e2e/basic-deployment/ as reference patterns.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-006",
@@ -324,6 +325,7 @@
       "description": "Create test/e2e/autoscaling-disable/ directory with: chainsaw-test.yaml (test name: autoscaling-disable, steps: apply CR with autoscaling enabled, assert HPA created, patch CR to set autoscaling.enabled=false and spec.replicas=3, assert HPA gone via error assertion, assert Deployment has replicas=3). Files: 00-memcached.yaml (autoscaling CR), 01-assert-hpa.yaml (HPA exists), 02-patch-disable-autoscaling.yaml (patch setting autoscaling.enabled=false, spec.replicas=3), 03-error-hpa-gone.yaml (HPA object for error assertion — same pattern as test/e2e/pdb-creation/03-error-pdb-gone.yaml), 03-assert-deployment-replicas.yaml (Deployment with spec.replicas=3). Follow pdb-creation enable/disable lifecycle pattern.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-006",
@@ -336,6 +338,7 @@
       "description": "Add a new step to the existing test/e2e/webhook-rejection/chainsaw-test.yaml: step name 'reject-autoscaling-replicas-mutual-exclusivity' with apply + expect ($error != null): true. Create test/e2e/webhook-rejection/07-invalid-autoscaling-replicas.yaml: a Memcached CR named test-invalid-autoscaling-replicas with spec.replicas=3 AND autoscaling.enabled=true, maxReplicas=10, resources.requests.cpu=500m. The numbering continues from existing 06-invalid-pdb-min-ge-replicas.yaml. Follow exact pattern of other rejection steps in the file.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-006",
@@ -348,6 +351,7 @@
       "description": "Create test/e2e/autoscaling-update/ directory with: chainsaw-test.yaml (test name: autoscaling-update, steps: apply CR with autoscaling, assert initial HPA, patch autoscaling parameters, assert updated HPA). Files: 00-memcached.yaml (autoscaling CR with minReplicas=2, maxReplicas=10), 01-assert-hpa.yaml (HPA with minReplicas=2, maxReplicas=10), 02-patch-update-autoscaling.yaml (patch setting minReplicas=3, maxReplicas=20), 03-assert-hpa-updated.yaml (HPA with minReplicas=3, maxReplicas=20, same scaleTargetRef and metrics). Follow the apply-assert-patch-assert pattern from test/e2e/scaling/.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-006",
@@ -360,6 +364,7 @@
       "description": "Verify the existing config/samples/memcached_v1alpha1_autoscaling.yaml has: autoscaling.enabled=true, minReplicas=2, maxReplicas=10, resources.requests.cpu set, no spec.replicas field. The file already exists and appears correct — validate it matches REQ-005 requirements exactly. If any field is missing or incorrect, update it. Ensure it does not have spec.replicas set (mutual exclusivity). The file should be usable as-is in a kind cluster with the operator deployed.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -370,6 +375,7 @@
       "description": "Update docs/reference/backend/chainsaw-e2e-tests.md to add: (1) autoscaling-enable test scenario section describing the test directory, files, what it validates, and the apply-assert flow; (2) autoscaling-disable test scenario section describing the enable-assert-patch-assert-error flow; (3) autoscaling-update test scenario section describing the apply-assert-patch-assert flow; (4) add the mutual exclusivity rejection to the webhook-rejection section; (5) update the requirement coverage matrix to map REQ-001 through REQ-004 to their test scenarios; (6) update the test count from 21 to the new total. Follow the existing documentation structure and formatting exactly.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -472,6 +478,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T23:43:18.108344"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T09:35:45.261717"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T09:55:34.609900"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T09:55:34.628525"
     }
   },
   "execution_history": [
@@ -485,6 +503,44 @@
           "name": "prepare",
           "duration": 275.85697054862976,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "09fbd5fb-3615-402a-aad5-1581869b49df",
+      "timestamp": "2026-02-22T09:51:05.642615",
+      "total_duration": 764.8778595924377,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (5 tasks)",
+          "duration": 269.1930093765259,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 170.90058851242065,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0042] Code Review",
+          "duration": 237.02041125297546,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0042] Improvements",
+          "duration": 49.76020646095276,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0042] Simplify",
+          "duration": 38.00364398956299,
+          "type": "simplify",
           "status": "done"
         }
       ]
