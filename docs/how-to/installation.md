@@ -92,7 +92,32 @@ memcacheds.memcached.c5c3.io    2025-01-15T10:00:00Z
 
 ## Deploy the Operator
 
-### Option A: From a GitHub Release (recommended)
+### Option A: Helm Chart from OCI Registry (recommended)
+
+Install the operator using Helm from the GHCR OCI registry:
+
+```bash
+helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
+  --version 0.1.0 \
+  --namespace memcached-operator-system \
+  --create-namespace
+```
+
+Replace `0.1.0` with the desired chart version. Override default values with
+`--set` or a values file:
+
+```bash
+helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
+  --version 0.1.0 \
+  --namespace memcached-operator-system \
+  --create-namespace \
+  --set serviceMonitor.enabled=true
+```
+
+See the [chart README](https://github.com/c5c3/memcached-operator/blob/main/charts/memcached-operator/README.md)
+for the full list of configurable values.
+
+### Option B: From a GitHub Release
 
 Each release includes a ready-to-use `install.yaml` that contains all resources
 (CRDs, RBAC, Deployment, webhooks, cert-manager resources) in a single file:
@@ -104,7 +129,7 @@ kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0
 Replace `v0.1.0` with the desired version. Available releases are listed at
 [github.com/c5c3/memcached-operator/releases](https://github.com/c5c3/memcached-operator/releases).
 
-### Option B: From source
+### Option C: From source
 
 If you have the repository cloned, you can deploy using the Makefile:
 
@@ -117,7 +142,7 @@ from `config/default/` using Kustomize and applies it to the cluster.
 
 ---
 
-Both options install the following resources under the
+All options install the following resources under the
 `memcached-operator-system` namespace with the `memcached-operator-` name
 prefix:
 
@@ -325,6 +350,12 @@ kubectl get deployment,service,pdb -l app.kubernetes.io/managed-by=memcached-ope
 
 ### Remove all operator resources
 
+If you installed via Helm:
+
+```bash
+helm uninstall memcached-operator --namespace memcached-operator-system
+```
+
 If you installed via the release manifest:
 
 ```bash
@@ -337,7 +368,7 @@ If you installed from source:
 make undeploy
 ```
 
-Both commands remove all operator resources including the
+All commands remove operator resources including the
 `memcached-operator-system` namespace.
 
 **Warning:** Removing the CRDs also deletes all `Memcached` custom resources and

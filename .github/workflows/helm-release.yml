@@ -1,0 +1,105 @@
+---
+name: Helm Chart Release
+
+on:
+  push:
+    tags:
+      - "helm-chart-*"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: helm-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate Chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      chart-version: ${{ steps.version.outputs.chart-version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          CHART_VERSION="${TAG#helm-chart-}"
+          echo "chart-version=${CHART_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Chart.yaml version matches tag
+        run: |
+          EXPECTED="${{ steps.version.outputs.chart-version }}"
+          ACTUAL=$(grep '^version:' charts/memcached-operator/Chart.yaml | awk '{print $2}')
+          if [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::Tag version ($EXPECTED) does not match Chart.yaml version ($ACTUAL)"
+            exit 1
+          fi
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+
+      - name: Run chart-testing lint
+        run: ct lint --config ct.yaml --charts charts/memcached-operator
+
+      - name: Install helm-unittest plugin
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.0.3
+
+      - name: Run helm-unittest
+        run: helm unittest charts/memcached-operator
+
+  release:
+    name: Release Helm Chart
+    needs: [validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Package chart
+        run: helm package charts/memcached-operator --destination /tmp/helm-packages
+
+      - name: Verify packaged chart
+        env:
+          CHART_VERSION: ${{ needs.validate.outputs.chart-version }}
+        run: |
+          helm show chart "/tmp/helm-packages/memcached-operator-${CHART_VERSION}.tgz"
+          helm template test-release "/tmp/helm-packages/memcached-operator-${CHART_VERSION}.tgz" > /dev/null
+
+      - name: Push chart to OCI registry
+        env:
+          CHART_VERSION: ${{ needs.validate.outputs.chart-version }}
+        run: helm push "/tmp/helm-packages/memcached-operator-${CHART_VERSION}.tgz" oci://ghcr.io/c5c3/charts
+
+      - name: Log out from GHCR
+        if: always()
+        run: helm registry logout ghcr.io

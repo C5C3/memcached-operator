@@ -2,8 +2,8 @@
   "feature_id": "MO-0054",
   "title": "N005: Add CI integration and OCI release workflow",
   "slug": "n005-add-ci-integration-and-oci-release-workflow",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** infrastructure\n**Priority:** high\n**Source:** Proposed for 'Helm Chart Packaging\n\nChart structure under charts/'\n\nAdd Helm chart CI validation and OCI release automation. CI job in .github/workflows/ci.yml: runs helm lint, ct lint (chart-testing), and helm-unittest on PRs touching charts/. New .github/workflows/helm-release.yml: triggered on chart/v* tags, logs into ghcr.io, runs helm package, then helm push to oci://ghcr.io/<org>/charts/memcached-operator. Chart version in Chart.yaml must match the tag. Includes chart README with install instructions (helm install from OCI registry), upgrade instructions, and CRD upgrade guidance for both crds/ and managedByHelm strategies.\n\n**Rationale:** CI prevents broken charts from merging. The OCI release workflow enables users to install the chart directly from GHCR without manual packaging. The chart/v* tag pattern decouples chart releases from operator image releases, allowing independent chart-only fixes. The README is the primary user-facing documentation for chart consumers.\n\n**Affected Areas:**\n- .github/workflows/ci.yml\n- .github/workflows/helm-release.yml\n- charts/memcached-operator/README.md\n- charts/memcached-operator/Chart.yaml",
   "stories": [
@@ -373,6 +373,7 @@
       "description": "Create ct.yaml in the repository root with chart-dirs: [charts], target-branch: main, and validate-maintainers: false (since maintainers are in Chart.yaml but may not match GitHub usernames). This file is consumed by both the CI helm-lint job and chart-testing CLI.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -383,6 +384,7 @@
       "description": "Append a new 'helm-lint' job to .github/workflows/ci.yml. The job: (1) uses dorny/paths-filter@v3 to detect changes in charts/**, (2) if charts changed: installs Helm via azure/setup-helm@v4, installs helm-unittest plugin, installs chart-testing via helm/chart-testing-action@v2, (3) runs 'helm lint charts/memcached-operator', (4) runs 'ct lint --config ct.yaml --all', (5) runs 'helm unittest charts/memcached-operator'. The job runs on both PRs and pushes to main. All existing jobs MUST remain byte-identical — only the new job is appended.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -396,6 +398,7 @@
       "description": "Create .github/workflows/helm-release.yml triggered on push tags: ['chart/v*']. Permissions: contents: read, packages: write. Steps: (1) checkout, (2) extract tag version by stripping 'chart/v' prefix, (3) read Chart.yaml version via yq or grep, (4) compare tag vs chart version — fail with clear error if mismatch, (5) install Helm via azure/setup-helm@v4, (6) install helm-unittest plugin and run tests, (7) helm lint charts/memcached-operator, (8) helm package charts/memcached-operator, (9) helm registry login ghcr.io, (10) helm push to oci://ghcr.io/c5c3/charts/memcached-operator.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-005",
@@ -409,6 +412,7 @@
       "description": "Create charts/memcached-operator/README.md with sections: (1) Title and description, (2) Prerequisites (Kubernetes v1.28+, cert-manager, optional Prometheus CRDs), (3) Install from OCI registry ('helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version 0.1.0 --namespace memcached-operator-system --create-namespace'), (4) Configuration table with key values.yaml parameters (image.repository, image.tag, replicaCount, webhook.enabled, certmanager.enabled, serviceMonitor.enabled, networkPolicy.enabled, crds.managedByHelm, watchNamespaces, leaderElection.enabled, rbac.create), (5) Upgrade section covering both CRD strategies, (6) Uninstall section, (7) CRD upgrade guidance for both crds/ default and managedByHelm strategies.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -419,6 +423,7 @@
       "description": "Add the new 'helm-lint' job row to the jobs table in docs/reference/backend/ci-pipeline.md. Add a new ### helm-lint section describing the job: path filtering with dorny/paths-filter, helm lint, ct lint with ct.yaml, and helm-unittest. Add a row to the 'Local Reproduction' section showing 'helm lint charts/memcached-operator && ct lint --config ct.yaml --all && helm unittest charts/memcached-operator'.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -429,6 +434,7 @@
       "description": "Create reference documentation for helm-release.yml following the pattern of the existing docs/reference/backend/release-workflow.md. Sections: Overview (trigger, purpose), Trigger (chart/v* tag pattern), Permissions (least-privilege), Job steps (version validation, lint, test, package, push), OCI registry details (oci://ghcr.io/c5c3/charts/memcached-operator), Creating a chart release (tag and push instructions), Versioning (chart version vs appVersion vs operator version).",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-004",
         "REQ-005",
@@ -441,6 +447,7 @@
       "description": "Add a new 'Option C: Helm Chart (recommended)' section to the 'Deploy the Operator' section in docs/how-to/installation.md. Include: helm install command from OCI registry, verify installation steps, link to the chart README for full configuration reference. Keep existing Option A (GitHub Release) and Option B (from source) unchanged.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -561,6 +568,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T21:15:18.748042"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T21:15:52.835080"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T21:31:50.969731"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T21:31:50.990365"
     }
   },
   "execution_history": [
@@ -574,6 +593,50 @@
           "name": "prepare",
           "duration": 235.41785764694214,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "59db9e66-f135-40a5-80ce-361c3eda7ed7",
+      "timestamp": "2026-02-22T21:31:10.471624",
+      "total_duration": 763.9161262512207,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (3 tasks)",
+          "duration": 165.0039780139923,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 61.69327211380005,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 124.13935494422913,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0054] Code Review",
+          "duration": 130.95947885513306,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0054] Improvements",
+          "duration": 157.39502453804016,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0054] Simplify",
+          "duration": 124.725017786026,
+          "type": "simplify",
           "status": "done"
         }
       ]

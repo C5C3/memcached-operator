@@ -1,0 +1,98 @@
+{
+  "summary": "Adds helm-lint CI job to ci.yml (ct lint + helm-unittest), creates helm-release.yml workflow for OCI chart publishing on helm-chart-* tags with version validation, adds chart README with install/upgrade/uninstall docs, ct.yaml config, and reference documentation for both workflows plus Helm install option in installation.md. All existing CI jobs are byte-identical. YAML syntax is valid across all files.",
+  "verdict": "NEEDS_CHANGES",
+  "tests_checklist": [
+    {"item": "YAML syntax valid for ci.yml, helm-release.yml, ct.yaml", "checked": true},
+    {"item": "helm-lint job runs ct lint and helm-unittest", "checked": true},
+    {"item": "helm-release.yml validates Chart.yaml version matches tag", "checked": true},
+    {"item": "helm-release.yml fails with clear ::error:: annotation on version mismatch", "checked": true},
+    {"item": "Existing CI jobs (lint, test, build, build-push, merge-manifest, validate-manifests, e2e) are byte-identical", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing workflow patterns (action versions, permissions, step naming)", "checked": true},
+    {"item": "Helm version pinned (v3.17.3) across both workflows", "checked": true},
+    {"item": "Release workflow uses separate validate and release jobs with proper dependency chain", "checked": true},
+    {"item": "Concurrency control on release workflow prevents partial releases", "checked": true},
+    {"item": "ct.yaml configuration is minimal and appropriate", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "Least-privilege permissions: validate job has contents:read only", "checked": true},
+    {"item": "Least-privilege permissions: release job has contents:read + packages:write", "checked": true},
+    {"item": "No hardcoded secrets — uses GITHUB_TOKEN", "checked": true},
+    {"item": "Registry logout in always() step cleans up credentials", "checked": true},
+    {"item": "Top-level workflow permissions set to contents:read (helm-release.yml)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Helm release decoupled from operator image release via separate tag pattern", "checked": true},
+    {"item": "OCI registry path follows org/charts/chart-name convention", "checked": true},
+    {"item": "helm-lint job is additive — no modification to existing jobs", "checked": true},
+    {"item": "Path filtering prevents unnecessary CI runs on non-chart PRs", "checked": false}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated workflow steps", "checked": true},
+    {"item": "ct.yaml shared between CI and release workflows", "checked": true},
+    {"item": "No over-engineered features", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Version mismatch detected early in validate job before release", "checked": true},
+    {"item": "Lint and tests run before package+push in release workflow", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Version extraction handles tag prefix stripping correctly", "checked": true},
+    {"item": "Chart.yaml version read with grep+awk is reliable for standard Chart.yaml format", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [
+    {
+      "severity": "MAJOR",
+      "id": "C2",
+      "description": "Missing path filtering on helm-lint job. The plan (task 1.2) explicitly requires dorny/paths-filter@v3 to skip the job when no charts/ files changed. The review criteria state: 'The helm-lint job uses path filtering and does NOT execute when no charts/ files are changed.' Currently the job runs on every PR and push to main regardless of what files changed, wasting CI minutes on Go-only PRs.",
+      "location": ".github/workflows/ci.yml:341-372",
+      "fix": "Add a paths-filter step using dorny/paths-filter@v3 (or use the native GitHub Actions paths filter on a separate workflow/job trigger) to detect changes in charts/** and conditionally skip lint+test steps when no chart files changed. Example: add a 'changes' step with dorny/paths-filter, then wrap subsequent steps with 'if: steps.changes.outputs.charts == true'."
+    }
+  ],
+  "issues_found": [
+    {
+      "id": "C2-1",
+      "severity": "major",
+      "check_id": "C2",
+      "file": ".github/workflows/ci.yml:341-372",
+      "description": "Missing path filtering (dorny/paths-filter or equivalent) on helm-lint job. Per plan task 1.2 and review criteria, the job must only execute when charts/ files are changed. Currently runs unconditionally on all PRs.",
+      "fix": "Add a dorny/paths-filter step to detect charts/** changes and gate subsequent steps on the filter output."
+    },
+    {
+      "id": "C1-1",
+      "severity": "minor",
+      "check_id": "C1",
+      "file": ".github/workflows/helm-release.yml:7",
+      "description": "Tag pattern is 'helm-chart-*' but plan specifies 'chart/v*'. The implementation is internally consistent (workflow, docs, README all reference helm-chart-*) and arguably better (git tags with / can cause tooling issues). However, this deviates from the plan spec.",
+      "fix": "Confirm with stakeholders which tag pattern to use. If helm-chart-* is preferred, update the plan. If chart/v* is required, update the workflow trigger, version extraction, and all documentation references."
+    },
+    {
+      "id": "DA3-1",
+      "severity": "minor",
+      "check_id": "DA3",
+      "file": "docs/reference/backend/ci-pipeline.md:145",
+      "description": "Text says 'through three checks' but only lists two: (1) chart-testing lint and (2) helm-unittest. The third check (explicit helm lint) is not listed as a separate step because ct lint runs helm lint internally. The count is misleading.",
+      "fix": "Change 'three checks' to 'two checks', or add a note that ct lint includes helm lint internally."
+    },
+    {
+      "id": "DA2-1",
+      "severity": "minor",
+      "check_id": "DA2",
+      "file": "charts/memcached-operator/README.md:55-65",
+      "description": "Values table is missing watchNamespaces, leaderElection.enabled, and rbac.create which are present in values.yaml and mentioned in the plan description. The table header says 'Common values' which makes this acceptable, but the plan explicitly lists these as required.",
+      "fix": "Add watchNamespaces, leaderElection.enabled, and rbac.create rows to the Common values table."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider pinning helm-unittest plugin version in both workflows for reproducibility (currently installs latest from upstream repo)",
+    "Consider adding a step to verify the packaged chart .tgz contents before pushing in the release workflow (helm template or helm show chart on the packaged artifact)"
+  ],
+  "next_steps": [
+    "Add dorny/paths-filter@v3 path filtering to the helm-lint job so it only runs when charts/ files are changed (REQUIRED)",
+    "Confirm tag pattern preference: helm-chart-* (current) vs chart/v* (plan spec) and align documentation",
+    "Fix 'three checks' text in ci-pipeline.md to 'two checks'",
+    "Consider adding missing values (watchNamespaces, leaderElection, rbac.create) to README table"
+  ]
+}

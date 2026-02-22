@@ -12,15 +12,17 @@ The CI pipeline runs on pushes to `main` and pull requests targeting `main`. It
 enforces code quality, correctness, build integrity, and manifest freshness
 through these jobs:
 
-| Job                  | Purpose                                          | Trigger   | Dependencies |
-|----------------------|--------------------------------------------------|-----------|--------------|
-| `lint`               | `go vet` + golangci-lint v2.10.1                 | PR + main | none         |
-| `test`               | envtest integration tests with race + coverage   | PR + main | none         |
-| `build`              | Native per-platform image build (no push)        | PR only   | none         |
-| `build-push`         | Native per-platform image build and push         | main only | none         |
-| `merge-manifest`     | Merge platform digests into multi-arch manifest  | main only | `build-push` |
-| `validate-manifests` | Verify generated CRDs/deepcopy are up-to-date    | PR + main | none         |
-| `e2e`                | End-to-end tests on a kind cluster with Chainsaw | PR + main | none         |
+| Job                    | Purpose                                             | Trigger   | Dependencies           |
+|------------------------|-----------------------------------------------------|-----------|------------------------|
+| `lint`                 | `go vet` + golangci-lint v2.10.1                    | PR + main | none                   |
+| `test`                 | envtest integration tests with race + coverage      | PR + main | none                   |
+| `build`                | Native per-platform image build (no push)           | PR only   | none                   |
+| `build-push`           | Native per-platform image build and push            | main only | none                   |
+| `merge-manifest`       | Merge platform digests into multi-arch manifest     | main only | `build-push`           |
+| `validate-manifests`   | Verify generated CRDs/deepcopy are up-to-date       | PR + main | none                   |
+| `e2e`                  | End-to-end tests on a kind cluster with Chainsaw    | PR + main | none                   |
+| `detect-chart-changes` | Path filter — skip helm-lint when charts/ unchanged | PR only   | none                   |
+| `helm-lint`            | Helm chart lint, chart-testing, and unit tests      | PR only   | `detect-chart-changes` |
 
 Independent jobs run in parallel, minimising total pipeline time.
 
@@ -138,6 +140,42 @@ Runs the full Chainsaw end-to-end test suite on a kind cluster:
 5. Waits for webhook certificate readiness.
 6. Runs `make test-e2e` (Chainsaw).
 7. On failure, collects operator logs, pod status, and events for debugging.
+
+### detect-chart-changes (PR only)
+
+Uses [`dorny/paths-filter@v3`](https://github.com/dorny/paths-filter) to detect
+whether any files under `charts/` or `ct.yaml` were modified. The output
+`charts-changed` gates the `helm-lint` job so it only runs when chart files
+change.
+
+### helm-lint
+
+Depends on `detect-chart-changes` and only runs when chart-related files are
+modified. Validates the Helm chart at `charts/memcached-operator/` through two
+checks:
+
+1. **chart-testing lint** — Runs `ct lint --config ct.yaml` using the
+   [helm/chart-testing-action](https://github.com/helm/chart-testing-action).
+   This validates `Chart.yaml` structure, runs `helm lint`, and checks for
+   version increments against the target branch (`main`).
+
+2. **helm-unittest** — Installs the
+   [helm-unittest](https://github.com/helm-unittest/helm-unittest) plugin and
+   runs `helm unittest charts/memcached-operator` to execute template-level unit
+   tests covering document counts, kind/apiVersion validation, toggle gating,
+   and label correctness.
+
+Tools are installed fresh on each run:
+
+| Tool          | Version | Source                                 |
+|---------------|---------|----------------------------------------|
+| Helm          | v3.17.3 | `azure/setup-helm@v4`                  |
+| Python        | 3.12    | `actions/setup-python@v5`              |
+| chart-testing | latest  | `helm/chart-testing-action@v2`         |
+| helm-unittest | v1.0.3  | helm plugin install from upstream repo |
+
+The chart-testing configuration is defined in `ct.yaml` at the repository root
+with `target-branch: main` and `check-version-increment: true`.
 
 ---
 
