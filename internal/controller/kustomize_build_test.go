@@ -11,8 +11,11 @@ import (
 	"testing"
 )
 
-// cachedKustomizeOutput holds the kustomize build output, computed once in TestMain.
+// cachedKustomizeOutput holds the kustomize build output for config/default, computed once in TestMain.
 var cachedKustomizeOutput string
+
+// cachedNamespaceScopedOutput holds the kustomize build output for config/namespace-scoped, computed once in TestMain.
+var cachedNamespaceScopedOutput string
 
 func TestMain(m *testing.M) {
 	_, thisFile, _, ok := runtime.Caller(0)
@@ -33,6 +36,16 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	cachedKustomizeOutput = string(out)
+
+	nsScopedDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "config", "namespace-scoped")
+	nsCmd := exec.Command(bin, "build", nsScopedDir)
+	nsOut, err := nsCmd.CombinedOutput()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "kustomize build (namespace-scoped) failed: %v\nOutput:\n%s\n", err, string(nsOut))
+		os.Exit(1)
+	}
+	cachedNamespaceScopedOutput = string(nsOut)
+
 	os.Exit(m.Run())
 }
 

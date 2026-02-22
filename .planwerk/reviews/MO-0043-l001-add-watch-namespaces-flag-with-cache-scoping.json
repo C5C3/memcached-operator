@@ -1,0 +1,56 @@
+{
+  "feature_id": "MO-0043",
+  "title": "L001: Add --watch-namespaces flag with cache scoping",
+  "date": "2026-02-22",
+  "verdict": "APPROVED",
+  "summary": "Adds --watch-namespaces CLI flag to cmd/main.go with parseWatchNamespaces pure function that converts comma-separated namespace string into map[string]cache.Config for controller-runtime DefaultNamespaces. Includes config/namespace-scoped/ Kustomize overlay converting ClusterRole/ClusterRoleBinding to Role/RoleBinding, comprehensive unit tests for both parse logic and kustomize output, and reference documentation. All new code is clean, minimal, well-tested, and backward-compatible (empty flag = cluster-wide).",
+  "tests_checklist": [
+    {"item": "Unit tests exist for parseWatchNamespaces (cmd/main_test.go)", "checked": true},
+    {"item": "Table-driven tests cover empty, whitespace-only, single, multi, whitespace-trimming, trailing-comma cases", "checked": true},
+    {"item": "Kustomize build tests verify overlay output (internal/controller/kustomize_namespace_scoped_test.go)", "checked": true},
+    {"item": "All new tests pass (go test ./cmd/... and kustomize tests)", "checked": true},
+    {"item": "No test regressions introduced (pre-existing failures confirmed on main)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "parseWatchNamespaces is a pure function with no side effects", "checked": true},
+    {"item": "Function is small (<15 lines), single-responsibility", "checked": true},
+    {"item": "Follows existing flag declaration and ctrl.Options wiring patterns", "checked": true},
+    {"item": "Clear naming throughout (nsMap, nsList, watchNamespaces)", "checked": true},
+    {"item": "No dead code or unused imports", "checked": true},
+    {"item": "go vet passes clean on all packages", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "Input is CLI flag string, parsed safely via strings.Split/TrimSpace", "checked": true},
+    {"item": "No user-controlled data reaches unsafe operations", "checked": true},
+    {"item": "No hardcoded secrets or credentials", "checked": true},
+    {"item": "Namespace names are passed through to controller-runtime without modification (correct trust boundary)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal — one function, one flag, one Cache option", "checked": true},
+    {"item": "Backward-compatible: empty string yields nil map (cluster-wide default)", "checked": true},
+    {"item": "Kustomize overlay uses JSON patches (idiomatic for kind changes)", "checked": true},
+    {"item": "Documentation accurately describes all implemented behavior", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No over-engineering or unnecessary abstractions", "checked": true},
+    {"item": "No future-proofing beyond scope", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Startup log distinguishes scoped vs cluster-wide mode", "checked": true},
+    {"item": "Empty segments silently skipped (correct for comma-separated flag semantics)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Whitespace trimmed from namespace names", "checked": true},
+    {"item": "Empty segments from trailing commas handled", "checked": true},
+    {"item": "Nil map correctly propagated for cluster-wide mode", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "P1 (minor): kustomize_namespace_scoped_test.go runs kustomize build 4 times (once per test). The existing kustomize_build_test.go caches output in TestMain. Consider caching the namespace-scoped output similarly for test speed, though this is not blocking since the build is fast (~10ms).",
+    "D2 (minor): The startup log at cmd/main.go:85-88 iterates map keys in non-deterministic order. The log output order of namespaces will vary between runs. Consider sorting nsList for deterministic logs (cosmetic only, does not affect functionality)."
+  ],
+  "next_steps": []
+}

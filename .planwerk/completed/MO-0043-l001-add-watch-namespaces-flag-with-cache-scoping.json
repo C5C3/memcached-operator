@@ -2,8 +2,8 @@
   "feature_id": "MO-0043",
   "title": "L001: Add --watch-namespaces flag with cache scoping",
   "slug": "l001-add-watch-namespaces-flag-with-cache-scoping",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** backend\n**Priority:** medium\n**Source:** Proposed for 'Namespace-Scoped Operator Mode\n\nNew flag --watch'\n\nAdd a --watch-namespaces string flag via flag.StringVar in cmd/main.go (~lines 38-56). Implement a parsing function that converts comma-separated namespace string into map[string]cache.Config: empty string yields nil map (cluster-wide default), single/multiple namespaces yield corresponding map entries, whitespace is trimmed. Wire the parsed map into ctrl.Options.Cache.DefaultNamespaces at ~line 80. Include unit tests covering: empty string → nil, single namespace, multiple namespaces, whitespace trimming, and verification that ctrl.Options is correctly populated.\n\n**Rationale:** Operators in multi-tenant Kubernetes clusters need least-privilege namespace scoping. Without this flag, the operator watches all namespaces, which violates principle of least privilege and may not be permitted in restricted environments. The flag preserves backward compatibility (empty = cluster-wide).\n\n**Affected Areas:**\n- cmd/main.go\n- cmd/main_test.go",
   "stories": [
@@ -265,6 +265,7 @@
       "description": "Create an exported function `parseWatchNamespaces(namespaces string) map[string]cache.Config` in cmd/main.go. Add import for `sigs.k8s.io/controller-runtime/pkg/cache`. The function splits on comma, trims whitespace, skips empty segments, and returns nil for empty input. Create cmd/main_test.go with table-driven tests covering: empty string → nil, whitespace-only → nil, single namespace → 1-entry map, multiple namespaces → multi-entry map, whitespace trimming, trailing comma handling.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -277,6 +278,7 @@
       "description": "In the main() function of cmd/main.go: (1) declare `var watchNamespaces string` alongside existing flag vars (~line 41), (2) add `flag.StringVar(&watchNamespaces, \"watch-namespaces\", \"\", \"Comma-separated list of namespaces to watch. Empty means all namespaces (cluster-scoped).\")` alongside existing flag registrations (~line 50), (3) after flag.Parse(), call `nsMap := parseWatchNamespaces(watchNamespaces)`, (4) add startup log: if nsMap != nil log namespaces, else log 'all namespaces', (5) in the ctrl.Options struct at ~line 80, add `Cache: cache.Options{DefaultNamespaces: nsMap}` field. Add import for `sigs.k8s.io/controller-runtime/pkg/cache`.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-005",
@@ -289,6 +291,7 @@
       "description": "Create config/namespace-scoped/kustomization.yaml referencing ../rbac as base resource. Create config/namespace-scoped/role_patch.yaml with JSON patches that: (a) change ClusterRole manager-role → Role, (b) change ClusterRoleBinding manager-rolebinding → RoleBinding, (c) update roleRef.kind to Role in the RoleBinding. Verify with `kustomize build config/namespace-scoped/` succeeds. Leave leader-election-role, metrics-auth-role, metrics-reader unchanged.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -299,6 +302,7 @@
       "description": "Add a test in internal/controller/kustomize_build_test.go that runs `kustomize build config/namespace-scoped/` and verifies: (1) build succeeds without error, (2) output contains Role (not ClusterRole) named manager-role, (3) output contains RoleBinding (not ClusterRoleBinding) named manager-rolebinding, (4) RoleBinding has roleRef.kind=Role. Follow the existing kustomize build test pattern in that file.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -309,6 +313,7 @@
       "description": "Create docs/reference/backend/namespace-scoped-mode.md documenting: (1) --watch-namespaces flag syntax with examples (empty/single/multiple), (2) how the flag maps to cache.Options.DefaultNamespaces, (3) config/namespace-scoped/ Kustomize overlay usage, (4) note that CRDs must be installed cluster-wide by an admin, (5) note that leader-election-role is already namespace-scoped, (6) note that metrics RBAC must remain cluster-scoped. Follow the style of existing reference docs in docs/reference/backend/.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -412,6 +417,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T10:12:05.434788"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:12:09.978810"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:36:35.084700"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:36:35.105281"
     }
   },
   "execution_history": [
@@ -425,6 +442,50 @@
           "name": "prepare",
           "duration": 166.32310366630554,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "0e6ce75f-a01e-4c71-8ef6-76b40ad188e6",
+      "timestamp": "2026-02-22T10:35:00.799511",
+      "total_duration": 462.7727530002594,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 54.364774227142334,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 48.21675157546997,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 51.901439905166626,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0043] Code Review",
+          "duration": 121.76709938049316,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0043] Improvements",
+          "duration": 80.18434166908264,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0043] Simplify",
+          "duration": 106.33834624290466,
+          "type": "simplify",
           "status": "done"
         }
       ]

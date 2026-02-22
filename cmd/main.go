@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"flag"
 	"os"
+	"sort"
+	"strings"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
@@ -13,6 +15,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -35,12 +38,32 @@ func init() {
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 }
 
+// parseWatchNamespaces splits a comma-separated namespace string into a
+// map[string]cache.Config suitable for controller-runtime's DefaultNamespaces.
+// It returns nil when the input is empty or whitespace-only, which tells the
+// manager to watch all namespaces (cluster-scoped).
+func parseWatchNamespaces(namespaces string) map[string]cache.Config {
+	var result map[string]cache.Config
+	for _, ns := range strings.Split(namespaces, ",") {
+		ns = strings.TrimSpace(ns)
+		if ns == "" {
+			continue
+		}
+		if result == nil {
+			result = make(map[string]cache.Config)
+		}
+		result[ns] = cache.Config{}
+	}
+	return result
+}
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var watchNamespaces string
 	var tlsOpts []func(*tls.Config)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. Use :8443 for HTTPS or :8080 for HTTP.")
@@ -48,6 +71,7 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true, "If set, the metrics endpoint is served securely via HTTPS.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers.")
+	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated list of namespaces to watch. Empty means all namespaces (cluster-scoped).")
 
 	opts := zap.Options{
 		Development: true,
@@ -56,6 +80,18 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	nsMap := parseWatchNamespaces(watchNamespaces)
+	if nsMap != nil {
+		nsList := make([]string, 0, len(nsMap))
+		for ns := range nsMap {
+			nsList = append(nsList, ns)
+		}
+		sort.Strings(nsList)
+		setupLog.Info("watching namespaces", "namespaces", nsList)
+	} else {
+		setupLog.Info("watching all namespaces")
+	}
 
 	if !enableHTTP2 {
 		tlsOpts = append(tlsOpts, func(c *tls.Config) {
@@ -84,6 +120,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "d4f3c8a2.c5c3.io",
+		Cache:                  cache.Options{DefaultNamespaces: nsMap},
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")

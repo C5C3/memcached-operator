@@ -405,18 +405,18 @@ Verifies that the validating webhook rejects invalid CRs. Each step uses
 Chainsaw's `expect` with `($error != null): true` to assert that the `apply`
 operation fails.
 
-| Step                                    | Invalid CR                                              | Expected Rejection Reason                          |
-|-----------------------------------------|---------------------------------------------------------|----------------------------------------------------|
-| reject-insufficient-memory-limit        | maxMemoryMB=64, memory limit=32Mi                       | Memory limit < maxMemoryMB + 32Mi overhead         |
-| reject-pdb-mutual-exclusivity           | Both minAvailable and maxUnavailable set                | Mutually exclusive fields                          |
-| reject-graceful-shutdown-invalid-period | terminationGracePeriodSeconds <= preStopDelaySeconds    | Termination period must exceed pre-stop delay      |
-| reject-sasl-without-secret-ref          | sasl.enabled=true, no credentialsSecretRef.name         | Missing required secret reference                  |
-| reject-tls-without-secret-ref           | tls.enabled=true, no certificateSecretRef.name          | Missing required secret reference                  |
-| reject-pdb-neither-set                  | PDB enabled, neither minAvailable nor maxUnavailable    | Exactly one of minAvailable or maxUnavailable required |
-| reject-pdb-min-available-ge-replicas    | PDB minAvailable >= replicas                            | minAvailable must be less than replicas            |
-| reject-autoscaling-replicas-conflict    | spec.replicas=3 and autoscaling.enabled=true            | spec.replicas and autoscaling.enabled are mutually exclusive |
-| reject-autoscaling-min-gt-max           | autoscaling.minReplicas=10, maxReplicas=5               | minReplicas must not exceed maxReplicas            |
-| reject-autoscaling-cpu-no-request       | CPU utilization metric without resources.requests.cpu   | CPU utilization metric requires resources.requests.cpu |
+| Step                                    | Invalid CR                                            | Expected Rejection Reason                                    |
+|-----------------------------------------|-------------------------------------------------------|--------------------------------------------------------------|
+| reject-insufficient-memory-limit        | maxMemoryMB=64, memory limit=32Mi                     | Memory limit < maxMemoryMB + 32Mi overhead                   |
+| reject-pdb-mutual-exclusivity           | Both minAvailable and maxUnavailable set              | Mutually exclusive fields                                    |
+| reject-graceful-shutdown-invalid-period | terminationGracePeriodSeconds <= preStopDelaySeconds  | Termination period must exceed pre-stop delay                |
+| reject-sasl-without-secret-ref          | sasl.enabled=true, no credentialsSecretRef.name       | Missing required secret reference                            |
+| reject-tls-without-secret-ref           | tls.enabled=true, no certificateSecretRef.name        | Missing required secret reference                            |
+| reject-pdb-neither-set                  | PDB enabled, neither minAvailable nor maxUnavailable  | Exactly one of minAvailable or maxUnavailable required       |
+| reject-pdb-min-available-ge-replicas    | PDB minAvailable >= replicas                          | minAvailable must be less than replicas                      |
+| reject-autoscaling-replicas-conflict    | spec.replicas=3 and autoscaling.enabled=true          | spec.replicas and autoscaling.enabled are mutually exclusive |
+| reject-autoscaling-min-gt-max           | autoscaling.minReplicas=10, maxReplicas=5             | minReplicas must not exceed maxReplicas                      |
+| reject-autoscaling-cpu-no-request       | CPU utilization metric without resources.requests.cpu | CPU utilization metric requires resources.requests.cpu       |
 
 ### 8. CR Deletion & Garbage Collection (REQ-009)
 
@@ -741,12 +741,12 @@ CPU utilization metric at 80%, and defaulted `scaleDown` stabilization window of
 300 seconds. The Deployment must exist but must NOT have a hardcoded replica count
 (HPA controls replicas).
 
-| Step                      | Operation                  | Assertion                                                                                                                           |
-|---------------------------|----------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
-| create-memcached-cr       | `apply` 00-memcached.yaml  | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10, `resources.requests.cpu: 50m` (`test-autoscaling-enable`)       |
-| assert-hpa-created        | `assert` 01-assert-hpa     | HPA with scaleTargetRef=Deployment/test-autoscaling-enable, minReplicas=2, maxReplicas=10, CPU metric at 80%, scaleDown 300s        |
-| assert-deployment-created | `assert` 01-assert-deployment | Deployment exists with standard labels; no `spec.replicas` field (HPA controls scaling)                                         |
-| assert-status-available   | `assert` 02-assert-status  | Status conditions indicate availability                                                                                             |
+| Step                      | Operation                     | Assertion                                                                                                                     |
+|---------------------------|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| create-memcached-cr       | `apply` 00-memcached.yaml     | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10, `resources.requests.cpu: 50m` (`test-autoscaling-enable`) |
+| assert-hpa-created        | `assert` 01-assert-hpa        | HPA with scaleTargetRef=Deployment/test-autoscaling-enable, minReplicas=2, maxReplicas=10, CPU metric at 80%, scaleDown 300s  |
+| assert-deployment-created | `assert` 01-assert-deployment | Deployment exists with standard labels; no `spec.replicas` field (HPA controls scaling)                                       |
+| assert-status-available   | `assert` 02-assert-status     | Status conditions indicate availability                                                                                       |
 
 **HPA assertion details**:
 - `scaleTargetRef`: apiVersion=apps/v1, kind=Deployment, name=test-autoscaling-enable
@@ -769,13 +769,13 @@ and that setting `spec.replicas` takes effect on the Deployment. This is a
 two-phase test: first create with autoscaling enabled (assert HPA exists),
 then patch to disable autoscaling with explicit replicas.
 
-| Step                         | Operation                     | Assertion                                                                                   |
-|------------------------------|-------------------------------|---------------------------------------------------------------------------------------------|
-| create-memcached-with-autoscaling | `apply` 00-memcached.yaml | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10 (`test-autoscaling-disable`) |
-| assert-hpa-created           | `assert` 01-assert-hpa        | HPA exists with scaleTargetRef=Deployment/test-autoscaling-disable                          |
-| disable-autoscaling          | `patch` 02-patch-disable.yaml | Set `autoscaling.enabled: false` and `spec.replicas: 3`                                     |
-| assert-hpa-deleted           | `error` 03-error-hpa-gone     | HPA no longer exists (autoscaling/v2 HPA for test-autoscaling-disable)                      |
-| assert-deployment-replicas   | `assert` 03-assert-deployment | Deployment.spec.replicas=3, status.readyReplicas=3                                          |
+| Step                              | Operation                     | Assertion                                                                                       |
+|-----------------------------------|-------------------------------|-------------------------------------------------------------------------------------------------|
+| create-memcached-with-autoscaling | `apply` 00-memcached.yaml     | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10 (`test-autoscaling-disable`) |
+| assert-hpa-created                | `assert` 01-assert-hpa        | HPA exists with scaleTargetRef=Deployment/test-autoscaling-disable                              |
+| disable-autoscaling               | `patch` 02-patch-disable.yaml | Set `autoscaling.enabled: false` and `spec.replicas: 3`                                         |
+| assert-hpa-deleted                | `error` 03-error-hpa-gone     | HPA no longer exists (autoscaling/v2 HPA for test-autoscaling-disable)                          |
+| assert-deployment-replicas        | `assert` 03-assert-deployment | Deployment.spec.replicas=3, status.readyReplicas=3                                              |
 
 **CRD fields tested**:
 - `spec.autoscaling.enabled` — Set to `false` to trigger HPA deletion
@@ -788,12 +788,12 @@ then patch to disable autoscaling with explicit replicas.
 Verifies that updating `minReplicas` and `maxReplicas` on a running autoscaled
 Memcached CR propagates the changes to the HPA without deleting and recreating it.
 
-| Step                         | Operation                        | Assertion                                                                                         |
-|------------------------------|----------------------------------|---------------------------------------------------------------------------------------------------|
-| create-memcached-with-autoscaling | `apply` 00-memcached.yaml  | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10 (`test-autoscaling-update`)    |
-| assert-initial-hpa           | `assert` 01-assert-hpa           | HPA with minReplicas=2, maxReplicas=10, scaleTargetRef=Deployment/test-autoscaling-update         |
-| update-autoscaling-bounds    | `patch` 02-patch-update.yaml     | Patch `autoscaling.minReplicas: 3`, `autoscaling.maxReplicas: 15`                                 |
-| assert-hpa-updated           | `assert` 03-assert-hpa-updated   | HPA with minReplicas=3, maxReplicas=15; scaleTargetRef unchanged; labels preserved                |
+| Step                              | Operation                      | Assertion                                                                                      |
+|-----------------------------------|--------------------------------|------------------------------------------------------------------------------------------------|
+| create-memcached-with-autoscaling | `apply` 00-memcached.yaml      | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10 (`test-autoscaling-update`) |
+| assert-initial-hpa                | `assert` 01-assert-hpa         | HPA with minReplicas=2, maxReplicas=10, scaleTargetRef=Deployment/test-autoscaling-update      |
+| update-autoscaling-bounds         | `patch` 02-patch-update.yaml   | Patch `autoscaling.minReplicas: 3`, `autoscaling.maxReplicas: 15`                              |
+| assert-hpa-updated                | `assert` 03-assert-hpa-updated | HPA with minReplicas=3, maxReplicas=15; scaleTargetRef unchanged; labels preserved             |
 
 **CRD fields tested**:
 - `spec.autoscaling.minReplicas` — Updated from 2 to 3
@@ -989,16 +989,16 @@ verify runtime protocol behavior. This means:
 
 ### Autoscaling E2E Tests (MO-0042)
 
-| REQ-ID      | Requirement                                                                   | Test Scenario        | Key Assertions                                                                                                                                           |
-|-------------|-------------------------------------------------------------------------------|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| MO-0042-001 | HPA created with correct scaleTargetRef, metrics, and behavior                | autoscaling-enable   | HPA scaleTargetRef=Deployment, CPU metric at 80%, scaleDown stabilization 300s, minReplicas=2, maxReplicas=10, standard labels                           |
-| MO-0042-002 | Deployment has no hardcoded replicas when autoscaling enabled                 | autoscaling-enable   | Deployment exists without `spec.replicas` field; HPA controls scaling                                                                                    |
-| MO-0042-003 | HPA deleted and Deployment replicas set when autoscaling disabled             | autoscaling-disable  | HPA no longer exists (error assertion); Deployment.spec.replicas=3, readyReplicas=3                                                                      |
-| MO-0042-004 | HPA updated when minReplicas and maxReplicas patched                          | autoscaling-update   | HPA minReplicas=3 and maxReplicas=15 after patching; scaleTargetRef unchanged                                                                            |
-| MO-0042-005 | Webhook rejects CR with spec.replicas and autoscaling.enabled=true            | webhook-rejection    | Apply returns `$error != null` for CR with replicas=3 and autoscaling.enabled=true                                                                       |
-| MO-0042-006 | Webhook rejects CR with autoscaling.minReplicas > maxReplicas                 | webhook-rejection    | Apply returns `$error != null` for CR with minReplicas=10 and maxReplicas=5                                                                              |
-| MO-0042-007 | Webhook rejects CR with CPU metric but no resources.requests.cpu              | webhook-rejection    | Apply returns `$error != null` for CR with CPU utilization metric and no cpu request                                                                     |
-| MO-0042-008 | Documentation updated with autoscaling test scenarios and coverage matrix     | (this document)      | File structure, three test scenario sections, webhook rejection table, requirement coverage matrix all include autoscaling                                |
+| REQ-ID      | Requirement                                                               | Test Scenario       | Key Assertions                                                                                                                 |
+|-------------|---------------------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| MO-0042-001 | HPA created with correct scaleTargetRef, metrics, and behavior            | autoscaling-enable  | HPA scaleTargetRef=Deployment, CPU metric at 80%, scaleDown stabilization 300s, minReplicas=2, maxReplicas=10, standard labels |
+| MO-0042-002 | Deployment has no hardcoded replicas when autoscaling enabled             | autoscaling-enable  | Deployment exists without `spec.replicas` field; HPA controls scaling                                                          |
+| MO-0042-003 | HPA deleted and Deployment replicas set when autoscaling disabled         | autoscaling-disable | HPA no longer exists (error assertion); Deployment.spec.replicas=3, readyReplicas=3                                            |
+| MO-0042-004 | HPA updated when minReplicas and maxReplicas patched                      | autoscaling-update  | HPA minReplicas=3 and maxReplicas=15 after patching; scaleTargetRef unchanged                                                  |
+| MO-0042-005 | Webhook rejects CR with spec.replicas and autoscaling.enabled=true        | webhook-rejection   | Apply returns `$error != null` for CR with replicas=3 and autoscaling.enabled=true                                             |
+| MO-0042-006 | Webhook rejects CR with autoscaling.minReplicas > maxReplicas             | webhook-rejection   | Apply returns `$error != null` for CR with minReplicas=10 and maxReplicas=5                                                    |
+| MO-0042-007 | Webhook rejects CR with CPU metric but no resources.requests.cpu          | webhook-rejection   | Apply returns `$error != null` for CR with CPU utilization metric and no cpu request                                           |
+| MO-0042-008 | Documentation updated with autoscaling test scenarios and coverage matrix | (this document)     | File structure, three test scenario sections, webhook rejection table, requirement coverage matrix all include autoscaling     |
 
 ---
 
