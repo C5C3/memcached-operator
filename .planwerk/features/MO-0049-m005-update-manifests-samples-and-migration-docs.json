@@ -1,0 +1,609 @@
+{
+  "feature_id": "MO-0049",
+  "title": "M005: Update manifests, samples, and migration docs",
+  "slug": "m005-update-manifests-samples-and-migration-docs",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** docs\n**Priority:** medium\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nGenerate updated manifests, create v1beta1 samples, and write migration docs:\n\n1. **Run `make manifests`** to regenerate:\n   - `config/crd/bases/memcached.c5c3.io_memcacheds.yaml` — Multi-version CRD: v1beta1 with `storage: true`, v1alpha1 with `served: true, storage: false`, conversion webhook strategy configured.\n   - `config/webhook/manifests.yaml` — Updated webhook paths pointing to v1beta1 endpoints.\n2. **config/samples/memcached_v1beta1_*.yaml** — Create 6 sample manifests (minimal, ha, monitoring, tls, production, full) mirroring the existing v1alpha1 samples but with `apiVersion: memcached.c5c3.io/v1beta1`.\n3. **Migration documentation** — Write a doc covering: what changed (storage version promotion), backward compatibility (v1alpha1 still served), deprecation timeline for v1alpha1, how conversion works transparently, and any user action required (none for existing clusters — API server converts on read).\n4. Verify the conversion webhook configuration in the generated CRD manifest includes the correct `webhookClientConfig` service reference and `conversionReviewVersions`.\n\n**Rationale:** Users need updated samples to adopt v1beta1, and clear migration documentation to understand the deprecation path. The CRD manifest must correctly declare both versions with conversion webhook strategy for the API server to handle multi-version serving.\n\n**Affected Areas:**\n- config/crd/bases/memcached.c5c3.io_memcacheds.yaml\n- config/webhook/manifests.yaml\n- config/samples/memcached_v1beta1_minimal.yaml\n- config/samples/memcached_v1beta1_ha.yaml\n- config/samples/memcached_v1beta1_monitoring.yaml\n- config/samples/memcached_v1beta1_tls.yaml\n- config/samples/memcached_v1beta1_production.yaml\n- config/samples/memcached_v1beta1_full.yaml\n- docs/migration-v1beta1.md",
+  "stories": [
+    {
+      "title": "Operator developer regenerates manifests for multi-version CRD",
+      "role": "operator developer",
+      "want": "to run `make manifests` and get a CRD manifest that declares both v1alpha1 and v1beta1 with correct storage/served settings",
+      "so_that": "the Kubernetes API server can serve both versions and store objects in v1beta1 format",
+      "criteria": [
+        "Running `make manifests` produces config/crd/bases/memcached.c5c3.io_memcacheds.yaml with two versions",
+        "v1beta1 has `served: true` and `storage: true`",
+        "v1alpha1 has `served: true` and `storage: false`",
+        "config/webhook/manifests.yaml is regenerated with v1beta1 webhook paths"
+      ]
+    },
+    {
+      "title": "User deploys Memcached using v1beta1 minimal sample",
+      "role": "cluster user",
+      "want": "to have v1beta1 sample manifests that I can kubectl apply to create Memcached instances",
+      "so_that": "I can adopt the new v1beta1 API version with working examples",
+      "criteria": [
+        "6 sample YAML files exist under config/samples/ with apiVersion memcached.c5c3.io/v1beta1",
+        "Each sample parses as a valid v1beta1 Memcached CR",
+        "Samples cover: minimal, ha, monitoring, tls, production, full configurations",
+        "Samples mirror the v1alpha1 equivalents but with v1beta1 apiVersion"
+      ]
+    },
+    {
+      "title": "User references v1beta1 samples from kustomization",
+      "role": "cluster user",
+      "want": "the v1beta1 samples to be registered in config/samples/kustomization.yaml",
+      "so_that": "kustomize build includes the new samples alongside existing v1alpha1 samples",
+      "criteria": [
+        "config/samples/kustomization.yaml lists all 6 v1beta1 sample files",
+        "Existing v1alpha1 sample entries remain unchanged",
+        "kustomize build config/samples succeeds without errors"
+      ]
+    },
+    {
+      "title": "User reads migration documentation to understand v1beta1 promotion",
+      "role": "cluster user",
+      "want": "clear migration documentation explaining the v1alpha1 to v1beta1 transition",
+      "so_that": "I understand backward compatibility, deprecation timeline, and what actions (if any) I need to take",
+      "criteria": [
+        "docs/how-to/migration-v1beta1.md exists with sections covering: what changed, backward compatibility, deprecation timeline, how conversion works, user actions required",
+        "Document explains that v1alpha1 is still served and no user action is required for existing clusters",
+        "Document explains the conversion webhook handles transparent conversion",
+        "Document is linked from the docs index page"
+      ]
+    },
+    {
+      "title": "Developer validates v1beta1 samples parse correctly via tests",
+      "role": "developer",
+      "want": "automated tests that validate all v1beta1 sample YAML files parse into valid Memcached structs",
+      "so_that": "sample correctness is continuously verified and regressions are caught",
+      "criteria": [
+        "api/v1beta1/sample_yaml_test.go exists with tests mirroring api/v1alpha1/sample_yaml_test.go",
+        "Tests validate apiVersion, kind, metadata.name for all v1beta1 samples",
+        "Tests validate specific features per sample (HA config in ha, monitoring in monitoring, etc.)",
+        "All tests pass with `go test ./api/v1beta1/...`"
+      ]
+    },
+    {
+      "title": "Developer verifies CRD manifest has correct conversion webhook configuration",
+      "role": "developer",
+      "want": "the generated CRD manifest to include conversion webhook strategy when patched by kustomize",
+      "so_that": "the API server can convert between v1alpha1 and v1beta1 transparently",
+      "criteria": [
+        "The CRD kustomization applies the cainjection patch for conversion webhook",
+        "The webhook service reference points to the correct service (webhook-service in system namespace)",
+        "conversionReviewVersions includes v1",
+        "The conversion strategy is documented in migration docs"
+      ]
+    },
+    {
+      "title": "Documentation index references new migration guide",
+      "role": "user",
+      "want": "the migration guide to be discoverable from the main documentation index",
+      "so_that": "I can find the migration documentation when browsing the docs",
+      "criteria": [
+        "docs/index.md How-To Guides table includes a row for the migration guide",
+        "Link text and description accurately describe the document's purpose",
+        "The existing upgrade guide is cross-referenced from the migration doc"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "Running `make manifests` SHALL regenerate the CRD manifest with v1beta1 as storage version and v1alpha1 as served-only",
+      "priority": "SHALL",
+      "rationale": "The multi-version CRD manifest is the foundation for API server to serve both versions correctly",
+      "scenarios": [
+        {
+          "name": "CRD has two versions after regeneration",
+          "when": "make manifests is run",
+          "then": "config/crd/bases/memcached.c5c3.io_memcacheds.yaml contains both v1alpha1 and v1beta1 version entries",
+          "and_then": [
+            "v1beta1 has storage: true and served: true",
+            "v1alpha1 has storage: false and served: true"
+          ]
+        },
+        {
+          "name": "Webhook manifests point to v1beta1",
+          "when": "make manifests is run",
+          "then": "config/webhook/manifests.yaml contains webhook paths for v1beta1 (e.g., /mutate-memcached-c5c3-io-v1beta1-memcached)",
+          "and_then": [
+            "Both mutating and validating webhook configurations are present"
+          ]
+        },
+        {
+          "name": "CRD manifest is valid YAML",
+          "when": "the regenerated CRD manifest is parsed",
+          "then": "it is valid YAML and valid CustomResourceDefinition",
+          "and_then": [
+            "No syntax errors or structural issues"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "Six v1beta1 sample manifests SHALL be created mirroring existing v1alpha1 samples",
+      "priority": "SHALL",
+      "rationale": "Users need working examples to adopt v1beta1",
+      "scenarios": [
+        {
+          "name": "Minimal sample exists with v1beta1 apiVersion",
+          "when": "config/samples/memcached_v1beta1_minimal.yaml is read",
+          "then": "it has apiVersion: memcached.c5c3.io/v1beta1 and kind: Memcached with minimal spec (replicas: 1)",
+          "and_then": [
+            "metadata.name is set",
+            "standard labels are present"
+          ]
+        },
+        {
+          "name": "HA sample exists with v1beta1 apiVersion",
+          "when": "config/samples/memcached_v1beta1_ha.yaml is read",
+          "then": "it has apiVersion: memcached.c5c3.io/v1beta1 with highAvailability configuration",
+          "and_then": [
+            "antiAffinityPreset, topologySpreadConstraints, PDB, and gracefulShutdown are configured"
+          ]
+        },
+        {
+          "name": "Full sample uses all available fields",
+          "when": "config/samples/memcached_v1beta1_full.yaml is read",
+          "then": "it exercises all major spec sections: replicas, image, resources, memcached config, HA, monitoring, security",
+          "and_then": [
+            "Mirrors the v1alpha1 memcached_v1alpha1_memcached.yaml sample content"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "Each v1beta1 sample SHALL parse as a valid v1beta1 Memcached struct",
+      "priority": "SHALL",
+      "rationale": "Invalid samples mislead users and break trust in the documentation",
+      "scenarios": [
+        {
+          "name": "All samples unmarshal without error",
+          "when": "each v1beta1 sample YAML file is unmarshalled into a v1beta1.Memcached struct",
+          "then": "no unmarshal errors occur",
+          "and_then": [
+            "apiVersion matches memcached.c5c3.io/v1beta1",
+            "kind is Memcached"
+          ]
+        },
+        {
+          "name": "Feature-specific fields are present",
+          "when": "the HA sample is parsed",
+          "then": "spec.highAvailability is non-nil",
+          "and_then": [
+            "monitoring sample has spec.monitoring.enabled=true",
+            "tls sample has spec.security.tls.enabled=true"
+          ]
+        },
+        {
+          "name": "Production sample has comprehensive configuration",
+          "when": "the production sample is parsed",
+          "then": "spec.replicas >= 2 and spec.resources is set",
+          "and_then": [
+            "spec.highAvailability is configured",
+            "spec.security is configured"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The kustomization.yaml SHALL include all v1beta1 sample files",
+      "priority": "SHALL",
+      "rationale": "Samples must be discoverable and buildable via kustomize",
+      "scenarios": [
+        {
+          "name": "All 6 v1beta1 samples are listed",
+          "when": "config/samples/kustomization.yaml is read",
+          "then": "it contains entries for all 6 v1beta1 sample files",
+          "and_then": [
+            "Existing v1alpha1 entries remain unchanged"
+          ]
+        },
+        {
+          "name": "Kustomize build succeeds",
+          "when": "kustomize build config/samples is run",
+          "then": "the command exits successfully",
+          "and_then": [
+            "Output includes both v1alpha1 and v1beta1 resources"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "A migration guide SHALL document the v1alpha1 to v1beta1 transition",
+      "priority": "SHALL",
+      "rationale": "Users need clear documentation to understand the API promotion and its impact",
+      "scenarios": [
+        {
+          "name": "Migration doc covers what changed",
+          "when": "docs/how-to/migration-v1beta1.md is read",
+          "then": "it explains that v1beta1 is now the storage version",
+          "and_then": [
+            "v1alpha1 remains served for backward compatibility"
+          ]
+        },
+        {
+          "name": "Migration doc covers deprecation timeline",
+          "when": "the deprecation section is read",
+          "then": "it states a clear timeline for v1alpha1 deprecation",
+          "and_then": [
+            "Users are advised to migrate manifests to v1beta1"
+          ]
+        },
+        {
+          "name": "Migration doc explains conversion mechanism",
+          "when": "the conversion section is read",
+          "then": "it explains that the API server automatically converts between versions via the conversion webhook",
+          "and_then": [
+            "No user action is required for existing clusters",
+            "Existing v1alpha1 resources continue to work"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The migration guide SHALL explain that no user action is required for existing clusters",
+      "priority": "SHALL",
+      "rationale": "Users need reassurance that the upgrade is non-disruptive",
+      "scenarios": [
+        {
+          "name": "No-action-required is clearly stated",
+          "when": "the user action section is read",
+          "then": "it explicitly states that no changes are needed for existing v1alpha1 CRs",
+          "and_then": [
+            "The API server converts stored objects on read transparently"
+          ]
+        },
+        {
+          "name": "Recommended migration steps provided",
+          "when": "the migration steps section is read",
+          "then": "it provides optional steps to update manifests from v1alpha1 to v1beta1",
+          "and_then": [
+            "Steps are framed as recommended but not required"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The docs index SHALL link to the migration guide",
+      "priority": "SHALL",
+      "rationale": "Documentation must be discoverable from the main index",
+      "scenarios": [
+        {
+          "name": "Migration guide appears in How-To table",
+          "when": "docs/index.md is read",
+          "then": "the How-To Guides table includes a row linking to how-to/migration-v1beta1.md",
+          "and_then": [
+            "The description accurately summarizes the migration guide"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The CRD reference doc SHALL be updated to reflect v1beta1 as the primary API version",
+      "priority": "SHALL",
+      "rationale": "The CRD reference must reflect the current primary API version",
+      "scenarios": [
+        {
+          "name": "CRD reference shows v1beta1 as primary",
+          "when": "docs/reference/crd-reference.md Resource Info table is read",
+          "then": "API Version shows v1beta1 (or both v1alpha1 and v1beta1)",
+          "and_then": [
+            "Examples in the doc use v1beta1 apiVersion"
+          ]
+        },
+        {
+          "name": "Inline examples use v1beta1",
+          "when": "YAML examples in crd-reference.md are inspected",
+          "then": "all example CRs use apiVersion: memcached.c5c3.io/v1beta1",
+          "and_then": [
+            "v1alpha1 examples are either removed or marked as deprecated"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The docs/how-to/examples.md SHALL include v1beta1 examples",
+      "priority": "SHOULD",
+      "rationale": "The examples how-to guide should reference the current primary API version",
+      "scenarios": [
+        {
+          "name": "Examples page references v1beta1",
+          "when": "docs/how-to/examples.md is read",
+          "then": "example CRs use apiVersion: memcached.c5c3.io/v1beta1",
+          "and_then": [
+            "References to v1alpha1 examples note that v1beta1 is preferred"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The upgrade guide SHALL mention v1beta1 promotion in the compatibility matrix",
+      "priority": "SHOULD",
+      "rationale": "The version compatibility matrix should reflect the new API version",
+      "scenarios": [
+        {
+          "name": "Compatibility matrix updated",
+          "when": "docs/how-to/upgrade.md compatibility matrix is read",
+          "then": "it includes a row for the version that introduces v1beta1",
+          "and_then": [
+            "CRD API Version column shows v1alpha1 + v1beta1"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Run `make manifests` to regenerate CRD and webhook manifests (REQ-001)",
+      "description": "Run `make manifests` to regenerate config/crd/bases/memcached.c5c3.io_memcacheds.yaml and config/webhook/manifests.yaml. Verify CRD has v1beta1 with storage: true and v1alpha1 with storage: false. Verify webhook manifests point to v1beta1 paths. The CRD is generated from kubebuilder markers on api/v1beta1/memcached_types.go (+kubebuilder:storageversion) and api/v1alpha1/memcached_types.go.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create v1beta1 minimal sample manifest (REQ-002)",
+      "description": "Create config/samples/memcached_v1beta1_minimal.yaml mirroring memcached_v1alpha1_minimal.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 1 replica, standard labels, name memcached-dev.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create v1beta1 ha sample manifest (REQ-002)",
+      "description": "Create config/samples/memcached_v1beta1_ha.yaml mirroring memcached_v1alpha1_ha.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 3 replicas, resources, memcached config, highAvailability with antiAffinity, topologySpread, PDB, gracefulShutdown.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Create v1beta1 monitoring sample manifest (REQ-002)",
+      "description": "Create config/samples/memcached_v1beta1_monitoring.yaml mirroring memcached_v1alpha1_monitoring.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 2 replicas, monitoring enabled with exporter resources and serviceMonitor config.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Create v1beta1 tls sample manifest (REQ-002)",
+      "description": "Create config/samples/memcached_v1beta1_tls.yaml mirroring memcached_v1alpha1_tls.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 3 replicas, security.tls.enabled=true with certificateSecretRef.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Create v1beta1 production sample manifest (REQ-002)",
+      "description": "Create config/samples/memcached_v1beta1_production.yaml mirroring memcached_v1alpha1_production.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 5 replicas, comprehensive config with HA, monitoring, security (SASL, TLS, NetworkPolicy), production resources.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.7",
+      "title": "Create v1beta1 full sample manifest (REQ-002)",
+      "description": "Create config/samples/memcached_v1beta1_full.yaml mirroring memcached_v1alpha1_memcached.yaml (the main sample) but with apiVersion: memcached.c5c3.io/v1beta1. Content: 3 replicas, image, resources, memcached config, HA with PDB, monitoring, security contexts.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.8",
+      "title": "Update config/samples/kustomization.yaml to include v1beta1 samples (REQ-004)",
+      "description": "Add all 6 v1beta1 sample files to config/samples/kustomization.yaml resources list. Keep existing v1alpha1 entries. Files to add: memcached_v1beta1_minimal.yaml, memcached_v1beta1_ha.yaml, memcached_v1beta1_monitoring.yaml, memcached_v1beta1_tls.yaml, memcached_v1beta1_production.yaml, memcached_v1beta1_full.yaml.",
+      "level": 1,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create v1beta1 sample YAML tests in api/v1beta1/sample_yaml_test.go (REQ-003)",
+      "description": "Create api/v1beta1/sample_yaml_test.go following the pattern in api/v1alpha1/sample_yaml_test.go. Include: TestSampleYAMLFiles (discover and validate all v1beta1 samples), TestSampleYAMLMinimal, TestSampleYAMLFull, TestSampleYAMLHA, TestSampleYAMLMonitoring, TestSampleYAMLTLS, TestSampleYAMLProduction, TestAllSamplesHaveValidStructure. Each test validates apiVersion=memcached.c5c3.io/v1beta1, kind=Memcached, non-empty name, and feature-specific fields.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write migration documentation docs/how-to/migration-v1beta1.md (REQ-005, REQ-006)",
+      "description": "Create docs/how-to/migration-v1beta1.md covering: (1) Overview - v1beta1 is now the storage version, (2) What Changed - storage version promotion, schema identical, (3) Backward Compatibility - v1alpha1 still served, existing CRs work without changes, (4) How Conversion Works - API server uses conversion webhook transparently, (5) Deprecation Timeline - v1alpha1 deprecated, planned removal in future release, (6) User Actions Required - none for existing clusters, recommended to update manifests, (7) Migrating Your Manifests - sed command to update apiVersion, (8) FAQ. Cross-reference docs/how-to/upgrade.md.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-005",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Update docs/index.md to link migration guide (REQ-007)",
+      "description": "Add a row to the How-To Guides table in docs/index.md linking to how-to/migration-v1beta1.md with description 'Migrate from v1alpha1 to v1beta1 API version'.",
+      "level": 3,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Update docs/reference/crd-reference.md to reflect v1beta1 as primary (REQ-008)",
+      "description": "Update docs/reference/crd-reference.md: (1) Change API Version in Resource Info table from v1alpha1 to v1beta1, (2) Update all inline YAML examples to use apiVersion: memcached.c5c3.io/v1beta1, (3) Add a note that v1alpha1 is still supported but deprecated. Update the minimal, full, HA, and autoscaling examples.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.4",
+      "title": "Update docs/how-to/upgrade.md compatibility matrix (REQ-010)",
+      "description": "Add a new row to the Version Compatibility Matrix in docs/how-to/upgrade.md for the version introducing v1beta1. Update CRD API Version column to show 'v1alpha1 + v1beta1'. Also update the CRD compatibility notes section to mention multi-version serving and the conversion webhook.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "3.5",
+      "title": "Update docs/how-to/examples.md to use v1beta1 (REQ-009)",
+      "description": "Update docs/how-to/examples.md to use apiVersion: memcached.c5c3.io/v1beta1 in all inline YAML examples. Add a note that v1alpha1 examples still work but v1beta1 is preferred.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLFiles",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "All memcached_v1beta1_*.yaml files parse as valid v1beta1 Memcached CRs with correct apiVersion and kind",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLMinimal",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "Minimal sample has non-empty name and spec.replicas set",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLHA",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "HA sample has spec.highAvailability set",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLMonitoring",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "Monitoring sample has spec.monitoring.enabled=true",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLTLS",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "TLS sample has spec.security.tls.enabled=true",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLProduction",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "Production sample has replicas >= 2, resources set, highAvailability set",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestSampleYAMLFull",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "Full sample has memcached config, monitoring, security, and highAvailability sections set",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1beta1/sample_yaml_test.go",
+      "test_function": "TestAllSamplesHaveValidStructure",
+      "story": "Developer validates v1beta1 samples parse correctly via tests",
+      "expected": "All v1beta1 samples have non-empty TypeMeta, ObjectMeta.Name, and valid structure",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/doc_links_test.go",
+      "test_function": "TestDocLinksIncludeMigrationGuide",
+      "story": "Documentation index references new migration guide",
+      "expected": "docs/index.md contains a link to the migration guide",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "api/v1beta1/crd_manifest_test.go",
+      "test_function": "TestCRDManifestMultiVersion",
+      "story": "Operator developer regenerates manifests for multi-version CRD",
+      "expected": "CRD manifest has v1beta1 as storage version and v1alpha1 as served-only",
+      "requirement_id": "REQ-001"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "`make manifests` produces the expected CRD with v1beta1 as storage version and v1alpha1 as served-only",
+    "All 6 v1beta1 sample YAML files exist, parse correctly, and mirror their v1alpha1 counterparts",
+    "config/samples/kustomization.yaml includes all v1beta1 sample files",
+    "api/v1beta1/sample_yaml_test.go tests pass: `go test ./api/v1beta1/... -run TestSampleYAML`",
+    "docs/how-to/migration-v1beta1.md covers all required sections: what changed, backward compatibility, deprecation, conversion, user actions",
+    "docs/index.md links to the migration guide in the How-To table",
+    "docs/reference/crd-reference.md uses v1beta1 as the primary API version in examples",
+    "docs/how-to/upgrade.md compatibility matrix includes v1beta1 entry",
+    "No v1alpha1 sample files are modified or broken",
+    "All existing tests continue to pass: `go test ./...`"
+  ],
+  "implementation_notes": "This feature is documentation and manifest-focused with no Go code changes (except new test file). Key patterns: (1) Sample YAML files follow the naming convention memcached_{version}_{variant}.yaml with standard labels app.kubernetes.io/name and app.kubernetes.io/managed-by. (2) Sample YAML tests follow the pattern in api/v1alpha1/sample_yaml_test.go using sigs.k8s.io/yaml unmarshal and runtime.Caller for path resolution. (3) The CRD is generated by controller-gen from kubebuilder markers - v1beta1 has +kubebuilder:storageversion marker. (4) The kustomize overlay in config/default/ patches webhook CA injection but does NOT add a conversion webhook strategy to the CRD - conversion is handled via the Hub/Spoke pattern in controller-runtime where v1beta1 implements Hub() and v1alpha1 implements ConvertTo/ConvertFrom. (5) Docs use VitePress markdown format. Migration doc should follow the style of existing how-to guides (upgrade.md). (6) The 'full' sample corresponds to memcached_v1alpha1_memcached.yaml (the original main sample). Note: The feature description says 'docs/migration-v1beta1.md' but the docs structure uses how-to/ subdirectory, so the file should be docs/how-to/migration-v1beta1.md for consistency.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:26:33.929056"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T16:12:51.392492"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T16:17:04.663418"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "6dcbb25d-1980-42a6-aa31-ff37ba9b7ee5",
+      "timestamp": "2026-02-22T16:17:04.663477",
+      "total_duration": 249.96909356117249,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 249.96909356117249,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
