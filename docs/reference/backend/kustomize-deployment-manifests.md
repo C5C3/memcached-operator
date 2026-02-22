@@ -40,6 +40,9 @@ config/
 ├── manager/              # Controller manager Deployment + Namespace
 │   ├── manager.yaml
 │   └── kustomization.yaml
+├── namespace-scoped/     # Overlay to convert ClusterRole/Binding to Role/Binding
+│   ├── kustomization.yaml
+│   └── role_patch.yaml
 ├── network-policy/       # NetworkPolicy for metrics ingress
 │   ├── allow-metrics-traffic.yaml
 │   └── kustomization.yaml
@@ -93,6 +96,25 @@ RBAC manifests generated from `+kubebuilder:rbac` markers on the reconciler.
 | `metrics_auth_role.yaml`            | ClusterRole                  | Authentication delegator for metrics endpoint                                             |
 | `metrics_auth_role_binding.yaml`    | ClusterRoleBinding           | Binds metrics auth role                                                                   |
 | `metrics_reader_role.yaml`          | ClusterRole                  | Read-only access to `/metrics`                                                            |
+
+### `config/namespace-scoped/`
+
+Overlay that converts the operator's cluster-scoped RBAC resources to
+namespace-scoped equivalents. Use this when deploying with `--watch-namespaces`
+to match RBAC scope to cache scope.
+
+| File                 | Kind      | Description                                                      |
+|----------------------|-----------|------------------------------------------------------------------|
+| `kustomization.yaml` | (overlay) | References `../rbac`, patches ClusterRole and ClusterRoleBinding |
+| `role_patch.yaml`    | (patch)   | JSON patch converting `ClusterRole` to `Role`                    |
+
+The overlay converts `ClusterRole/manager-role` to a `Role` and
+`ClusterRoleBinding/manager-rolebinding` to a `RoleBinding` (with
+`roleRef.kind: Role`). Leader-election and metrics RBAC resources are not
+modified.
+
+**Build independently**: `kustomize build config/namespace-scoped` — produces
+namespace-scoped RBAC resources.
 
 ### `config/manager/`
 

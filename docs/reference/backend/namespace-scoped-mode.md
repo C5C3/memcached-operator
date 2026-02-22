@@ -111,7 +111,7 @@ ClusterRoleBinding to namespace-scoped Role and RoleBinding resources. Use this
 overlay when deploying the operator with `--watch-namespaces` to match RBAC
 scope to cache scope.
 
-**Path**: `config/namespace-scoped/kustomization.yaml`
+**Path**: `config/namespace-scoped/kustomization.yaml`, `config/namespace-scoped/role_patch.yaml`
 
 ### What It Patches
 
@@ -121,10 +121,12 @@ scope to cache scope.
 | `ClusterRoleBinding/manager-rolebinding` | `RoleBinding/manager-rolebinding` |
 | `roleRef.kind: ClusterRole`              | `roleRef.kind: Role`              |
 
-The overlay uses JSON patches (`op: replace`) to change the `kind` fields. It
-does **not** modify `leader-election-role` (already a Role) or the metrics RBAC
-resources (must remain cluster-scoped because they reference cluster-scoped
-resources like `tokenreviews` and `subjectaccessreviews`).
+The ClusterRole-to-Role conversion uses an external JSON patch file
+(`role_patch.yaml`), while the ClusterRoleBinding-to-RoleBinding conversion is
+an inline patch in `kustomization.yaml`. The overlay does **not** modify
+`leader-election-role` (already a Role) or the metrics RBAC resources (must
+remain cluster-scoped because they reference cluster-scoped resources like
+`tokenreviews` and `subjectaccessreviews`).
 
 ### Building the Overlay
 

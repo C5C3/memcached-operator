@@ -1,0 +1,56 @@
+{
+  "feature_id": "MO-0044",
+  "title": "L002: Add Kustomize namespace-scoped RBAC overlay",
+  "date": "2026-02-22",
+  "summary": "Extracts ClusterRole-to-Role JSON patch into config/namespace-scoped/role_patch.yaml, updates kustomization.yaml to reference it, adds 9 Go tests validating the full kustomize build output (kind conversions, preserved resources, rule completeness, resource count), and updates both docs pages to reference the new file.",
+  "verdict": "APPROVED",
+  "tests_checklist": [
+    {"item": "All 9 namespace-scoped kustomize tests pass (go test -run TestKustomizeBuildNamespaceScoped -v -count=1)", "checked": true},
+    {"item": "ClusterRole-to-Role conversion verified", "checked": true},
+    {"item": "ClusterRoleBinding-to-RoleBinding conversion verified", "checked": true},
+    {"item": "roleRef.kind=Role verified with YAML block parsing", "checked": true},
+    {"item": "Metrics ClusterRoles remain cluster-scoped (table-driven)", "checked": true},
+    {"item": "Leader-election resources remain unchanged (table-driven)", "checked": true},
+    {"item": "ServiceAccount controller-manager present", "checked": true},
+    {"item": "Total resource count = 8", "checked": true},
+    {"item": "All 11 RBAC rule groups preserved in Role (table-driven)", "checked": true},
+    {"item": "Base config/rbac/ output unaffected (still produces ClusterRole/ClusterRoleBinding)", "checked": true},
+    {"item": "go vet passes clean", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing kustomize_build_test.go patterns (cached output, strings.Split, table-driven)", "checked": true},
+    {"item": "Test file in correct location (internal/controller/)", "checked": true},
+    {"item": "role_patch.yaml has clear comments explaining purpose", "checked": true},
+    {"item": "kustomization.yaml is minimal and correct", "checked": true},
+    {"item": "No code duplication beyond test structure (inherent to table-driven tests)", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input handling (pure Kustomize YAML config)", "checked": true},
+    {"item": "No secrets or credentials in any changed file", "checked": true},
+    {"item": "RBAC follows least-privilege principle (Role instead of ClusterRole)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal — single patch file + kustomization reference", "checked": true},
+    {"item": "Overlay correctly inherits from ../rbac base", "checked": true},
+    {"item": "Separation of concerns: external patch for Role, inline for RoleBinding (different values needed)", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated patch logic", "checked": true},
+    {"item": "No unnecessary files or abstractions", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "TestMain exits immediately if kustomize binary missing or build fails", "checked": true},
+    {"item": "Tests use t.Fatal for missing resources (stops early)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Not applicable — no external inputs to validate (static YAML config)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [
+    "D2 (minor): Test name substring matching (e.g. 'name: leader-election-role' matches 'name: leader-election-rolebinding') is order-dependent. Consider using 'name: leader-election-role\\n' or regex word boundaries for exact matching. This is a pre-existing pattern across all kustomize build tests, not introduced by this PR."
+  ],
+  "next_steps": []
+}

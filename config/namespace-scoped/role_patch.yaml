@@ -1,0 +1,6 @@
+# JSON patch: convert ClusterRole to namespace-scoped Role.
+# Used by the namespace-scoped Kustomize overlay to restrict
+# operator RBAC to a single namespace.
+- op: replace
+  path: /kind
+  value: Role

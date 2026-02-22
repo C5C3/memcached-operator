@@ -2,8 +2,8 @@
   "feature_id": "MO-0044",
   "title": "L002: Add Kustomize namespace-scoped RBAC overlay",
   "slug": "l002-add-kustomize-namespace-scoped-rbac-overlay",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "awaiting_external_review",
   "summary": "",
   "description": "**Size:** 🔧 small\n**Category:** infrastructure\n**Priority:** medium\n**Source:** Proposed for 'Namespace-Scoped Operator Mode\n\nNew flag --watch'\n\nCreate new directory config/namespace-scoped/ with: (1) kustomization.yaml referencing ../rbac as base and applying patches, (2) role_patch.yaml with JSON or strategic merge patches that convert ClusterRole manager-role to Role and ClusterRoleBinding manager-rolebinding to RoleBinding (updating roleRef.kind accordingly). Leave leader-election-role (already a Role), metrics-auth-role, metrics-auth-rolebinding, metrics-reader, and service_account untouched. Verify with kustomize build that output produces correct Role/RoleBinding resources. Add documentation note that CRDs must be installed cluster-wide by an admin.\n\n**Rationale:** Namespace-scoped deployments require Role/RoleBinding instead of ClusterRole/ClusterRoleBinding for least-privilege RBAC. Providing a ready-made Kustomize overlay eliminates error-prone manual RBAC conversion and ensures correct configuration for namespace-scoped operator deployments.\n\n**Affected Areas:**\n- config/namespace-scoped/kustomization.yaml\n- config/namespace-scoped/role_patch.yaml",
   "stories": [
@@ -355,6 +355,7 @@
       "description": "Create config/namespace-scoped/role_patch.yaml containing a JSON patch array with a single operation: op: replace, path: /kind, value: Role. This file will be referenced by kustomization.yaml to convert the ClusterRole manager-role to a namespace-scoped Role. The file format is a YAML list of JSON patch operations compatible with kustomize's patches[].path directive.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -365,6 +366,7 @@
       "description": "Update the existing config/namespace-scoped/kustomization.yaml to: (1) keep resources: [../rbac] as base, (2) replace the inline ClusterRole patch with a path reference to role_patch.yaml targeting kind: ClusterRole, name: manager-role, (3) keep the inline JSON patches for ClusterRoleBinding→RoleBinding conversion (op: replace path: /kind value: RoleBinding AND op: replace path: /roleRef/kind value: Role) targeting kind: ClusterRoleBinding, name: manager-rolebinding. The ClusterRoleBinding patches must remain inline because they require different replacement values than role_patch.yaml.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-003",
@@ -377,6 +379,7 @@
       "description": "Add TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleToRole in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput (already populated in TestMain). Split output by '\\n---\\n', find the document containing 'name: manager-role', and verify: (1) it contains 'kind: Role' (not 'kind: ClusterRole'), (2) it contains 'apiVersion: rbac.authorization.k8s.io/v1', (3) it contains rules for memcacheds, deployments, services, secrets, events. Follow the existing test pattern of strings.Contains checks on YAML documents.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-005"
@@ -388,6 +391,7 @@
       "description": "Add TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleBindingToRoleBinding in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Split output by '\\n---\\n', find the document containing 'name: manager-rolebinding', and verify: (1) it contains 'kind: RoleBinding' (not 'kind: ClusterRoleBinding'), (2) it does NOT contain 'kind: ClusterRoleBinding', (3) roleRef.kind is Role (check for 'kind: Role' within the roleRef block), (4) subjects reference ServiceAccount controller-manager.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-004",
@@ -400,6 +404,7 @@
       "description": "Add TestKustomizeBuildNamespaceScoped_PreservesLeaderElectionResources in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Verify: (1) output contains a Role named leader-election-role (it was already Role in base), (2) output contains a RoleBinding named leader-election-rolebinding. Use table-driven subtests for each resource.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -410,6 +415,7 @@
       "description": "Add TestKustomizeBuildNamespaceScoped_PreservesClusterScopedResources in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Use table-driven subtests to verify: (1) metrics-auth-role remains ClusterRole, (2) metrics-auth-rolebinding remains ClusterRoleBinding, (3) metrics-reader remains ClusterRole, (4) service_account controller-manager is present. For each, find the YAML document by name and check kind.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -420,6 +426,7 @@
       "description": "Add TestKustomizeBuildNamespaceScoped_OutputIsNonEmpty in internal/controller/kustomize_build_test.go. Verify cachedNamespaceScopedOutput is non-empty. Count YAML documents by splitting on '\\n---\\n' and verify there are exactly 8 documents (matching the 8 resources in config/rbac/kustomization.yaml: role, role_binding, leader_election_role, leader_election_role_binding, service_account, metrics_auth_role, metrics_auth_role_binding, metrics_reader_role).",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -430,6 +437,7 @@
       "description": "Add TestKustomizeBuildNamespaceScoped_RolePreservesAllRules in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Find the manager-role document and use table-driven subtests to verify it contains rules for: (1) memcacheds (full CRUD), (2) memcacheds/status, (3) memcacheds/finalizers, (4) deployments, (5) services, (6) poddisruptionbudgets, (7) networkpolicies, (8) servicemonitors, (9) secrets (read-only), (10) events (create/patch). Check for each resource name string in the document.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -440,6 +448,7 @@
       "description": "Update docs/reference/backend/kustomize-deployment-manifests.md: (1) Add config/namespace-scoped/ entry to the Directory Structure tree with kustomization.yaml and role_patch.yaml files, (2) Add a new Component Bases subsection '### config/namespace-scoped/' describing it as a Kustomize overlay that converts ClusterRole/ClusterRoleBinding to Role/RoleBinding for namespace-scoped deployments. Include a table listing the two files (kustomization.yaml and role_patch.yaml) with their descriptions. Place the section after config/rbac/ section.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -450,34 +459,9 @@
       "description": "Update docs/reference/backend/namespace-scoped-mode.md: (1) Update the Source line to include role_patch.yaml, (2) In the 'Kustomize Overlay: Namespace-Scoped RBAC' section, update the description to mention that JSON patches are defined in role_patch.yaml and referenced from kustomization.yaml, (3) Verify the 'What It Patches' table is accurate, (4) Verify the CRD cluster-wide installation note is present (it already exists at line 151-159). Only make additive changes.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-008"
-      ]
-    },
-    {
-      "id": "4.1",
-      "title": "Run kustomize build config/namespace-scoped/ and verify correct output manually (REQ-005)",
-      "description": "Run 'make kustomize && bin/kustomize build config/namespace-scoped/' from the project root. Manually inspect the output to verify: (1) no errors, (2) Role manager-role appears (not ClusterRole), (3) RoleBinding manager-rolebinding appears with roleRef.kind=Role (not ClusterRoleBinding), (4) leader-election-role remains Role, (5) metrics resources remain ClusterRole/ClusterRoleBinding, (6) all 8 resources present.",
-      "level": 4,
-      "estimate_minutes": 10,
-      "requirements": [
-        "REQ-005"
-      ]
-    },
-    {
-      "id": "4.2",
-      "title": "Run full kustomize build test suite and verify all tests pass (REQ-001 through REQ-007)",
-      "description": "Run 'make kustomize && go test ./internal/controller/ -run TestKustomizeBuild -v -count=1' to execute all kustomize build tests including the new namespace-scoped tests. Verify all tests pass. If any test fails, investigate and fix the issue in the implementation (tasks 1.1-1.2) or test code (tasks 2.1-2.6).",
-      "level": 4,
-      "estimate_minutes": 10,
-      "requirements": [
-        "REQ-001",
-        "REQ-002",
-        "REQ-003",
-        "REQ-004",
-        "REQ-005",
-        "REQ-006",
-        "REQ-007"
       ]
     }
   ],
@@ -635,6 +619,14 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T10:50:27.647813"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:50:32.319693"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T11:06:01.043496"
     }
   },
   "execution_history": [
@@ -648,6 +640,50 @@
           "name": "prepare",
           "duration": 491.7545416355133,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "a60bdb33-4bbb-44a2-baaf-db861ed5c4b0",
+      "timestamp": "2026-02-22T11:05:35.633723",
+      "total_duration": 746.097993850708,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 263.0638692378998,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (6 tasks)",
+          "duration": 121.65434455871582,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (2 tasks)",
+          "duration": 50.62827157974243,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0044] Code Review",
+          "duration": 132.5509808063507,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0044] Improvements",
+          "duration": 77.45922780036926,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0044] Simplify",
+          "duration": 100.74129986763,
+          "type": "simplify",
           "status": "done"
         }
       ]
