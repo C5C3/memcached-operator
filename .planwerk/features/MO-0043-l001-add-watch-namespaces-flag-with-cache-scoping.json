@@ -1,24 +1,433 @@
 {
   "feature_id": "MO-0043",
-  "title": "L001: Add --watch-namespaces flag with cache scoping in cmd/main.go",
+  "title": "L001: Add --watch-namespaces flag with cache scoping",
   "slug": "l001-add-watch-namespaces-flag-with-cache-scoping",
-  "status": "proposed",
+  "status": "prepared",
   "phase": null,
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** backend\n**Priority:** medium\n**Source:** Proposed for 'Namespace-Scoped Operator Mode\n\nNew flag --watch'\n\nAdd a --watch-namespaces string flag via flag.StringVar in cmd/main.go (~lines 38-56). Implement a parsing function that converts comma-separated namespace string into map[string]cache.Config: empty string yields nil map (cluster-wide default), single/multiple namespaces yield corresponding map entries, whitespace is trimmed. Wire the parsed map into ctrl.Options.Cache.DefaultNamespaces at ~line 80. Include unit tests covering: empty string → nil, single namespace, multiple namespaces, whitespace trimming, and verification that ctrl.Options is correctly populated.\n\n**Rationale:** Operators in multi-tenant Kubernetes clusters need least-privilege namespace scoping. Without this flag, the operator watches all namespaces, which violates principle of least privilege and may not be permitted in restricted environments. The flag preserves backward compatibility (empty = cluster-wide).\n\n**Affected Areas:**\n- cmd/main.go\n- cmd/main_test.go",
-  "stories": [],
-  "requirements": [],
-  "tasks": [],
-  "test_specifications": [],
+  "stories": [
+    {
+      "title": "Operator admin restricts operator to specific namespaces via CLI flag",
+      "role": "operator admin",
+      "want": "to pass --watch-namespaces=ns1,ns2 when starting the operator so the cache is restricted to those namespaces only",
+      "so_that": "the operator follows the principle of least privilege and only watches namespaces it manages",
+      "criteria": [
+        "Running with --watch-namespaces=ns1,ns2 results in ctrl.Options.Cache.DefaultNamespaces containing entries for 'ns1' and 'ns2'",
+        "Each namespace entry in the map has an empty cache.Config{} value",
+        "The operator logs the watched namespaces at startup via setupLog.Info",
+        "The operator starts successfully and only creates informers for the specified namespaces"
+      ]
+    },
+    {
+      "title": "Operator admin runs operator in cluster-wide mode by default",
+      "role": "operator admin",
+      "want": "the operator to watch all namespaces when --watch-namespaces is not set or is empty",
+      "so_that": "backward compatibility is preserved and no configuration change is required for existing deployments",
+      "criteria": [
+        "When --watch-namespaces is omitted, ctrl.Options.Cache.DefaultNamespaces is nil",
+        "When --watch-namespaces is set to an empty string, ctrl.Options.Cache.DefaultNamespaces is nil",
+        "The operator starts successfully and watches all namespaces (default controller-runtime behavior)"
+      ]
+    },
+    {
+      "title": "Operator admin passes a single namespace to restrict the operator scope",
+      "role": "operator admin",
+      "want": "to pass a single namespace like --watch-namespaces=production",
+      "so_that": "the operator is restricted to exactly one namespace in a single-tenant setup",
+      "criteria": [
+        "parseWatchNamespaces('production') returns map[string]cache.Config with one entry keyed 'production'",
+        "The returned map has exactly 1 entry",
+        "The entry value is an empty cache.Config{}"
+      ]
+    },
+    {
+      "title": "Operator admin passes namespaces with extra whitespace",
+      "role": "operator admin",
+      "want": "whitespace around namespace names in --watch-namespaces to be trimmed automatically",
+      "so_that": "minor formatting differences in configuration do not cause unexpected behavior",
+      "criteria": [
+        "parseWatchNamespaces(' ns1 , ns2 ') returns map with keys 'ns1' and 'ns2' (trimmed)",
+        "parseWatchNamespaces('  ') returns nil (whitespace-only treated as empty)",
+        "No namespace key in the returned map contains leading or trailing whitespace"
+      ]
+    },
+    {
+      "title": "Developer deploys operator in namespace-scoped mode with matching RBAC",
+      "role": "platform engineer",
+      "want": "a Kustomize overlay that converts ClusterRole/ClusterRoleBinding to Role/RoleBinding",
+      "so_that": "the operator can be deployed with namespace-scoped RBAC matching the watch-namespaces restriction",
+      "criteria": [
+        "config/namespace-scoped/kustomization.yaml exists and references ../rbac as base",
+        "Patch converts ClusterRole manager-role to Role manager-role",
+        "Patch converts ClusterRoleBinding manager-rolebinding to RoleBinding manager-rolebinding",
+        "Patch updates roleRef.kind from ClusterRole to Role in the RoleBinding",
+        "kustomize build config/namespace-scoped/ succeeds without errors"
+      ]
+    },
+    {
+      "title": "Reference documentation describes the --watch-namespaces flag and namespace-scoped overlay",
+      "role": "developer",
+      "want": "reference documentation covering the new CLI flag and Kustomize overlay",
+      "so_that": "I can understand how to configure namespace-scoped operation",
+      "criteria": [
+        "Reference doc exists at docs/reference/backend/namespace-scoped-mode.md",
+        "Documents the --watch-namespaces flag syntax with examples",
+        "Documents the config/namespace-scoped/ Kustomize overlay",
+        "Notes that CRDs must still be installed cluster-wide"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator SHALL accept a --watch-namespaces string flag that specifies comma-separated namespace names",
+      "priority": "SHALL",
+      "rationale": "Enables namespace-scoped operation for multi-tenant Kubernetes clusters",
+      "scenarios": [
+        {
+          "name": "Flag registered with flag.StringVar",
+          "when": "the operator binary is built and --help is invoked",
+          "then": "--watch-namespaces is listed with description and default empty string",
+          "and_then": []
+        },
+        {
+          "name": "Flag value parsed at startup",
+          "when": "the operator is started with --watch-namespaces=ns1,ns2",
+          "then": "the watchNamespaces variable contains 'ns1,ns2'",
+          "and_then": []
+        },
+        {
+          "name": "Flag defaults to empty string",
+          "when": "the operator is started without --watch-namespaces",
+          "then": "the watchNamespaces variable is an empty string",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The parseWatchNamespaces function SHALL convert an empty string to a nil map",
+      "priority": "SHALL",
+      "rationale": "Preserves backward compatibility — nil DefaultNamespaces means cluster-wide watching",
+      "scenarios": [
+        {
+          "name": "Empty string yields nil",
+          "when": "parseWatchNamespaces is called with an empty string ''",
+          "then": "the function returns nil",
+          "and_then": []
+        },
+        {
+          "name": "Whitespace-only string yields nil",
+          "when": "parseWatchNamespaces is called with '   '",
+          "then": "the function returns nil after trimming",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The parseWatchNamespaces function SHALL convert a single namespace string to a single-entry map[string]cache.Config",
+      "priority": "SHALL",
+      "rationale": "Supports single-namespace operator deployments",
+      "scenarios": [
+        {
+          "name": "Single namespace",
+          "when": "parseWatchNamespaces is called with 'production'",
+          "then": "returns map[string]cache.Config{'production': {}}",
+          "and_then": []
+        },
+        {
+          "name": "Single namespace with whitespace",
+          "when": "parseWatchNamespaces is called with ' production '",
+          "then": "returns map[string]cache.Config{'production': {}} with trimmed key",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The parseWatchNamespaces function SHALL convert multiple comma-separated namespaces to a multi-entry map[string]cache.Config",
+      "priority": "SHALL",
+      "rationale": "Supports watching a specific set of namespaces in multi-tenant clusters",
+      "scenarios": [
+        {
+          "name": "Two namespaces",
+          "when": "parseWatchNamespaces is called with 'ns1,ns2'",
+          "then": "returns map with entries for 'ns1' and 'ns2', each with empty cache.Config{}",
+          "and_then": []
+        },
+        {
+          "name": "Multiple namespaces with whitespace",
+          "when": "parseWatchNamespaces is called with ' ns1 , ns2 , ns3 '",
+          "then": "returns map with entries for 'ns1', 'ns2', 'ns3' (trimmed)",
+          "and_then": []
+        },
+        {
+          "name": "Trailing comma ignored",
+          "when": "parseWatchNamespaces is called with 'ns1,ns2,'",
+          "then": "returns map with entries for 'ns1' and 'ns2' only (empty segments skipped)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The parsed namespace map SHALL be wired into ctrl.Options.Cache.DefaultNamespaces when creating the manager",
+      "priority": "SHALL",
+      "rationale": "This is the controller-runtime mechanism for scoping the informer cache to specific namespaces",
+      "scenarios": [
+        {
+          "name": "Non-nil map set on Cache.DefaultNamespaces",
+          "when": "parseWatchNamespaces returns a non-nil map",
+          "then": "ctrl.Options.Cache.DefaultNamespaces is set to that map",
+          "and_then": []
+        },
+        {
+          "name": "Nil map leaves Cache.DefaultNamespaces unset",
+          "when": "parseWatchNamespaces returns nil",
+          "then": "ctrl.Options.Cache.DefaultNamespaces remains nil (zero value)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "A Kustomize overlay at config/namespace-scoped/ SHALL convert ClusterRole/ClusterRoleBinding to namespace-scoped Role/RoleBinding for the manager-role",
+      "priority": "SHALL",
+      "rationale": "Namespace-scoped RBAC is required when the operator only watches specific namespaces",
+      "scenarios": [
+        {
+          "name": "ClusterRole converted to Role",
+          "when": "kustomize build config/namespace-scoped/ is run",
+          "then": "the output contains a Role (not ClusterRole) named manager-role",
+          "and_then": []
+        },
+        {
+          "name": "ClusterRoleBinding converted to RoleBinding",
+          "when": "kustomize build config/namespace-scoped/ is run",
+          "then": "the output contains a RoleBinding (not ClusterRoleBinding) named manager-rolebinding with roleRef.kind=Role",
+          "and_then": []
+        },
+        {
+          "name": "Other RBAC resources unchanged",
+          "when": "kustomize build config/namespace-scoped/ is run",
+          "then": "leader-election-role, metrics-auth-role, and metrics-reader remain unchanged in kind",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The operator SHALL log the configured watched namespaces at startup",
+      "priority": "SHALL",
+      "rationale": "Observability — operators need to confirm which namespaces are being watched",
+      "scenarios": [
+        {
+          "name": "Namespaces logged when set",
+          "when": "the operator starts with --watch-namespaces=ns1,ns2",
+          "then": "setupLog.Info logs a message including the namespace list",
+          "and_then": []
+        },
+        {
+          "name": "Cluster-wide logged when empty",
+          "when": "the operator starts without --watch-namespaces",
+          "then": "setupLog.Info logs that the operator is watching all namespaces",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "Reference documentation SHALL describe the --watch-namespaces flag and namespace-scoped Kustomize overlay",
+      "priority": "SHALL",
+      "rationale": "Users need documentation to configure namespace-scoped operation",
+      "scenarios": [
+        {
+          "name": "Flag usage documented",
+          "when": "a user reads the namespace-scoped mode reference doc",
+          "then": "the doc explains --watch-namespaces syntax with examples for empty, single, and multiple namespaces",
+          "and_then": []
+        },
+        {
+          "name": "Kustomize overlay documented",
+          "when": "a user reads the namespace-scoped mode reference doc",
+          "then": "the doc explains how to use config/namespace-scoped/ overlay and notes CRDs must be installed cluster-wide",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add parseWatchNamespaces function with unit tests in cmd/main.go and cmd/main_test.go (REQ-002, REQ-003, REQ-004)",
+      "description": "Create an exported function `parseWatchNamespaces(namespaces string) map[string]cache.Config` in cmd/main.go. Add import for `sigs.k8s.io/controller-runtime/pkg/cache`. The function splits on comma, trims whitespace, skips empty segments, and returns nil for empty input. Create cmd/main_test.go with table-driven tests covering: empty string → nil, whitespace-only → nil, single namespace → 1-entry map, multiple namespaces → multi-entry map, whitespace trimming, trailing comma handling.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add --watch-namespaces flag and wire into ctrl.Options.Cache.DefaultNamespaces in cmd/main.go (REQ-001, REQ-005, REQ-007)",
+      "description": "In the main() function of cmd/main.go: (1) declare `var watchNamespaces string` alongside existing flag vars (~line 41), (2) add `flag.StringVar(&watchNamespaces, \"watch-namespaces\", \"\", \"Comma-separated list of namespaces to watch. Empty means all namespaces (cluster-scoped).\")` alongside existing flag registrations (~line 50), (3) after flag.Parse(), call `nsMap := parseWatchNamespaces(watchNamespaces)`, (4) add startup log: if nsMap != nil log namespaces, else log 'all namespaces', (5) in the ctrl.Options struct at ~line 80, add `Cache: cache.Options{DefaultNamespaces: nsMap}` field. Add import for `sigs.k8s.io/controller-runtime/pkg/cache`.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-005",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create config/namespace-scoped/ Kustomize overlay with Role/RoleBinding patches (REQ-006)",
+      "description": "Create config/namespace-scoped/kustomization.yaml referencing ../rbac as base resource. Create config/namespace-scoped/role_patch.yaml with JSON patches that: (a) change ClusterRole manager-role → Role, (b) change ClusterRoleBinding manager-rolebinding → RoleBinding, (c) update roleRef.kind to Role in the RoleBinding. Verify with `kustomize build config/namespace-scoped/` succeeds. Leave leader-election-role, metrics-auth-role, metrics-reader unchanged.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Add kustomize build test for namespace-scoped overlay in internal/controller/kustomize_build_test.go (REQ-006)",
+      "description": "Add a test in internal/controller/kustomize_build_test.go that runs `kustomize build config/namespace-scoped/` and verifies: (1) build succeeds without error, (2) output contains Role (not ClusterRole) named manager-role, (3) output contains RoleBinding (not ClusterRoleBinding) named manager-rolebinding, (4) RoleBinding has roleRef.kind=Role. Follow the existing kustomize build test pattern in that file.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Write reference documentation for namespace-scoped mode (REQ-008)",
+      "description": "Create docs/reference/backend/namespace-scoped-mode.md documenting: (1) --watch-namespaces flag syntax with examples (empty/single/multiple), (2) how the flag maps to cache.Options.DefaultNamespaces, (3) config/namespace-scoped/ Kustomize overlay usage, (4) note that CRDs must be installed cluster-wide by an admin, (5) note that leader-election-role is already namespace-scoped, (6) note that metrics RBAC must remain cluster-scoped. Follow the style of existing reference docs in docs/reference/backend/.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_EmptyString",
+      "story": "Operator admin runs operator in cluster-wide mode by default",
+      "expected": "parseWatchNamespaces('') returns nil",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_WhitespaceOnly",
+      "story": "Operator admin passes namespaces with extra whitespace",
+      "expected": "parseWatchNamespaces('   ') returns nil",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_SingleNamespace",
+      "story": "Operator admin passes a single namespace to restrict the operator scope",
+      "expected": "parseWatchNamespaces('production') returns map with single entry 'production'",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_SingleNamespaceWithWhitespace",
+      "story": "Operator admin passes namespaces with extra whitespace",
+      "expected": "parseWatchNamespaces(' production ') returns map with trimmed key 'production'",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_MultipleNamespaces",
+      "story": "Operator admin restricts operator to specific namespaces via CLI flag",
+      "expected": "parseWatchNamespaces('ns1,ns2') returns map with entries for 'ns1' and 'ns2'",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_MultipleNamespacesWithWhitespace",
+      "story": "Operator admin passes namespaces with extra whitespace",
+      "expected": "parseWatchNamespaces(' ns1 , ns2 , ns3 ') returns map with trimmed entries 'ns1', 'ns2', 'ns3'",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_TrailingComma",
+      "story": "Operator admin restricts operator to specific namespaces via CLI flag",
+      "expected": "parseWatchNamespaces('ns1,ns2,') returns map with entries for 'ns1' and 'ns2' only",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces_MapValuesAreEmptyCacheConfig",
+      "story": "Operator admin restricts operator to specific namespaces via CLI flag",
+      "expected": "Each value in the returned map is an empty cache.Config{}",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_SucceedsWithoutErrors",
+      "story": "Developer deploys operator in namespace-scoped mode with matching RBAC",
+      "expected": "kustomize build config/namespace-scoped/ completes without error and produces non-empty output",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_ContainsRoleNotClusterRole",
+      "story": "Developer deploys operator in namespace-scoped mode with matching RBAC",
+      "expected": "Output contains kind: Role for manager-role and kind: RoleBinding for manager-rolebinding, not ClusterRole/ClusterRoleBinding",
+      "requirement_id": "REQ-006"
+    }
+  ],
   "affected_files": [],
   "similar_patterns": [],
-  "review_criteria": [],
-  "implementation_notes": "",
+  "review_criteria": [
+    "parseWatchNamespaces is a pure function with no side effects, tested via table-driven unit tests in cmd/main_test.go",
+    "All unit tests pass: go test ./cmd/... covers empty, single, multi, whitespace, trailing-comma cases",
+    "ctrl.Options.Cache.DefaultNamespaces is correctly populated from the parsed flag value in cmd/main.go",
+    "--watch-namespaces flag has correct default (empty string) and descriptive help text",
+    "config/namespace-scoped/ overlay builds successfully with kustomize and produces correct Role/RoleBinding output",
+    "Kustomize build test verifies namespace-scoped overlay output programmatically",
+    "No backward-incompatible changes: empty --watch-namespaces produces nil map, preserving cluster-wide behavior",
+    "golangci-lint passes without new warnings on cmd/main.go and cmd/main_test.go",
+    "Reference documentation exists at docs/reference/backend/namespace-scoped-mode.md covering flag and overlay usage"
+  ],
+  "implementation_notes": "The parseWatchNamespaces function is a pure function: strings.Split on comma, strings.TrimSpace each element, skip empty strings, build map[string]cache.Config. Return nil for empty input to preserve backward compatibility (nil DefaultNamespaces = cluster-wide). The function is exported to enable direct unit testing from cmd/main_test.go. The cache import is `sigs.k8s.io/controller-runtime/pkg/cache`. The Kustomize overlay uses JSON patches (not strategic merge) because kind changes require replacing the entire field, not merging. The overlay only targets manager-role and manager-rolebinding; leader-election-role is already a Role, and metrics RBAC must remain ClusterRole/ClusterRoleBinding because they reference cluster-scoped resources (tokenreviews, subjectaccessreviews) and non-resource URLs (/metrics).",
   "status_history": {
     "proposed": {
       "github_account": "berendt",
       "timestamp": "2026-02-21T16:16:21.781906"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:09:15.784206"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:12:05.434788"
     }
   },
-  "elaboration": "**Size:** 🔨 medium\n**Category:** infrastructure\n**Priority:** medium\n\n## Summary\n\nAdd a `--watch-namespaces` CLI flag to `cmd/main.go` that configures controller-runtime's `cache.Options.DefaultNamespaces` map, restricting the informer cache to only the specified namespaces. When the flag is empty (default), the operator retains its current cluster-scoped behavior. A new Kustomize overlay at `config/namespace-scoped/` provides Role/RoleBinding equivalents of the existing `manager-role` ClusterRole/ClusterRoleBinding, suitable for least-privilege namespace-scoped deployments.\n\n## Scope\n\n**Included:**\n- `--watch-namespaces` string flag in `cmd/main.go` (comma-separated, e.g. `--watch-namespaces=ns1,ns2`)\n- Parsing logic to build `map[string]cache.Config` from the flag value\n- Wiring the map into `ctrl.Options.Cache.DefaultNamespaces` at `cmd/main.go:80`\n- New Kustomize overlay `config/namespace-scoped/` with:\n  - `kustomization.yaml` referencing `../rbac` as base\n  - Patch converting `ClusterRole` `manager-role` → `Role` and `ClusterRoleBinding` `manager-rolebinding` → `RoleBinding`\n- Unit tests for namespace parsing (empty → nil map, single namespace, multiple namespaces, whitespace trimming)\n- Documentation note: CRDs must be installed cluster-wide by an admin\n\n**Excluded (YAGNI):**\n- Dynamic namespace discovery at runtime (label-selector-based namespace watching) — not requested, significant complexity\n- Helm chart changes — separate concern\n- Webhook scoping/disabling — webhooks remain cluster-scoped in controller-runtime\n- Automatic per-namespace RBAC generation — user responsibility\n- Leader election RBAC changes — `leader-election-role` is already a namespace-scoped `Role` (`config/rbac/leader_election_role.yaml:3`)\n- Conversion of metrics RBAC — `metrics-auth-role` grants access to cluster-scoped `tokenreviews`/`subjectaccessreviews`; `metrics-reader` grants access to non-resource URL `/metrics` — both require ClusterRole\n- Changes to CRD installation — CRDs remain cluster-scoped by design\n\n## Visualization\n\n```mermaid\nflowchart TD\n    subgraph CLI[\"cmd/main.go\"]\n        FLAG[\"--watch-namespaces flag\"]\n        PARSE[\"Parse comma-separated string into map\"]\n        FLAG --> PARSE\n    end\n\n    subgraph MGR[\"ctrl.NewManager at line 80\"]\n        CACHE[\"Cache.DefaultNamespaces\"]\n        OPTS[\"ctrl.Options\"]\n        CACHE --> OPTS\n    end\n\n    PARSE -->|\"empty: nil map = cluster-wide\"| OPTS\n    PARSE -->|\"ns1,ns2: scoped map\"| CACHE\n\n    subgraph EXISTING[\"config/rbac/ - unchanged\"]\n        CR[\"ClusterRole manager-role\"]\n        CRB[\"ClusterRoleBinding manager-rolebinding\"]\n        LER[\"Role leader-election-role\"]\n        MAR[\"ClusterRole metrics-auth-role\"]\n        MR[\"ClusterRole metrics-reader\"]\n    end\n\n    subgraph OVERLAY[\"config/namespace-scoped/ - new\"]\n        KUST[\"kustomization.yaml\"]\n        PATCH[\"role_patch.yaml\"]\n    end\n\n    OVERLAY -->|\"patches\"| CR\n    OVERLAY -->|\"patches\"| CRB\n    CR -.->|\"becomes\"| R[\"Role manager-role\"]\n    CRB -.->|\"becomes\"| RB[\"RoleBinding manager-rolebinding\"]\n```\n\n```mermaid\nsequenceDiagram\n    participant U as User / CLI\n    participant M as main.go\n    participant C as ctrl.NewManager\n    participant K as Cache Informers\n\n    U->>M: --watch-namespaces=ns1,ns2\n    M->>M: Split comma-separated, trim whitespace\n    M->>M: Build map of string to cache.Config\n    M->>C: ctrl.Options with Cache.DefaultNamespaces\n    C->>K: Create informers scoped to ns1, ns2\n    Note over K: Only watches resources in ns1 and ns2\n```\n\n## Key Components\n\n- **`cmd/main.go:38-56`** (modify): Add `--watch-namespaces` string flag via `flag.StringVar`, parse into `map[string]cache.Config`, wire into `ctrl.Options.Cache` field at line 80. All managed resources (secrets, services, deployments, memcacheds, servicemonitors, networkpolicies, poddisruptionbudgets) are namespace-scoped, so `DefaultNamespaces` correctly restricts all informers.\n- **`config/namespace-scoped/kustomization.yaml`** (new): Overlay with `resources: [../rbac]` as base, referencing the patch file. Only targets `manager-role` and `manager-rolebinding`; leaves `leader-election-role`, `metrics-auth-role`, `metrics-auth-rolebinding`, `metrics-reader`, and `service_account` untouched.\n- **`config/namespace-scoped/role_patch.yaml`** (new): JSON patch or strategic merge patch converting `ClusterRole` → `Role` (kind + apiVersion) and `ClusterRoleBinding` → `RoleBinding` (kind + apiVersion + `roleRef.kind`). The `roleRef.name` (`manager-role`) and `subjects` stay the same.\n- **`config/rbac/role.yaml`** (existing, unchanged): `ClusterRole` `manager-role` — all rules reference namespace-scoped resources (secrets, services, deployments, memcacheds, servicemonitors, networkpolicies, poddisruptionbudgets, events).\n- **`config/rbac/role_binding.yaml`** (existing, unchanged): `ClusterRoleBinding` `manager-rolebinding` binding to ServiceAccount `controller-manager` in namespace `system`.\n- **`config/rbac/leader_election_role.yaml`** (existing, unchanged): Already a `Role` (not `ClusterRole`) — no action needed.\n- **`config/rbac/metrics_auth_role.yaml`** (existing, unchanged): Must remain `ClusterRole` — grants access to `tokenreviews` and `subjectaccessreviews`.\n- **`config/rbac/metrics_reader_role.yaml`** (existing, unchanged): Must remain `ClusterRole` — grants access to non-resource URL `/metrics`.\n- **Unit tests** (new): Validate namespace flag parsing — empty string → nil map, `\"ns1\"` → single-entry map, `\"ns1,ns2\"` → two-entry map, `\" ns1 , ns2 \"` → trimmed entries. Test that `ctrl.Options.Cache.DefaultNamespaces` is correctly populated."
+  "execution_history": [
+    {
+      "run_id": "65b5e291-e447-4132-9176-efe30ded69a6",
+      "timestamp": "2026-02-22T10:12:05.434816",
+      "total_duration": 166.32310366630554,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 166.32310366630554,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
 }
