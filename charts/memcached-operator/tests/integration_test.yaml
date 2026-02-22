@@ -7,6 +7,12 @@ templates:
   - templates/rbac/leader-election-role.yaml
   - templates/rbac/metrics-role.yaml
   - templates/networkpolicy.yaml
+  - templates/webhook/service.yaml
+  - templates/webhook/mutatingwebhookconfiguration.yaml
+  - templates/webhook/validatingwebhookconfiguration.yaml
+  - templates/certmanager/issuer.yaml
+  - templates/certmanager/certificate.yaml
+  - templates/servicemonitor.yaml
 release:
   name: test-release
   namespace: test-ns
@@ -16,10 +22,11 @@ chart:
 tests:
   # ====================================================================
   # Test 1: Default rendering produces correct total resource count
-  # (SA=1, Deployment=1, clusterrole=2, leader-election=2, metrics=3, netpol=1 => 10)
+  # SA=1, Deployment=1, clusterrole=2, leader-election=2, metrics=3,
+  # netpol=1, webhook=3, certmanager=2, servicemonitor=0 => 15
   # ====================================================================
 
-  - it: should produce 10 resources with all defaults
+  - it: should produce 15 resources with all defaults
     asserts:
       - hasDocuments:
           count: 1
@@ -39,6 +46,24 @@ tests:
       - hasDocuments:
           count: 1
         template: templates/networkpolicy.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/service.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/mutatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/validatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/certmanager/issuer.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/certmanager/certificate.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/servicemonitor.yaml
 
   # ====================================================================
   # Test 2: rbac.create=false suppresses all 7 RBAC resources
@@ -67,6 +92,24 @@ tests:
       - hasDocuments:
           count: 1
         template: templates/networkpolicy.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/service.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/mutatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/validatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/certmanager/issuer.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/certmanager/certificate.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/servicemonitor.yaml
 
   # ====================================================================
   # Test 3: serviceAccount.create=false suppresses SA
@@ -95,6 +138,24 @@ tests:
       - hasDocuments:
           count: 1
         template: templates/networkpolicy.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/service.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/mutatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/validatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/certmanager/issuer.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/certmanager/certificate.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/servicemonitor.yaml
 
   - it: should set Deployment serviceAccountName to default when serviceAccount.create is false
     set:
@@ -249,3 +310,193 @@ tests:
       - equal:
           path: subjects[0].name
           value: my-sa
+
+  # ====================================================================
+  # Test 6: webhook.enabled=false suppresses all webhook + certmanager
+  #         templates and removes webhook artifacts from Deployment/NetworkPolicy
+  # ====================================================================
+
+  - it: should suppress all webhook and certmanager resources when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/webhook/service.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/webhook/mutatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/webhook/validatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/certmanager/issuer.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/certmanager/certificate.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/deployment.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/networkpolicy.yaml
+
+  - it: should not include webhook port in Deployment when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    template: templates/deployment.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 9443
+            name: webhook-server
+            protocol: TCP
+
+  - it: should not include webhook port in NetworkPolicy when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    template: templates/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.ingress[0].ports
+          content:
+            port: 9443
+            protocol: TCP
+
+  # ====================================================================
+  # Test 7: certmanager.enabled=false suppresses cert-manager templates
+  #         but webhook templates remain
+  # ====================================================================
+
+  - it: should suppress certmanager resources but keep webhooks when certmanager.enabled is false
+    set:
+      certmanager.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/service.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/mutatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/webhook/validatingwebhookconfiguration.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/certmanager/issuer.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/certmanager/certificate.yaml
+
+  # ====================================================================
+  # Test 8: serviceMonitor.enabled=true produces 1 ServiceMonitor
+  # ====================================================================
+
+  - it: should produce 1 ServiceMonitor when serviceMonitor.enabled is true
+    set:
+      serviceMonitor.enabled: true
+    template: templates/servicemonitor.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  # ====================================================================
+  # Test 9: fullnameOverride propagates to new resource names
+  # ====================================================================
+
+  - it: should propagate fullnameOverride to webhook Service name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/webhook/service.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-webhook
+
+  - it: should propagate fullnameOverride to MutatingWebhookConfiguration name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/webhook/mutatingwebhookconfiguration.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-mutating
+
+  - it: should propagate fullnameOverride to ValidatingWebhookConfiguration name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/webhook/validatingwebhookconfiguration.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-validating
+
+  - it: should propagate fullnameOverride to cert-manager Issuer name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/certmanager/issuer.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-selfsigned-issuer
+
+  - it: should propagate fullnameOverride to cert-manager Certificate name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/certmanager/certificate.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-webhook-cert
+
+  - it: should propagate fullnameOverride to ServiceMonitor name
+    set:
+      fullnameOverride: my-custom-name
+      serviceMonitor.enabled: true
+    template: templates/servicemonitor.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-metrics
+
+  # ====================================================================
+  # Test 10: Cross-references - webhook configs reference correct service
+  # ====================================================================
+
+  - it: should reference correct webhook service name in MutatingWebhookConfiguration
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/webhook/mutatingwebhookconfiguration.yaml
+    asserts:
+      - equal:
+          path: webhooks[0].clientConfig.service.name
+          value: my-custom-name-webhook
+
+  - it: should reference correct webhook service name in ValidatingWebhookConfiguration
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/webhook/validatingwebhookconfiguration.yaml
+    asserts:
+      - equal:
+          path: webhooks[0].clientConfig.service.name
+          value: my-custom-name-webhook
+
+  - it: should reference correct cert-manager annotation in MutatingWebhookConfiguration
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/webhook/mutatingwebhookconfiguration.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/inject-ca-from"]
+          value: test-ns/my-custom-name-webhook-cert
+
+  - it: should reference correct issuer in Certificate
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/certmanager/certificate.yaml
+    asserts:
+      - equal:
+          path: spec.issuerRef.name
+          value: my-custom-name-selfsigned-issuer

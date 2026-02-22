@@ -1,0 +1,163 @@
+---
+suite: ValidatingWebhookConfiguration template
+templates:
+  - templates/webhook/validatingwebhookconfiguration.yaml
+release:
+  name: test-release
+  namespace: test-ns
+chart:
+  appVersion: "0.1.0"
+  version: "0.1.0"
+tests:
+  # ====================================================================
+  # Suite 1: Conditional rendering
+  # ====================================================================
+
+  - it: should not render when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: should render when webhook.enabled is true (default)
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  # ====================================================================
+  # Suite 2: Kind and API version
+  # ====================================================================
+
+  - it: should render correct kind and apiVersion
+    asserts:
+      - isKind:
+          of: ValidatingWebhookConfiguration
+      - isAPIVersion:
+          of: admissionregistration.k8s.io/v1
+
+  # ====================================================================
+  # Suite 3: Metadata
+  # ====================================================================
+
+  - it: should set name to fullname with -validating suffix
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-release-memcached-operator-validating
+
+  - it: should include all standard labels
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/name"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/instance"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/version"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+
+  - it: should set managed-by to Helm
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  # ====================================================================
+  # Suite 4: cert-manager annotation
+  # ====================================================================
+
+  - it: should include cert-manager annotation when certmanager.enabled is true (default)
+    asserts:
+      - equal:
+          path: metadata.annotations["cert-manager.io/inject-ca-from"]
+          value: test-ns/test-release-memcached-operator-webhook-cert
+
+  - it: should not include cert-manager annotation when certmanager.enabled is false
+    set:
+      certmanager.enabled: false
+    asserts:
+      - notExists:
+          path: metadata.annotations
+
+  # ====================================================================
+  # Suite 5: Webhook configuration
+  # ====================================================================
+
+  - it: should set webhook name to vmemcached-v1beta1.kb.io
+    asserts:
+      - equal:
+          path: webhooks[0].name
+          value: vmemcached-v1beta1.kb.io
+
+  - it: should set webhook path to /validate-memcached-c5c3-io-v1beta1-memcached
+    asserts:
+      - equal:
+          path: webhooks[0].clientConfig.service.path
+          value: /validate-memcached-c5c3-io-v1beta1-memcached
+
+  - it: should set service name using webhookServiceName helper
+    asserts:
+      - equal:
+          path: webhooks[0].clientConfig.service.name
+          value: test-release-memcached-operator-webhook
+
+  - it: should set service namespace to release namespace
+    asserts:
+      - equal:
+          path: webhooks[0].clientConfig.service.namespace
+          value: test-ns
+
+  - it: should set failurePolicy to Fail
+    asserts:
+      - equal:
+          path: webhooks[0].failurePolicy
+          value: Fail
+
+  - it: should include v1 in admissionReviewVersions
+    asserts:
+      - contains:
+          path: webhooks[0].admissionReviewVersions
+          content: v1
+
+  - it: should set sideEffects to None
+    asserts:
+      - equal:
+          path: webhooks[0].sideEffects
+          value: None
+
+  # ====================================================================
+  # Suite 6: Webhook rules
+  # ====================================================================
+
+  - it: should target memcached.c5c3.io apiGroup
+    asserts:
+      - contains:
+          path: webhooks[0].rules[0].apiGroups
+          content: memcached.c5c3.io
+
+  - it: should target v1beta1 apiVersion
+    asserts:
+      - contains:
+          path: webhooks[0].rules[0].apiVersions
+          content: v1beta1
+
+  - it: should target CREATE operation
+    asserts:
+      - contains:
+          path: webhooks[0].rules[0].operations
+          content: CREATE
+
+  - it: should target UPDATE operation
+    asserts:
+      - contains:
+          path: webhooks[0].rules[0].operations
+          content: UPDATE
+
+  - it: should target memcacheds resource
+    asserts:
+      - contains:
+          path: webhooks[0].rules[0].resources
+          content: memcacheds

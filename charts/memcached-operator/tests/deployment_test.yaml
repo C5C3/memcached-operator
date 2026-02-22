@@ -434,3 +434,89 @@ tests:
     asserts:
       - exists:
           path: spec.template.spec.affinity.nodeAffinity
+
+  # ====================================================================
+  # Suite 6: Conditional webhook port/volumes (REQ-007)
+  # ====================================================================
+
+  - it: should include webhook-server port 9443 when webhook.enabled is true (default)
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 9443
+            name: webhook-server
+            protocol: TCP
+
+  - it: should not include webhook-server port when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 9443
+            name: webhook-server
+            protocol: TCP
+
+  - it: should still include health and metrics ports when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 8081
+            name: health
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 8443
+            name: metrics
+            protocol: TCP
+
+  - it: should include cert volumeMount when webhook.enabled is true (default)
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            mountPath: /tmp/k8s-webhook-server/serving-certs
+            name: cert
+            readOnly: true
+
+  - it: should not include volumeMounts when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].volumeMounts
+
+  - it: should include cert volume from secret when webhook.enabled is true (default)
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: cert
+            secret:
+              defaultMode: 420
+              secretName: test-release-memcached-operator-webhook-cert-secret
+
+  - it: should not include volumes when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.volumes
+
+  - it: should propagate fullnameOverride to cert volume secretName
+    set:
+      fullnameOverride: my-custom-name
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: cert
+            secret:
+              defaultMode: 420
+              secretName: my-custom-name-webhook-cert-secret

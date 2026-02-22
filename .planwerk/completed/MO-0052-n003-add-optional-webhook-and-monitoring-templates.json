@@ -2,8 +2,8 @@
   "feature_id": "MO-0052",
   "title": "N003: Add optional Webhook and monitoring templates",
   "slug": "n003-add-optional-webhook-and-monitoring-templates",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** infrastructure\n**Priority:** high\n**Source:** Proposed for 'Helm Chart Packaging\n\nChart structure under charts/'\n\nImplement all conditionally-rendered Helm templates for optional components. Includes: templates/webhook/ with MutatingWebhookConfiguration, ValidatingWebhookConfiguration, and webhook Service (gated by webhook.enabled); templates/certmanager/ with Issuer and Certificate resources (gated by certmanager.enabled, which implies webhook.enabled); templates/servicemonitor.yaml for Prometheus monitoring (gated by serviceMonitor.enabled); and templates/networkpolicy.yaml for metrics ingress policy (gated by networkPolicy.enabled). Each template includes proper conditional blocks and cross-references (e.g., cert-manager Certificate references webhook Service).\n\n**Rationale:** These optional components represent the full feature set of the operator deployment. Webhooks and cert-manager are tightly coupled and must be templated together. ServiceMonitor and NetworkPolicy are independent but complete the chart's parity with the existing Kustomize configuration.\n\n**Affected Areas:**\n- charts/memcached-operator/templates/webhook/mutating-webhook.yaml\n- charts/memcached-operator/templates/webhook/validating-webhook.yaml\n- charts/memcached-operator/templates/webhook/service.yaml\n- charts/memcached-operator/templates/certmanager/issuer.yaml\n- charts/memcached-operator/templates/certmanager/certificate.yaml\n- charts/memcached-operator/templates/servicemonitor.yaml\n- charts/memcached-operator/templates/networkpolicy.yaml\n- config/webhook/\n- config/certmanager/\n- config/prometheus/",
   "stories": [
@@ -356,6 +356,7 @@
       "description": "Create `charts/memcached-operator/templates/webhook/service.yaml`. Gated by `{{- if .Values.webhook.enabled }}`. Translates `config/webhook/service.yaml` into Helm template: name `{{ include \"memcached-operator.fullname\" . }}-webhook-service`, namespace `{{ .Release.Namespace }}`, standard labels from `_helpers.tpl`, port 443 -> targetPort 9443, selector using `selectorLabels` + `control-plane: controller-manager`. Create test file `charts/memcached-operator/tests/webhook_service_test.yaml` with tests for: renders 1 doc when enabled, renders 0 when disabled, correct name/namespace/labels/port/selector, fullnameOverride propagation.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -366,6 +367,7 @@
       "description": "Create `charts/memcached-operator/templates/webhook/mutating-webhook.yaml`. Gated by `{{- if .Values.webhook.enabled }}`. Translates `config/webhook/manifests.yaml` (mutating section): name `{{ include \"memcached-operator.fullname\" . }}-mutating-webhook-configuration`, standard labels, clientConfig.service.name referencing the webhook service (`{{ include \"memcached-operator.fullname\" . }}-webhook-service`), clientConfig.service.namespace `{{ .Release.Namespace }}`, path `/mutate-memcached-c5c3-io-v1beta1-memcached`, failurePolicy Fail, sideEffects None, admissionReviewVersions [v1], rules for memcached.c5c3.io/v1beta1 CREATE+UPDATE. Conditionally add `cert-manager.io/inject-ca-from` annotation when `certmanager.enabled=true`. Create test file `charts/memcached-operator/tests/webhook_mutating_test.yaml`.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-004",
@@ -378,6 +380,7 @@
       "description": "Create `charts/memcached-operator/templates/webhook/validating-webhook.yaml`. Same pattern as task 1.2 but for validating webhook: name `{{ include \"memcached-operator.fullname\" . }}-validating-webhook-configuration`, path `/validate-memcached-c5c3-io-v1beta1-memcached`, webhook name `vmemcached-v1beta1.kb.io`. Same conditional cert-manager annotation. Create test file `charts/memcached-operator/tests/webhook_validating_test.yaml`.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-004",
@@ -390,6 +393,7 @@
       "description": "Create `charts/memcached-operator/templates/certmanager/issuer.yaml`. Gated by `{{- if .Values.certmanager.enabled }}`. Translates `config/certmanager/certificate.yaml` (Issuer section): apiVersion cert-manager.io/v1, kind Issuer, name `{{ include \"memcached-operator.fullname\" . }}-selfsigned-issuer`, namespace `{{ .Release.Namespace }}`, standard labels, spec.selfSigned {}. Create test file `charts/memcached-operator/tests/certmanager_issuer_test.yaml` with tests for: renders when enabled, doesn't render when disabled, correct name/namespace/labels, selfSigned spec.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -400,6 +404,7 @@
       "description": "Create `charts/memcached-operator/templates/certmanager/certificate.yaml`. Gated by `{{- if .Values.certmanager.enabled }}`. Translates `config/certmanager/certificate.yaml` (Certificate section): apiVersion cert-manager.io/v1, kind Certificate, name `{{ include \"memcached-operator.fullname\" . }}-serving-cert`, namespace `{{ .Release.Namespace }}`, standard labels, dnsNames using webhook service fullname (`{{ include \"memcached-operator.fullname\" . }}-webhook-service.{{ .Release.Namespace }}.svc` and `.svc.cluster.local`), issuerRef.name referencing the Issuer (`{{ include \"memcached-operator.fullname\" . }}-selfsigned-issuer`), issuerRef.kind Issuer, secretName webhook-server-cert, privateKey.rotationPolicy Always. Create test file `charts/memcached-operator/tests/certmanager_certificate_test.yaml`.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -410,6 +415,7 @@
       "description": "Create `charts/memcached-operator/templates/servicemonitor.yaml`. Gated by `{{- if .Values.serviceMonitor.enabled }}`. Translates `config/prometheus/monitor.yaml`: apiVersion monitoring.coreos.com/v1, kind ServiceMonitor, name `{{ include \"memcached-operator.fullname\" . }}-metrics-monitor`, namespace `{{ .Release.Namespace }}`, standard labels + `control-plane: controller-manager`, endpoint with path /metrics, port https, scheme https, bearerTokenFile, tlsConfig.insecureSkipVerify true, selector.matchLabels using selectorLabels + control-plane: controller-manager. Create test file `charts/memcached-operator/tests/servicemonitor_test.yaml`.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -420,6 +426,7 @@
       "description": "Modify `charts/memcached-operator/templates/deployment.yaml` to conditionally add webhook artifacts when `webhook.enabled=true`: (1) Add containerPort 9443 named webhook-server to container ports, (2) Add volumeMount for /tmp/k8s-webhook-server/serving-certs with name cert and readOnly true, (3) Add volume 'cert' from secret webhook-server-cert with defaultMode 420. All three gated by `{{- if .Values.webhook.enabled }}`. Pattern follows `config/default/manager_webhook_patch.yaml`. Update `charts/memcached-operator/tests/deployment_test.yaml` with new test cases for webhook port/volume presence when enabled and absence when disabled.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -430,6 +437,7 @@
       "description": "Modify `charts/memcached-operator/templates/networkpolicy.yaml` to conditionally add port 9443 TCP to ingress rules when `webhook.enabled=true`. Add `{{- if .Values.webhook.enabled }}` block for the additional port entry. Update existing tests in a new or existing test file to verify: port 9443 present when webhook.enabled=true, absent when false, other ports unchanged.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -440,6 +448,7 @@
       "description": "Modify `charts/memcached-operator/templates/NOTES.txt` to add sections for: (1) Webhooks status (enabled/disabled), (2) cert-manager status with warning if webhook.enabled=true but certmanager.enabled=false about manual TLS cert management, (3) ServiceMonitor status. Use `{{- if .Values.webhook.enabled }}` etc. conditionals. Update `charts/memcached-operator/tests/helpers_test.yaml` (NOTES.txt suite) with tests for NOTES output under different value combinations.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -450,6 +459,7 @@
       "description": "Update `charts/memcached-operator/tests/integration_test.yaml` to: (1) Add all new templates to the templates list (webhook/mutating-webhook.yaml, webhook/validating-webhook.yaml, webhook/service.yaml, certmanager/issuer.yaml, certmanager/certificate.yaml, servicemonitor.yaml), (2) Update default resource count test to include webhook (3), certmanager (2), servicemonitor (0) documents, (3) Add test for webhook.enabled=false suppressing all webhook + certmanager templates, (4) Add test for certmanager.enabled=false suppressing certmanager templates while webhook templates remain, (5) Add test for serviceMonitor.enabled=true producing 1 ServiceMonitor, (6) Add fullnameOverride propagation tests for new resources, (7) Verify cross-references: webhook configs reference correct service name, cert annotation references correct Certificate name.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -467,6 +477,7 @@
       "description": "Add a helper `memcached-operator.webhookServiceName` to `charts/memcached-operator/templates/_helpers.tpl` that returns `{{ include \"memcached-operator.fullname\" . }}-webhook-service`. This centralizes the webhook service name used by webhook/service.yaml, webhook configurations clientConfig, and Certificate dnsNames. Add a helper `memcached-operator.servingCertName` that returns `{{ include \"memcached-operator.fullname\" . }}-serving-cert` for the Certificate name and the cert-manager annotation. Update _helpers.tpl tests to verify these new helpers.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002",
         "REQ-008"
@@ -663,6 +674,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T19:34:38.911373"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T19:52:10.547816"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T20:16:40.890024"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T20:16:40.911281"
     }
   },
   "execution_history": [
@@ -676,6 +699,50 @@
           "name": "prepare",
           "duration": 241.5087342262268,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "c1eaf595-2fb4-4663-aa01-66c7b52831ed",
+      "timestamp": "2026-02-22T20:10:37.720138",
+      "total_duration": 997.6313683986664,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (7 tasks)",
+          "duration": 279.5606586933136,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 226.03548645973206,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 61.551209926605225,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0052] Code Review",
+          "duration": 280.35201239585876,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0052] Improvements",
+          "duration": 74.86767244338989,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0052] Simplify",
+          "duration": 75.26432847976685,
+          "type": "simplify",
           "status": "done"
         }
       ]

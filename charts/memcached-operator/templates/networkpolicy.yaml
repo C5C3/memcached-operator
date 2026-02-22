@@ -20,6 +20,10 @@ spec:
           protocol: TCP
         - port: 8443
           protocol: TCP
+        {{- if .Values.webhook.enabled }}
+        - port: 9443
+          protocol: TCP
+        {{- end }}
   egress:
     - {}
 {{- end }}

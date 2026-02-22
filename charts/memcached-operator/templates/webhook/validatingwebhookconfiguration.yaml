@@ -1,0 +1,33 @@
+{{- if .Values.webhook.enabled -}}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "memcached-operator.fullname" . }}-validating
+  labels:
+    {{- include "memcached-operator.labels" . | nindent 4 }}
+  {{- if .Values.certmanager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "memcached-operator.webhookCertName" . }}
+  {{- end }}
+webhooks:
+  - admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "memcached-operator.webhookServiceName" . }}
+        namespace: {{ .Release.Namespace }}
+        path: /validate-memcached-c5c3-io-v1beta1-memcached
+    failurePolicy: Fail
+    name: vmemcached-v1beta1.kb.io
+    rules:
+      - apiGroups:
+          - memcached.c5c3.io
+        apiVersions:
+          - v1beta1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - memcacheds
+    sideEffects: None
+{{- end }}

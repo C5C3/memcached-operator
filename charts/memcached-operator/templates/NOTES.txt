@@ -28,3 +28,20 @@ RBAC: Helm-managed (rbac.create=true)
 WARNING: RBAC resources are not managed by this chart (rbac.create=false).
 You must manually create ClusterRoles and ClusterRoleBindings for the operator to function.
 {{- end }}
+{{- if .Values.webhook.enabled }}
+
+Webhooks: enabled
+{{- if .Values.certmanager.enabled }}
+cert-manager: enabled (TLS certificates managed automatically)
+{{- else }}
+WARNING: Webhooks are enabled but cert-manager is disabled (certmanager.enabled=false).
+You must manually provision TLS certificates for the webhook server.
+{{- end }}
+{{- else }}
+
+Webhooks: disabled
+{{- end }}
+{{- if .Values.serviceMonitor.enabled }}
+
+ServiceMonitor: enabled (Prometheus will discover operator metrics)
+{{- end }}

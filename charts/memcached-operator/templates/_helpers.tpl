@@ -24,6 +24,27 @@ If release name contains chart name it will be used as a full name.
 {{- end }}
 
 {{/*
+Create the name of the webhook service.
+*/}}
+{{- define "memcached-operator.webhookServiceName" -}}
+{{- printf "%s-webhook" (include "memcached-operator.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create the name of the webhook certificate.
+*/}}
+{{- define "memcached-operator.webhookCertName" -}}
+{{- printf "%s-webhook-cert" (include "memcached-operator.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create the name of the webhook certificate secret.
+*/}}
+{{- define "memcached-operator.webhookCertSecretName" -}}
+{{- printf "%s-webhook-cert-secret" (include "memcached-operator.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
 Create chart name and version as used by the chart label.
 */}}
 {{- define "memcached-operator.chart" -}}

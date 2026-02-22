@@ -1,0 +1,19 @@
+{{- if and .Values.webhook.enabled .Values.certmanager.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "memcached-operator.webhookCertName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "memcached-operator.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ include "memcached-operator.webhookServiceName" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "memcached-operator.webhookServiceName" . }}.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: {{ include "memcached-operator.fullname" . }}-selfsigned-issuer
+  privateKey:
+    rotationPolicy: Always
+  secretName: {{ include "memcached-operator.webhookCertSecretName" . }}
+{{- end }}

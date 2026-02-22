@@ -1,0 +1,78 @@
+{
+  "feature_id": "MO-0052",
+  "title": "N003: Add optional Webhook and monitoring templates",
+  "date": "2026-02-22",
+  "verdict": "APPROVED",
+  "summary": "Implementation adds 7 new conditionally-rendered Helm templates (webhook Service, MutatingWebhookConfiguration, ValidatingWebhookConfiguration, cert-manager Issuer, cert-manager Certificate, ServiceMonitor) and updates 3 existing templates (Deployment, NetworkPolicy, NOTES.txt) with conditional webhook support. All 296 helm-unittest tests pass across 17 test suites. Cross-references between templates (webhook service name in clientConfig, Certificate dnsNames, cert-manager annotation, Deployment secret volume) are internally consistent and verified correct under fullnameOverride. All features properly gated by values flags. Cert-manager templates use an improved dual guard (webhook.enabled AND certmanager.enabled) preventing orphaned resources.",
+  "tests_checklist": [
+    {"item": "All 296 helm-unittest tests pass (17 suites)", "checked": true},
+    {"item": "Enabled/disabled toggle tested for all features (webhook, certmanager, serviceMonitor, networkPolicy)", "checked": true},
+    {"item": "Edge case: webhook enabled + certmanager disabled tested", "checked": true},
+    {"item": "fullnameOverride propagation tested for all new resources", "checked": true},
+    {"item": "Cross-references tested (webhook service in clientConfig, cert annotation, issuerRef, dnsNames)", "checked": true},
+    {"item": "NOTES.txt conditional output tested (enabled/disabled/warning states)", "checked": true},
+    {"item": "Integration tests verify total document counts and feature suppression", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "All templates follow existing patterns (conditional guard, standard labels, fullname helper, Release.Namespace)", "checked": true},
+    {"item": "webhookServiceName helper centralizes webhook service name across templates", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "Template indentation and YAML structure correct", "checked": true},
+    {"item": "values.yaml has clear documentation comments for all new values", "checked": true},
+    {"item": "servingCertName helper missing per task 3.2 (cert name inlined in 3 templates)", "checked": false}
+  ],
+  "security_checklist": [
+    {"item": "No hardcoded secrets in templates", "checked": true},
+    {"item": "TLS cert volume mounted read-only", "checked": true},
+    {"item": "Webhook failurePolicy set to Fail (not Ignore)", "checked": true},
+    {"item": "NetworkPolicy restricts ingress to required ports only", "checked": true},
+    {"item": "ServiceMonitor uses bearerToken auth and HTTPS scheme", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Each optional feature independently toggleable via values", "checked": true},
+    {"item": "Cert-manager guard improved with dual condition (webhook.enabled AND certmanager.enabled)", "checked": true},
+    {"item": "Cross-references use helper functions for consistency", "checked": true},
+    {"item": "Template structure mirrors Kustomize source accurately", "checked": true},
+    {"item": "NOTES.txt warns when webhook enabled without cert-manager", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "webhookServiceName helper prevents name duplication", "checked": true},
+    {"item": "Standard labels via _helpers.tpl (not duplicated)", "checked": true},
+    {"item": "No unnecessary features beyond plan scope", "checked": true},
+    {"item": "Cert name pattern centralized via helper", "checked": false}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Webhook failurePolicy: Fail ensures invalid CRs rejected", "checked": true},
+    {"item": "Conditional guards prevent rendering invalid partial configurations", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "DNS name truncation at 63 chars in helpers", "checked": true},
+    {"item": "trimSuffix prevents trailing dashes after truncation", "checked": true},
+    {"item": "Secret defaultMode 420 (restrictive permissions)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "Q3-1",
+      "severity": "minor",
+      "check_id": "Q3",
+      "file": "charts/memcached-operator/templates/_helpers.tpl",
+      "description": "Task 3.2 specified adding a `memcached-operator.servingCertName` helper to centralize the cert name pattern. Only `webhookServiceName` was added. The cert name `{{ include \"memcached-operator.fullname\" . }}-webhook-cert` is repeated inline in certificate.yaml:5, mutatingwebhookconfiguration.yaml:10, and validatingwebhookconfiguration.yaml:10. The secret name `-webhook-cert-secret` is repeated in certificate.yaml:18 and deployment.yaml:87.",
+      "fix": "Add a `memcached-operator.webhookCertName` helper returning `{{ printf \"%s-webhook-cert\" (include \"memcached-operator.fullname\" .) | trunc 63 | trimSuffix \"-\" }}` and use it in all 5 locations. This centralizes the name and prevents drift if the naming convention changes."
+    },
+    {
+      "id": "P1-1",
+      "severity": "minor",
+      "check_id": "P1",
+      "file": "charts/memcached-operator/templates/servicemonitor.yaml:16",
+      "description": "ServiceMonitor uses `port: metrics` instead of `port: https` specified in the source config/prometheus/monitor.yaml and plan task 1.6. This is actually CORRECT because the Deployment template names port 8443 as `metrics` (deployment.yaml:55), so the port reference must match. The plan text was inaccurate relative to the existing Deployment template naming.",
+      "fix": "No change needed. The implementation correctly adapted the port name to match the actual Deployment port name."
+    }
+  ],
+  "suggested_improvements": [
+    "Add `memcached-operator.webhookCertName` helper to _helpers.tpl (per task 3.2) to centralize the `-webhook-cert` suffix used in 5 locations across 3 templates",
+    "Consider adding `memcached-operator.webhookCertSecretName` helper for the `-webhook-cert-secret` suffix used in certificate.yaml and deployment.yaml"
+  ],
+  "next_steps": []
+}

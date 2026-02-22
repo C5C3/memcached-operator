@@ -1,0 +1,103 @@
+---
+suite: Webhook Service template
+templates:
+  - templates/webhook/service.yaml
+release:
+  name: test-release
+  namespace: test-ns
+chart:
+  appVersion: "0.1.0"
+  version: "0.1.0"
+tests:
+  # ====================================================================
+  # Suite 1: Conditional rendering
+  # ====================================================================
+
+  - it: should render when webhook.enabled is true (default)
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: should not render when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # ====================================================================
+  # Suite 2: Kind and API version
+  # ====================================================================
+
+  - it: should render correct kind and apiVersion
+    asserts:
+      - isKind:
+          of: Service
+      - isAPIVersion:
+          of: v1
+
+  # ====================================================================
+  # Suite 3: Metadata
+  # ====================================================================
+
+  - it: should set name using webhookServiceName helper
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-release-memcached-operator-webhook
+
+  - it: should set namespace to release namespace
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: test-ns
+
+  # ====================================================================
+  # Suite 4: Labels
+  # ====================================================================
+
+  - it: should include all standard labels
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/name"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/instance"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/version"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  # ====================================================================
+  # Suite 5: Port configuration
+  # ====================================================================
+
+  - it: should expose port 443 targeting 9443
+    asserts:
+      - contains:
+          path: spec.ports
+          content:
+            port: 443
+            protocol: TCP
+            targetPort: 9443
+
+  # ====================================================================
+  # Suite 6: Selector
+  # ====================================================================
+
+  - it: should include selectorLabels in selector
+    asserts:
+      - equal:
+          path: spec.selector["app.kubernetes.io/name"]
+          value: memcached-operator
+      - equal:
+          path: spec.selector["app.kubernetes.io/instance"]
+          value: test-release
+
+  - it: should include control-plane label in selector
+    asserts:
+      - equal:
+          path: spec.selector.control-plane
+          value: controller-manager

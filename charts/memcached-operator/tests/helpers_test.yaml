@@ -116,3 +116,51 @@ tests:
     asserts:
       - matchRegexRaw:
           pattern: "kubectl get pods -l app.kubernetes.io/name=memcached-operator,app.kubernetes.io/instance=test-release"
+
+  # ====================================================================
+  # NOTES.txt optional component status (REQ-009)
+  # ====================================================================
+
+  - it: should show webhooks enabled when webhook.enabled is true (default)
+    asserts:
+      - matchRegexRaw:
+          pattern: "Webhooks: enabled"
+
+  - it: should show cert-manager enabled when both webhook and certmanager are enabled (default)
+    asserts:
+      - matchRegexRaw:
+          pattern: "cert-manager: enabled"
+
+  - it: should show webhooks disabled when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "Webhooks: disabled"
+
+  - it: should show manual TLS warning when webhook enabled but certmanager disabled
+    set:
+      webhook.enabled: true
+      certmanager.enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "WARNING.*Webhooks are enabled but cert-manager is disabled"
+
+  - it: should not show cert-manager enabled when certmanager.enabled is false
+    set:
+      certmanager.enabled: false
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "cert-manager: enabled"
+
+  - it: should show ServiceMonitor enabled when serviceMonitor.enabled is true
+    set:
+      serviceMonitor.enabled: true
+    asserts:
+      - matchRegexRaw:
+          pattern: "ServiceMonitor: enabled"
+
+  - it: should not show ServiceMonitor when serviceMonitor.enabled is false (default)
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "ServiceMonitor: enabled"

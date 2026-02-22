@@ -63,6 +63,12 @@ certmanager:
 serviceMonitor:
   # -- Enable creation of ServiceMonitor resource
   enabled: false
+  # -- Scrape interval (e.g. 30s)
+  interval: ""
+  # -- Scrape timeout (e.g. 10s)
+  scrapeTimeout: ""
+  # -- Additional labels for the ServiceMonitor
+  additionalLabels: {}
 
 # -- NetworkPolicy configuration
 networkPolicy:
