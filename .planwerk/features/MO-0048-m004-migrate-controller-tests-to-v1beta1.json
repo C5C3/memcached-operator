@@ -1,0 +1,526 @@
+{
+  "feature_id": "MO-0048",
+  "title": "M004: Migrate controller tests to v1beta1",
+  "slug": "m004-migrate-controller-tests-to-v1beta1",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nUpdate the entire test suite to use v1beta1 types:\n\n1. **internal/controller/suite_test.go** — Register v1beta1 scheme alongside v1alpha1 (both needed for conversion tests). Set up v1beta1 webhooks in the envtest environment. Ensure the test environment supports multi-version CRD with conversion.\n2. **~30 test files in internal/controller/** — Mechanical migration: replace all `v1alpha1.Memcached` with `v1beta1.Memcached`, update import aliases, update object creation helpers, update type assertions. Since schema is identical, test logic remains unchanged.\n3. Verify all tests pass with `make test` after migration.\n\nThis is primarily a mechanical find-and-replace operation across test files, but must be done carefully to ensure no references are missed.\n\n**Rationale:** Tests must match the types the controller actually uses. Running tests against v1alpha1 types while the controller uses v1beta1 would cause compilation failures and wouldn't test the actual production code path.\n\n**Affected Areas:**\n- internal/controller/suite_test.go\n- internal/controller/*_test.go",
+  "stories": [
+    {
+      "title": "Test environment supports multi-version CRD conversion",
+      "role": "developer",
+      "want": "the envtest environment to register both v1alpha1 and v1beta1 schemes",
+      "so_that": "conversion tests can create and read objects in both API versions through the envtest API server",
+      "criteria": [
+        "suite_test.go registers memcachedv1alpha1.AddToScheme alongside memcachedv1beta1.AddToScheme",
+        "suite_test.go import block includes memcachedv1alpha1 alias for api/v1alpha1 package",
+        "envtest environment can accept v1alpha1 and v1beta1 objects through k8sClient",
+        "All existing tests continue to pass after scheme registration change"
+      ]
+    },
+    {
+      "title": "Test helpers are consolidated and unambiguous",
+      "role": "developer",
+      "want": "a single canonical helper function for creating test Memcached objects",
+      "so_that": "there is no confusion about which helper to use and the test codebase is clean",
+      "criteria": [
+        "validMemcachedBeta function is removed from memcached_crd_validation_test.go",
+        "All 11 call sites of validMemcachedBeta are replaced with validMemcached",
+        "validMemcached is the single canonical helper for creating v1beta1 test objects",
+        "No compilation errors after the replacement"
+      ]
+    },
+    {
+      "title": "Controller test suite compiles and passes after migration",
+      "role": "developer",
+      "want": "the entire test suite to pass with `make test`",
+      "so_that": "the migration is verified as complete and correct",
+      "criteria": [
+        "`make test` exits with code 0",
+        "All packages report ok status in test output",
+        "No v1alpha1 type references remain in internal/controller/ test files (only import for scheme registration)",
+        "Coverage report is generated successfully"
+      ]
+    },
+    {
+      "title": "Test files have no leftover v1alpha1 type usage",
+      "role": "developer",
+      "want": "all controller test files to exclusively use v1beta1 types for Memcached object creation and assertions",
+      "so_that": "tests match the actual production code path using v1beta1",
+      "criteria": [
+        "Zero occurrences of v1alpha1.Memcached, v1alpha1.MemcachedSpec, or v1alpha1.MemcachedList in test files",
+        "All type assertions in tests reference memcachedv1beta1 types",
+        "Import aliases use memcachedv1beta1 consistently across all test files",
+        "Only suite_test.go imports v1alpha1, and only for scheme registration"
+      ]
+    },
+    {
+      "title": "Migration is documented for future reference",
+      "role": "developer",
+      "want": "a reference note in documentation about the test migration from v1alpha1 to v1beta1",
+      "so_that": "future contributors understand the multi-version test setup and why both schemes are registered",
+      "criteria": [
+        "suite_test.go has a comment explaining why both v1alpha1 and v1beta1 schemes are registered",
+        "The comment references conversion webhook testing as the rationale"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "suite_test.go SHALL register both v1alpha1 and v1beta1 schemes to support multi-version CRD conversion in envtest",
+      "priority": "SHALL",
+      "rationale": "The production binary (cmd/main.go) registers both schemes. The test environment must match to enable conversion webhook testing.",
+      "scenarios": [
+        {
+          "name": "v1beta1 scheme remains registered",
+          "when": "suite_test.go BeforeSuite runs",
+          "then": "memcachedv1beta1.AddToScheme is called on scheme.Scheme without error",
+          "and_then": [
+            "k8sClient can create and read v1beta1 Memcached objects"
+          ]
+        },
+        {
+          "name": "v1alpha1 scheme is newly registered",
+          "when": "suite_test.go BeforeSuite runs",
+          "then": "memcachedv1alpha1.AddToScheme is called on scheme.Scheme without error",
+          "and_then": [
+            "k8sClient can deserialize v1alpha1 Memcached objects for conversion tests"
+          ]
+        },
+        {
+          "name": "Scheme registration order matches cmd/main.go",
+          "when": "both schemes are registered",
+          "then": "v1alpha1 is registered before v1beta1",
+          "and_then": [
+            "Consistent ordering across the codebase"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "suite_test.go SHALL import memcachedv1alpha1 with the correct alias and package path matching cmd/main.go convention",
+      "priority": "SHALL",
+      "rationale": "Import consistency across the codebase aids readability and grep-ability",
+      "scenarios": [
+        {
+          "name": "Import alias matches convention",
+          "when": "the import block is parsed",
+          "then": "the alias memcachedv1alpha1 maps to github.com/c5c3/memcached-operator/api/v1alpha1",
+          "and_then": [
+            "go vet and go build succeed"
+          ]
+        },
+        {
+          "name": "Import is grouped with project imports",
+          "when": "the import block is formatted",
+          "then": "the v1alpha1 import is adjacent to the v1beta1 import in the project-local group",
+          "and_then": [
+            "go fmt produces no changes"
+          ]
+        },
+        {
+          "name": "Import is not unused",
+          "when": "the import is added",
+          "then": "it is used in the AddToScheme call",
+          "and_then": [
+            "go vet reports no unused import errors"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The duplicate validMemcachedBeta helper SHALL be removed and all 11 callers replaced with validMemcached",
+      "priority": "SHALL",
+      "rationale": "validMemcachedBeta is functionally identical to validMemcached — both return *memcachedv1beta1.Memcached with identical implementation. The duplicate is a migration artifact.",
+      "scenarios": [
+        {
+          "name": "Function definition removed from memcached_crd_validation_test.go",
+          "when": "memcached_crd_validation_test.go is checked after the change",
+          "then": "validMemcachedBeta function definition no longer exists (lines 34-43 removed)",
+          "and_then": [
+            "Only validMemcached remains as the canonical helper"
+          ]
+        },
+        {
+          "name": "9 callers in memcached_validation_webhook_integration_test.go updated",
+          "when": "memcached_validation_webhook_integration_test.go is checked",
+          "then": "all occurrences of validMemcachedBeta are replaced with validMemcached",
+          "and_then": [
+            "File compiles without errors"
+          ]
+        },
+        {
+          "name": "2 callers in memcached_webhook_integration_test.go updated",
+          "when": "memcached_webhook_integration_test.go is checked",
+          "then": "all occurrences of validMemcachedBeta are replaced with validMemcached",
+          "and_then": [
+            "File compiles without errors"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "All controller test files SHALL exclusively use v1beta1 types for Memcached object creation and assertions",
+      "priority": "SHALL",
+      "rationale": "Controller operates on v1beta1 types; tests must match the production code path",
+      "scenarios": [
+        {
+          "name": "No v1alpha1 type usage in test logic",
+          "when": "all *_test.go files in internal/controller/ are searched for v1alpha1 type references",
+          "then": "zero matches for v1alpha1.Memcached, v1alpha1.MemcachedSpec, or v1alpha1.MemcachedList",
+          "and_then": [
+            "All Memcached type references use memcachedv1beta1 alias"
+          ]
+        },
+        {
+          "name": "Only suite_test.go imports v1alpha1",
+          "when": "all *_test.go files are checked for v1alpha1 imports",
+          "then": "only suite_test.go imports memcachedv1alpha1, and only for scheme registration",
+          "and_then": []
+        },
+        {
+          "name": "v1beta1 import alias is consistent",
+          "when": "all test files importing memcached types are checked",
+          "then": "all use the alias memcachedv1beta1",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "Existing webhook integration tests SHALL continue to pass after changes",
+      "priority": "SHALL",
+      "rationale": "The helper replacement and scheme changes must not break webhook test behavior",
+      "scenarios": [
+        {
+          "name": "Validation webhook tests pass",
+          "when": "memcached_validation_webhook_integration_test.go runs after validMemcachedBeta replacement",
+          "then": "all 9 test cases pass (invalid PDB, missing secrets, autoscaling, etc.)",
+          "and_then": [
+            "Webhook rejects invalid objects as before"
+          ]
+        },
+        {
+          "name": "Defaulting webhook tests pass",
+          "when": "memcached_webhook_integration_test.go runs after validMemcachedBeta replacement",
+          "then": "both test cases pass (minimal defaults, full defaults)",
+          "and_then": [
+            "Webhook applies defaults as before"
+          ]
+        },
+        {
+          "name": "Webhook server starts correctly with dual scheme registration",
+          "when": "BeforeSuite adds v1alpha1 scheme alongside v1beta1",
+          "then": "SetupMemcachedWebhookWithManager succeeds and webhook server starts",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "suite_test.go SHALL include a brief comment explaining why v1alpha1 scheme is registered",
+      "priority": "SHALL",
+      "rationale": "Without the comment, a developer might remove the seemingly-unnecessary v1alpha1 registration since the controller only uses v1beta1",
+      "scenarios": [
+        {
+          "name": "Comment explains conversion test rationale",
+          "when": "a developer reads the v1alpha1 AddToScheme call",
+          "then": "a comment explains it enables multi-version CRD conversion in envtest",
+          "and_then": []
+        },
+        {
+          "name": "Comment is concise",
+          "when": "the comment is reviewed",
+          "then": "it is 1-2 lines explaining the WHY, not the WHAT",
+          "and_then": []
+        },
+        {
+          "name": "No excessive documentation elsewhere",
+          "when": "other test files are checked",
+          "then": "no new comments are added to other files",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "make test SHALL pass with zero failures after all changes are applied",
+      "priority": "SHALL",
+      "rationale": "Final verification gate for the migration",
+      "scenarios": [
+        {
+          "name": "All packages pass",
+          "when": "`make test` is executed",
+          "then": "exit code is 0, all packages show 'ok' status",
+          "and_then": [
+            "cover.out is generated"
+          ]
+        },
+        {
+          "name": "go vet passes",
+          "when": "`go vet ./...` runs as part of make test",
+          "then": "zero issues reported",
+          "and_then": []
+        },
+        {
+          "name": "No compilation errors",
+          "when": "`go build ./...` runs",
+          "then": "all packages compile cleanly",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The envtest CRD configuration SHALL continue to load multi-version CRDs with conversion webhook support",
+      "priority": "SHALL",
+      "rationale": "The CRD YAML defines v1alpha1 (served, non-storage) and v1beta1 (served, storage). Both must load correctly.",
+      "scenarios": [
+        {
+          "name": "Multi-version CRD loads from config/crd/bases",
+          "when": "envtest.Environment starts",
+          "then": "the CRD with both v1alpha1 and v1beta1 versions is loaded",
+          "and_then": [
+            "API server serves both versions"
+          ]
+        },
+        {
+          "name": "Webhook configuration loads from config/webhook",
+          "when": "envtest.Environment starts with WebhookInstallOptions",
+          "then": "webhook manifests are installed in the envtest API server",
+          "and_then": []
+        },
+        {
+          "name": "ErrorIfCRDPathMissing prevents silent failures",
+          "when": "CRD files are missing",
+          "then": "test fails immediately with a descriptive error",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add v1alpha1 scheme registration to suite_test.go with import and explanatory comment (REQ-001, REQ-002, REQ-006)",
+      "description": "In internal/controller/suite_test.go: (1) Add import `memcachedv1alpha1 \"github.com/c5c3/memcached-operator/api/v1alpha1\"` in the project-local import group, adjacent to the existing v1beta1 import (line 26). (2) In the BeforeSuite function, add `err = memcachedv1alpha1.AddToScheme(scheme.Scheme)` + `Expect(err).NotTo(HaveOccurred())` BEFORE the existing v1beta1 AddToScheme call (before line 86), matching the order in cmd/main.go lines 38-39. (3) Add a brief comment: `// v1alpha1 scheme needed for multi-version CRD conversion in envtest`. Verify: `go build ./internal/controller/...` and `go vet ./internal/controller/...` pass.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Replace validMemcachedBeta with validMemcached in memcached_validation_webhook_integration_test.go (REQ-003)",
+      "description": "In internal/controller/memcached_validation_webhook_integration_test.go: Replace all 9 occurrences of `validMemcachedBeta(` with `validMemcached(`. The lines are: 19, 36, 52, 69, 83, 97, 113, 150, 157. This is a mechanical find-and-replace. Verify: `go build ./internal/controller/...` passes.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Replace validMemcachedBeta with validMemcached in memcached_webhook_integration_test.go (REQ-003)",
+      "description": "In internal/controller/memcached_webhook_integration_test.go: Replace all 2 occurrences of `validMemcachedBeta(` with `validMemcached(` at lines 16 and 51. Verify: `go build ./internal/controller/...` passes.",
+      "level": 1,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Remove validMemcachedBeta function definition from memcached_crd_validation_test.go (REQ-003)",
+      "description": "In internal/controller/memcached_crd_validation_test.go: Remove the validMemcachedBeta function definition (lines 34-43) and its comment (line 34). The function body is identical to validMemcached (lines 24-32). Verify: `go build ./internal/controller/...` passes with no undefined references.",
+      "level": 1,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Verify no v1alpha1 type references remain in controller test files (REQ-004)",
+      "description": "Run `grep -rn 'v1alpha1\\.' internal/controller/*_test.go` to confirm zero matches for v1alpha1 type usage. Run `grep -rn 'v1alpha1' internal/controller/*_test.go` to confirm the only v1alpha1 reference is the import in suite_test.go. If any unexpected references are found, update them to v1beta1. Document findings.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Run make test to verify all tests pass (REQ-005, REQ-007, REQ-008)",
+      "description": "Execute `make test` from the project root. Verify: (1) Exit code is 0. (2) All 6 packages report 'ok' status. (3) cover.out is generated. (4) No compilation errors, no test failures. If any test fails, investigate and fix the root cause before proceeding.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-005",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Write reference documentation for multi-version test environment setup",
+      "description": "Verify that the inline comment in suite_test.go adequately documents the multi-version scheme registration. No separate documentation file is needed since this is internal test infrastructure, but ensure the comment in suite_test.go is clear enough that a new developer understands: (1) why both v1alpha1 and v1beta1 schemes are registered, (2) that the controller only uses v1beta1, (3) that v1alpha1 is for conversion webhook support in envtest.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/suite_test.go",
+      "test_function": "BeforeSuite (v1alpha1 scheme registration)",
+      "story": "Test environment supports multi-version CRD conversion",
+      "expected": "memcachedv1alpha1.AddToScheme(scheme.Scheme) should succeed without error, registered before v1beta1",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/suite_test.go",
+      "test_function": "BeforeSuite (import verification)",
+      "story": "Test environment supports multi-version CRD conversion",
+      "expected": "Import memcachedv1alpha1 alias resolves to api/v1alpha1 package, go vet passes",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "All validation webhook tests",
+      "story": "Test helpers are consolidated and unambiguous",
+      "expected": "All 9 test cases pass after replacing validMemcachedBeta with validMemcached",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_webhook_integration_test.go",
+      "test_function": "All defaulting webhook tests",
+      "story": "Test helpers are consolidated and unambiguous",
+      "expected": "Both test cases pass after replacing validMemcachedBeta with validMemcached",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "Compilation check after removing validMemcachedBeta",
+      "story": "Test helpers are consolidated and unambiguous",
+      "expected": "File compiles without undefined reference errors; validMemcached is the sole helper",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/*_test.go",
+      "test_function": "grep verification — no v1alpha1 type usage",
+      "story": "Test files have no leftover v1alpha1 type usage",
+      "expected": "Zero matches for v1alpha1.Memcached, v1alpha1.MemcachedSpec, v1alpha1.MemcachedList in test files",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_validation_webhook_integration_test.go",
+      "test_function": "Webhook rejects invalid PDB configuration",
+      "story": "Controller test suite compiles and passes after migration",
+      "expected": "Validation webhook correctly rejects invalid PDB configs after helper replacement",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_webhook_integration_test.go",
+      "test_function": "Webhook applies defaults to minimal object",
+      "story": "Controller test suite compiles and passes after migration",
+      "expected": "Defaulting webhook applies all defaults correctly after helper replacement",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "all packages",
+      "test_function": "make test",
+      "story": "Controller test suite compiles and passes after migration",
+      "expected": "Exit code 0, all packages ok, cover.out generated",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/suite_test.go",
+      "test_function": "BeforeSuite (envtest environment start)",
+      "story": "Test environment supports multi-version CRD conversion",
+      "expected": "envtest starts successfully with multi-version CRD from config/crd/bases and webhook from config/webhook",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/suite_test.go",
+      "test_function": "BeforeSuite (comment verification)",
+      "story": "Migration is documented for future reference",
+      "expected": "Comment explaining v1alpha1 scheme registration rationale exists near AddToScheme call",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "All CRD validation tests",
+      "story": "Controller test suite compiles and passes after migration",
+      "expected": "All CRD validation tests pass, confirming validMemcached helper works for all callers",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_envtest_integration_test.go",
+      "test_function": "Full reconciliation integration tests",
+      "story": "Controller test suite compiles and passes after migration",
+      "expected": "All envtest integration tests pass with dual scheme registration",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment reconciliation tests",
+      "story": "Controller test suite compiles and passes after migration",
+      "expected": "All deployment reconciliation tests pass — no behavior change from scheme addition",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "suite_test.go imports memcachedv1alpha1 with correct alias and package path matching cmd/main.go",
+    "suite_test.go registers v1alpha1 scheme BEFORE v1beta1 scheme (matching cmd/main.go order)",
+    "suite_test.go includes a concise comment explaining why v1alpha1 scheme is registered for conversion tests",
+    "validMemcachedBeta function is completely removed (definition + comment) from memcached_crd_validation_test.go",
+    "All 11 call sites of validMemcachedBeta are replaced with validMemcached (9 in validation webhook, 2 in webhook)",
+    "`make test` passes with exit code 0 and all packages show 'ok' status",
+    "Zero occurrences of v1alpha1 type references (v1alpha1.Memcached etc.) in internal/controller/ test files — only import in suite_test.go",
+    "go vet ./... passes with zero issues (no unused imports, no shadowed variables)"
+  ],
+  "implementation_notes": "The feature was originally scoped as 'large' assuming ~30 test files needed mechanical v1alpha1→v1beta1 migration. That migration was already completed in MO-0047 (commit 29a7f9f). The remaining work is:\n\n1. **suite_test.go scheme registration**: Add memcachedv1alpha1.AddToScheme to match cmd/main.go. This enables the envtest API server to handle multi-version CRD conversion. The registration order should match main.go: v1alpha1 before v1beta1 before monitoring. Add a comment explaining why both are needed.\n\n2. **validMemcachedBeta cleanup**: This function (memcached_crd_validation_test.go:34-43) is byte-for-byte identical to validMemcached (lines 23-32). It was likely created during the migration as a parallel helper and never consolidated. Replace all 11 call sites (9 in validation webhook tests, 2 in webhook tests) with validMemcached, then delete the definition.\n\n3. **Verification**: `make test` runs manifests generation, code generation, fmt, vet, and all tests. This is the definitive verification.\n\nArchitectural note: The envtest environment loads the multi-version CRD from config/crd/bases/memcached.c5c3.io_memcacheds.yaml which defines v1alpha1 (served: true, storage: false) and v1beta1 (served: true, storage: true). The conversion webhook (Hub/Spoke pattern) allows the API server to translate between versions. Registering v1alpha1 in the test scheme enables future conversion integration tests within the envtest framework.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:26:33.928462"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:44:41.274209"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:51:15.612973"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "6d39dfe8-4a1f-4908-90b5-3bb7a71cd960",
+      "timestamp": "2026-02-22T15:51:15.613000",
+      "total_duration": 391.3379557132721,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 391.3379557132721,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
