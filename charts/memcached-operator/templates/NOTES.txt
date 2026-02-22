@@ -1,0 +1,20 @@
+{{ include "memcached-operator.fullname" . }} has been installed.
+
+Check the operator status:
+
+  kubectl get pods -l {{ include "memcached-operator.selectorLabels" . | replace ": " "=" | replace "\n" "," }}
+
+{{- if .Values.crds.managedByHelm }}
+
+CRD management: Helm-managed (crds.managedByHelm=true)
+The Memcached CRD will be updated on helm upgrade.
+{{- else }}
+
+CRD management: Helm crds/ directory (default)
+The Memcached CRD was installed on first install and will NOT be updated on helm upgrade.
+To update the CRD manually:
+
+  kubectl apply -f https://raw.githubusercontent.com/c5c3/memcached-operator/main/config/crd/bases/memcached.c5c3.io_memcacheds.yaml
+
+Or set crds.managedByHelm=true for Helm-managed CRD upgrades.
+{{- end }}

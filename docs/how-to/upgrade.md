@@ -282,9 +282,9 @@ is running correctly and all Memcached instances are healthy.
 
 ## Version Compatibility Matrix
 
-| Operator Version | Kubernetes Version | CRD API Versions                         | cert-manager Version | Notes                                                                           |
-|------------------|--------------------|------------------------------------------|----------------------|---------------------------------------------------------------------------------|
-| v0.1.0           | v1.28 -- v1.32     | v1alpha1                                 | v1.12+               | Initial release                                                                 |
+| Operator Version | Kubernetes Version | CRD API Versions                         | cert-manager Version | Notes                                                                |
+|------------------|--------------------|------------------------------------------|----------------------|----------------------------------------------------------------------|
+| v0.1.0           | v1.28 -- v1.32     | v1alpha1                                 | v1.12+               | Initial release                                                      |
 | v0.2.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | v1beta1 storage version; see [migration guide](migration-v1beta1.md) |
 
 Check the release notes for each version to confirm compatibility with your

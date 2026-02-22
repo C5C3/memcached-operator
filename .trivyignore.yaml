@@ -1,3 +1,4 @@
+---
 # Trivy ignore rules for legitimate operator findings
 # YAML format: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/
 misconfigurations:

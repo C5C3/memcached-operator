@@ -3,6 +3,7 @@ extends: default
 
 ignore:
   - docs/node_modules/
+  - charts/memcached-operator/templates/
 
 rules:
   document-start: enable

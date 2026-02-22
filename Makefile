@@ -67,6 +67,25 @@ lint: golangci-lint ## Run golangci-lint linter.
 lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes.
 	$(GOLANGCI_LINT) run --fix
 
+HELM_CHART_DIR ?= charts/memcached-operator
+CRD_SOURCE ?= config/crd/bases/memcached.c5c3.io_memcacheds.yaml
+
+.PHONY: helm-sync-crds
+helm-sync-crds: ## Sync CRD from config/crd/bases/ to Helm chart (crds/ and templates/).
+	@cp $(CRD_SOURCE) $(HELM_CHART_DIR)/crds/
+	@# Regenerate the Helm-managed CRD template: add guard, labels, and footer
+	@{ \
+		echo '{{/*'; \
+		echo 'CRD template for Helm-managed CRD upgrades.'; \
+		echo 'Disabled by default — only rendered when crds.managedByHelm is true.'; \
+		echo 'When disabled, the CRD in crds/ directory is used (installed on first helm install only).'; \
+		echo '*/}}'; \
+		echo '{{- if .Values.crds.managedByHelm }}'; \
+		sed -e '1d' -e '/^  name: memcacheds/i\  labels:\n    {{- include "memcached-operator.labels" . | nindent 4 }}' $(CRD_SOURCE); \
+		echo '{{- end }}'; \
+	} > $(HELM_CHART_DIR)/templates/crd-template.yaml
+	@echo "Synced CRD to Helm chart: crds/ and templates/crd-template.yaml"
+
 .PHONY: verify-manifests
 verify-manifests: manifests generate ## Verify generated manifests and code are up-to-date.
 	@git diff --exit-code -- config/crd/ api/v1alpha1/zz_generated.deepcopy.go api/v1beta1/zz_generated.deepcopy.go || \

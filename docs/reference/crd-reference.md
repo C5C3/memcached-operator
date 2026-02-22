@@ -6,14 +6,14 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 
 ## Resource Info
 
-| Property     | Value               |
-|--------------|---------------------|
-| API Group    | `memcached.c5c3.io` |
+| Property     | Value                                                |
+|--------------|------------------------------------------------------|
+| API Group    | `memcached.c5c3.io`                                  |
 | API Version  | `v1beta1` (storage version), `v1alpha1` (deprecated) |
-| Kind         | `Memcached`         |
-| List Kind    | `MemcachedList`     |
-| Scope        | Namespaced          |
-| Subresources | `status`            |
+| Kind         | `Memcached`                                          |
+| List Kind    | `MemcachedList`                                      |
+| Scope        | Namespaced                                           |
+| Subresources | `status`                                             |
 
 ---
 

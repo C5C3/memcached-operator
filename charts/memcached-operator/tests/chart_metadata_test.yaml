@@ -1,0 +1,35 @@
+---
+suite: Chart.yaml metadata and values.yaml defaults
+templates:
+  - templates/NOTES.txt
+release:
+  name: test-release
+  namespace: test-ns
+tests:
+  - it: should render NOTES.txt with default fullname
+    asserts:
+      - matchRegexRaw:
+          pattern: "test-release-memcached-operator has been installed"
+
+  - it: should show crds/ directory management by default
+    asserts:
+      - matchRegexRaw:
+          pattern: "CRD management: Helm crds/ directory \\(default\\)"
+      - notMatchRegexRaw:
+          pattern: "CRD management: Helm-managed"
+
+  - it: should show Helm-managed CRD when toggled
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - matchRegexRaw:
+          pattern: "CRD management: Helm-managed \\(crds\\.managedByHelm=true\\)"
+      - notMatchRegexRaw:
+          pattern: "CRD management: Helm crds/ directory"
+
+  - it: should include selector labels in kubectl command
+    asserts:
+      - matchRegexRaw:
+          pattern: "app\\.kubernetes\\.io/name=memcached-operator"
+      - matchRegexRaw:
+          pattern: "app\\.kubernetes\\.io/instance=test-release"

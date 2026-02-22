@@ -10,10 +10,10 @@ as a deprecated spoke version. Both versions have identical schemas — no field
 were added, removed, or renamed. The Kubernetes API server automatically
 converts between versions using the hub/spoke conversion pattern.
 
-| Version   | Role  | Storage | Status     |
-|-----------|-------|---------|------------|
-| `v1beta1` | Hub   | Yes     | Active     |
-| `v1alpha1`| Spoke | No      | Deprecated |
+| Version    | Role  | Storage | Status     |
+|------------|-------|---------|------------|
+| `v1beta1`  | Hub   | Yes     | Active     |
+| `v1alpha1` | Spoke | No      | Deprecated |
 
 ## Do I need to migrate?
 

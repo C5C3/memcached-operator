@@ -19,16 +19,16 @@ The operator automates the deployment, configuration, and lifecycle management o
 
 ## Tech Stack
 
-| Component           | Technology                        |
-|---------------------|-----------------------------------|
-| Language            | Go 1.24+                          |
-| Scaffolding         | Operator SDK / Kubebuilder        |
-| Runtime             | controller-runtime                |
-| CRD API group       | `memcached.c5c3.io`               |
-| API versions        | `v1beta1` (active), `v1alpha1` (deprecated) |
-| Memcached image     | `memcached:1.6`                   |
-| Exporter image      | `prom/memcached-exporter:v0.15.4` |
-| Testing             | envtest, Chainsaw                 |
+| Component       | Technology                                  |
+|-----------------|---------------------------------------------|
+| Language        | Go 1.24+                                    |
+| Scaffolding     | Operator SDK / Kubebuilder                  |
+| Runtime         | controller-runtime                          |
+| CRD API group   | `memcached.c5c3.io`                         |
+| API versions    | `v1beta1` (active), `v1alpha1` (deprecated) |
+| Memcached image | `memcached:1.6`                             |
+| Exporter image  | `prom/memcached-exporter:v0.15.4`           |
+| Testing         | envtest, Chainsaw                           |
 
 ---
 
@@ -46,13 +46,13 @@ Background knowledge and architectural context for the operator.
 
 Step-by-step instructions for common tasks.
 
-| Document                                                 | Description                                                  |
-|----------------------------------------------------------|--------------------------------------------------------------|
-| [Installation](how-to/installation.md)                   | Install the operator and its prerequisites                   |
-| [Upgrade](how-to/upgrade.md)                             | Upgrade the operator to a new version                        |
-| [Migration to v1beta1](how-to/migration-v1beta1.md)      | Migrate Memcached CRs from v1alpha1 to v1beta1               |
-| [Troubleshooting](how-to/troubleshooting.md)             | Diagnose and resolve common issues                           |
-| [Examples](how-to/examples.md)                           | Example Memcached CR configurations for common scenarios     |
+| Document                                            | Description                                              |
+|-----------------------------------------------------|----------------------------------------------------------|
+| [Installation](how-to/installation.md)              | Install the operator and its prerequisites               |
+| [Upgrade](how-to/upgrade.md)                        | Upgrade the operator to a new version                    |
+| [Migration to v1beta1](how-to/migration-v1beta1.md) | Migrate Memcached CRs from v1alpha1 to v1beta1           |
+| [Troubleshooting](how-to/troubleshooting.md)        | Diagnose and resolve common issues                       |
+| [Examples](how-to/examples.md)                      | Example Memcached CR configurations for common scenarios |
 
 ### Reference
 

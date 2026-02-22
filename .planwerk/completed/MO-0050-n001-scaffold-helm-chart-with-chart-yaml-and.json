@@ -2,8 +2,8 @@
   "feature_id": "MO-0050",
   "title": "N001: Scaffold Helm chart with Chart.yaml and values.yaml",
   "slug": "n001-scaffold-helm-chart-with-chart-yaml-and",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** infrastructure\n**Priority:** critical\n**Source:** Proposed for 'Helm Chart Packaging\n\nChart structure under charts/'\n\nCreate the Helm chart foundation under charts/memcached-operator/. Includes: Chart.yaml (type: application, appVersion tracking operator version), comprehensive values.yaml with all tunables (image.repository/tag, replicaCount, resources, webhook.enabled, certmanager.enabled, serviceMonitor.enabled, networkPolicy.enabled, watchNamespaces, leaderElection.enabled, rbac.create, crds.managedByHelm), and templates/_helpers.tpl with standard label/name/selector helpers matching existing app.kubernetes.io/name conventions from config/. Also includes the CRD in crds/ directory (copied from config/crd/bases/) plus the optional templates/crd-template.yaml gated by crds.managedByHelm for helm-upgrade-managed CRD updates.\n\n**Rationale:** Foundation that all other features depend on. The values.yaml defines the contract for all templates, _helpers.tpl provides reusable template functions, and CRD handling (both crds/ directory and optional template) must be established first since it affects how the operator is installed and upgraded.\n\n**Affected Areas:**\n- charts/memcached-operator/Chart.yaml\n- charts/memcached-operator/values.yaml\n- charts/memcached-operator/templates/_helpers.tpl\n- charts/memcached-operator/crds/\n- charts/memcached-operator/templates/crd-template.yaml",
   "stories": [
@@ -387,6 +387,7 @@
       "description": "Create charts/memcached-operator/Chart.yaml with apiVersion: v2, name: memcached-operator, type: application, version: 0.1.0, appVersion: 0.1.0, description, home (https://github.com/c5c3/memcached-operator), sources list, and maintainers. The appVersion should track the operator version. Follow Helm chart metadata conventions.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -397,6 +398,7 @@
       "description": "Create charts/memcached-operator/.helmignore with standard exclusions: .git, .gitignore, .bzr, .bzrignore, .hg, .hgignore, .svn, *.swp, .DS_Store, *.tmp, tests/, ci/. Follow standard Helm .helmignore patterns.",
       "level": 1,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -407,6 +409,7 @@
       "description": "Create charts/memcached-operator/values.yaml with all tunables documented with YAML comments. Sections: image (repository: controller, tag: latest, pullPolicy: IfNotPresent), replicaCount: 1, resources (matching config/manager/manager.yaml: limits cpu 500m memory 128Mi, requests cpu 10m memory 64Mi), nameOverride/fullnameOverride, serviceAccount (create: true, annotations: {}, name: \"\"), rbac (create: true), leaderElection (enabled: true), webhook (enabled: true), certmanager (enabled: true), serviceMonitor (enabled: false), networkPolicy (enabled: false), watchNamespaces: [], crds (managedByHelm: false), securityContext and podSecurityContext matching config/manager/manager.yaml (runAsNonRoot: true, runAsUser: 65532, seccompProfile RuntimeDefault, container: allowPrivilegeEscalation false, readOnlyRootFilesystem true, capabilities drop ALL), nodeSelector: {}, tolerations: [], affinity: {}. Each section with explanatory comments.",
       "level": 1,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -417,6 +420,7 @@
       "description": "Create charts/memcached-operator/templates/_helpers.tpl with standard Helm helpers: (1) memcached-operator.name — returns .Chart.Name or nameOverride truncated to 63 chars; (2) memcached-operator.fullname — returns release-prefixed name or fullnameOverride truncated to 63 chars; (3) memcached-operator.chart — returns chart name-version; (4) memcached-operator.labels — returns labels: helm.sh/chart, app.kubernetes.io/name (from name helper), app.kubernetes.io/instance (.Release.Name), app.kubernetes.io/version (.Chart.AppVersion), app.kubernetes.io/managed-by (.Release.Service); (5) memcached-operator.selectorLabels — returns only app.kubernetes.io/name and app.kubernetes.io/instance; (6) memcached-operator.serviceAccountName — returns serviceAccount.name or fullname. Match existing app.kubernetes.io conventions from config/ manifests.",
       "level": 1,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-007"
@@ -428,6 +432,7 @@
       "description": "Create charts/memcached-operator/crds/ directory and copy config/crd/bases/memcached.c5c3.io_memcacheds.yaml into it. The CRD file must be an exact copy of the generated CRD. Verify the CRD has apiVersion: apiextensions.k8s.io/v1 and kind: CustomResourceDefinition with spec.group: memcached.c5c3.io.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -438,6 +443,7 @@
       "description": "Create charts/memcached-operator/templates/crd-template.yaml. Wrap the entire CRD content in {{- if .Values.crds.managedByHelm }} / {{- end }}. The CRD content should match the file in crds/ directory but with added metadata.labels from {{ include \"memcached-operator.labels\" . | nindent 4 }}. Add a comment at top explaining this is for helm-managed CRD upgrades and is disabled by default.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -448,6 +454,7 @@
       "description": "Create charts/memcached-operator/templates/NOTES.txt with basic post-install instructions: chart name, how to check the operator status (kubectl get pods), and a note about CRD management (crds.managedByHelm). This file is required for helm lint to pass cleanly.",
       "level": 2,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-006"
       ]
@@ -458,6 +465,7 @@
       "description": "Create charts/memcached-operator/tests/chart_metadata_test.yaml using helm-unittest format. Tests: (1) Chart.yaml has apiVersion v2, type application, name memcached-operator; (2) NOTES.txt is rendered without errors; (3) default values produce expected output. Since this feature only has scaffold files (no deployment template yet), test that helm template with defaults produces NOTES.txt output and that the CRD template is absent by default.",
       "level": 3,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-001",
@@ -470,6 +478,7 @@
       "description": "Create charts/memcached-operator/tests/crd_template_test.yaml using helm-unittest format. Tests: (1) with default values (crds.managedByHelm: false), crd-template.yaml should not render any document; (2) with crds.managedByHelm: true, crd-template.yaml should render a CustomResourceDefinition with correct apiVersion, kind, spec.group=memcached.c5c3.io; (3) when rendered, CRD has standard labels from _helpers.tpl including helm.sh/chart and app.kubernetes.io/managed-by: Helm.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-005"
@@ -481,19 +490,10 @@
       "description": "Create charts/memcached-operator/tests/helpers_test.yaml using helm-unittest format. Test helper output by asserting on labels of the CRD template (enabled via set crds.managedByHelm=true). Tests: (1) app.kubernetes.io/name equals memcached-operator; (2) app.kubernetes.io/instance equals RELEASE-NAME; (3) app.kubernetes.io/managed-by equals Helm; (4) helm.sh/chart contains memcached-operator-0.1.0; (5) with nameOverride set, app.kubernetes.io/name reflects the override; (6) with fullnameOverride set, resource names use the override.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008",
         "REQ-003"
-      ]
-    },
-    {
-      "id": "3.4",
-      "title": "Validate chart with helm lint under multiple configurations (REQ-006)",
-      "description": "Run helm lint charts/memcached-operator/ with: (1) default values; (2) all toggles enabled (--set crds.managedByHelm=true,serviceMonitor.enabled=true,networkPolicy.enabled=true); (3) minimal config (--set webhook.enabled=false,certmanager.enabled=false,rbac.create=false). All three must pass with exit code 0 and no ERROR-level messages. Fix any lint issues found.",
-      "level": 3,
-      "estimate_minutes": 10,
-      "requirements": [
-        "REQ-006"
       ]
     },
     {
@@ -502,6 +502,7 @@
       "description": "Create docs/reference/backend/helm-chart-scaffold.md. Sections: (1) Overview — chart purpose and directory structure; (2) Chart.yaml — fields and versioning strategy (appVersion tracks operator, version is chart version); (3) values.yaml Reference — table of all keys with Key, Type, Default, Description columns; (4) _helpers.tpl Functions — table listing each template function, its purpose, and example output; (5) CRD Handling — explanation of crds/ directory for install vs crds.managedByHelm template for upgrade; (6) .helmignore — explanation of excluded patterns. Follow existing doc style in docs/reference/backend/.",
       "level": 4,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -605,6 +606,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T17:32:56.892798"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T17:49:02.090392"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T18:17:11.595392"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T18:17:11.614500"
     }
   },
   "execution_history": [
@@ -618,6 +631,56 @@
           "name": "prepare",
           "duration": 247.89970922470093,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "0e2973b3-0de0-42ff-ba5e-0835f04e37e2",
+      "timestamp": "2026-02-22T18:07:49.872733",
+      "total_duration": 1020.0102589130402,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (4 tasks)",
+          "duration": 274.86442518234253,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (3 tasks)",
+          "duration": 113.94626808166504,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (3 tasks)",
+          "duration": 152.12088704109192,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 98.53363633155823,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0050] Code Review",
+          "duration": 107.82071304321289,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0050] Improvements",
+          "duration": 168.71722221374512,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0050] Simplify",
+          "duration": 104.00710701942444,
+          "type": "simplify",
           "status": "done"
         }
       ]

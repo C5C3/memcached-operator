@@ -1,0 +1,105 @@
+---
+# -- Number of operator replicas to deploy
+replicaCount: 1
+
+# -- String to partially override memcached-operator.fullname
+nameOverride: ""
+# -- String to fully override memcached-operator.fullname
+fullnameOverride: ""
+
+# -- Operator container image configuration
+image:
+  # -- Container image repository
+  repository: controller
+  # -- Container image tag (defaults to chart appVersion if empty)
+  tag: ""
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+
+# -- Secrets for pulling images from private registries
+imagePullSecrets: []
+
+# -- Resource requests and limits for the operator container
+# Defaults match config/manager/manager.yaml
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# -- Service account configuration
+serviceAccount:
+  # -- Specifies whether a service account should be created
+  create: true
+  # -- Annotations to add to the service account
+  annotations: {}
+  # -- The name of the service account to use
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# -- RBAC configuration
+rbac:
+  # -- Specifies whether RBAC resources should be created
+  create: true
+
+# -- Leader election configuration for HA deployments
+leaderElection:
+  # -- Enable leader election for controller manager
+  enabled: true
+
+# -- Webhook configuration
+webhook:
+  # -- Enable admission webhooks (defaulting and validation)
+  enabled: true
+
+# -- cert-manager configuration for webhook certificates
+certmanager:
+  # -- Enable cert-manager integration for webhook TLS
+  enabled: true
+
+# -- Prometheus ServiceMonitor configuration
+serviceMonitor:
+  # -- Enable creation of ServiceMonitor resource
+  enabled: false
+
+# -- NetworkPolicy configuration
+networkPolicy:
+  # -- Enable creation of NetworkPolicy resource
+  enabled: false
+
+# -- List of namespaces to watch (empty means all namespaces)
+watchNamespaces: []
+
+# -- CRD management configuration
+crds:
+  # -- If true, CRD is rendered as a Helm template for helm-managed upgrades
+  # If false (default), CRD is only in crds/ directory (installed on first install, not upgraded)
+  managedByHelm: false
+
+# -- Pod security context matching config/manager/manager.yaml
+# @default -- See values below
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context matching config/manager/manager.yaml
+# @default -- See values below
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- Node selector for pod assignment
+nodeSelector: {}
+
+# -- Tolerations for pod assignment
+tolerations: []
+
+# -- Affinity rules for pod assignment
+affinity: {}

@@ -1,0 +1,112 @@
+---
+suite: _helpers.tpl label and name functions via CRD template
+templates:
+  - templates/crd-template.yaml
+release:
+  name: test-release
+  namespace: test-ns
+tests:
+  # -- memcached-operator.name --
+  - it: should use chart name as default name
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: memcached-operator
+
+  - it: should use nameOverride when set
+    set:
+      crds.managedByHelm: true
+      nameOverride: custom-name
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: custom-name
+
+  # -- memcached-operator.chart --
+  - it: should format chart label as name-version
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - equal:
+          path: metadata.labels["helm.sh/chart"]
+          value: memcached-operator-0.1.0
+
+  # -- memcached-operator.labels (all standard labels) --
+  - it: should include all standard labels
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/name"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/instance"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/version"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+
+  - it: should set app version label from chart appVersion
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: "0.1.0"
+
+  - it: should set managed-by to Helm
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  # -- memcached-operator.selectorLabels --
+  - it: should include selector labels in common labels
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - equal:
+          path: metadata.labels["app.kubernetes.io/name"]
+          value: memcached-operator
+      - equal:
+          path: metadata.labels["app.kubernetes.io/instance"]
+          value: test-release
+
+---
+suite: _helpers.tpl fullname function via NOTES.txt
+templates:
+  - templates/NOTES.txt
+release:
+  name: test-release
+  namespace: test-ns
+tests:
+  - it: should produce release-chartname as fullname by default
+    asserts:
+      - matchRegexRaw:
+          pattern: "test-release-memcached-operator has been installed"
+
+  - it: should use release name as fullname when it contains chart name
+    release:
+      name: memcached-operator
+    asserts:
+      - matchRegexRaw:
+          pattern: "memcached-operator has been installed"
+
+  - it: should use fullnameOverride when set
+    set:
+      fullnameOverride: my-override
+    asserts:
+      - matchRegexRaw:
+          pattern: "my-override has been installed"
+
+  - it: should truncate fullname at 63 characters
+    set:
+      fullnameOverride: "aThis-is-a-very-long-fullname-override-that-exceeds-sixty-three-characters-total"
+    asserts:
+      - matchRegexRaw:
+          pattern: "aThis-is-a-very-long-fullname-override-that-exceeds-sixty-three has been installed"
