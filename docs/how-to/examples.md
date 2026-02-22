@@ -9,7 +9,7 @@ Annotated Memcached CR examples for common deployment scenarios. Each example in
 The simplest possible Memcached CR. Relies entirely on webhook defaults for all configuration.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: memcached-dev
@@ -41,7 +41,7 @@ No PDB, ServiceMonitor, or NetworkPolicy is created because those features are d
 A production-grade HA setup with pod anti-affinity, topology spread across availability zones, a PodDisruptionBudget, and graceful shutdown.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: memcached-ha
@@ -96,7 +96,7 @@ spec:
 Adds a Prometheus memcached-exporter sidecar and a ServiceMonitor for automated Prometheus scraping.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: memcached-monitored
@@ -205,7 +205,7 @@ kubectl create secret generic memcached-tls-certs -n <namespace> \
 ### Apply the CR
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: memcached-tls
@@ -263,7 +263,7 @@ rm password-file
 ### Apply the CR
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: memcached-sasl
@@ -293,7 +293,7 @@ spec:
 A comprehensive production configuration combining HA, monitoring, TLS, SASL, NetworkPolicy, custom security contexts, and resource limits.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: memcached-production
@@ -421,7 +421,7 @@ kubectl create secret tls memcached-prod-tls -n cache \
 Configured specifically for [OpenStack Keystone](https://docs.openstack.org/keystone/latest/) token caching. Keystone uses [pymemcache](https://pymemcache.readthedocs.io/) with the `HashClient`, which connects to individual Memcached pods via the headless Service DNS records.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: keystone-cache

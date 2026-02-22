@@ -2,8 +2,8 @@
   "feature_id": "MO-0049",
   "title": "M005: Update manifests, samples, and migration docs",
   "slug": "m005-update-manifests-samples-and-migration-docs",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 📦 medium\n**Category:** docs\n**Priority:** medium\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nGenerate updated manifests, create v1beta1 samples, and write migration docs:\n\n1. **Run `make manifests`** to regenerate:\n   - `config/crd/bases/memcached.c5c3.io_memcacheds.yaml` — Multi-version CRD: v1beta1 with `storage: true`, v1alpha1 with `served: true, storage: false`, conversion webhook strategy configured.\n   - `config/webhook/manifests.yaml` — Updated webhook paths pointing to v1beta1 endpoints.\n2. **config/samples/memcached_v1beta1_*.yaml** — Create 6 sample manifests (minimal, ha, monitoring, tls, production, full) mirroring the existing v1alpha1 samples but with `apiVersion: memcached.c5c3.io/v1beta1`.\n3. **Migration documentation** — Write a doc covering: what changed (storage version promotion), backward compatibility (v1alpha1 still served), deprecation timeline for v1alpha1, how conversion works transparently, and any user action required (none for existing clusters — API server converts on read).\n4. Verify the conversion webhook configuration in the generated CRD manifest includes the correct `webhookClientConfig` service reference and `conversionReviewVersions`.\n\n**Rationale:** Users need updated samples to adopt v1beta1, and clear migration documentation to understand the deprecation path. The CRD manifest must correctly declare both versions with conversion webhook strategy for the API server to handle multi-version serving.\n\n**Affected Areas:**\n- config/crd/bases/memcached.c5c3.io_memcacheds.yaml\n- config/webhook/manifests.yaml\n- config/samples/memcached_v1beta1_minimal.yaml\n- config/samples/memcached_v1beta1_ha.yaml\n- config/samples/memcached_v1beta1_monitoring.yaml\n- config/samples/memcached_v1beta1_tls.yaml\n- config/samples/memcached_v1beta1_production.yaml\n- config/samples/memcached_v1beta1_full.yaml\n- docs/migration-v1beta1.md",
   "stories": [
@@ -353,6 +353,7 @@
       "description": "Run `make manifests` to regenerate config/crd/bases/memcached.c5c3.io_memcacheds.yaml and config/webhook/manifests.yaml. Verify CRD has v1beta1 with storage: true and v1alpha1 with storage: false. Verify webhook manifests point to v1beta1 paths. The CRD is generated from kubebuilder markers on api/v1beta1/memcached_types.go (+kubebuilder:storageversion) and api/v1alpha1/memcached_types.go.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -363,6 +364,7 @@
       "description": "Create config/samples/memcached_v1beta1_minimal.yaml mirroring memcached_v1alpha1_minimal.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 1 replica, standard labels, name memcached-dev.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -373,6 +375,7 @@
       "description": "Create config/samples/memcached_v1beta1_ha.yaml mirroring memcached_v1alpha1_ha.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 3 replicas, resources, memcached config, highAvailability with antiAffinity, topologySpread, PDB, gracefulShutdown.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -383,6 +386,7 @@
       "description": "Create config/samples/memcached_v1beta1_monitoring.yaml mirroring memcached_v1alpha1_monitoring.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 2 replicas, monitoring enabled with exporter resources and serviceMonitor config.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -393,6 +397,7 @@
       "description": "Create config/samples/memcached_v1beta1_tls.yaml mirroring memcached_v1alpha1_tls.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 3 replicas, security.tls.enabled=true with certificateSecretRef.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -403,6 +408,7 @@
       "description": "Create config/samples/memcached_v1beta1_production.yaml mirroring memcached_v1alpha1_production.yaml but with apiVersion: memcached.c5c3.io/v1beta1. Content: 5 replicas, comprehensive config with HA, monitoring, security (SASL, TLS, NetworkPolicy), production resources.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -413,6 +419,7 @@
       "description": "Create config/samples/memcached_v1beta1_full.yaml mirroring memcached_v1alpha1_memcached.yaml (the main sample) but with apiVersion: memcached.c5c3.io/v1beta1. Content: 3 replicas, image, resources, memcached config, HA with PDB, monitoring, security contexts.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -423,6 +430,7 @@
       "description": "Add all 6 v1beta1 sample files to config/samples/kustomization.yaml resources list. Keep existing v1alpha1 entries. Files to add: memcached_v1beta1_minimal.yaml, memcached_v1beta1_ha.yaml, memcached_v1beta1_monitoring.yaml, memcached_v1beta1_tls.yaml, memcached_v1beta1_production.yaml, memcached_v1beta1_full.yaml.",
       "level": 1,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -433,6 +441,7 @@
       "description": "Create api/v1beta1/sample_yaml_test.go following the pattern in api/v1alpha1/sample_yaml_test.go. Include: TestSampleYAMLFiles (discover and validate all v1beta1 samples), TestSampleYAMLMinimal, TestSampleYAMLFull, TestSampleYAMLHA, TestSampleYAMLMonitoring, TestSampleYAMLTLS, TestSampleYAMLProduction, TestAllSamplesHaveValidStructure. Each test validates apiVersion=memcached.c5c3.io/v1beta1, kind=Memcached, non-empty name, and feature-specific fields.",
       "level": 2,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -443,6 +452,7 @@
       "description": "Create docs/how-to/migration-v1beta1.md covering: (1) Overview - v1beta1 is now the storage version, (2) What Changed - storage version promotion, schema identical, (3) Backward Compatibility - v1alpha1 still served, existing CRs work without changes, (4) How Conversion Works - API server uses conversion webhook transparently, (5) Deprecation Timeline - v1alpha1 deprecated, planned removal in future release, (6) User Actions Required - none for existing clusters, recommended to update manifests, (7) Migrating Your Manifests - sed command to update apiVersion, (8) FAQ. Cross-reference docs/how-to/upgrade.md.",
       "level": 3,
       "estimate_minutes": 25,
+      "status": "done",
       "requirements": [
         "REQ-005",
         "REQ-006"
@@ -454,6 +464,7 @@
       "description": "Add a row to the How-To Guides table in docs/index.md linking to how-to/migration-v1beta1.md with description 'Migrate from v1alpha1 to v1beta1 API version'.",
       "level": 3,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -464,6 +475,7 @@
       "description": "Update docs/reference/crd-reference.md: (1) Change API Version in Resource Info table from v1alpha1 to v1beta1, (2) Update all inline YAML examples to use apiVersion: memcached.c5c3.io/v1beta1, (3) Add a note that v1alpha1 is still supported but deprecated. Update the minimal, full, HA, and autoscaling examples.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -474,6 +486,7 @@
       "description": "Add a new row to the Version Compatibility Matrix in docs/how-to/upgrade.md for the version introducing v1beta1. Update CRD API Version column to show 'v1alpha1 + v1beta1'. Also update the CRD compatibility notes section to mention multi-version serving and the conversion webhook.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -484,6 +497,7 @@
       "description": "Update docs/how-to/examples.md to use apiVersion: memcached.c5c3.io/v1beta1 in all inline YAML examples. Add a note that v1alpha1 examples still work but v1beta1 is preferred.",
       "level": 3,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-009"
       ]
@@ -588,6 +602,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T16:17:04.663418"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T16:18:49.050664"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T16:38:28.561375"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T16:38:28.581517"
     }
   },
   "execution_history": [
@@ -601,6 +627,50 @@
           "name": "prepare",
           "duration": 249.96909356117249,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "079b632f-8c2a-4116-865f-3341184039eb",
+      "timestamp": "2026-02-22T16:37:54.305746",
+      "total_duration": 1017.7152495384216,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (8 tasks)",
+          "duration": 180.98037314414978,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 103.58201217651367,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (5 tasks)",
+          "duration": 170.53740072250366,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0049] Code Review",
+          "duration": 215.46863389015198,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0049] Improvements",
+          "duration": 175.7415771484375,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0049] Simplify",
+          "duration": 171.40525245666504,
+          "type": "simplify",
           "status": "done"
         }
       ]

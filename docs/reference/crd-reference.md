@@ -9,7 +9,7 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 | Property     | Value               |
 |--------------|---------------------|
 | API Group    | `memcached.c5c3.io` |
-| API Version  | `v1alpha1`          |
+| API Version  | `v1beta1` (storage version), `v1alpha1` (deprecated) |
 | Kind         | `Memcached`         |
 | List Kind    | `MemcachedList`     |
 | Scope        | Namespaced          |
@@ -286,7 +286,7 @@ The validation webhook enforces cross-field constraints that cannot be expressed
 The simplest valid `Memcached` resource. All fields use their defaults (1 replica, `memcached:1.6` image, 64MB memory, 1024 max connections, 4 threads).
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: basic-cache
@@ -299,7 +299,7 @@ spec: {}
 A comprehensive example using all available fields.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: prod-cache
@@ -397,7 +397,7 @@ spec:
 A production-oriented configuration focusing on availability and observability.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: ha-cache
@@ -441,7 +441,7 @@ spec:
 A configuration using horizontal pod autoscaling instead of static replicas.
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: autoscaled-cache

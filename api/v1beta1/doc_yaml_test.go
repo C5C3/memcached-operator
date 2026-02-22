@@ -1,6 +1,6 @@
-// Package v1alpha1 contains documentation YAML validation tests that verify
+// Package v1beta1 contains documentation YAML validation tests that verify
 // all YAML code blocks in the documentation parse as valid Memcached CRs.
-package v1alpha1
+package v1beta1
 
 import (
 	"bufio"
@@ -133,7 +133,7 @@ func TestDocumentationYAMLExamples(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Verify apiVersion
-			expectedAPIVersion := "memcached.c5c3.io/v1beta1"
+			expectedAPIVersion := "memcached.c5c3.io/v1beta1" //nolint:goconst // test literal
 			if memcached.APIVersion != expectedAPIVersion {
 				t.Errorf("apiVersion: got %q, want %q", memcached.APIVersion, expectedAPIVersion)
 			}

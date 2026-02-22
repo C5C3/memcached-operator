@@ -9,3 +9,9 @@ resources:
   - memcached_v1alpha1_tls.yaml
   - memcached_v1alpha1_production.yaml
   - memcached_v1alpha1_autoscaling.yaml
+  - memcached_v1beta1_minimal.yaml
+  - memcached_v1beta1_ha.yaml
+  - memcached_v1beta1_monitoring.yaml
+  - memcached_v1beta1_tls.yaml
+  - memcached_v1beta1_production.yaml
+  - memcached_v1beta1_full.yaml

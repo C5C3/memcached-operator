@@ -89,9 +89,13 @@ kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/<n
 
 ### CRD compatibility notes
 
-- CRD updates within the `v1alpha1` API version are generally
-  backwards-compatible. New optional fields are added with defaults, and existing
-  fields retain their behavior.
+- The operator now serves `v1beta1` as the storage version and `v1alpha1` as a
+  deprecated spoke version. Both have identical schemas — automatic conversion
+  is handled by the API server. See the
+  [migration guide](migration-v1beta1.md) for details.
+- CRD updates within a given API version are generally backwards-compatible. New
+  optional fields are added with defaults, and existing fields retain their
+  behavior.
 - **Field removals or renames** between versions require careful handling. If a
   field is removed, existing CRs that specify that field will continue to work
   (the field is ignored), but you should update your CRs to remove deprecated
@@ -99,8 +103,6 @@ kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/<n
 - **New validation rules** may reject existing CRs on the next update. If an
   existing CR violates a new validation constraint, you must update the CR to
   conform before applying changes to it.
-- Since `v1alpha1` is an alpha API, breaking changes are possible between minor
-  versions. Always review the release notes.
 
 ### Verify CRD update
 
@@ -280,9 +282,10 @@ is running correctly and all Memcached instances are healthy.
 
 ## Version Compatibility Matrix
 
-| Operator Version | Kubernetes Version | CRD API Version | cert-manager Version | Notes           |
-|------------------|--------------------|-----------------|----------------------|-----------------|
-| v0.1.0           | v1.28 -- v1.32     | v1alpha1        | v1.12+               | Initial release |
+| Operator Version | Kubernetes Version | CRD API Versions                         | cert-manager Version | Notes                                                                           |
+|------------------|--------------------|------------------------------------------|----------------------|---------------------------------------------------------------------------------|
+| v0.1.0           | v1.28 -- v1.32     | v1alpha1                                 | v1.12+               | Initial release                                                                 |
+| v0.2.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | v1beta1 storage version; see [migration guide](migration-v1beta1.md) |
 
 Check the release notes for each version to confirm compatibility with your
 Kubernetes cluster version. The operator is tested against the Kubernetes

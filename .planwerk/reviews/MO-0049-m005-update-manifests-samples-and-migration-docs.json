@@ -1,0 +1,101 @@
+{
+  "summary": "v1beta1 sample YAML files (6 files), kustomization.yaml update, sample_yaml_test.go, migration documentation, and doc updates for examples.md, crd-reference.md, upgrade.md, and index.md. CRD and webhook manifests were already correct from prior milestones. All new v1beta1 sample tests pass. However, updating docs/how-to/examples.md YAML blocks from v1alpha1 to v1beta1 broke the existing api/v1alpha1/doc_yaml_test.go which hardcodes expected apiVersion as v1alpha1.",
+  "verdict": "BLOCKED",
+  "tests_checklist": [
+    {"item": "v1beta1 sample YAML tests exist and pass (api/v1beta1/sample_yaml_test.go)", "checked": true},
+    {"item": "go vet passes on all packages", "checked": true},
+    {"item": "All existing tests continue to pass (go test ./...)", "checked": false},
+    {"item": "Edge cases covered (empty labels, minimal spec)", "checked": true},
+    {"item": "Feature-specific validations (HA, monitoring, TLS, production)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "v1beta1 tests follow v1alpha1 test patterns", "checked": true},
+    {"item": "Sample YAMLs mirror v1alpha1 counterparts correctly", "checked": true},
+    {"item": "No code duplication beyond necessary version-parallel test structure", "checked": true},
+    {"item": "Test helper functions (samplesDirPath, loadSampleYAML) are clean and reusable", "checked": true},
+    {"item": "Clear naming conventions followed", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No security-relevant code changes (docs and YAML samples only)", "checked": true},
+    {"item": "No hardcoded secrets in sample manifests", "checked": true},
+    {"item": "Production sample demonstrates security best practices (SASL, TLS, NetworkPolicy, seccomp)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible (version bump in samples + docs)", "checked": true},
+    {"item": "File locations follow project conventions", "checked": true},
+    {"item": "v1alpha1 samples left unmodified", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No unnecessary abstractions in test code", "checked": true},
+    {"item": "Sample files contain only version-appropriate content", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Tests use t.Fatal for critical setup failures", "checked": true},
+    {"item": "File glob returns early on zero matches", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Sample YAML tests validate apiVersion, kind, and metadata.name", "checked": true},
+    {"item": "Test discovery uses glob pattern to auto-detect new samples", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "V1-1",
+      "check_id": "V1",
+      "severity": "blocker",
+      "title": "Existing test regression: TestDocumentationYAMLExamples fails",
+      "description": "The docs/how-to/examples.md YAML blocks were updated from v1alpha1 to v1beta1, but api/v1alpha1/doc_yaml_test.go:136 hardcodes the expected apiVersion as 'memcached.c5c3.io/v1alpha1'. All 7 subtests fail with: apiVersion: got \"memcached.c5c3.io/v1beta1\", want \"memcached.c5c3.io/v1alpha1\".",
+      "location": "api/v1alpha1/doc_yaml_test.go:136",
+      "fix": "Update doc_yaml_test.go line 136 to expect 'memcached.c5c3.io/v1beta1' since the docs now use v1beta1 as the primary API version. The test validates doc content, and the docs were intentionally updated to v1beta1."
+    },
+    {
+      "id": "C5-1",
+      "check_id": "C5",
+      "severity": "blocker",
+      "title": "Review criterion violated: 'All existing tests continue to pass'",
+      "description": "The review criteria explicitly require 'All existing tests continue to pass: go test ./...' but go test ./... fails due to the doc_yaml_test.go regression in api/v1alpha1 package.",
+      "location": "api/v1alpha1/doc_yaml_test.go:136",
+      "fix": "Same fix as V1-1. Update the expected apiVersion in the doc YAML test to v1beta1."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider adding a v1beta1/doc_yaml_test.go that validates docs reference v1beta1 apiVersion, mirroring the pattern",
+    "Minor: docs/index.md table row padding is inconsistent after the migration guide row was added — purely cosmetic"
+  ],
+  "next_steps": [
+    "Fix api/v1alpha1/doc_yaml_test.go:136 — change expected apiVersion from 'memcached.c5c3.io/v1alpha1' to 'memcached.c5c3.io/v1beta1'",
+    "Run go test ./... to confirm all tests pass after the fix",
+    "Re-request review"
+  ],
+  "metadata": {
+    "feature_id": "MO-0049",
+    "title": "M005: Update manifests, samples, and migration docs",
+    "date": "2026-02-22",
+    "verdict": "BLOCKED",
+    "verification_commands_run": [
+      "go test ./api/v1beta1/... -run TestSampleYAML -v (PASS)",
+      "go test ./... (FAIL — api/v1alpha1 TestDocumentationYAMLExamples)",
+      "go vet ./... (PASS)",
+      "git diff main...HEAD --stat (14 files changed, 664 insertions, 26 deletions)"
+    ],
+    "files_reviewed": [
+      "api/v1beta1/sample_yaml_test.go",
+      "api/v1alpha1/doc_yaml_test.go",
+      "config/samples/kustomization.yaml",
+      "config/samples/memcached_v1beta1_full.yaml",
+      "config/samples/memcached_v1beta1_ha.yaml",
+      "config/samples/memcached_v1beta1_minimal.yaml",
+      "config/samples/memcached_v1beta1_monitoring.yaml",
+      "config/samples/memcached_v1beta1_production.yaml",
+      "config/samples/memcached_v1beta1_tls.yaml",
+      "docs/how-to/migration-v1beta1.md",
+      "docs/how-to/examples.md",
+      "docs/how-to/upgrade.md",
+      "docs/index.md",
+      "docs/reference/crd-reference.md",
+      "config/crd/bases/memcached.c5c3.io_memcacheds.yaml",
+      "config/webhook/manifests.yaml"
+    ]
+  }
+}
