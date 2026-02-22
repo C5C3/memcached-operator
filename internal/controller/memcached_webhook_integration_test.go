@@ -6,17 +6,17 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 var _ = Describe("Webhook Defaulting via API Server", func() {
 
 	Context("minimal CR with empty spec", func() {
 		It("should apply all webhook defaults to a minimal CR", func() {
-			mc := validMemcached(uniqueName("wh-minimal"))
+			mc := validMemcachedBeta(uniqueName("wh-minimal"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			// REQ-001: replicas defaults to 1.
@@ -46,13 +46,13 @@ var _ = Describe("Webhook Defaulting via API Server", func() {
 			replicas := int32(5)
 			image := "memcached:1.6.28"
 			exporterImage := "custom/exporter:v2"
-			preset := memcachedv1alpha1.AntiAffinityPresetHard
+			preset := memcachedv1beta1.AntiAffinityPresetHard
 
-			mc := validMemcached(uniqueName("wh-full"))
-			mc.Spec = memcachedv1alpha1.MemcachedSpec{
+			mc := validMemcachedBeta(uniqueName("wh-full"))
+			mc.Spec = memcachedv1beta1.MemcachedSpec{
 				Replicas: &replicas,
 				Image:    &image,
-				Memcached: &memcachedv1alpha1.MemcachedConfig{
+				Memcached: &memcachedv1beta1.MemcachedConfig{
 					MaxMemoryMB:    512,
 					MaxConnections: 4096,
 					Threads:        16,
@@ -60,21 +60,21 @@ var _ = Describe("Webhook Defaulting via API Server", func() {
 					Verbosity:      1,
 					ExtraArgs:      []string{"-o", "modern"},
 				},
-				Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Monitoring: &memcachedv1beta1.MonitoringSpec{
 					Enabled:       true,
 					ExporterImage: &exporterImage,
-					ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+					ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 						Interval:      "15s",
 						ScrapeTimeout: "5s",
 					},
 				},
-				HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 					AntiAffinityPreset: &preset,
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			// All explicit values must be preserved.
@@ -89,7 +89,7 @@ var _ = Describe("Webhook Defaulting via API Server", func() {
 			Expect(*fetched.Spec.Monitoring.ExporterImage).To(Equal("custom/exporter:v2"))
 			Expect(fetched.Spec.Monitoring.ServiceMonitor.Interval).To(Equal("15s"))
 			Expect(fetched.Spec.Monitoring.ServiceMonitor.ScrapeTimeout).To(Equal("5s"))
-			Expect(*fetched.Spec.HighAvailability.AntiAffinityPreset).To(Equal(memcachedv1alpha1.AntiAffinityPresetHard))
+			Expect(*fetched.Spec.HighAvailability.AntiAffinityPreset).To(Equal(memcachedv1beta1.AntiAffinityPresetHard))
 		})
 	})
 })

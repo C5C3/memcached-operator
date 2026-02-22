@@ -13,6 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // uniqueName returns a unique resource name for test isolation.
@@ -28,6 +29,17 @@ func validMemcached(name string) *memcachedv1alpha1.Memcached {
 			Namespace: "default",
 		},
 		Spec: memcachedv1alpha1.MemcachedSpec{},
+	}
+}
+
+// validMemcachedBeta returns a minimal valid v1beta1 Memcached resource for use in tests.
+func validMemcachedBeta(name string) *memcachedv1beta1.Memcached {
+	return &memcachedv1beta1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "default",
+		},
+		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
 }
 

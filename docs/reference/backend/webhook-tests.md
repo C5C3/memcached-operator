@@ -5,8 +5,8 @@ validation webhooks at three levels: unit tests, envtest integration tests, and
 Chainsaw E2E tests.
 
 **Source**:
-- `api/v1alpha1/memcached_webhook_test.go` (defaulting unit tests)
-- `api/v1alpha1/memcached_validation_webhook_test.go` (validation unit tests)
+- `api/v1beta1/memcached_webhook_test.go` (defaulting unit tests)
+- `api/v1beta1/memcached_validation_webhook_test.go` (validation unit tests)
 - `internal/controller/memcached_webhook_integration_test.go` (defaulting envtest)
 - `internal/controller/memcached_validation_webhook_integration_test.go` (validation envtest)
 - `test/e2e/webhook-defaulting/` (Chainsaw E2E defaulting)
@@ -34,7 +34,7 @@ three levels of the testing pyramid:
 
 ## Unit Tests: Defaulting Webhook
 
-**File**: `api/v1alpha1/memcached_webhook_test.go`
+**File**: `api/v1beta1/memcached_webhook_test.go`
 
 Standard Go `testing.T` tests calling `MemcachedCustomDefaulter.Default()`
 directly on in-memory `Memcached` structs.
@@ -71,7 +71,7 @@ directly on in-memory `Memcached` structs.
 
 ## Unit Tests: Validation Webhook
 
-**File**: `api/v1alpha1/memcached_validation_webhook_test.go`
+**File**: `api/v1beta1/memcached_validation_webhook_test.go`
 
 Standard Go `testing.T` tests with table-driven test patterns calling
 `MemcachedCustomValidator.ValidateCreate/Update/Delete()` directly.
@@ -255,10 +255,10 @@ Integration tests create CRs via the API server and verify the result:
 var _ = Describe("Webhook Defaulting via API Server", func() {
     Context("minimal CR", func() {
         It("should apply defaults", func() {
-            mc := validMemcached(uniqueName("wh-minimal"))
+            mc := validMemcachedBeta(uniqueName("wh-minimal"))
             Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-            fetched := &memcachedv1alpha1.Memcached{}
+            fetched := &memcachedv1beta1.Memcached{}
             Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
             Expect(*fetched.Spec.Replicas).To(Equal(int32(1)))
@@ -367,10 +367,10 @@ steps:
 
 ```bash
 # Defaulting webhook
-go test ./api/v1alpha1/ -run TestMemcachedDefaulting -v
+go test ./api/v1beta1/ -run TestMemcachedDefaulting -v
 
 # Validation webhook
-go test ./api/v1alpha1/ -run 'TestValidate|TestValidation' -v
+go test ./api/v1beta1/ -run 'TestValidate|TestValidation' -v
 ```
 
 ### All tests (unit + envtest integration)

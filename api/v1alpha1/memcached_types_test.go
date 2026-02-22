@@ -10,6 +10,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	v1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // --- REQ-001: MemcachedConfig ---
@@ -177,7 +179,7 @@ func TestMonitoringSpec_ZeroValue(t *testing.T) {
 }
 
 func TestMonitoringSpec_AllFieldsSet(t *testing.T) {
-	img := DefaultExporterImage
+	img := v1beta1.DefaultExporterImage
 	m := MonitoringSpec{
 		Enabled:       true,
 		ExporterImage: &img,
@@ -197,7 +199,7 @@ func TestMonitoringSpec_AllFieldsSet(t *testing.T) {
 	if !m.Enabled {
 		t.Error("expected Enabled to be true")
 	}
-	if *m.ExporterImage != DefaultExporterImage {
+	if *m.ExporterImage != v1beta1.DefaultExporterImage {
 		t.Errorf("unexpected ExporterImage: %s", *m.ExporterImage)
 	}
 	if m.ExporterResources.Requests.Cpu().String() != "50m" {
@@ -206,7 +208,7 @@ func TestMonitoringSpec_AllFieldsSet(t *testing.T) {
 	if m.ServiceMonitor.Interval != "30s" {
 		t.Errorf("unexpected Interval: %s", m.ServiceMonitor.Interval)
 	}
-	if m.ServiceMonitor.ScrapeTimeout != DefaultServiceMonitorScrapeTimeout {
+	if m.ServiceMonitor.ScrapeTimeout != v1beta1.DefaultServiceMonitorScrapeTimeout {
 		t.Errorf("unexpected ScrapeTimeout: %s", m.ServiceMonitor.ScrapeTimeout)
 	}
 	if m.ServiceMonitor.AdditionalLabels["team"] != "infra" {

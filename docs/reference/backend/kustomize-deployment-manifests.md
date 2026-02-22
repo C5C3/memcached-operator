@@ -146,8 +146,8 @@ Admission webhook configurations and the webhook Service.
 | `service.yaml`   | Service                                                      | Routes port 443 to the manager's webhook port 9443 |
 
 Webhook paths:
-- Mutating: `/mutate-memcached-c5c3-io-v1alpha1-memcached`
-- Validating: `/validate-memcached-c5c3-io-v1alpha1-memcached`
+- Mutating: `/mutate-memcached-c5c3-io-v1beta1-memcached`
+- Validating: `/validate-memcached-c5c3-io-v1beta1-memcached`
 
 Both webhooks intercept `CREATE` and `UPDATE` operations on `memcacheds` resources
 with `failurePolicy: Fail`.

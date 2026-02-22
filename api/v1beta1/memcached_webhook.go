@@ -1,5 +1,5 @@
-// Package v1alpha1 contains API Schema definitions for the memcached v1alpha1 API group.
-package v1alpha1
+// Package v1beta1 contains API Schema definitions for the memcached v1beta1 API group.
+package v1beta1
 
 import (
 	"context"
@@ -35,7 +35,7 @@ type MemcachedCustomDefaulter struct{}
 // Compile-time interface check.
 var _ admission.Defaulter[*Memcached] = &MemcachedCustomDefaulter{}
 
-// +kubebuilder:webhook:path=/mutate-memcached-c5c3-io-v1alpha1-memcached,mutating=true,failurePolicy=fail,sideEffects=None,groups=memcached.c5c3.io,resources=memcacheds,verbs=create;update,versions=v1alpha1,name=mmemcached-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-memcached-c5c3-io-v1beta1-memcached,mutating=true,failurePolicy=fail,sideEffects=None,groups=memcached.c5c3.io,resources=memcacheds,verbs=create;update,versions=v1beta1,name=mmemcached-v1beta1.kb.io,admissionReviewVersions=v1
 
 // SetupMemcachedWebhookWithManager registers the defaulting and validation webhooks with the manager.
 func SetupMemcachedWebhookWithManager(mgr ctrl.Manager) error {

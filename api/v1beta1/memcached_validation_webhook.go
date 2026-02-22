@@ -1,5 +1,5 @@
-// Package v1alpha1 contains the validation webhook for Memcached resources.
-package v1alpha1
+// Package v1beta1 contains the validation webhook for Memcached resources.
+package v1beta1
 
 import (
 	"context"
@@ -27,7 +27,7 @@ type MemcachedCustomValidator struct{}
 // Compile-time interface check.
 var _ admission.Validator[*Memcached] = &MemcachedCustomValidator{}
 
-// +kubebuilder:webhook:path=/validate-memcached-c5c3-io-v1alpha1-memcached,mutating=false,failurePolicy=fail,sideEffects=None,groups=memcached.c5c3.io,resources=memcacheds,verbs=create;update,versions=v1alpha1,name=vmemcached-v1alpha1.kb.io,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-memcached-c5c3-io-v1beta1-memcached,mutating=false,failurePolicy=fail,sideEffects=None,groups=memcached.c5c3.io,resources=memcacheds,verbs=create;update,versions=v1beta1,name=vmemcached-v1beta1.kb.io,admissionReviewVersions=v1
 
 // ValidateCreate validates a Memcached resource on creation.
 func (v *MemcachedCustomValidator) ValidateCreate(_ context.Context, obj *Memcached) (admission.Warnings, error) {
@@ -234,12 +234,11 @@ func validateAutoscaling(mc *Memcached) field.ErrorList {
 
 	// REQ-007: CPU utilization metrics require resources.requests.cpu.
 	if hasCPUUtilizationMetric(as.Metrics) {
-		if mc.Spec.Resources == nil || mc.Spec.Resources.Requests == nil {
-			errs = append(errs, field.Required(
-				field.NewPath("spec", "resources", "requests", "cpu"),
-				"resources.requests.cpu is required when using CPU utilization metrics",
-			))
-		} else if _, ok := mc.Spec.Resources.Requests[corev1.ResourceCPU]; !ok {
+		hasCPURequest := mc.Spec.Resources != nil && mc.Spec.Resources.Requests != nil
+		if hasCPURequest {
+			_, hasCPURequest = mc.Spec.Resources.Requests[corev1.ResourceCPU]
+		}
+		if !hasCPURequest {
 			errs = append(errs, field.Required(
 				field.NewPath("spec", "resources", "requests", "cpu"),
 				"resources.requests.cpu is required when using CPU utilization metrics",

@@ -94,7 +94,7 @@ func fullyPopulated() *Memcached {
 				},
 				ServiceMonitor: &ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{"team": "platform"},
-					Interval:         DefaultServiceMonitorInterval,
+					Interval:         v1beta1.DefaultServiceMonitorInterval,
 					ScrapeTimeout:    "10s",
 				},
 			},
@@ -228,7 +228,7 @@ func TestConvertTo_FullyPopulatedObject(t *testing.T) {
 	if dst.Spec.Monitoring == nil {
 		t.Fatal("Monitoring is nil after ConvertTo")
 	}
-	if dst.Spec.Monitoring.ServiceMonitor.Interval != DefaultServiceMonitorInterval {
+	if dst.Spec.Monitoring.ServiceMonitor.Interval != v1beta1.DefaultServiceMonitorInterval {
 		t.Error("ServiceMonitor.Interval mismatch")
 	}
 

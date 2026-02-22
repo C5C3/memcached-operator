@@ -272,7 +272,7 @@ Creating or updating a Memcached CR is rejected with a validation error.
 
 ```text
 Error from server (Invalid): error when creating "memcached.yaml":
-admission webhook "vmemcached-v1alpha1.kb.io" denied the request: ...
+admission webhook "vmemcached-v1beta1.kb.io" denied the request: ...
 ```
 
 ### Diagnosis

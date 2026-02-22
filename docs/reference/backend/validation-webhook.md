@@ -3,7 +3,7 @@
 Reference documentation for the validating admission webhook that rejects
 Memcached custom resources with invalid field combinations.
 
-**Source**: `api/v1alpha1/memcached_validation_webhook.go`
+**Source**: `api/v1beta1/memcached_validation_webhook.go`
 
 ## Overview
 
@@ -21,7 +21,7 @@ webhook in the admission chain, so validation sees the fully-defaulted CR.
 ### Webhook Path
 
 ```text
-/validate-memcached-c5c3-io-v1alpha1-memcached
+/validate-memcached-c5c3-io-v1beta1-memcached
 ```
 
 Admission type: **Validating** (`mutating=false`)
@@ -163,7 +163,7 @@ performing any checks.
 ### Rejected: Insufficient Memory Limit
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -180,7 +180,7 @@ spec:
 ### Rejected: PDB minAvailable >= Replicas
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -197,7 +197,7 @@ spec:
 ### Rejected: SASL Enabled Without Secret
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -213,7 +213,7 @@ spec:
 ### Rejected: TLS Enabled Without Secret
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -229,7 +229,7 @@ spec:
 ### Rejected: Graceful Shutdown Timing
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -246,7 +246,7 @@ spec:
 ### Rejected: Autoscaling With Replicas
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -263,7 +263,7 @@ spec:
 ### Rejected: minReplicas Exceeds maxReplicas
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -279,7 +279,7 @@ spec:
 ### Rejected: CPU Utilization Without CPU Request
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -298,7 +298,7 @@ spec:
 A CR with multiple invalid fields returns all errors at once:
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -326,7 +326,7 @@ spec:
 ### Accepted: Valid CR With All Features
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -363,7 +363,7 @@ A minimal CR with an empty spec passes validation because the defaulting
 webhook fills required fields before validation runs:
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -392,7 +392,7 @@ sections — all nil-guarded validations are skipped.
 ## Implementation
 
 The `MemcachedCustomValidator` struct in
-`api/v1alpha1/memcached_validation_webhook.go` implements
+`api/v1beta1/memcached_validation_webhook.go` implements
 `admission.Validator[*Memcached]`:
 
 ```go
@@ -442,10 +442,10 @@ webhook in the Kubernetes admission chain.
 The kubebuilder marker on `MemcachedCustomValidator` generates the webhook
 manifest in `config/webhook/manifests.yaml`:
 
-- Path: `/validate-memcached-c5c3-io-v1alpha1-memcached`
+- Path: `/validate-memcached-c5c3-io-v1beta1-memcached`
 - Mutating: `false`
 - Failure policy: `Fail`
 - Side effects: `None`
 - Verbs: `create`, `update`
 - API group: `memcached.c5c3.io`
-- API version: `v1alpha1`
+- API version: `v1beta1`

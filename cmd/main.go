@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/controller"
 	"github.com/c5c3/memcached-operator/internal/version"
 )
@@ -35,6 +36,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(memcachedv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(memcachedv1beta1.AddToScheme(scheme))
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 }
 
@@ -136,7 +138,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = memcachedv1alpha1.SetupMemcachedWebhookWithManager(mgr); err != nil {
+	if err = memcachedv1beta1.SetupMemcachedWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Memcached")
 		os.Exit(1)
 	}

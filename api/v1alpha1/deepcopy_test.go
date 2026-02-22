@@ -5,13 +5,15 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	v1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 const testMutatedValue = "changed"
 
 func TestMemcachedDeepCopy_Independence(t *testing.T) {
 	replicas := int32(3)
-	image := DefaultImage
+	image := v1beta1.DefaultImage
 
 	original := &Memcached{
 		TypeMeta: metav1.TypeMeta{
@@ -72,7 +74,7 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 
 	// Mutate Image pointer in original.
 	*original.Spec.Image = "changed:latest"
-	if *clone.Spec.Image != DefaultImage {
+	if *clone.Spec.Image != v1beta1.DefaultImage {
 		t.Error("clone Spec.Image was affected by mutating original")
 	}
 

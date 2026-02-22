@@ -1,5 +1,5 @@
-// Package v1alpha1 contains unit tests for the Memcached validation webhook.
-package v1alpha1
+// Package v1beta1 contains unit tests for the Memcached validation webhook.
+package v1beta1
 
 import (
 	"context"

@@ -3,7 +3,7 @@
 Reference documentation for the mutating admission webhook that sets sensible
 defaults on Memcached custom resources when fields are omitted.
 
-**Source**: `api/v1alpha1/memcached_webhook.go`
+**Source**: `api/v1beta1/memcached_webhook.go`
 
 ## Overview
 
@@ -32,7 +32,7 @@ Values are resolved in the following order (highest priority first):
 ### Webhook Path
 
 ```text
-/mutate-memcached-c5c3-io-v1alpha1-memcached
+/mutate-memcached-c5c3-io-v1beta1-memcached
 ```
 
 Admission type: **Mutating** (`mutating=true`)
@@ -125,7 +125,7 @@ cache stampedes when load decreases temporarily.
 ### Minimal CR (Empty Spec)
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -150,7 +150,7 @@ spec:
 ### Partially Specified (User Values Preserved)
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -178,7 +178,7 @@ spec:
 ### With Monitoring Enabled
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -208,7 +208,7 @@ spec:
 ### With High Availability Enabled
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -235,7 +235,7 @@ spec:
 ### With Autoscaling Enabled
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -278,7 +278,7 @@ spec:
 A CR with all fields explicitly set passes through the webhook unchanged:
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -344,7 +344,7 @@ This design means:
 
 ## Implementation
 
-The `MemcachedCustomDefaulter` struct in `api/v1alpha1/memcached_webhook.go`
+The `MemcachedCustomDefaulter` struct in `api/v1beta1/memcached_webhook.go`
 implements `admission.Defaulter[*Memcached]`:
 
 ```go
@@ -370,10 +370,10 @@ This function is called from `cmd/main.go` during operator startup.
 The kubebuilder marker on `SetupMemcachedWebhookWithManager` generates the
 webhook manifest in `config/webhook/`. The marker defines:
 
-- Path: `/mutate-memcached-c5c3-io-v1alpha1-memcached`
+- Path: `/mutate-memcached-c5c3-io-v1beta1-memcached`
 - Mutating: `true`
 - Failure policy: `Fail`
 - Side effects: `None`
 - Verbs: `create`, `update`
 - API group: `memcached.c5c3.io`
-- API version: `v1alpha1`
+- API version: `v1beta1`

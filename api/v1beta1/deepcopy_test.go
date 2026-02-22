@@ -8,7 +8,7 @@ import (
 
 func TestMemcachedDeepCopy_Independence(t *testing.T) {
 	replicas := int32(3)
-	image := "memcached:1.6"
+	image := DefaultImage
 
 	original := &Memcached{
 		TypeMeta: metav1.TypeMeta{
@@ -68,7 +68,7 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 
 	// Mutate Image pointer in original.
 	*original.Spec.Image = "changed:latest"
-	if *clone.Spec.Image != "memcached:1.6" {
+	if *clone.Spec.Image != DefaultImage {
 		t.Error("clone Spec.Image was affected by mutating original")
 	}
 

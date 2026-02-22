@@ -10,14 +10,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-memcached-c5c3-io-v1alpha1-memcached
+      path: /mutate-memcached-c5c3-io-v1beta1-memcached
   failurePolicy: Fail
-  name: mmemcached-v1alpha1.kb.io
+  name: mmemcached-v1beta1.kb.io
   rules:
   - apiGroups:
     - memcached.c5c3.io
     apiVersions:
-    - v1alpha1
+    - v1beta1
     operations:
     - CREATE
     - UPDATE
@@ -36,14 +36,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-memcached-c5c3-io-v1alpha1-memcached
+      path: /validate-memcached-c5c3-io-v1beta1-memcached
   failurePolicy: Fail
-  name: vmemcached-v1alpha1.kb.io
+  name: vmemcached-v1beta1.kb.io
   rules:
   - apiGroups:
     - memcached.c5c3.io
     apiVersions:
-    - v1alpha1
+    - v1beta1
     operations:
     - CREATE
     - UPDATE
