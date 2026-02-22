@@ -882,12 +882,12 @@ func TestMemcachedDefaulting_AutoscalingIdempotent(t *testing.T) {
 	}
 }
 
-// --- Autoscaling + replicas interaction (B1 fix) ---
+// --- Autoscaling + replicas interaction ---
 
-func TestMemcachedDefaulting_AutoscalingClearsReplicas(t *testing.T) {
-	// When autoscaling is enabled, the webhook must clear spec.replicas
-	// (the CRD schema default +kubebuilder:default=1 may have set it).
-	replicas := int32(1)
+func TestMemcachedDefaulting_AutoscalingPreservesReplicas(t *testing.T) {
+	// When autoscaling is enabled and replicas is set, the defaulter must
+	// leave replicas intact so that validation can reject the conflict.
+	replicas := int32(3)
 	mc := &Memcached{
 		Spec: MemcachedSpec{
 			Replicas: &replicas,
@@ -903,8 +903,8 @@ func TestMemcachedDefaulting_AutoscalingClearsReplicas(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if mc.Spec.Replicas != nil {
-		t.Errorf("expected spec.replicas to be nil when autoscaling is enabled, got %d", *mc.Spec.Replicas)
+	if mc.Spec.Replicas == nil || *mc.Spec.Replicas != 3 {
+		t.Errorf("expected spec.replicas to be preserved (3) for validation to reject, got %v", mc.Spec.Replicas)
 	}
 }
 
@@ -958,8 +958,7 @@ func TestDefaultThenValidate_AutoscalingEnabled(t *testing.T) {
 }
 
 func TestDefaultThenValidate_AutoscalingWithExplicitReplicas(t *testing.T) {
-	// Autoscaling enabled + explicit replicas: defaulting clears replicas,
-	// validation passes.
+	// Autoscaling enabled + explicit replicas: validation must reject the conflict.
 	replicas := int32(3)
 	mc := &Memcached{
 		Spec: MemcachedSpec{
@@ -981,12 +980,12 @@ func TestDefaultThenValidate_AutoscalingWithExplicitReplicas(t *testing.T) {
 		t.Fatalf("defaulting error: %v", err)
 	}
 
-	if mc.Spec.Replicas != nil {
-		t.Errorf("expected replicas to be cleared, got %d", *mc.Spec.Replicas)
+	if mc.Spec.Replicas == nil || *mc.Spec.Replicas != 3 {
+		t.Errorf("expected replicas to be preserved (3), got %v", mc.Spec.Replicas)
 	}
 
-	if err := validateMemcached(mc); err != nil {
-		t.Errorf("expected no validation error after defaulting, got: %v", err)
+	if err := validateMemcached(mc); err == nil {
+		t.Error("expected validation error for replicas + autoscaling conflict, got nil")
 	}
 }
 

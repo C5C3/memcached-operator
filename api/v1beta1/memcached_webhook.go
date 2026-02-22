@@ -121,14 +121,9 @@ func defaultMonitoring(mc *Memcached) {
 	}
 }
 
-// defaultAutoscaling sets defaults for autoscaling sub-fields and clears spec.replicas.
+// defaultAutoscaling sets defaults for autoscaling sub-fields.
 // Must only be called when autoscaling is enabled.
 func defaultAutoscaling(mc *Memcached) {
-	// Clear spec.replicas — it is mutually exclusive with autoscaling.enabled.
-	// The CRD schema default (+kubebuilder:default=1) may have set replicas before
-	// the webhook runs; clear it so validation does not reject the CR.
-	mc.Spec.Replicas = nil
-
 	// Inject 80% CPU utilization metric when Metrics is empty.
 	if len(mc.Spec.Autoscaling.Metrics) == 0 {
 		cpuUtilization := DefaultAutoscalingCPUUtilization
