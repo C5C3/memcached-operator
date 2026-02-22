@@ -31,17 +31,6 @@ func validMemcached(name string) *memcachedv1beta1.Memcached {
 	}
 }
 
-// validMemcachedBeta returns a minimal valid v1beta1 Memcached resource for use in tests.
-func validMemcachedBeta(name string) *memcachedv1beta1.Memcached {
-	return &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: "default",
-		},
-		Spec: memcachedv1beta1.MemcachedSpec{},
-	}
-}
-
 func int32Ptr(i int32) *int32 { return &i }
 func strPtr(s string) *string { return &s }
 

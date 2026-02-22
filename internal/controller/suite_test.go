@@ -23,6 +23,7 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
+	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
@@ -82,6 +83,12 @@ var _ = BeforeSuite(func() {
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
+
+	// Register v1alpha1 before v1beta1 to match cmd/main.go scheme registration order.
+	// v1alpha1 is needed so the conversion webhook can serve v1alpha1 ↔ v1beta1 round-trips
+	// during integration tests that exercise the API server's storage version migration path.
+	err = memcachedv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	err = memcachedv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())

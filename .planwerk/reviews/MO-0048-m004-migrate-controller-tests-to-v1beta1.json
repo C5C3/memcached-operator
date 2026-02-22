@@ -1,0 +1,51 @@
+{
+  "feature_id": "MO-0048",
+  "title": "M004: Migrate controller tests to v1beta1",
+  "date": "2026-02-22",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Mechanical migration of test files from validMemcachedBeta to validMemcached is correct and complete (11/11 call sites, function removed). v1alpha1 scheme registration added to suite_test.go with proper import alias. However, v1alpha1 scheme is registered AFTER v1beta1, violating the plan requirement to register BEFORE v1beta1 (matching cmd/main.go order). Two pre-existing test failures in memcached_envtest_integration_test.go are NOT regressions (identical failures on main branch). go vet passes clean.",
+  "tests_checklist": [
+    {"item": "Tests exist and pass (374/376, 2 pre-existing failures unrelated to this change)", "checked": true},
+    {"item": "No test regressions introduced", "checked": true},
+    {"item": "Edge cases covered by existing test suite", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing code patterns", "checked": false},
+    {"item": "No duplicated code (validMemcachedBeta removed)", "checked": true},
+    {"item": "No dead code remains", "checked": true},
+    {"item": "Import alias matches cmd/main.go convention", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No security-relevant changes (test-only migration)", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is as simple as possible (mechanical find-replace)", "checked": true},
+    {"item": "No scope creep beyond test migration", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code (validMemcachedBeta eliminated)", "checked": true},
+    {"item": "Single canonical helper function (validMemcached)", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Scheme registration errors caught with Expect", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Not applicable (test-only changes)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "P1-001",
+      "check_id": "P1",
+      "severity": "major",
+      "description": "v1alpha1 scheme registered AFTER v1beta1 in suite_test.go, but plan and review criteria require BEFORE (matching cmd/main.go order where v1alpha1 is line 38, v1beta1 is line 39). Current order: v1beta1 at line 87, v1alpha1 at line 92.",
+      "location": "internal/controller/suite_test.go:87-93",
+      "fix": "Move the v1alpha1 AddToScheme block (lines 90-93) BEFORE the v1beta1 AddToScheme call (line 87). Result: v1alpha1 registration, then v1beta1 registration, matching cmd/main.go:38-39."
+    }
+  ],
+  "suggested_improvements": [],
+  "next_steps": [
+    "Move v1alpha1 scheme registration before v1beta1 in suite_test.go to match cmd/main.go order"
+  ]
+}

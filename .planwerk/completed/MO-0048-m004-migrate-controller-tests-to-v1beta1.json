@@ -2,8 +2,8 @@
   "feature_id": "MO-0048",
   "title": "M004: Migrate controller tests to v1beta1",
   "slug": "m004-migrate-controller-tests-to-v1beta1",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nUpdate the entire test suite to use v1beta1 types:\n\n1. **internal/controller/suite_test.go** — Register v1beta1 scheme alongside v1alpha1 (both needed for conversion tests). Set up v1beta1 webhooks in the envtest environment. Ensure the test environment supports multi-version CRD with conversion.\n2. **~30 test files in internal/controller/** — Mechanical migration: replace all `v1alpha1.Memcached` with `v1beta1.Memcached`, update import aliases, update object creation helpers, update type assertions. Since schema is identical, test logic remains unchanged.\n3. Verify all tests pass with `make test` after migration.\n\nThis is primarily a mechanical find-and-replace operation across test files, but must be done carefully to ensure no references are missed.\n\n**Rationale:** Tests must match the types the controller actually uses. Running tests against v1alpha1 types while the controller uses v1beta1 would cause compilation failures and wouldn't test the actual production code path.\n\n**Affected Areas:**\n- internal/controller/suite_test.go\n- internal/controller/*_test.go",
   "stories": [
@@ -311,6 +311,7 @@
       "description": "In internal/controller/suite_test.go: (1) Add import `memcachedv1alpha1 \"github.com/c5c3/memcached-operator/api/v1alpha1\"` in the project-local import group, adjacent to the existing v1beta1 import (line 26). (2) In the BeforeSuite function, add `err = memcachedv1alpha1.AddToScheme(scheme.Scheme)` + `Expect(err).NotTo(HaveOccurred())` BEFORE the existing v1beta1 AddToScheme call (before line 86), matching the order in cmd/main.go lines 38-39. (3) Add a brief comment: `// v1alpha1 scheme needed for multi-version CRD conversion in envtest`. Verify: `go build ./internal/controller/...` and `go vet ./internal/controller/...` pass.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -323,6 +324,7 @@
       "description": "In internal/controller/memcached_validation_webhook_integration_test.go: Replace all 9 occurrences of `validMemcachedBeta(` with `validMemcached(`. The lines are: 19, 36, 52, 69, 83, 97, 113, 150, 157. This is a mechanical find-and-replace. Verify: `go build ./internal/controller/...` passes.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -333,6 +335,7 @@
       "description": "In internal/controller/memcached_webhook_integration_test.go: Replace all 2 occurrences of `validMemcachedBeta(` with `validMemcached(` at lines 16 and 51. Verify: `go build ./internal/controller/...` passes.",
       "level": 1,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -343,6 +346,7 @@
       "description": "In internal/controller/memcached_crd_validation_test.go: Remove the validMemcachedBeta function definition (lines 34-43) and its comment (line 34). The function body is identical to validMemcached (lines 24-32). Verify: `go build ./internal/controller/...` passes with no undefined references.",
       "level": 1,
       "estimate_minutes": 5,
+      "status": "done",
       "requirements": [
         "REQ-003"
       ]
@@ -353,30 +357,9 @@
       "description": "Run `grep -rn 'v1alpha1\\.' internal/controller/*_test.go` to confirm zero matches for v1alpha1 type usage. Run `grep -rn 'v1alpha1' internal/controller/*_test.go` to confirm the only v1alpha1 reference is the import in suite_test.go. If any unexpected references are found, update them to v1beta1. Document findings.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-004"
-      ]
-    },
-    {
-      "id": "2.2",
-      "title": "Run make test to verify all tests pass (REQ-005, REQ-007, REQ-008)",
-      "description": "Execute `make test` from the project root. Verify: (1) Exit code is 0. (2) All 6 packages report 'ok' status. (3) cover.out is generated. (4) No compilation errors, no test failures. If any test fails, investigate and fix the root cause before proceeding.",
-      "level": 2,
-      "estimate_minutes": 10,
-      "requirements": [
-        "REQ-005",
-        "REQ-007",
-        "REQ-008"
-      ]
-    },
-    {
-      "id": "3.1",
-      "title": "Write reference documentation for multi-version test environment setup",
-      "description": "Verify that the inline comment in suite_test.go adequately documents the multi-version scheme registration. No separate documentation file is needed since this is internal test infrastructure, but ensure the comment in suite_test.go is clear enough that a new developer understands: (1) why both v1alpha1 and v1beta1 schemes are registered, (2) that the controller only uses v1beta1, (3) that v1alpha1 is for conversion webhook support in envtest.",
-      "level": 3,
-      "estimate_minutes": 15,
-      "requirements": [
-        "REQ-006"
       ]
     }
   ],
@@ -505,6 +488,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T15:51:15.612973"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:52:26.625087"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T16:06:38.538773"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T16:06:38.557981"
     }
   },
   "execution_history": [
@@ -518,6 +513,44 @@
           "name": "prepare",
           "duration": 391.3379557132721,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "7a540de0-40b4-4564-919d-71cb29b20554",
+      "timestamp": "2026-02-22T16:02:15.527901",
+      "total_duration": 471.94767665863037,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (4 tasks)",
+          "duration": 162.9472348690033,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (1 tasks)",
+          "duration": 78.71213579177856,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0048] Code Review",
+          "duration": 116.96738743782043,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0048] Improvements",
+          "duration": 27.287358045578003,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0048] Simplify",
+          "duration": 86.03356051445007,
+          "type": "simplify",
           "status": "done"
         }
       ]

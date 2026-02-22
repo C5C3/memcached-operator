@@ -16,7 +16,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("rejects insufficient memory limit", func() {
 		It("should reject a CR where resources.limits.memory < maxMemoryMB + 32Mi overhead", func() {
-			mc := validMemcachedBeta(uniqueName("val-mem"))
+			mc := validMemcached(uniqueName("val-mem"))
 			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB: 64,
 			}
@@ -33,7 +33,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("rejects PDB minAvailable >= replicas", func() {
 		It("should reject a CR where minAvailable equals replicas", func() {
-			mc := validMemcachedBeta(uniqueName("val-pdb"))
+			mc := validMemcached(uniqueName("val-pdb"))
 			mc.Spec.Replicas = int32Ptr(3)
 			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
@@ -49,7 +49,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("rejects PDB mutual exclusivity", func() {
 		It("should reject a CR with both minAvailable and maxUnavailable set", func() {
-			mc := validMemcachedBeta(uniqueName("val-pdb-mut"))
+			mc := validMemcached(uniqueName("val-pdb-mut"))
 			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:        true,
@@ -66,7 +66,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("rejects SASL without secret", func() {
 		It("should reject a CR with SASL enabled but no credentialsSecretRef", func() {
-			mc := validMemcachedBeta(uniqueName("val-sasl"))
+			mc := validMemcached(uniqueName("val-sasl"))
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
@@ -80,7 +80,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("rejects TLS without secret", func() {
 		It("should reject a CR with TLS enabled but no certificateSecretRef", func() {
-			mc := validMemcachedBeta(uniqueName("val-tls"))
+			mc := validMemcached(uniqueName("val-tls"))
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
@@ -94,7 +94,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("rejects graceful shutdown timing violation", func() {
 		It("should reject a CR where terminationGracePeriodSeconds <= preStopDelaySeconds", func() {
-			mc := validMemcachedBeta(uniqueName("val-gs"))
+			mc := validMemcached(uniqueName("val-gs"))
 			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
@@ -110,7 +110,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("accepts valid CR with all features", func() {
 		It("should accept a fully valid CR with all optional sections configured correctly", func() {
-			mc := validMemcachedBeta(uniqueName("val-full"))
+			mc := validMemcached(uniqueName("val-full"))
 			mc.Spec.Replicas = int32Ptr(3)
 			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB: 64,
@@ -147,14 +147,14 @@ var _ = Describe("Webhook Validation via API Server", func() {
 
 	Context("minimal CR passes after defaulting", func() {
 		It("should accept a minimal empty-spec CR because defaulting fills required values", func() {
-			mc := validMemcachedBeta(uniqueName("val-minimal"))
+			mc := validMemcached(uniqueName("val-minimal"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 		})
 	})
 
 	Context("rejects update to invalid config", func() {
 		It("should reject an update that changes a valid CR to an invalid configuration", func() {
-			mc := validMemcachedBeta(uniqueName("val-upd"))
+			mc := validMemcached(uniqueName("val-upd"))
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,

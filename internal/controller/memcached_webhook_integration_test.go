@@ -13,7 +13,7 @@ var _ = Describe("Webhook Defaulting via API Server", func() {
 
 	Context("minimal CR with empty spec", func() {
 		It("should apply all webhook defaults to a minimal CR", func() {
-			mc := validMemcachedBeta(uniqueName("wh-minimal"))
+			mc := validMemcached(uniqueName("wh-minimal"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			fetched := &memcachedv1beta1.Memcached{}
@@ -48,7 +48,7 @@ var _ = Describe("Webhook Defaulting via API Server", func() {
 			exporterImage := "custom/exporter:v2"
 			preset := memcachedv1beta1.AntiAffinityPresetHard
 
-			mc := validMemcachedBeta(uniqueName("wh-full"))
+			mc := validMemcached(uniqueName("wh-full"))
 			mc.Spec = memcachedv1beta1.MemcachedSpec{
 				Replicas: &replicas,
 				Image:    &image,
