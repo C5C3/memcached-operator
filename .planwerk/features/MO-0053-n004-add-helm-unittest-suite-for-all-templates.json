@@ -1,0 +1,932 @@
+{
+  "feature_id": "MO-0053",
+  "title": "N004: Add Helm unittest suite for all templates",
+  "slug": "n004-add-helm-unittest-suite-for-all-templates",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** testing\n**Priority:** high\n**Source:** Proposed for 'Helm Chart Packaging\n\nChart structure under charts/'\n\nCreate a comprehensive helm-unittest test suite under charts/memcached-operator/tests/. Tests cover: default values rendering (all resources present with defaults), each toggle combination (webhook.enabled=false excludes webhook resources, certmanager.enabled=true includes cert-manager resources, serviceMonitor.enabled toggling, networkPolicy.enabled toggling, rbac.create=false excludes RBAC, crds.managedByHelm=true renders CRD template instead of relying on crds/ directory), deployment parameterization (custom image, replicas, resources, watchNamespaces arg injection), and label/selector correctness via _helpers.tpl.\n\n**Rationale:** Chart correctness must be verified before CI integration. Helm-unittest runs without a cluster and catches template rendering issues, missing conditionals, and value propagation bugs. Testing all toggle combinations prevents broken installs when users customize values.\n\n**Affected Areas:**\n- charts/memcached-operator/tests/deployment_test.yaml\n- charts/memcached-operator/tests/rbac_test.yaml\n- charts/memcached-operator/tests/webhook_test.yaml\n- charts/memcached-operator/tests/certmanager_test.yaml\n- charts/memcached-operator/tests/servicemonitor_test.yaml\n- charts/memcached-operator/tests/networkpolicy_test.yaml\n- charts/memcached-operator/tests/crd_test.yaml",
+  "stories": [
+    {
+      "title": "Chart maintainer verifies all templates render with default values",
+      "role": "chart maintainer",
+      "want": "to run helm-unittest and confirm all templates render correctly with default values.yaml",
+      "so_that": "I know the chart produces a valid, complete set of Kubernetes resources out of the box",
+      "criteria": [
+        "Running `helm unittest charts/memcached-operator` produces 0 failures",
+        "Default rendering test verifies exact document count per template (SA=1, Deployment=1, ClusterRole=2, LeaderElection=2, Metrics=3, NetworkPolicy=1, WebhookService=1, MutatingWH=1, ValidatingWH=1, Issuer=1, Certificate=1, ServiceMonitor=0, CRD-template=0)",
+        "Each template test file validates kind, apiVersion, metadata.name, metadata.namespace, and standard labels",
+        "Deployment test validates default image (controller:0.1.0), replicas (1), resources (cpu:500m/10m, memory:128Mi/64Mi), security context, probes, ports, and container args"
+      ]
+    },
+    {
+      "title": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "role": "chart maintainer",
+      "want": "to verify that each values.yaml toggle (webhook.enabled, certmanager.enabled, serviceMonitor.enabled, networkPolicy.enabled, rbac.create, crds.managedByHelm) correctly gates its associated templates",
+      "so_that": "users who customize toggles get exactly the resources they expect without broken references",
+      "criteria": [
+        "webhook.enabled=false produces 0 documents for webhook/service.yaml, webhook/mutatingwebhookconfiguration.yaml, webhook/validatingwebhookconfiguration.yaml, certmanager/issuer.yaml, certmanager/certificate.yaml",
+        "webhook.enabled=false removes webhook port 9443 and cert volume/volumeMount from Deployment, removes webhook port from NetworkPolicy ingress",
+        "certmanager.enabled=false produces 0 documents for certmanager/issuer.yaml and certmanager/certificate.yaml but keeps webhook templates rendering",
+        "certmanager.enabled=false removes cert-manager.io/inject-ca-from annotation from MutatingWebhookConfiguration and ValidatingWebhookConfiguration",
+        "serviceMonitor.enabled=true produces 1 ServiceMonitor document; false (default) produces 0",
+        "networkPolicy.enabled=false produces 0 documents for networkpolicy.yaml; true (default) produces 1",
+        "rbac.create=false produces 0 documents for all 3 RBAC template files (clusterrole, leader-election, metrics)",
+        "crds.managedByHelm=true produces 1 CRD document; false (default) produces 0"
+      ]
+    },
+    {
+      "title": "Chart maintainer validates deployment parameterization",
+      "role": "chart maintainer",
+      "want": "to verify that all deployment parameters (image, replicas, resources, watchNamespaces, scheduling, security) are correctly templated",
+      "so_that": "users can customize the operator deployment to match their environment",
+      "criteria": [
+        "Custom image.repository and image.tag override the default container image",
+        "Custom replicaCount overrides spec.replicas",
+        "Custom resources override container resource requests/limits",
+        "watchNamespaces list is joined with commas and injected as --watch-namespaces arg",
+        "leaderElection.enabled=false removes --leader-elect arg",
+        "imagePullSecrets are rendered when set, absent when empty",
+        "nodeSelector, tolerations, and affinity are rendered when set, absent when empty",
+        "Pod and container security contexts match values.yaml defaults (runAsNonRoot, readOnlyRootFilesystem, drop ALL)"
+      ]
+    },
+    {
+      "title": "Chart maintainer verifies label and selector correctness via _helpers.tpl",
+      "role": "chart maintainer",
+      "want": "to validate that all helper template functions produce correct labels, names, and selectors",
+      "so_that": "Kubernetes label selectors match across Deployments, Services, NetworkPolicies, and ServiceMonitors",
+      "criteria": [
+        "memcached-operator.fullname produces release-chartname by default, uses release name when it contains chart name, uses fullnameOverride when set, truncates at 63 chars",
+        "memcached-operator.name uses chart name by default, nameOverride when set",
+        "memcached-operator.labels includes helm.sh/chart, app.kubernetes.io/name, instance, version, managed-by",
+        "memcached-operator.selectorLabels includes only name and instance (subset of full labels)",
+        "control-plane: controller-manager label appears on Deployment metadata, pod template, and selector matchLabels",
+        "Deployment spec.selector.matchLabels matches pod template labels (selectorLabels + control-plane)"
+      ]
+    },
+    {
+      "title": "Chart maintainer verifies cross-template consistency with fullnameOverride and serviceAccount.name",
+      "role": "chart maintainer",
+      "want": "to verify that fullnameOverride and custom serviceAccount.name propagate consistently across all templates",
+      "so_that": "all resource names, role binding subjects, cert DNS names, and webhook service references remain consistent when overrides are used",
+      "criteria": [
+        "fullnameOverride propagates to Deployment, ServiceAccount, all RBAC resources, webhook Service, webhook configs, cert-manager resources, ServiceMonitor, NetworkPolicy names",
+        "Custom serviceAccount.name propagates to ServiceAccount metadata.name, Deployment serviceAccountName, and all RoleBinding/ClusterRoleBinding subjects",
+        "serviceAccount.create=false sets Deployment serviceAccountName to 'default' (when no custom name)",
+        "Webhook configs reference the correct webhook service name derived from fullnameOverride",
+        "cert-manager.io/inject-ca-from annotation references correct namespace/certificate-name combination"
+      ]
+    },
+    {
+      "title": "Chart maintainer validates NOTES.txt reflects toggle states",
+      "role": "chart maintainer",
+      "want": "to verify that NOTES.txt output correctly reflects enabled/disabled component states and shows appropriate warnings",
+      "so_that": "users see accurate post-install instructions including CRD management mode, RBAC status, webhook status, and cert-manager warnings",
+      "criteria": [
+        "Default NOTES.txt shows correct fullname, CRD management mode (crds/ directory default), RBAC Helm-managed, webhooks enabled, cert-manager enabled",
+        "crds.managedByHelm=true changes CRD management message to Helm-managed",
+        "rbac.create=false shows RBAC warning",
+        "webhook.enabled=false shows webhooks disabled",
+        "webhook.enabled=true with certmanager.enabled=false shows manual TLS warning",
+        "serviceMonitor.enabled=true shows ServiceMonitor enabled"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The test suite SHALL verify that all templates render the correct number of documents and correct kind/apiVersion with default values",
+      "priority": "SHALL",
+      "rationale": "Ensures the chart produces a complete, valid set of resources out of the box without any value overrides",
+      "scenarios": [
+        {
+          "name": "Default rendering produces expected document counts",
+          "when": "helm-unittest runs with no value overrides",
+          "then": "each template produces the expected document count (SA=1, Deployment=1, ClusterRole=2, LeaderElection=2, Metrics=3, NetworkPolicy=1, WebhookService=1, MutatingWH=1, ValidatingWH=1, Issuer=1, Certificate=1, ServiceMonitor=0, CRD-template=0)",
+          "and_then": [
+            "every document has correct kind and apiVersion"
+          ]
+        },
+        {
+          "name": "Each document has correct metadata.name and namespace",
+          "when": "helm-unittest runs with release name 'test-release' in namespace 'test-ns'",
+          "then": "metadata.name uses the fullname helper pattern (test-release-memcached-operator[-suffix])",
+          "and_then": [
+            "metadata.namespace equals 'test-ns' for namespaced resources"
+          ]
+        },
+        {
+          "name": "Each document includes standard Helm labels",
+          "when": "helm-unittest runs with defaults",
+          "then": "metadata.labels includes helm.sh/chart, app.kubernetes.io/name, instance, version, managed-by",
+          "and_then": [
+            "managed-by is 'Helm'",
+            "version matches chart appVersion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The test suite SHALL verify that webhook.enabled=false excludes all webhook resources and removes webhook artifacts from Deployment and NetworkPolicy",
+      "priority": "SHALL",
+      "rationale": "Users who don't need webhooks must be able to disable them without leftover ports, volumes, or broken references",
+      "scenarios": [
+        {
+          "name": "webhook.enabled=false suppresses webhook templates",
+          "when": "webhook.enabled is set to false",
+          "then": "webhook/service.yaml, webhook/mutatingwebhookconfiguration.yaml, webhook/validatingwebhookconfiguration.yaml produce 0 documents",
+          "and_then": [
+            "certmanager/issuer.yaml and certmanager/certificate.yaml also produce 0 documents"
+          ]
+        },
+        {
+          "name": "webhook.enabled=false cleans Deployment",
+          "when": "webhook.enabled is set to false",
+          "then": "Deployment does not contain webhook-server port 9443, no volumeMounts, no volumes",
+          "and_then": [
+            "health port 8081 and metrics port 8443 are still present"
+          ]
+        },
+        {
+          "name": "webhook.enabled=false cleans NetworkPolicy",
+          "when": "webhook.enabled is set to false",
+          "then": "NetworkPolicy ingress does not contain port 9443",
+          "and_then": [
+            "health port 8081 and metrics port 8443 are still present in ingress"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The test suite SHALL verify that certmanager.enabled toggle independently controls cert-manager resources and webhook annotations",
+      "priority": "SHALL",
+      "rationale": "Users may want webhooks without cert-manager (manual TLS provisioning) or with cert-manager for automated TLS",
+      "scenarios": [
+        {
+          "name": "certmanager.enabled=false suppresses cert-manager templates",
+          "when": "certmanager.enabled is set to false (webhook.enabled remains true)",
+          "then": "certmanager/issuer.yaml and certmanager/certificate.yaml produce 0 documents",
+          "and_then": [
+            "webhook templates still render"
+          ]
+        },
+        {
+          "name": "certmanager.enabled=false removes inject-ca-from annotation",
+          "when": "certmanager.enabled is set to false",
+          "then": "MutatingWebhookConfiguration and ValidatingWebhookConfiguration have no metadata.annotations",
+          "and_then": []
+        },
+        {
+          "name": "Both webhook and certmanager enabled renders cert-manager annotation",
+          "when": "both webhook.enabled and certmanager.enabled are true (defaults)",
+          "then": "MutatingWebhookConfiguration and ValidatingWebhookConfiguration have cert-manager.io/inject-ca-from annotation referencing namespace/certificate-name",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The test suite SHALL verify that serviceMonitor.enabled toggle controls ServiceMonitor rendering and validates all endpoint configuration",
+      "priority": "SHALL",
+      "rationale": "ServiceMonitor is disabled by default and must render correctly with all optional fields when enabled",
+      "scenarios": [
+        {
+          "name": "serviceMonitor.enabled=false produces no document",
+          "when": "serviceMonitor.enabled is false (default)",
+          "then": "servicemonitor.yaml produces 0 documents",
+          "and_then": []
+        },
+        {
+          "name": "serviceMonitor.enabled=true produces correct ServiceMonitor",
+          "when": "serviceMonitor.enabled is set to true",
+          "then": "1 ServiceMonitor document with correct endpoint config (path /metrics, port metrics, scheme https)",
+          "and_then": [
+            "bearerTokenFile and tlsConfig.insecureSkipVerify are set"
+          ]
+        },
+        {
+          "name": "Optional interval, scrapeTimeout, and additionalLabels rendered when set",
+          "when": "serviceMonitor.enabled=true with interval, scrapeTimeout, and additionalLabels configured",
+          "then": "endpoint includes interval and scrapeTimeout; metadata.labels includes additionalLabels",
+          "and_then": [
+            "these fields are absent when not configured"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The test suite SHALL verify that networkPolicy.enabled, rbac.create, and leaderElection.enabled toggles independently control their resources",
+      "priority": "SHALL",
+      "rationale": "Each toggle must independently gate its resources without side effects on other templates",
+      "scenarios": [
+        {
+          "name": "networkPolicy.enabled=false suppresses NetworkPolicy",
+          "when": "networkPolicy.enabled is set to false",
+          "then": "networkpolicy.yaml produces 0 documents",
+          "and_then": []
+        },
+        {
+          "name": "rbac.create=false suppresses all RBAC",
+          "when": "rbac.create is set to false",
+          "then": "clusterrole.yaml, leader-election-role.yaml, and metrics-role.yaml all produce 0 documents",
+          "and_then": [
+            "Deployment and ServiceAccount still render"
+          ]
+        },
+        {
+          "name": "leaderElection.enabled=false suppresses leader-election RBAC and removes --leader-elect arg",
+          "when": "leaderElection.enabled is false",
+          "then": "leader-election-role.yaml produces 0 documents and Deployment args do not contain --leader-elect",
+          "and_then": [
+            "clusterrole.yaml and metrics-role.yaml still render"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The test suite SHALL verify crds.managedByHelm toggle and CRD spec field correctness",
+      "priority": "SHALL",
+      "rationale": "CRD management strategy must be explicitly toggled and produce valid CRD with correct group/kind/scope",
+      "scenarios": [
+        {
+          "name": "crds.managedByHelm=false produces no CRD template",
+          "when": "crds.managedByHelm is false (default)",
+          "then": "crd-template.yaml produces 0 documents",
+          "and_then": []
+        },
+        {
+          "name": "crds.managedByHelm=true renders valid CRD",
+          "when": "crds.managedByHelm is true",
+          "then": "1 CustomResourceDefinition with spec.group=memcached.c5c3.io, names.kind=Memcached, names.plural=memcacheds, scope=Namespaced",
+          "and_then": [
+            "standard Helm labels present on CRD"
+          ]
+        },
+        {
+          "name": "CRD name follows Kubernetes convention",
+          "when": "crds.managedByHelm is true",
+          "then": "metadata.name is 'memcacheds.memcached.c5c3.io' (plural.group format)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The test suite SHALL verify Deployment parameterization for image, replicas, resources, args, scheduling, and security",
+      "priority": "SHALL",
+      "rationale": "The Deployment is the most parameterized template; thorough testing prevents misconfiguration",
+      "scenarios": [
+        {
+          "name": "Custom image overrides default",
+          "when": "image.repository='ghcr.io/my-org/my-operator' and image.tag='v2.0.0'",
+          "then": "container image is 'ghcr.io/my-org/my-operator:v2.0.0'",
+          "and_then": [
+            "imagePullPolicy and imagePullSecrets are also customizable"
+          ]
+        },
+        {
+          "name": "watchNamespaces injects --watch-namespaces arg",
+          "when": "watchNamespaces is ['ns1', 'ns2']",
+          "then": "container args include '--watch-namespaces=ns1,ns2'",
+          "and_then": [
+            "arg is absent when watchNamespaces is empty"
+          ]
+        },
+        {
+          "name": "Security contexts match restricted pod security standards",
+          "when": "defaults are used",
+          "then": "pod securityContext has runAsNonRoot=true, runAsUser=65532, seccompProfile.type=RuntimeDefault; container securityContext has allowPrivilegeEscalation=false, readOnlyRootFilesystem=true, capabilities.drop=[ALL]",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The test suite SHALL verify _helpers.tpl functions produce correct labels, names, and selectors across all templates",
+      "priority": "SHALL",
+      "rationale": "Helper functions are shared infrastructure; bugs cascade to every resource in the chart",
+      "scenarios": [
+        {
+          "name": "fullname with defaults, overrides, and truncation",
+          "when": "various combinations of release name, nameOverride, and fullnameOverride",
+          "then": "fullname produces expected values and truncates at 63 chars",
+          "and_then": []
+        },
+        {
+          "name": "selectorLabels are subset of labels",
+          "when": "both label sets are rendered",
+          "then": "selectorLabels include only name and instance; labels include all 5 standard labels",
+          "and_then": []
+        },
+        {
+          "name": "serviceAccountName helper respects create toggle and custom name",
+          "when": "serviceAccount.create=false with no custom name",
+          "then": "serviceAccountName returns 'default'",
+          "and_then": [
+            "with custom name, returns the custom name regardless of create flag"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The test suite SHALL verify cross-template reference consistency when fullnameOverride and serviceAccount.name are customized",
+      "priority": "SHALL",
+      "rationale": "Inconsistent names between templates cause runtime failures (broken RoleBindings, webhook service references, cert DNS mismatches)",
+      "scenarios": [
+        {
+          "name": "fullnameOverride propagates to all resource names",
+          "when": "fullnameOverride is 'my-custom-name'",
+          "then": "all resources use 'my-custom-name' as name prefix with correct suffixes",
+          "and_then": []
+        },
+        {
+          "name": "serviceAccount.name propagates to all binding subjects",
+          "when": "serviceAccount.name is 'my-sa'",
+          "then": "all ClusterRoleBinding and RoleBinding subjects[0].name is 'my-sa'",
+          "and_then": [
+            "Deployment serviceAccountName is also 'my-sa'"
+          ]
+        },
+        {
+          "name": "Webhook configs reference correct service and cert names with overrides",
+          "when": "fullnameOverride is set",
+          "then": "webhook clientConfig.service.name matches webhook Service name; cert-manager annotation references correct certificate name",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The test suite SHALL verify RBAC rules contain exact verb sets and resource targets matching operator requirements",
+      "priority": "SHALL",
+      "rationale": "Incorrect RBAC causes operator permission failures or grants excessive privileges",
+      "scenarios": [
+        {
+          "name": "ClusterRole has 11 rules with correct verbs",
+          "when": "rbac.create is true",
+          "then": "rules count is 11; memcacheds gets full CRUD, secrets gets read-only, events gets create/patch",
+          "and_then": []
+        },
+        {
+          "name": "Leader-election Role has 3 rules",
+          "when": "rbac.create and leaderElection.enabled are true",
+          "then": "configmaps and leases get full CRUD; events gets create/patch",
+          "and_then": []
+        },
+        {
+          "name": "Metrics roles have correct structure",
+          "when": "rbac.create is true",
+          "then": "3 documents: metrics-auth-role (2 rules), metrics-auth-rolebinding, metrics-reader (1 rule for /metrics nonResourceURL)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-011",
+      "description": "The test suite SHALL verify NOTES.txt reflects toggle states and shows appropriate warnings",
+      "priority": "SHALL",
+      "rationale": "Post-install notes guide users; stale or incorrect info causes confusion",
+      "scenarios": [
+        {
+          "name": "Default NOTES shows correct component status",
+          "when": "all defaults",
+          "then": "shows CRD crds/ directory management, RBAC Helm-managed, webhooks enabled, cert-manager enabled",
+          "and_then": []
+        },
+        {
+          "name": "Warning for webhook without cert-manager",
+          "when": "webhook.enabled=true, certmanager.enabled=false",
+          "then": "NOTES includes WARNING about manual TLS provisioning",
+          "and_then": []
+        },
+        {
+          "name": "Warning for disabled RBAC",
+          "when": "rbac.create=false",
+          "then": "NOTES includes WARNING about manually creating RBAC",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-012",
+      "description": "The test suite SHALL verify serviceAccount.create toggle and annotation propagation",
+      "priority": "SHALL",
+      "rationale": "ServiceAccount creation and naming must be toggleable for environments with pre-provisioned accounts",
+      "scenarios": [
+        {
+          "name": "serviceAccount.create=false suppresses SA",
+          "when": "serviceAccount.create is false",
+          "then": "serviceaccount.yaml produces 0 documents; Deployment uses serviceAccountName 'default'",
+          "and_then": []
+        },
+        {
+          "name": "Custom name overrides generated name",
+          "when": "serviceAccount.name is 'custom-sa'",
+          "then": "SA metadata.name and Deployment serviceAccountName are both 'custom-sa'",
+          "and_then": []
+        },
+        {
+          "name": "Annotations rendered when set, absent when not",
+          "when": "serviceAccount.annotations has key-value pairs",
+          "then": "SA metadata.annotations includes specified annotations",
+          "and_then": [
+            "annotations are absent by default"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create Deployment template test suite with default rendering, container args, custom image, security context, scheduling, and conditional webhook ports/volumes (REQ-001, REQ-002, REQ-007)",
+      "description": "Create charts/memcached-operator/tests/deployment_test.yaml. Test suites: (1) Default rendering - document count, kind/apiVersion, replicas=1, image=controller:0.1.0, pullPolicy=Always, default resources, serviceAccountName, metadata+pod template labels, selector labels, namespace, container name/command, ports (health 8081, metrics 8443), probes (liveness /healthz:8081, readiness /readyz:8081), pod annotation default-container, terminationGracePeriodSeconds=10. (2) Container args - --leader-elect present by default/absent when false, --health-probe-bind-address, --metrics-bind-address, --metrics-secure always present, --watch-namespaces absent by default/present when set. (3) Custom image - custom tag, custom repository+tag, imagePullSecrets when set/absent by default, custom pullPolicy. (4) Security context - podSecurityContext (runAsNonRoot, runAsUser 65532, seccompProfile), containerSecurityContext (allowPrivilegeEscalation false, readOnlyRootFilesystem true, drop ALL). (5) Scheduling - nodeSelector/tolerations/affinity absent by default, rendered when set. (6) Conditional webhook - port 9443 present/absent, volumeMounts present/absent, volumes present/absent based on webhook.enabled, fullnameOverride propagates to cert volume secretName.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create ServiceAccount template test suite with create toggle, naming, labels, and annotations (REQ-001, REQ-012)",
+      "description": "Create charts/memcached-operator/tests/serviceaccount_test.yaml. Tests: serviceAccount.create=true (default) renders 1 document, create=false renders 0; correct kind/apiVersion; name from fullname by default, custom serviceAccount.name when set; namespace from release; standard labels (all 5); managed-by=Helm; annotations absent by default, rendered when set (single + multiple annotations).",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-012"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create RBAC ClusterRole + ClusterRoleBinding test suite with toggle, rules validation, and binding references (REQ-005, REQ-010)",
+      "description": "Create charts/memcached-operator/tests/rbac_clusterrole_test.yaml. Tests: rbac.create=true renders 2 documents, false renders 0; ClusterRole (doc 0): correct kind/apiVersion, name with -manager-role suffix, standard labels, exactly 11 rules (memcacheds CRUD, status, finalizers, deployments, services, PDBs, networkpolicies, servicemonitors, HPAs, secrets read-only, events create/patch). ClusterRoleBinding (doc 1): correct kind/apiVersion, name with -manager-rolebinding suffix, roleRef to ClusterRole, subjects bind to SA in release namespace, standard labels.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Create RBAC leader-election Role + RoleBinding test suite with dual toggle and rules validation (REQ-005, REQ-010)",
+      "description": "Create charts/memcached-operator/tests/rbac_leader_election_test.yaml. Tests: both rbac.create AND leaderElection.enabled must be true to render (4 combinations tested); Role (doc 0): kind/apiVersion, name with -leader-election-role suffix, namespace, standard labels, exactly 3 rules (configmaps CRUD, leases CRUD, events create/patch); RoleBinding (doc 1): kind/apiVersion, name with -leader-election-rolebinding suffix, namespace, roleRef to Role, subjects bind to SA in release namespace, standard labels.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Create RBAC metrics auth roles test suite with 3-document structure and rules (REQ-005, REQ-010)",
+      "description": "Create charts/memcached-operator/tests/rbac_metrics_test.yaml. Tests: rbac.create=true renders 3 documents, false renders 0; metrics-auth-role ClusterRole (doc 0): kind/apiVersion, name, labels, 2 rules (tokenreviews create, subjectaccessreviews create); metrics-auth-rolebinding ClusterRoleBinding (doc 1): kind/apiVersion, name, roleRef, subjects, labels; metrics-reader ClusterRole (doc 2): kind/apiVersion, name, labels, 1 rule (get /metrics nonResourceURL).",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Create Webhook Service template test suite with toggle, ports, and selector (REQ-001, REQ-002)",
+      "description": "Create charts/memcached-operator/tests/webhook_service_test.yaml. Tests: webhook.enabled=true (default) renders 1 doc, false renders 0; correct kind/apiVersion; name using webhookServiceName helper (fullname-webhook); namespace; standard labels; port 443 targeting 9443; selector includes selectorLabels plus control-plane=controller-manager.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.7",
+      "title": "Create MutatingWebhookConfiguration test suite with toggle, cert-manager annotation, config, and rules (REQ-002, REQ-003)",
+      "description": "Create charts/memcached-operator/tests/webhook_mutating_test.yaml. Tests: webhook.enabled=true renders 1 doc, false renders 0; kind/apiVersion; name with -mutating suffix; standard labels; cert-manager annotation present when certmanager.enabled=true, absent when false; webhook name mmemcached-v1beta1.kb.io, path /mutate-memcached-c5c3-io-v1beta1-memcached, service name/namespace from helpers, failurePolicy Fail, admissionReviewVersions includes v1, sideEffects None; rules target memcached.c5c3.io, v1beta1, CREATE+UPDATE, memcacheds.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.8",
+      "title": "Create ValidatingWebhookConfiguration test suite with toggle, cert-manager annotation, config, and rules (REQ-002, REQ-003)",
+      "description": "Create charts/memcached-operator/tests/webhook_validating_test.yaml. Tests: webhook.enabled=true renders 1 doc, false renders 0; kind/apiVersion; name with -validating suffix; standard labels; cert-manager annotation present/absent based on certmanager.enabled; webhook name vmemcached-v1beta1.kb.io, path /validate-memcached-c5c3-io-v1beta1-memcached, service name/namespace, failurePolicy Fail, admissionReviewVersions v1, sideEffects None; rules target memcached.c5c3.io v1beta1 CREATE+UPDATE memcacheds.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.9",
+      "title": "Create cert-manager Certificate and Issuer test suites with dual toggle, DNS names, issuer ref, and secret name (REQ-003, REQ-006)",
+      "description": "Create charts/memcached-operator/tests/certmanager_certificate_test.yaml and certmanager_issuer_test.yaml. Certificate tests: requires both webhook.enabled AND certmanager.enabled (3 toggle combos); kind/apiVersion cert-manager.io/v1; name with -webhook-cert suffix; namespace; standard labels; dnsNames with .svc and .svc.cluster.local suffixes; issuerRef.kind=Issuer, name from fullname-selfsigned-issuer; privateKey.rotationPolicy=Always; secretName with -webhook-cert-secret suffix. Issuer tests: same dual toggle; kind/apiVersion; name with -selfsigned-issuer suffix; namespace; labels; spec.selfSigned={}.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "1.10",
+      "title": "Create ServiceMonitor template test suite with toggle, endpoint config, optional fields, and selector (REQ-004)",
+      "description": "Create charts/memcached-operator/tests/servicemonitor_test.yaml. Tests: serviceMonitor.enabled=false (default) renders 0, true renders 1; kind/apiVersion monitoring.coreos.com/v1; name with -metrics suffix; namespace; standard labels plus control-plane; additionalLabels merged when set; endpoint: path=/metrics, port=metrics, scheme=https, bearerTokenFile, tlsConfig.insecureSkipVerify=true; interval absent by default/present when set; scrapeTimeout absent/present; selector.matchLabels includes selectorLabels + control-plane.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.11",
+      "title": "Create NetworkPolicy template test suite with toggle, pod selector, policy types, conditional webhook port, and egress (REQ-002, REQ-005)",
+      "description": "Create charts/memcached-operator/tests/networkpolicy_test.yaml. Tests: networkPolicy.enabled=true (default) renders 1, false renders 0; kind/apiVersion networking.k8s.io/v1; name, namespace, standard labels; podSelector uses selectorLabels + control-plane; policyTypes include Ingress and Egress; ingress includes health 8081 and metrics 8443 ports; webhook port 9443 present when webhook.enabled=true, absent when false; health+metrics ports remain when webhook disabled; egress allows all (empty rule {}); fullnameOverride propagation.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "1.12",
+      "title": "Create CRD template test suite with managedByHelm toggle and CRD spec validation, plus Chart metadata/NOTES.txt tests (REQ-006, REQ-011)",
+      "description": "Create charts/memcached-operator/tests/crd_template_test.yaml and chart_metadata_test.yaml. CRD template tests: managedByHelm=false renders 0, true renders 1; kind CustomResourceDefinition, apiVersion apiextensions.k8s.io/v1; name memcacheds.memcached.c5c3.io; standard Helm labels with exact chart label value; spec.group, names.kind/plural, scope. Chart metadata tests: NOTES.txt with default fullname, CRD management mode (crds/ directory default vs Helm-managed), selector labels in kubectl command, ServiceAccount name (default/custom), RBAC status/warning, webhook/cert-manager status/warnings, ServiceMonitor status.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-006",
+        "REQ-011"
+      ]
+    },
+    {
+      "id": "1.13",
+      "title": "Create _helpers.tpl label/name/selector function tests via proxy template (REQ-008)",
+      "description": "Create charts/memcached-operator/tests/helpers_test.yaml. Tests use crd-template.yaml (with managedByHelm=true) and NOTES.txt as proxy templates to verify helper output. Tests: memcached-operator.name uses chart name by default, nameOverride when set; memcached-operator.chart formats as name-version; memcached-operator.labels includes all 5 standard labels with correct values; selectorLabels subset (name + instance); memcached-operator.fullname default (release-chartname), release name containing chart name, fullnameOverride, truncation at 63 chars; memcached-operator.selectorLabelsKubectl for kubectl -l flag.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create cross-template integration test suite validating resource counts, toggle combinations, fullnameOverride propagation, and cross-references (REQ-001, REQ-002, REQ-003, REQ-005, REQ-009)",
+      "description": "Create charts/memcached-operator/tests/integration_test.yaml rendering ALL templates simultaneously. Tests: (1) Default rendering produces correct total across all templates (15 resources); (2) rbac.create=false suppresses all 7 RBAC docs, others unchanged; (3) serviceAccount.create=false suppresses SA, Deployment serviceAccountName='default'; (4) fullnameOverride propagates to all resource names (Deployment, SA, all RBAC, webhook Service, webhook configs, cert-manager, ServiceMonitor, NetworkPolicy); (5) serviceAccount.name propagates to SA, Deployment, all binding subjects; (6) webhook.enabled=false suppresses webhook+certmanager templates, removes webhook port from Deployment and NetworkPolicy; (7) certmanager.enabled=false suppresses cert-manager but keeps webhooks; (8) serviceMonitor.enabled=true adds ServiceMonitor; (9) fullnameOverride propagates to new resources; (10) cross-references: webhook configs reference correct service name, cert-manager annotation references correct certificate name with fullnameOverride.",
+      "level": 2,
+      "estimate_minutes": 30,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-005",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Run full helm-unittest suite and verify all tests pass (REQ-001 through REQ-012)",
+      "description": "Install helm-unittest plugin if not present (helm plugin install https://github.com/helm-unittest/helm-unittest). Run `helm unittest charts/memcached-operator` and verify 0 failures. Fix any test failures discovered during the run. Document total test count and suite count in a summary.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008",
+        "REQ-009",
+        "REQ-010",
+        "REQ-011",
+        "REQ-012"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Write reference documentation for helm-unittest test suite structure (REQ-001)",
+      "description": "Create docs/reference/backend/helm-unittest-test-suite.md documenting: test file organization (per-template files + integration file), naming conventions (*_test.yaml), test patterns used (hasDocuments for toggles, equal/contains for values, isKind/isAPIVersion for type checks, notExists/notContains for absence), how to run tests locally, how to add tests for new templates, toggle coverage matrix showing which test files cover which values.yaml toggles.",
+      "level": 3,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should render one Deployment document",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "Default values produce exactly 1 Deployment document with kind Deployment and apiVersion apps/v1",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should set default image to controller:0.1.0",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "Container image is controller:0.1.0 using chart appVersion as tag default",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should not include webhook-server port when webhook.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "Port 9443 is absent from container ports when webhook.enabled=false",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should not include volumeMounts when webhook.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "No volumeMounts or volumes exist when webhook.enabled=false",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should use custom repository and tag",
+      "story": "Chart maintainer validates deployment parameterization",
+      "expected": "Custom image.repository and image.tag produce correct container image string",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should include --watch-namespaces when watchNamespaces is set",
+      "story": "Chart maintainer validates deployment parameterization",
+      "expected": "watchNamespaces=['ns1','ns2'] produces --watch-namespaces=ns1,ns2 arg",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should set default podSecurityContext with runAsNonRoot",
+      "story": "Chart maintainer validates deployment parameterization",
+      "expected": "Pod security context matches restricted profile defaults",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/serviceaccount_test.yaml",
+      "test_function": "should not render ServiceAccount when serviceAccount.create is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "serviceAccount.create=false produces 0 documents",
+      "requirement_id": "REQ-012"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/serviceaccount_test.yaml",
+      "test_function": "should use serviceAccount.name when set",
+      "story": "Chart maintainer verifies cross-template consistency",
+      "expected": "Custom serviceAccount.name overrides generated name in SA metadata",
+      "requirement_id": "REQ-012"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/rbac_clusterrole_test.yaml",
+      "test_function": "should not render any documents when rbac.create is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "rbac.create=false produces 0 documents for ClusterRole template",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/rbac_clusterrole_test.yaml",
+      "test_function": "should have exactly 11 RBAC rules",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "ClusterRole has exactly 11 rules matching operator RBAC requirements",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/rbac_leader_election_test.yaml",
+      "test_function": "should not render when leaderElection.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "leaderElection.enabled=false suppresses leader-election RBAC even when rbac.create=true",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/rbac_leader_election_test.yaml",
+      "test_function": "should have exactly 3 rules",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "Leader-election Role has exactly 3 rules (configmaps, leases, events)",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/rbac_metrics_test.yaml",
+      "test_function": "should render all 3 documents when rbac.create is true (default)",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "Metrics RBAC template produces exactly 3 documents (2 ClusterRoles + 1 ClusterRoleBinding)",
+      "requirement_id": "REQ-010"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_service_test.yaml",
+      "test_function": "should not render when webhook.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "webhook.enabled=false produces 0 documents for webhook Service",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_mutating_test.yaml",
+      "test_function": "should not include cert-manager annotation when certmanager.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "certmanager.enabled=false removes cert-manager.io/inject-ca-from annotation",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_mutating_test.yaml",
+      "test_function": "should include cert-manager annotation when certmanager.enabled is true (default)",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "cert-manager.io/inject-ca-from annotation references correct namespace/certificate-name",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_validating_test.yaml",
+      "test_function": "should not include cert-manager annotation when certmanager.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "certmanager.enabled=false removes cert-manager annotation from ValidatingWebhookConfiguration",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_certificate_test.yaml",
+      "test_function": "should not render when certmanager.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "certmanager.enabled=false produces 0 documents for Certificate",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_certificate_test.yaml",
+      "test_function": "should not render when webhook.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "webhook.enabled=false also suppresses cert-manager Certificate",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_issuer_test.yaml",
+      "test_function": "should render when both webhook.enabled and certmanager.enabled are true (defaults)",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "Default values produce 1 Issuer with selfSigned spec",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/servicemonitor_test.yaml",
+      "test_function": "should not render when serviceMonitor.enabled is false (default)",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "Default serviceMonitor.enabled=false produces 0 documents",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/servicemonitor_test.yaml",
+      "test_function": "should set interval when configured",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "serviceMonitor.interval='30s' sets endpoint interval field",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/networkpolicy_test.yaml",
+      "test_function": "should not render when networkPolicy.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "networkPolicy.enabled=false produces 0 documents",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/networkpolicy_test.yaml",
+      "test_function": "should not include webhook port 9443 when webhook.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "webhook.enabled=false removes port 9443 from NetworkPolicy ingress",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/crd_template_test.yaml",
+      "test_function": "should render CRD when managedByHelm is true",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "crds.managedByHelm=true produces 1 CRD document",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/crd_template_test.yaml",
+      "test_function": "should set correct CRD spec fields",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "CRD has group=memcached.c5c3.io, kind=Memcached, plural=memcacheds, scope=Namespaced",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/helpers_test.yaml",
+      "test_function": "should use fullnameOverride when set",
+      "story": "Chart maintainer verifies label and selector correctness via _helpers.tpl",
+      "expected": "fullnameOverride replaces computed fullname in NOTES.txt output",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/helpers_test.yaml",
+      "test_function": "should truncate fullname at 63 characters",
+      "story": "Chart maintainer verifies label and selector correctness via _helpers.tpl",
+      "expected": "Names exceeding 63 chars are truncated per DNS naming spec",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/chart_metadata_test.yaml",
+      "test_function": "should show Helm-managed CRD when toggled",
+      "story": "Chart maintainer validates NOTES.txt reflects toggle states",
+      "expected": "crds.managedByHelm=true changes NOTES output to show Helm-managed CRD mode",
+      "requirement_id": "REQ-011"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/chart_metadata_test.yaml",
+      "test_function": "should show RBAC warning when rbac.create is false",
+      "story": "Chart maintainer validates NOTES.txt reflects toggle states",
+      "expected": "NOTES includes WARNING about manually creating RBAC resources",
+      "requirement_id": "REQ-011"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/integration_test.yaml",
+      "test_function": "should produce 15 resources with all defaults",
+      "story": "Chart maintainer verifies all templates render with default values",
+      "expected": "All templates combined produce exactly 15 resources with default values",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/integration_test.yaml",
+      "test_function": "should suppress all webhook and certmanager resources when webhook.enabled is false",
+      "story": "Chart maintainer validates toggle combinations exclude/include correct resources",
+      "expected": "webhook.enabled=false suppresses 5 templates (3 webhook + 2 certmanager) while Deployment and NetworkPolicy still render",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/integration_test.yaml",
+      "test_function": "should propagate fullnameOverride to Deployment name",
+      "story": "Chart maintainer verifies cross-template consistency",
+      "expected": "fullnameOverride 'my-custom-name' sets Deployment metadata.name to 'my-custom-name'",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/integration_test.yaml",
+      "test_function": "should propagate custom serviceAccount.name to manager ClusterRoleBinding subjects",
+      "story": "Chart maintainer verifies cross-template consistency",
+      "expected": "Custom serviceAccount.name propagates to ClusterRoleBinding subjects[0].name",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/integration_test.yaml",
+      "test_function": "should reference correct webhook service name in MutatingWebhookConfiguration",
+      "story": "Chart maintainer verifies cross-template consistency",
+      "expected": "With fullnameOverride, webhook config clientConfig.service.name matches webhook Service name",
+      "requirement_id": "REQ-009"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All helm-unittest test files follow existing naming convention (*_test.yaml) and structure (suite/templates/release/tests)",
+    "Every template file has at least one dedicated test file covering: document count, kind/apiVersion, metadata (name, namespace, labels), and all conditional logic",
+    "Every values.yaml toggle (webhook.enabled, certmanager.enabled, serviceMonitor.enabled, networkPolicy.enabled, rbac.create, leaderElection.enabled, serviceAccount.create, crds.managedByHelm) has tests for both true and false states",
+    "Integration test file renders ALL templates simultaneously and validates cross-template consistency (resource counts, fullnameOverride propagation, serviceAccount.name propagation, webhook cross-references)",
+    "Running `helm unittest charts/memcached-operator` produces 0 failures",
+    "Test specifications cover toggle combinations where one toggle affects multiple templates (e.g., webhook.enabled=false affects 5 templates + Deployment + NetworkPolicy)",
+    "RBAC tests validate exact rule counts and verb sets to catch permission drift",
+    "All test files use consistent release metadata (name: test-release, namespace: test-ns) for predictable assertion values",
+    "Reference documentation exists at docs/reference/backend/helm-unittest-test-suite.md covering test structure, patterns, and how to extend"
+  ],
+  "implementation_notes": "**Architecture**: Each template gets its own test file for isolated testing. A single integration_test.yaml renders all templates simultaneously for cross-template validation. Helper functions are tested indirectly via proxy templates (crd-template.yaml for labels, NOTES.txt for fullname).\n\n**Test patterns**: (1) hasDocuments for toggle gating (count: 0 when disabled, count: N when enabled). (2) isKind/isAPIVersion for type validation. (3) equal for exact value matching. (4) contains for array/list membership. (5) notExists/notContains for absence verification. (6) matchRegexRaw for NOTES.txt text matching. (7) documentIndex for multi-document templates (RBAC files produce 2-3 documents).\n\n**Toggle coverage matrix**: webhook.enabled affects: webhook/*, certmanager/*, deployment (ports/volumes), networkpolicy (ingress ports). certmanager.enabled affects: certmanager/*, webhook annotations. serviceMonitor.enabled affects: servicemonitor.yaml. networkPolicy.enabled affects: networkpolicy.yaml. rbac.create affects: rbac/*. leaderElection.enabled affects: rbac/leader-election-role.yaml, deployment args. serviceAccount.create affects: serviceaccount.yaml, deployment serviceAccountName. crds.managedByHelm affects: crd-template.yaml.\n\n**Key files**: templates/_helpers.tpl defines all shared helpers (fullname, name, labels, selectorLabels, serviceAccountName, webhookServiceName, webhookCertName, webhookCertSecretName). values.yaml defines all toggles and their defaults. All test files use release name 'test-release' in namespace 'test-ns' with chart appVersion '0.1.0' for consistent, predictable assertion values.\n\n**Risks**: (1) helm-unittest plugin version compatibility - pin to v0.5.x or later. (2) Multi-document template ordering - use documentIndex consistently. (3) NOTES.txt regex assertions may be fragile if NOTES format changes.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:36:34.847594"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T20:22:19.127771"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T20:29:28.047856"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "51f50a18-fcb0-48ed-9781-ed47a1f19e79",
+      "timestamp": "2026-02-22T20:29:28.047897",
+      "total_duration": 426.45636320114136,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 426.45636320114136,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
