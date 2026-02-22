@@ -1,0 +1,4 @@
+# Helm templates contain Go template syntax that is not valid YAML
+charts/memcached-operator/templates/
+# CRD generated files
+charts/memcached-operator/crds/

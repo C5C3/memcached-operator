@@ -5,6 +5,9 @@ templates:
 release:
   name: test-release
   namespace: test-ns
+chart:
+  appVersion: "0.1.0"
+  version: "0.1.0"
 tests:
   - it: should not render CRD when managedByHelm is false (default)
     asserts:
@@ -48,6 +51,9 @@ tests:
       - equal:
           path: metadata.labels["app.kubernetes.io/instance"]
           value: test-release
+      - equal:
+          path: metadata.labels["app.kubernetes.io/version"]
+          value: "0.1.0"
       - equal:
           path: metadata.labels["app.kubernetes.io/managed-by"]
           value: Helm

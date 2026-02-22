@@ -59,3 +59,40 @@ tests:
           pattern: "WARNING: RBAC resources are not managed by this chart"
       - notMatchRegexRaw:
           pattern: "RBAC: Helm-managed"
+
+  - it: should show webhooks enabled by default
+    asserts:
+      - matchRegexRaw:
+          pattern: "Webhooks: enabled"
+
+  - it: should show webhooks disabled when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "Webhooks: disabled"
+
+  - it: should show cert-manager enabled by default
+    asserts:
+      - matchRegexRaw:
+          pattern: "cert-manager: enabled"
+
+  - it: should show manual TLS warning when webhook enabled but certmanager disabled
+    set:
+      webhook.enabled: true
+      certmanager.enabled: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "WARNING.*Webhooks are enabled but cert-manager is disabled"
+
+  - it: should show ServiceMonitor enabled when toggled
+    set:
+      serviceMonitor.enabled: true
+    asserts:
+      - matchRegexRaw:
+          pattern: "ServiceMonitor: enabled"
+
+  - it: should not show ServiceMonitor when disabled (default)
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "ServiceMonitor: enabled"

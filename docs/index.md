@@ -92,4 +92,5 @@ The `reference/backend/` directory contains in-depth implementation references f
 - [CI Pipeline](reference/backend/ci-pipeline.md)
 - [Multi-Stage Dockerfile](reference/backend/multi-stage-dockerfile.md)
 - [Kustomize Deployment Manifests](reference/backend/kustomize-deployment-manifests.md)
+- [Helm Unit Tests](reference/backend/helm-unittest-test-suite.md)
 - [Project Structure](reference/backend/project-structure.md)

@@ -1,0 +1,107 @@
+{
+  "summary": "Comprehensive helm-unittest test suite covering all 15 Helm chart templates with 304 tests across 17 suites. Every template has a dedicated test file, all 8 values.yaml toggles are tested in both states, integration tests validate cross-template consistency (resource counts, fullnameOverride propagation, serviceAccount.name propagation, webhook cross-references), and reference documentation is complete. All tests pass with 0 failures. Two issues require changes: the integration test omits crd-template.yaml from its template list (violating the 'ALL templates' plan requirement), and 7 NOTES.txt test cases are duplicated across helpers_test.yaml and chart_metadata_test.yaml.",
+  "verdict": "NEEDS_CHANGES",
+  "tests_checklist": [
+    {"item": "All 304 tests pass (helm unittest charts/memcached-operator)", "checked": true},
+    {"item": "Every template file has a dedicated test file", "checked": true},
+    {"item": "All 8 values.yaml toggles tested for both true and false states", "checked": true},
+    {"item": "Toggle combinations tested (webhook+certmanager dual gate, rbac+leaderElection dual gate)", "checked": true},
+    {"item": "RBAC tests validate exact rule counts (11, 3, 2+1) and verb sets", "checked": true},
+    {"item": "Integration test renders ALL templates simultaneously", "checked": false},
+    {"item": "Integration test validates cross-template fullnameOverride propagation", "checked": true},
+    {"item": "Integration test validates serviceAccount.name propagation", "checked": true},
+    {"item": "Integration test validates webhook cross-references with fullnameOverride", "checked": true},
+    {"item": "Consistent release metadata (test-release, test-ns) across all files", "checked": true},
+    {"item": "Reference documentation exists at docs/reference/backend/helm-unittest-test-suite.md", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Test files follow *_test.yaml naming convention", "checked": true},
+    {"item": "Test files use consistent suite/templates/release/tests structure", "checked": true},
+    {"item": "Assertions are specific (exact values, not just existence checks)", "checked": true},
+    {"item": "No dead code or commented-out tests", "checked": true},
+    {"item": "No duplicated test logic across files", "checked": false}
+  ],
+  "security_checklist": [
+    {"item": "N/A - YAML test files have no security surface", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "One test file per template (clear 1:1 mapping)", "checked": true},
+    {"item": "Integration test separated from unit tests", "checked": true},
+    {"item": "Helper functions tested via proxy templates (acceptable pattern)", "checked": true},
+    {"item": "Solution is as simple as possible for helm-unittest", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No unnecessary abstractions in test files", "checked": true},
+    {"item": "No duplicated NOTES.txt test cases across files", "checked": false}
+  ],
+  "fail_fast_checklist": [
+    {"item": "N/A - declarative YAML tests", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "N/A - no external inputs in test files", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "FC1-1",
+      "severity": "critical",
+      "check_id": "FC1",
+      "file": "charts/memcached-operator/tests/integration_test.yaml:3-15",
+      "description": "Integration test templates: block omits templates/crd-template.yaml. Plan Task 2.1 explicitly requires 'rendering ALL templates simultaneously' but the CRD template is excluded. The crds.managedByHelm toggle has no integration-level coverage. The documented '15 resources' count is correct only because the CRD defaults to 0 documents, but the template is not even loaded so a regression where it always renders would not be caught.",
+      "fix": "Add '- templates/crd-template.yaml' to the templates list at line 15. Add 'hasDocuments: count: 0' with 'template: templates/crd-template.yaml' to the default resource count test. Add a new test: 'should produce 1 CRD when crds.managedByHelm is true' with set crds.managedByHelm=true asserting hasDocuments count: 1 for that template."
+    },
+    {
+      "id": "Q3-1",
+      "severity": "major",
+      "check_id": "Q3",
+      "file": "charts/memcached-operator/tests/helpers_test.yaml:127-173",
+      "description": "7 NOTES.txt test cases in helpers_test.yaml Suite 2 (lines 131-173) are semantic duplicates of tests in chart_metadata_test.yaml (lines 63-98). Both target templates/NOTES.txt and assert identical patterns: Webhooks enabled/disabled, cert-manager enabled, cert-manager warning, ServiceMonitor enabled/disabled, and default fullname. Any NOTES.txt change requires updating assertions in two files.",
+      "fix": "Remove lines 127-173 from helpers_test.yaml (the duplicated NOTES.txt component status tests). Keep the fullname/truncation/selectorLabelsKubectl tests (lines 88-125) in helpers_test.yaml Suite 2 since those test _helpers.tpl functions not covered elsewhere. All component status tests belong in chart_metadata_test.yaml."
+    },
+    {
+      "id": "DA3-1",
+      "severity": "minor",
+      "check_id": "DA3",
+      "file": "docs/reference/backend/helm-unittest-test-suite.md:69",
+      "description": "Documentation states deployment_test.yaml has '54 tests' but actual count is 56 (verified via grep -c '  - it:').",
+      "fix": "Change '54 tests' to '56 tests' on line 69."
+    },
+    {
+      "id": "P1-1",
+      "severity": "minor",
+      "check_id": "P1",
+      "file": "charts/memcached-operator/tests/crd_template_test.yaml:1-7, charts/memcached-operator/tests/helpers_test.yaml:1-8",
+      "description": "Both files assert on app.kubernetes.io/version label (crd_template_test.yaml:53, helpers_test.yaml:57) without declaring a chart: block to pin appVersion. 9 other test files include chart: { appVersion: '0.1.0', version: '0.1.0' }. These assertions depend on the live Chart.yaml appVersion and will break silently if it changes.",
+      "fix": "Add 'chart: { appVersion: \"0.1.0\", version: \"0.1.0\" }' after the release: block in both files, matching the pattern in deployment_test.yaml and 8 other test files."
+    },
+    {
+      "id": "DA3-2",
+      "severity": "minor",
+      "check_id": "DA3",
+      "file": "docs/reference/backend/helm-unittest-test-suite.md:302",
+      "description": "ClusterRole rules prose lists 'memcacheds, deployments, services, PDBs, networkpolicies, servicemonitors, HPAs, secrets, events' (9 items) but claims 11 rules. The 2 missing items are memcacheds/status and memcacheds/finalizers sub-resources.",
+      "fix": "Change to: '11 rules covering memcacheds (including /status and /finalizers sub-resources), deployments, services, PDBs, networkpolicies, servicemonitors, HPAs, secrets, events'"
+    }
+  ],
+  "suggested_improvements": [
+    "Consider adding a fullnameOverride propagation test for NetworkPolicy in integration_test.yaml (was added in this diff, good catch)",
+    "The helpers_test.yaml Suite 2 fullname/truncation tests (lines 88-125) could optionally be moved to chart_metadata_test.yaml for a single NOTES.txt test file, but keeping them separate for the _helpers.tpl focus is also reasonable"
+  ],
+  "next_steps": [
+    "Add templates/crd-template.yaml to integration_test.yaml templates list with default count: 0 and managedByHelm=true count: 1 assertions",
+    "Remove 7 duplicated NOTES.txt component status tests from helpers_test.yaml lines 127-173",
+    "Add chart: block to crd_template_test.yaml and helpers_test.yaml Suite 1",
+    "Fix deployment test count in docs (54 → 56)",
+    "Fix ClusterRole rules prose in docs to mention /status and /finalizers sub-resources",
+    "Run helm unittest to confirm 0 failures after changes"
+  ],
+  "metadata": {
+    "feature_id": "MO-0053",
+    "title": "N004: Add Helm unittest suite for all templates",
+    "date": "2026-02-22",
+    "verdict": "NEEDS_CHANGES",
+    "tests_run": "304 passed, 0 failed",
+    "suites_run": "17 passed, 0 failed"
+  }
+}

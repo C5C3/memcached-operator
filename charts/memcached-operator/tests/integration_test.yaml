@@ -13,6 +13,7 @@ templates:
   - templates/certmanager/issuer.yaml
   - templates/certmanager/certificate.yaml
   - templates/servicemonitor.yaml
+  - templates/crd-template.yaml
 release:
   name: test-release
   namespace: test-ns
@@ -23,7 +24,7 @@ tests:
   # ====================================================================
   # Test 1: Default rendering produces correct total resource count
   # SA=1, Deployment=1, clusterrole=2, leader-election=2, metrics=3,
-  # netpol=1, webhook=3, certmanager=2, servicemonitor=0 => 15
+  # netpol=1, webhook=3, certmanager=2, servicemonitor=0, crd=0 => 15
   # ====================================================================
 
   - it: should produce 15 resources with all defaults
@@ -64,6 +65,9 @@ tests:
       - hasDocuments:
           count: 0
         template: templates/servicemonitor.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/crd-template.yaml
 
   # ====================================================================
   # Test 2: rbac.create=false suppresses all 7 RBAC resources
@@ -110,6 +114,9 @@ tests:
       - hasDocuments:
           count: 0
         template: templates/servicemonitor.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/crd-template.yaml
 
   # ====================================================================
   # Test 3: serviceAccount.create=false suppresses SA
@@ -156,6 +163,9 @@ tests:
       - hasDocuments:
           count: 0
         template: templates/servicemonitor.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/crd-template.yaml
 
   - it: should set Deployment serviceAccountName to default when serviceAccount.create is false
     set:
@@ -403,6 +413,18 @@ tests:
           count: 1
 
   # ====================================================================
+  # Test 8b: crds.managedByHelm=true produces 1 CRD
+  # ====================================================================
+
+  - it: should produce 1 CRD when crds.managedByHelm is true
+    set:
+      crds.managedByHelm: true
+    template: templates/crd-template.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  # ====================================================================
   # Test 9: fullnameOverride propagates to new resource names
   # ====================================================================
 
@@ -450,6 +472,15 @@ tests:
       - equal:
           path: metadata.name
           value: my-custom-name-webhook-cert
+
+  - it: should propagate fullnameOverride to NetworkPolicy name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/networkpolicy.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name
 
   - it: should propagate fullnameOverride to ServiceMonitor name
     set:
