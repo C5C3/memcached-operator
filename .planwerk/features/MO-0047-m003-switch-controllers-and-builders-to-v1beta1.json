@@ -1,0 +1,763 @@
+{
+  "feature_id": "MO-0047",
+  "title": "M003: Switch controllers and builders to v1beta1",
+  "slug": "m003-switch-controllers-and-builders-to-v1beta1",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** backend\n**Priority:** high\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nUpdate the entire controller layer and cmd/main.go to use v1beta1 types:\n\n1. **cmd/main.go** — Add `memcachedv1beta1` import for `api/v1beta1`, call `memcachedv1beta1.AddToScheme(scheme)`, replace v1alpha1 webhook setup with v1beta1 webhook setup (`SetupMemcachedWebhookWithManager` or equivalent).\n2. **internal/controller/memcached_controller.go** — Change import alias from `memcachedv1alpha1` to `memcachedv1beta1`, update `MemcachedReconciler` to reconcile `v1beta1.Memcached`, update `SetupWithManager` builder, update all type references in Reconcile function.\n3. **internal/controller/deployment.go** — Change `constructDeployment` parameter from `*v1alpha1.Memcached` to `*v1beta1.Memcached`.\n4. **internal/controller/service.go** — Change `constructService` parameter type.\n5. **internal/controller/status.go** — Change status update functions parameter types.\n6. **internal/controller/pdb.go** — Change `constructPDB` parameter type.\n7. **internal/controller/networkpolicy.go** — Change `constructNetworkPolicy` parameter type.\n8. **internal/controller/servicemonitor.go** — Change `constructServiceMonitor` parameter type.\n9. **internal/controller/reconcile_resource.go** — Update owner reference type if applicable.\n\nAll changes are mechanical import/type swaps since schema is identical.\n\n**Rationale:** The controller must reconcile the storage version (v1beta1) to correctly watch and process resources as stored in etcd. This is the core operational change that makes the operator work with the new API version.\n\n**Affected Areas:**\n- cmd/main.go\n- internal/controller/memcached_controller.go\n- internal/controller/deployment.go\n- internal/controller/service.go\n- internal/controller/status.go\n- internal/controller/pdb.go\n- internal/controller/networkpolicy.go\n- internal/controller/servicemonitor.go\n- internal/controller/reconcile_resource.go",
+  "stories": [
+    {
+      "title": "Controller reconciles v1beta1 Memcached resources from etcd",
+      "role": "operator",
+      "want": "the controller to watch and reconcile v1beta1.Memcached resources (the storage version)",
+      "so_that": "resources stored in etcd as v1beta1 are correctly processed without conversion overhead",
+      "criteria": [
+        "MemcachedReconciler.Reconcile fetches memcachedv1beta1.Memcached objects",
+        "SetupWithManager registers For(&memcachedv1beta1.Memcached{})",
+        "All reconcile sub-methods (reconcileDeployment, reconcileService, etc.) accept *memcachedv1beta1.Memcached",
+        "go vet and golangci-lint pass with zero v1alpha1 references in internal/controller/ production code"
+      ]
+    },
+    {
+      "title": "Builder functions produce correct Kubernetes resources from v1beta1 types",
+      "role": "operator",
+      "want": "constructDeployment, constructService, constructPDB, constructNetworkPolicy, constructServiceMonitor, and constructHPA to accept v1beta1 types",
+      "so_that": "all sub-resource construction works with the promoted API version",
+      "criteria": [
+        "constructDeployment accepts *memcachedv1beta1.Memcached and produces identical Deployment specs as before",
+        "constructService accepts *memcachedv1beta1.Memcached and produces identical Service specs",
+        "constructPDB, constructNetworkPolicy, constructServiceMonitor, constructHPA all accept v1beta1 types",
+        "All helper functions (buildAntiAffinity, buildMemcachedArgs, buildExporterContainer, etc.) reference v1beta1 types"
+      ]
+    },
+    {
+      "title": "Status reconciliation uses v1beta1 types",
+      "role": "operator",
+      "want": "computeConditions and reconcileStatus to operate on v1beta1.Memcached",
+      "so_that": "status updates write to the correct v1beta1 resource version",
+      "criteria": [
+        "computeConditions accepts *memcachedv1beta1.Memcached parameter",
+        "reconcileStatus accepts *memcachedv1beta1.Memcached parameter",
+        "Status conditions are computed identically to before",
+        "r.Status().Update(ctx, mc) operates on the v1beta1 type"
+      ]
+    },
+    {
+      "title": "Secret watching and mapping uses v1beta1 types",
+      "role": "operator",
+      "want": "fetchReferencedSecrets and mapSecretToMemcached to use v1beta1.Memcached and v1beta1.MemcachedList",
+      "so_that": "secret rotation triggers reconciliation of v1beta1 resources",
+      "criteria": [
+        "fetchReferencedSecrets accepts *memcachedv1beta1.Memcached",
+        "mapSecretToMemcached lists memcachedv1beta1.MemcachedList",
+        "Secret change events correctly map to reconcile requests for v1beta1 CRs"
+      ]
+    },
+    {
+      "title": "Entrypoint registers v1beta1 scheme and webhooks",
+      "role": "operator",
+      "want": "cmd/main.go to keep both v1alpha1 and v1beta1 scheme registrations but only set up v1beta1 webhooks",
+      "so_that": "the operator manager can handle both API versions with v1beta1 as the primary",
+      "criteria": [
+        "memcachedv1alpha1.AddToScheme(scheme) remains for conversion support",
+        "memcachedv1beta1.AddToScheme(scheme) is registered",
+        "memcachedv1beta1.SetupMemcachedWebhookWithManager is called (already done)",
+        "No v1alpha1 webhook setup calls exist"
+      ]
+    },
+    {
+      "title": "All unit tests use v1beta1 types for controller code",
+      "role": "developer",
+      "want": "all unit test files in internal/controller/ to import and use memcachedv1beta1 types",
+      "so_that": "tests validate the actual production types the controller uses",
+      "criteria": [
+        "deployment_test.go uses memcachedv1beta1.Memcached in all test cases",
+        "service_test.go, status_test.go, pdb_test.go, networkpolicy_test.go, servicemonitor_test.go, hpa_test.go use v1beta1 types",
+        "secret_test.go uses v1beta1 types",
+        "All unit tests pass with `make test`"
+      ]
+    },
+    {
+      "title": "All integration/reconcile tests use v1beta1 types",
+      "role": "developer",
+      "want": "all Ginkgo integration and reconcile test files to use memcachedv1beta1 types",
+      "so_that": "integration tests validate the v1beta1 reconciliation path end-to-end",
+      "criteria": [
+        "memcached_envtest_integration_test.go creates v1beta1.Memcached objects",
+        "All *_reconcile_test.go files use v1beta1 types",
+        "memcached_crd_validation_test.go validMemcached() helper returns v1beta1.Memcached",
+        "suite_test.go already registers both schemes (verified)"
+      ]
+    },
+    {
+      "title": "reconcileResource and deleteOwnedResource use v1beta1 owner type",
+      "role": "operator",
+      "want": "reconcileResource to set controller owner reference using *memcachedv1beta1.Memcached",
+      "so_that": "owner references on sub-resources point to the v1beta1 GVK",
+      "criteria": [
+        "reconcileResource accepts *memcachedv1beta1.Memcached as the mc parameter",
+        "controllerutil.SetControllerReference(mc, obj, r.Scheme) uses the v1beta1 type",
+        "emitEventForResult accepts *memcachedv1beta1.Memcached",
+        "All reconcileResource callers pass v1beta1 type"
+      ]
+    },
+    {
+      "title": "Reference documentation updated for v1beta1 controller migration",
+      "role": "developer",
+      "want": "project documentation to reflect the v1beta1 migration of the controller layer",
+      "so_that": "future contributors understand the current architecture",
+      "criteria": [
+        "docs/reference/backend/project-structure.md mentions v1beta1 as the controller's primary API version",
+        "No stale references to v1alpha1 as the controller's reconciled type in docs"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The controller SHALL import memcachedv1beta1 and reconcile v1beta1.Memcached objects",
+      "priority": "SHALL",
+      "rationale": "The controller must reconcile the storage version (v1beta1) to correctly watch and process resources as stored in etcd",
+      "scenarios": [
+        {
+          "name": "Controller fetches v1beta1 Memcached",
+          "when": "a reconcile request is received",
+          "then": "the controller fetches a memcachedv1beta1.Memcached object from the API server",
+          "and_then": [
+            "the object is passed to all reconcile sub-methods"
+          ]
+        },
+        {
+          "name": "SetupWithManager watches v1beta1",
+          "when": "SetupWithManager is called",
+          "then": "the controller registers For(&memcachedv1beta1.Memcached{})",
+          "and_then": [
+            "watches trigger on v1beta1 resource changes"
+          ]
+        },
+        {
+          "name": "No v1alpha1 references in production controller code",
+          "when": "grep is run for memcachedv1alpha1 in internal/controller/*.go (non-test)",
+          "then": "zero matches are found",
+          "and_then": [
+            "all 10 production files use only memcachedv1beta1"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "All builder functions SHALL accept *memcachedv1beta1.Memcached parameters",
+      "priority": "SHALL",
+      "rationale": "Builder functions construct sub-resources from the CR spec; they must use the same type as the reconciler",
+      "scenarios": [
+        {
+          "name": "constructDeployment uses v1beta1",
+          "when": "constructDeployment is called with a v1beta1.Memcached",
+          "then": "it produces a valid Deployment identical to the v1alpha1 version",
+          "and_then": [
+            "the Deployment spec matches all field mappings from the CR spec"
+          ]
+        },
+        {
+          "name": "constructService uses v1beta1",
+          "when": "constructService is called with a v1beta1.Memcached",
+          "then": "it produces a valid headless Service",
+          "and_then": [
+            "ports include memcached, optional TLS, and optional metrics"
+          ]
+        },
+        {
+          "name": "All helper functions reference v1beta1 types",
+          "when": "buildMemcachedArgs, buildAntiAffinity, buildExporterContainer, etc. are called",
+          "then": "they accept v1beta1 types (MemcachedConfig, SASLSpec, TLSSpec, etc.)",
+          "and_then": [
+            "no compilation errors occur"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The reconcileResource function SHALL set owner references using *memcachedv1beta1.Memcached",
+      "priority": "SHALL",
+      "rationale": "Owner references must point to the correct GVK for garbage collection to work",
+      "scenarios": [
+        {
+          "name": "Owner reference uses v1beta1 GVK",
+          "when": "reconcileResource creates a sub-resource with owner reference",
+          "then": "the owner reference apiVersion is memcached.c5c3.io/v1beta1",
+          "and_then": [
+            "garbage collection deletes sub-resources when the v1beta1 CR is deleted"
+          ]
+        },
+        {
+          "name": "emitEventForResult uses v1beta1",
+          "when": "a resource is created or updated",
+          "then": "the event is emitted on the v1beta1 Memcached object",
+          "and_then": [
+            "events appear on the correct resource version"
+          ]
+        },
+        {
+          "name": "Conflict retries work with v1beta1",
+          "when": "a resource version conflict occurs during CreateOrUpdate",
+          "then": "the retry loop re-fetches and retries with the v1beta1 owner",
+          "and_then": [
+            "up to maxConflictRetries attempts are made"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The status reconciliation SHALL use v1beta1.Memcached for condition computation and status updates",
+      "priority": "SHALL",
+      "rationale": "Status updates must target the storage version to avoid conversion issues",
+      "scenarios": [
+        {
+          "name": "computeConditions accepts v1beta1",
+          "when": "computeConditions is called",
+          "then": "it accepts *memcachedv1beta1.Memcached and returns identical conditions",
+          "and_then": [
+            "Available, Progressing, Degraded conditions computed correctly"
+          ]
+        },
+        {
+          "name": "reconcileStatus updates v1beta1 status",
+          "when": "reconcileStatus is called",
+          "then": "r.Status().Update(ctx, mc) updates the v1beta1 resource status",
+          "and_then": [
+            "readyReplicas and observedGeneration are set correctly"
+          ]
+        },
+        {
+          "name": "HPA-aware status works with v1beta1",
+          "when": "HPA is enabled and computeConditions is called",
+          "then": "desired replicas sourced from Deployment status, not spec",
+          "and_then": [
+            "HPA-managed message appended to Available condition"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The secret handling code SHALL use v1beta1.Memcached and v1beta1.MemcachedList",
+      "priority": "SHALL",
+      "rationale": "Secret watching must list and match against the storage version of the CR",
+      "scenarios": [
+        {
+          "name": "fetchReferencedSecrets uses v1beta1",
+          "when": "fetchReferencedSecrets is called",
+          "then": "it accepts *memcachedv1beta1.Memcached and reads Security spec from v1beta1 types",
+          "and_then": [
+            "SASL and TLS secret names are correctly extracted"
+          ]
+        },
+        {
+          "name": "mapSecretToMemcached lists v1beta1",
+          "when": "a Secret event triggers the map function",
+          "then": "it lists memcachedv1beta1.MemcachedList in the same namespace",
+          "and_then": [
+            "matching CRs generate reconcile requests"
+          ]
+        },
+        {
+          "name": "Missing secret names returned correctly",
+          "when": "a referenced Secret does not exist",
+          "then": "the missing name is included in the returned slice",
+          "and_then": [
+            "degraded condition is set with SecretNotFound reason"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "cmd/main.go SHALL retain both v1alpha1 and v1beta1 scheme registrations",
+      "priority": "SHALL",
+      "rationale": "Both versions must be registered for the conversion webhook to function; v1alpha1 is still served",
+      "scenarios": [
+        {
+          "name": "Both schemes registered",
+          "when": "the operator starts",
+          "then": "both memcachedv1alpha1.AddToScheme and memcachedv1beta1.AddToScheme are called",
+          "and_then": [
+            "the scheme can handle both API versions"
+          ]
+        },
+        {
+          "name": "Only v1beta1 webhooks setup",
+          "when": "the operator starts",
+          "then": "memcachedv1beta1.SetupMemcachedWebhookWithManager is called",
+          "and_then": [
+            "no v1alpha1 webhook setup calls exist"
+          ]
+        },
+        {
+          "name": "Compilation succeeds",
+          "when": "go build ./cmd/... is run",
+          "then": "the binary compiles without errors",
+          "and_then": [
+            "no unused import warnings"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "All unit tests SHALL be updated to use v1beta1 types",
+      "priority": "SHALL",
+      "rationale": "Tests must validate the actual types used in production code",
+      "scenarios": [
+        {
+          "name": "Unit tests compile with v1beta1",
+          "when": "go test ./internal/controller/... is run",
+          "then": "all unit tests compile and pass",
+          "and_then": [
+            "no v1alpha1 import in unit test files for builder functions"
+          ]
+        },
+        {
+          "name": "Table-driven tests use v1beta1 types",
+          "when": "deployment_test.go, service_test.go, etc. construct test inputs",
+          "then": "they use memcachedv1beta1.Memcached and related types",
+          "and_then": [
+            "test coverage remains identical"
+          ]
+        },
+        {
+          "name": "Test helpers updated",
+          "when": "validMemcached() is called in tests",
+          "then": "it returns *memcachedv1beta1.Memcached",
+          "and_then": [
+            "all callers compile without changes"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "All integration and reconcile tests SHALL be updated to use v1beta1 types",
+      "priority": "SHALL",
+      "rationale": "Integration tests must exercise the v1beta1 reconciliation path end-to-end",
+      "scenarios": [
+        {
+          "name": "Envtest integration tests use v1beta1",
+          "when": "memcached_envtest_integration_test.go creates a CR",
+          "then": "it creates a memcachedv1beta1.Memcached object",
+          "and_then": [
+            "the full reconciliation loop is exercised with v1beta1"
+          ]
+        },
+        {
+          "name": "Reconcile tests use v1beta1",
+          "when": "any *_reconcile_test.go file is executed",
+          "then": "it uses memcachedv1beta1 types for CR construction",
+          "and_then": [
+            "all assertions pass"
+          ]
+        },
+        {
+          "name": "CRD validation tests use v1beta1",
+          "when": "memcached_crd_validation_test.go runs",
+          "then": "validMemcached returns v1beta1 type; CRD validation still enforced by API server",
+          "and_then": [
+            "all validation scenarios pass"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The project SHALL pass all quality checks after migration",
+      "priority": "SHALL",
+      "rationale": "Ensuring no regressions from the mechanical type swap",
+      "scenarios": [
+        {
+          "name": "go vet passes",
+          "when": "make vet is run",
+          "then": "zero errors are reported",
+          "and_then": []
+        },
+        {
+          "name": "golangci-lint passes",
+          "when": "make lint is run",
+          "then": "zero errors or warnings are reported",
+          "and_then": []
+        },
+        {
+          "name": "All tests pass",
+          "when": "make test is run",
+          "then": "all unit and integration tests pass",
+          "and_then": [
+            "test count is identical to before the migration"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The project documentation SHOULD be updated to reflect v1beta1 controller migration",
+      "priority": "SHOULD",
+      "rationale": "Keeps documentation accurate for future contributors",
+      "scenarios": [
+        {
+          "name": "Project structure doc updated",
+          "when": "a developer reads docs/reference/backend/project-structure.md",
+          "then": "it states the controller reconciles v1beta1.Memcached",
+          "and_then": [
+            "no stale v1alpha1 references for controller layer"
+          ]
+        },
+        {
+          "name": "Memory file updated",
+          "when": "Serena project_overview memory is read",
+          "then": "it mentions v1beta1 as the controller's primary API version",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Switch memcached_controller.go from v1alpha1 to v1beta1 (REQ-001)",
+      "description": "In internal/controller/memcached_controller.go: (1) change import alias from `memcachedv1alpha1 \"github.com/c5c3/memcached-operator/api/v1alpha1\"` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"`, (2) update Reconcile to create `memcachedv1beta1.Memcached{}` instead of `memcachedv1alpha1.Memcached{}`, (3) update all reconcile sub-method parameters from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`, (4) update SetupWithManager to use `For(&memcachedv1beta1.Memcached{})`. This is a mechanical find-and-replace of `memcachedv1alpha1` → `memcachedv1beta1` in this file. Verify: `go build ./internal/controller/` compiles (will fail until downstream files updated, but this is the anchor task).",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Switch deployment.go from v1alpha1 to v1beta1 (REQ-002)",
+      "description": "In internal/controller/deployment.go: (1) change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"`, (2) update all type references: `*memcachedv1alpha1.Memcached` → `*memcachedv1beta1.Memcached`, `memcachedv1alpha1.MemcachedConfig` → `memcachedv1beta1.MemcachedConfig`, `memcachedv1alpha1.SASLSpec` → `memcachedv1beta1.SASLSpec`, `memcachedv1alpha1.TLSSpec` → `memcachedv1beta1.TLSSpec`, `memcachedv1alpha1.AntiAffinityPresetSoft` → `memcachedv1beta1.AntiAffinityPresetSoft`, `memcachedv1alpha1.AntiAffinityPresetHard` → `memcachedv1beta1.AntiAffinityPresetHard`. All functions affected: constructDeployment, buildMemcachedArgs, buildAntiAffinity, buildTopologySpreadConstraints, buildGracefulShutdown, buildExporterContainer, buildSASLVolume, buildSASLVolumeMount, buildTLSVolume, buildTLSVolumeMount, buildPodSecurityContext, buildContainerSecurityContext.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Switch service.go, pdb.go, networkpolicy.go, servicemonitor.go, hpa.go from v1alpha1 to v1beta1 (REQ-002)",
+      "description": "In each of these 5 files, change import alias from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and update all type references. Files and functions: (1) service.go — constructService, (2) pdb.go — constructPDB, pdbEnabled, (3) networkpolicy.go — constructNetworkPolicy, networkPolicyEnabled, (4) servicemonitor.go — constructServiceMonitor, serviceMonitorEnabled, (5) hpa.go — constructHPA, hpaEnabled. Each file has only the import and type references to change.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Switch status.go from v1alpha1 to v1beta1 (REQ-004)",
+      "description": "In internal/controller/status.go: change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and update parameter types in computeConditions and reconcileStatus from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Switch reconcile_resource.go and secret.go from v1alpha1 to v1beta1 (REQ-003, REQ-005)",
+      "description": "In internal/controller/reconcile_resource.go: change import to `memcachedv1beta1` and update reconcileResource, emitEventForResult parameters from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`. In internal/controller/secret.go: change import to `memcachedv1beta1`, update fetchReferencedSecrets parameter from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`, update mapSecretToMemcached to use `memcachedv1beta1.MemcachedList`. Verify: `go build ./internal/controller/` compiles after all 1.x tasks done.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Switch unit test files: deployment_test.go, service_test.go, status_test.go (REQ-007)",
+      "description": "In each of these 3 files: change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and replace all occurrences of `memcachedv1alpha1.` with `memcachedv1beta1.`. These files use table-driven tests constructing Memcached objects — the type references change but all field names remain identical. Files: internal/controller/deployment_test.go (~272 occurrences), internal/controller/service_test.go (~53 occurrences), internal/controller/status_test.go (~29 occurrences).",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Switch unit test files: pdb_test.go, networkpolicy_test.go, servicemonitor_test.go, hpa_test.go, secret_test.go (REQ-007)",
+      "description": "In each of these 5 files: change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and replace all occurrences of `memcachedv1alpha1.` with `memcachedv1beta1.`. Files: internal/controller/pdb_test.go (~47 occurrences), internal/controller/networkpolicy_test.go (~66 occurrences), internal/controller/servicemonitor_test.go (~45 occurrences), internal/controller/hpa_test.go (~18 occurrences), internal/controller/secret_test.go (~59 occurrences).",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Switch unit test file: reconcile_resource_test.go, reconcile_methods_test.go (REQ-007)",
+      "description": "In internal/controller/reconcile_resource_test.go: change import to `memcachedv1beta1` and replace all `memcachedv1alpha1.` references (~32 occurrences). In internal/controller/reconcile_methods_test.go: same operation (~42 occurrences). These test the reconcileResource helper and the reconcile sub-methods.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Switch test helpers and CRD validation tests (REQ-007, REQ-008)",
+      "description": "In internal/controller/memcached_crd_validation_test.go: (1) change `validMemcached()` to return `*memcachedv1beta1.Memcached` instead of `*memcachedv1alpha1.Memcached`, (2) replace all `memcachedv1alpha1.` references with `memcachedv1beta1.` (~132 occurrences), (3) keep `validMemcachedBeta()` as-is (already v1beta1). Note: the import for `memcachedv1beta1` already exists in this file. Remove the `memcachedv1alpha1` import if it becomes unused.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Switch Ginkgo reconcile test files batch 1: deployment, service, status, pdb reconcile tests (REQ-008)",
+      "description": "Switch 4 integration/reconcile test files from v1alpha1 to v1beta1: (1) memcached_deployment_reconcile_test.go (~49 occurrences), (2) memcached_service_reconcile_test.go (~6 occurrences), (3) memcached_status_reconcile_test.go (~4 occurrences), (4) memcached_pdb_reconcile_test.go (~19 occurrences). In each: change import to `memcachedv1beta1` and replace all `memcachedv1alpha1.` references.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.6",
+      "title": "Switch Ginkgo reconcile test files batch 2: servicemonitor, networkpolicy, monitoring, security, hpa, reconcile tests (REQ-008)",
+      "description": "Switch 5 integration/reconcile test files: (1) memcached_servicemonitor_reconcile_test.go (~52 occurrences), (2) memcached_networkpolicy_reconcile_test.go (~26 occurrences), (3) memcached_monitoring_reconcile_test.go (~16 occurrences), (4) memcached_security_context_reconcile_test.go (~13 occurrences), (5) memcached_hpa_reconcile_test.go (~27 occurrences). In each: change import to `memcachedv1beta1` and replace all `memcachedv1alpha1.` references.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.7",
+      "title": "Switch remaining test files: TLS, envtest, secret rotation, setup, CRD installation, metrics, reconcile (REQ-008)",
+      "description": "Switch remaining integration test files: (1) memcached_tls_deployment_reconcile_test.go (~16 occurrences), (2) memcached_tls_service_reconcile_test.go (~10 occurrences), (3) memcached_envtest_integration_test.go (~85 occurrences), (4) memcached_secret_rotation_integration_test.go (~19 occurrences), (5) memcached_setup_test.go (check for any v1alpha1 refs), (6) memcached_crd_installation_test.go (~14 occurrences), (7) memcached_reconcile_test.go (~4 occurrences), (8) memcached_metrics_reconcile_test.go (check for v1alpha1 refs). Also update suite_test.go if the `validMemcached` import alias change requires it. Note: suite_test.go already imports both versions.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Verify cmd/main.go is correct for v1beta1 (REQ-006)",
+      "description": "cmd/main.go already has both v1alpha1 and v1beta1 scheme registrations and uses v1beta1 webhook setup. Verify: (1) memcachedv1alpha1.AddToScheme(scheme) present for conversion support, (2) memcachedv1beta1.AddToScheme(scheme) present, (3) memcachedv1beta1.SetupMemcachedWebhookWithManager(mgr) is the only webhook setup call, (4) no v1alpha1 webhook setup. If already correct (confirmed from reading), this task is a verification-only pass. Run `go build ./cmd/...` to confirm compilation.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Run full test suite and fix any compilation or test failures (REQ-009)",
+      "description": "Run `make test` to execute all unit and integration tests. Fix any remaining compilation errors from missed v1alpha1 references. Run `make vet` and `make lint` to verify code quality. Ensure zero v1alpha1 references remain in internal/controller/ production (non-test) files by running: `grep -r memcachedv1alpha1 internal/controller/ --include='*.go' --exclude='*_test.go'` — expect zero results. Also verify no unused imports in any file.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Update project-structure.md reference doc for v1beta1 controller (REQ-010)",
+      "description": "Update docs/reference/backend/project-structure.md to reflect that the controller layer now imports and reconciles v1beta1.Memcached. Replace any mentions of v1alpha1 as the controller's reconciled type with v1beta1. Add a note that v1alpha1 remains served for backward compatibility via the conversion webhook, but the controller operates exclusively on v1beta1.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-010"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/deployment_test.go",
+      "test_function": "TestConstructDeployment (all sub-tests)",
+      "story": "Builder functions produce correct Kubernetes resources from v1beta1 types",
+      "expected": "constructDeployment with v1beta1.Memcached produces identical Deployment specs as with v1alpha1",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/service_test.go",
+      "test_function": "TestConstructService (all sub-tests)",
+      "story": "Builder functions produce correct Kubernetes resources from v1beta1 types",
+      "expected": "constructService with v1beta1.Memcached produces identical Service specs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions (all sub-tests)",
+      "story": "Status reconciliation uses v1beta1 types",
+      "expected": "computeConditions with v1beta1.Memcached returns identical conditions",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/pdb_test.go",
+      "test_function": "TestConstructPDB (all sub-tests)",
+      "story": "Builder functions produce correct Kubernetes resources from v1beta1 types",
+      "expected": "constructPDB with v1beta1.Memcached produces identical PDB specs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/networkpolicy_test.go",
+      "test_function": "TestConstructNetworkPolicy (all sub-tests)",
+      "story": "Builder functions produce correct Kubernetes resources from v1beta1 types",
+      "expected": "constructNetworkPolicy with v1beta1.Memcached produces identical NetworkPolicy specs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/servicemonitor_test.go",
+      "test_function": "TestConstructServiceMonitor (all sub-tests)",
+      "story": "Builder functions produce correct Kubernetes resources from v1beta1 types",
+      "expected": "constructServiceMonitor with v1beta1.Memcached produces identical ServiceMonitor specs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/hpa_test.go",
+      "test_function": "TestConstructHPA (all sub-tests)",
+      "story": "Builder functions produce correct Kubernetes resources from v1beta1 types",
+      "expected": "constructHPA with v1beta1.Memcached produces identical HPA specs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/secret_test.go",
+      "test_function": "TestFetchReferencedSecrets, TestComputeSecretHash, TestMapSecretToMemcached",
+      "story": "Secret watching and mapping uses v1beta1 types",
+      "expected": "Secret functions with v1beta1 types produce identical behavior",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/reconcile_resource_test.go",
+      "test_function": "TestReconcileResource (all sub-tests)",
+      "story": "reconcileResource and deleteOwnedResource use v1beta1 owner type",
+      "expected": "Owner references point to v1beta1 GVK",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/memcached_envtest_integration_test.go",
+      "test_function": "All Ginkgo integration tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "Full reconciliation loop works with v1beta1 CRs in envtest",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_deployment_reconcile_test.go",
+      "test_function": "Deployment reconcile Ginkgo tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "Deployment reconciliation works with v1beta1 CRs",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_crd_validation_test.go",
+      "test_function": "CRD validation Ginkgo tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "CRD validation enforced for v1beta1 resources via API server",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_controller_test.go",
+      "test_function": "Controller setup tests (if any v1alpha1 refs)",
+      "story": "Controller reconciles v1beta1 Memcached resources from etcd",
+      "expected": "Controller test validates v1beta1 reconciliation setup",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/reconcile_methods_test.go",
+      "test_function": "Reconcile methods tests",
+      "story": "reconcileResource and deleteOwnedResource use v1beta1 owner type",
+      "expected": "All reconcile method tests pass with v1beta1 types",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces",
+      "story": "Entrypoint registers v1beta1 scheme and webhooks",
+      "expected": "Existing main_test.go tests continue to pass (no v1alpha1 refs present)",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/memcached_service_reconcile_test.go",
+      "test_function": "Service reconcile Ginkgo tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "Service reconciliation works with v1beta1 CRs",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_pdb_reconcile_test.go",
+      "test_function": "PDB reconcile Ginkgo tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "PDB reconciliation works with v1beta1 CRs",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_networkpolicy_reconcile_test.go",
+      "test_function": "NetworkPolicy reconcile Ginkgo tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "NetworkPolicy reconciliation works with v1beta1 CRs",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_servicemonitor_reconcile_test.go",
+      "test_function": "ServiceMonitor reconcile Ginkgo tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "ServiceMonitor reconciliation works with v1beta1 CRs",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/memcached_tls_deployment_reconcile_test.go",
+      "test_function": "TLS deployment reconcile Ginkgo tests",
+      "story": "All integration/reconcile tests use v1beta1 types",
+      "expected": "TLS deployment reconciliation works with v1beta1 CRs",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "Zero occurrences of `memcachedv1alpha1` in internal/controller/ production (non-test) Go files: grep -r memcachedv1alpha1 internal/controller/ --include='*.go' --exclude='*_test.go' returns empty",
+    "Zero occurrences of `memcachedv1alpha1` in internal/controller/ test Go files: grep -r memcachedv1alpha1 internal/controller/ --include='*_test.go' returns empty (except suite_test.go which needs both for scheme registration)",
+    "cmd/main.go retains both v1alpha1 and v1beta1 AddToScheme calls and only v1beta1 webhook setup",
+    "All tests pass: `make test` exits with code 0",
+    "Lint passes: `make lint` exits with code 0",
+    "go vet passes: `make vet` exits with code 0",
+    "No functional changes: all builder functions produce byte-identical output given identical input (schema is identical between v1alpha1 and v1beta1)",
+    "docs/reference/backend/project-structure.md references v1beta1 as the controller's reconciled API version"
+  ],
+  "implementation_notes": "This is a mechanical migration with zero functional changes. The v1alpha1 and v1beta1 types have identical schemas, so the import/type swap is the only change needed.\n\n**Key decisions:**\n- cmd/main.go MUST keep v1alpha1 scheme registration — the conversion webhook requires both versions in the scheme.\n- suite_test.go MUST keep both scheme registrations for the same reason.\n- The `validMemcached()` test helper should return v1beta1 to match production code. The `validMemcachedBeta()` helper already exists and can replace it, or `validMemcached` can be updated to return v1beta1 directly.\n- Some CRD validation tests (memcached_crd_validation_test.go) already import both versions — after migration, the v1alpha1 import may become unused and should be removed.\n\n**Migration pattern per file:**\n1. Change import: `memcachedv1alpha1 \"github.com/c5c3/memcached-operator/api/v1alpha1\"` → `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"`\n2. Find-replace: `memcachedv1alpha1.` → `memcachedv1beta1.`\n3. Remove unused v1alpha1 import if present\n\n**Files affected (production):** 10 files in internal/controller/\n**Files affected (tests):** 27 test files in internal/controller/\n**Files verified (no changes needed):** cmd/main.go (already correct), cmd/main_test.go (no v1alpha1 refs)\n\n**Risk:** Extremely low — this is a find-and-replace operation on types with identical schemas. The only risk is missing an occurrence, which the compiler will catch immediately.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:26:33.927885"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:08:14.425741"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:12:46.489810"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "8d0f729b-6d2d-46cb-8a63-6ee87e323a29",
+      "timestamp": "2026-02-22T15:12:46.489852",
+      "total_duration": 269.3104944229126,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 269.3104944229126,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
