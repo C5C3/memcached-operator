@@ -1,0 +1,582 @@
+{
+  "feature_id": "MO-0054",
+  "title": "N005: Add CI integration and OCI release workflow",
+  "slug": "n005-add-ci-integration-and-oci-release-workflow",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** infrastructure\n**Priority:** high\n**Source:** Proposed for 'Helm Chart Packaging\n\nChart structure under charts/'\n\nAdd Helm chart CI validation and OCI release automation. CI job in .github/workflows/ci.yml: runs helm lint, ct lint (chart-testing), and helm-unittest on PRs touching charts/. New .github/workflows/helm-release.yml: triggered on chart/v* tags, logs into ghcr.io, runs helm package, then helm push to oci://ghcr.io/<org>/charts/memcached-operator. Chart version in Chart.yaml must match the tag. Includes chart README with install instructions (helm install from OCI registry), upgrade instructions, and CRD upgrade guidance for both crds/ and managedByHelm strategies.\n\n**Rationale:** CI prevents broken charts from merging. The OCI release workflow enables users to install the chart directly from GHCR without manual packaging. The chart/v* tag pattern decouples chart releases from operator image releases, allowing independent chart-only fixes. The README is the primary user-facing documentation for chart consumers.\n\n**Affected Areas:**\n- .github/workflows/ci.yml\n- .github/workflows/helm-release.yml\n- charts/memcached-operator/README.md\n- charts/memcached-operator/Chart.yaml",
+  "stories": [
+    {
+      "title": "Chart contributor gets CI feedback on PRs touching charts/",
+      "role": "chart contributor",
+      "want": "CI to automatically run helm lint, ct lint, and helm-unittest when I open or update a PR that modifies files under charts/",
+      "so_that": "broken chart changes are caught before merge and I get fast feedback on template errors",
+      "criteria": [
+        "A new 'helm-lint' job appears in .github/workflows/ci.yml that runs on PRs touching charts/**",
+        "The job runs 'helm lint charts/memcached-operator' and fails the PR if lint errors exist",
+        "The job runs 'ct lint --charts charts/memcached-operator' (with ct.yaml config) and fails on schema/metadata issues",
+        "The job runs 'helm unittest charts/memcached-operator' and fails if any test case fails",
+        "The job does NOT run when no files under charts/ are modified (path filter)"
+      ]
+    },
+    {
+      "title": "Release engineer publishes chart to GHCR via tag",
+      "role": "release engineer",
+      "want": "pushing a chart/v* tag to trigger an automated workflow that packages the chart and pushes it to oci://ghcr.io/c5c3/charts/memcached-operator",
+      "so_that": "chart consumers can install directly from the OCI registry without manual packaging steps",
+      "criteria": [
+        "A new .github/workflows/helm-release.yml workflow triggers on tags matching 'chart/v*'",
+        "The workflow logs into ghcr.io using GITHUB_TOKEN",
+        "The workflow runs 'helm package charts/memcached-operator'",
+        "The workflow runs 'helm push' to oci://ghcr.io/c5c3/charts/memcached-operator",
+        "The workflow validates that Chart.yaml version matches the tag (e.g. chart/v0.1.0 requires version: 0.1.0)"
+      ]
+    },
+    {
+      "title": "Chart consumer installs from OCI registry",
+      "role": "chart consumer",
+      "want": "clear README instructions for installing the chart from the GHCR OCI registry",
+      "so_that": "I can deploy the operator using helm install without cloning the repository",
+      "criteria": [
+        "charts/memcached-operator/README.md contains helm install command using oci://ghcr.io/c5c3/charts/memcached-operator",
+        "README includes prerequisite section (Kubernetes version, cert-manager, Prometheus CRDs)",
+        "README shows how to override common values (image.tag, replicaCount, webhook.enabled)",
+        "README includes helm pull command for downloading the chart locally"
+      ]
+    },
+    {
+      "title": "Chart consumer upgrades operator via Helm",
+      "role": "chart consumer",
+      "want": "clear README instructions for upgrading the chart and handling CRD updates",
+      "so_that": "I can safely upgrade without losing CRDs or Memcached custom resources",
+      "criteria": [
+        "README documents the default CRD behavior (crds/ directory: install-only, not upgraded)",
+        "README documents the Helm-managed CRD strategy (crds.managedByHelm=true)",
+        "README provides manual CRD upgrade command for the default strategy",
+        "README includes pre-upgrade backup instructions for Memcached CRs"
+      ]
+    },
+    {
+      "title": "Release engineer gets clear error when tag/version mismatch",
+      "role": "release engineer",
+      "want": "the release workflow to fail with a clear error message if the Chart.yaml version does not match the chart/v* tag",
+      "so_that": "I catch versioning mistakes before a mismatched chart is published to the registry",
+      "criteria": [
+        "If chart/v0.2.0 is pushed but Chart.yaml has version: 0.1.0, the workflow fails",
+        "The error message clearly states expected vs actual version",
+        "The workflow does NOT push a chart when the version mismatch is detected"
+      ]
+    },
+    {
+      "title": "CI does not regress existing Go workflow jobs",
+      "role": "developer",
+      "want": "the new helm-lint job to be additive to the existing CI workflow without modifying existing jobs",
+      "so_that": "Go lint, test, build, validate-manifests, and e2e jobs continue to function identically",
+      "criteria": [
+        "Existing lint, test, build, build-push, merge-manifest, validate-manifests, and e2e jobs are unchanged",
+        "The new helm-lint job runs independently (no dependencies on other jobs)",
+        "The concurrency group and top-level permissions remain unchanged"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The CI workflow SHALL include a 'helm-lint' job that runs helm lint, ct lint, and helm-unittest on PRs touching charts/",
+      "priority": "SHALL",
+      "rationale": "Prevents broken chart templates from being merged; the three tools cover different aspects: helm lint checks template rendering, ct lint validates Chart.yaml schema/versioning, helm-unittest runs declarative test cases",
+      "scenarios": [
+        {
+          "name": "PR modifying charts/ triggers helm-lint job",
+          "when": "a PR is opened or updated with changes under charts/**",
+          "then": "the helm-lint job runs all three validation steps (helm lint, ct lint, helm unittest)",
+          "and_then": [
+            "job status is reported on the PR checks"
+          ]
+        },
+        {
+          "name": "PR not touching charts/ skips helm-lint job",
+          "when": "a PR is opened with changes only outside charts/ (e.g. internal/controller/)",
+          "then": "the helm-lint job is skipped entirely",
+          "and_then": [
+            "no Helm tooling is installed or invoked"
+          ]
+        },
+        {
+          "name": "helm lint failure blocks merge",
+          "when": "a PR introduces a template syntax error in charts/memcached-operator/templates/",
+          "then": "the helm-lint job fails at the helm lint step",
+          "and_then": [
+            "subsequent steps (ct lint, unittest) do not run"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The CI helm-lint job SHALL use path filtering to only run on changes under charts/",
+      "priority": "SHALL",
+      "rationale": "Avoids wasting CI minutes on PRs that do not touch chart files; uses dorny/paths-filter or native paths filter in the job condition",
+      "scenarios": [
+        {
+          "name": "Changes only in charts/ triggers job",
+          "when": "a PR modifies only charts/memcached-operator/values.yaml",
+          "then": "the helm-lint job executes",
+          "and_then": []
+        },
+        {
+          "name": "Changes only in Go code skips job",
+          "when": "a PR modifies only internal/controller/memcached_controller.go",
+          "then": "the helm-lint job is skipped",
+          "and_then": []
+        },
+        {
+          "name": "Mixed changes triggers job",
+          "when": "a PR modifies both internal/ and charts/",
+          "then": "the helm-lint job executes because charts/ was touched",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "A ct.yaml configuration file SHALL be created to configure chart-testing for the project",
+      "priority": "SHALL",
+      "rationale": "chart-testing (ct) requires a configuration file to know where charts live and how to validate them",
+      "scenarios": [
+        {
+          "name": "ct.yaml points to correct chart directory",
+          "when": "ct lint is invoked with the ct.yaml config",
+          "then": "it discovers and validates charts/memcached-operator",
+          "and_then": [
+            "chart-dirs is set to ['charts']"
+          ]
+        },
+        {
+          "name": "ct.yaml validates chart schema",
+          "when": "Chart.yaml is missing a required field",
+          "then": "ct lint reports the schema violation",
+          "and_then": []
+        },
+        {
+          "name": "ct.yaml sets target-branch to main",
+          "when": "ct lint runs in CI against a PR",
+          "then": "it compares chart changes against the main branch",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "A new .github/workflows/helm-release.yml SHALL package and push the chart to oci://ghcr.io/c5c3/charts/memcached-operator on chart/v* tags",
+      "priority": "SHALL",
+      "rationale": "Automates chart distribution to GHCR; the chart/v* tag pattern decouples chart releases from operator image releases",
+      "scenarios": [
+        {
+          "name": "Tag chart/v0.1.0 triggers release",
+          "when": "the tag chart/v0.1.0 is pushed",
+          "then": "the workflow logs into ghcr.io, runs helm package, and pushes to oci://ghcr.io/c5c3/charts/memcached-operator",
+          "and_then": [
+            "the chart is available at oci://ghcr.io/c5c3/charts/memcached-operator:0.1.0"
+          ]
+        },
+        {
+          "name": "Non-chart tags do not trigger release",
+          "when": "the tag v0.2.0 (operator release) is pushed",
+          "then": "the helm-release workflow does NOT run",
+          "and_then": [
+            "only the existing release.yml workflow runs"
+          ]
+        },
+        {
+          "name": "Workflow uses GITHUB_TOKEN for GHCR auth",
+          "when": "the workflow runs",
+          "then": "it authenticates to ghcr.io using github.actor and secrets.GITHUB_TOKEN",
+          "and_then": [
+            "no additional secrets need to be configured"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The helm-release workflow SHALL validate that Chart.yaml version matches the tag before pushing",
+      "priority": "SHALL",
+      "rationale": "Prevents publishing a chart with a version that does not match the Git tag",
+      "scenarios": [
+        {
+          "name": "Matching version passes validation",
+          "when": "tag chart/v0.2.0 is pushed and Chart.yaml has version: 0.2.0",
+          "then": "the version validation step passes",
+          "and_then": [
+            "the workflow proceeds to helm package and push"
+          ]
+        },
+        {
+          "name": "Mismatched version fails validation",
+          "when": "tag chart/v0.2.0 is pushed but Chart.yaml has version: 0.1.0",
+          "then": "the version validation step fails with message: 'Chart version 0.1.0 does not match tag version 0.2.0'",
+          "and_then": [
+            "the workflow stops before running helm package"
+          ]
+        },
+        {
+          "name": "Tag parsing extracts version correctly",
+          "when": "the tag is chart/v1.2.3",
+          "then": "the extracted version is 1.2.3 (chart/v prefix stripped)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The helm-release workflow SHALL run helm lint and helm-unittest before packaging",
+      "priority": "SHALL",
+      "rationale": "Release-time validation prevents publishing a broken chart even if CI was bypassed",
+      "scenarios": [
+        {
+          "name": "Lint passes before package",
+          "when": "the release workflow runs",
+          "then": "helm lint charts/memcached-operator runs successfully before helm package",
+          "and_then": []
+        },
+        {
+          "name": "Lint failure prevents release",
+          "when": "the chart at the tagged commit has a lint error",
+          "then": "the workflow fails at the lint step and does not push to GHCR",
+          "and_then": []
+        },
+        {
+          "name": "Unit tests run before package",
+          "when": "the release workflow runs",
+          "then": "helm unittest charts/memcached-operator runs before helm package",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "charts/memcached-operator/README.md SHALL document install, upgrade, and CRD management instructions for OCI registry consumers",
+      "priority": "SHALL",
+      "rationale": "The chart README is the primary user-facing documentation for chart consumers",
+      "scenarios": [
+        {
+          "name": "Install instructions use OCI registry",
+          "when": "a user reads the README install section",
+          "then": "the instructions show 'helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version <version>'",
+          "and_then": [
+            "a namespace flag example is shown"
+          ]
+        },
+        {
+          "name": "Upgrade instructions cover CRD strategies",
+          "when": "a user reads the README upgrade section",
+          "then": "both crds/ directory (default) and crds.managedByHelm strategies are documented",
+          "and_then": [
+            "manual CRD apply command is shown for the default strategy"
+          ]
+        },
+        {
+          "name": "README includes values reference",
+          "when": "a user reads the README configuration section",
+          "then": "key values.yaml parameters are documented in a table (image, replicaCount, webhook.enabled, etc.)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The existing CI jobs (lint, test, build, validate-manifests, e2e) SHALL NOT be modified",
+      "priority": "SHALL",
+      "rationale": "The new helm-lint job is additive; modifying existing jobs risks breaking the Go development workflow",
+      "scenarios": [
+        {
+          "name": "Existing jobs remain unchanged",
+          "when": "the ci.yml file is updated",
+          "then": "all existing job definitions (lint, test, build, build-push, merge-manifest, validate-manifests, e2e) are byte-identical to before",
+          "and_then": []
+        },
+        {
+          "name": "Top-level workflow triggers unchanged",
+          "when": "the ci.yml file is updated",
+          "then": "the on.push and on.pull_request triggers remain on branches: [main]",
+          "and_then": []
+        },
+        {
+          "name": "Concurrency and permissions unchanged",
+          "when": "the ci.yml file is updated",
+          "then": "the concurrency group and top-level permissions block are unchanged",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The helm-release workflow SHOULD use least-privilege permissions",
+      "priority": "SHOULD",
+      "rationale": "Following security best practices, the workflow should only request the minimum permissions needed",
+      "scenarios": [
+        {
+          "name": "Workflow requests packages:write for GHCR push",
+          "when": "the workflow definition is reviewed",
+          "then": "permissions include packages: write and contents: read",
+          "and_then": [
+            "no other write permissions are requested"
+          ]
+        },
+        {
+          "name": "Workflow uses GITHUB_TOKEN not PAT",
+          "when": "the workflow authenticates to GHCR",
+          "then": "it uses the built-in GITHUB_TOKEN secret",
+          "and_then": []
+        },
+        {
+          "name": "Checkout uses contents: read only",
+          "when": "the workflow checks out code",
+          "then": "the checkout step only requires read access to contents",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "The CI helm-lint job SHALL also run on pushes to main when charts/ files are changed",
+      "priority": "SHALL",
+      "rationale": "Direct pushes or merge commits to main should also validate the chart",
+      "scenarios": [
+        {
+          "name": "Push to main with chart changes triggers helm-lint",
+          "when": "a push to main includes changes under charts/",
+          "then": "the helm-lint job runs",
+          "and_then": []
+        },
+        {
+          "name": "Push to main without chart changes skips helm-lint",
+          "when": "a push to main only includes Go code changes",
+          "then": "the helm-lint job is skipped",
+          "and_then": []
+        },
+        {
+          "name": "PR to main with chart changes triggers helm-lint",
+          "when": "a PR targeting main includes changes under charts/",
+          "then": "the helm-lint job runs",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create ct.yaml configuration file for chart-testing (REQ-003)",
+      "description": "Create ct.yaml in the repository root with chart-dirs: [charts], target-branch: main, and validate-maintainers: false (since maintainers are in Chart.yaml but may not match GitHub usernames). This file is consumed by both the CI helm-lint job and chart-testing CLI.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add helm-lint job to .github/workflows/ci.yml with path filtering (REQ-001, REQ-002, REQ-008, REQ-010)",
+      "description": "Append a new 'helm-lint' job to .github/workflows/ci.yml. The job: (1) uses dorny/paths-filter@v3 to detect changes in charts/**, (2) if charts changed: installs Helm via azure/setup-helm@v4, installs helm-unittest plugin, installs chart-testing via helm/chart-testing-action@v2, (3) runs 'helm lint charts/memcached-operator', (4) runs 'ct lint --config ct.yaml --all', (5) runs 'helm unittest charts/memcached-operator'. The job runs on both PRs and pushes to main. All existing jobs MUST remain byte-identical — only the new job is appended.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-008",
+        "REQ-010"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create .github/workflows/helm-release.yml with version validation, lint, test, package, and push (REQ-004, REQ-005, REQ-006, REQ-009)",
+      "description": "Create .github/workflows/helm-release.yml triggered on push tags: ['chart/v*']. Permissions: contents: read, packages: write. Steps: (1) checkout, (2) extract tag version by stripping 'chart/v' prefix, (3) read Chart.yaml version via yq or grep, (4) compare tag vs chart version — fail with clear error if mismatch, (5) install Helm via azure/setup-helm@v4, (6) install helm-unittest plugin and run tests, (7) helm lint charts/memcached-operator, (8) helm package charts/memcached-operator, (9) helm registry login ghcr.io, (10) helm push to oci://ghcr.io/c5c3/charts/memcached-operator.",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Write charts/memcached-operator/README.md with install instructions from OCI registry (REQ-007)",
+      "description": "Create charts/memcached-operator/README.md with sections: (1) Title and description, (2) Prerequisites (Kubernetes v1.28+, cert-manager, optional Prometheus CRDs), (3) Install from OCI registry ('helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version 0.1.0 --namespace memcached-operator-system --create-namespace'), (4) Configuration table with key values.yaml parameters (image.repository, image.tag, replicaCount, webhook.enabled, certmanager.enabled, serviceMonitor.enabled, networkPolicy.enabled, crds.managedByHelm, watchNamespaces, leaderElection.enabled, rbac.create), (5) Upgrade section covering both CRD strategies, (6) Uninstall section, (7) CRD upgrade guidance for both crds/ default and managedByHelm strategies.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Update docs/reference/backend/ci-pipeline.md to document the helm-lint job (REQ-001)",
+      "description": "Add the new 'helm-lint' job row to the jobs table in docs/reference/backend/ci-pipeline.md. Add a new ### helm-lint section describing the job: path filtering with dorny/paths-filter, helm lint, ct lint with ct.yaml, and helm-unittest. Add a row to the 'Local Reproduction' section showing 'helm lint charts/memcached-operator && ct lint --config ct.yaml --all && helm unittest charts/memcached-operator'.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Create docs/reference/backend/helm-release-workflow.md documenting the OCI release workflow (REQ-004)",
+      "description": "Create reference documentation for helm-release.yml following the pattern of the existing docs/reference/backend/release-workflow.md. Sections: Overview (trigger, purpose), Trigger (chart/v* tag pattern), Permissions (least-privilege), Job steps (version validation, lint, test, package, push), OCI registry details (oci://ghcr.io/c5c3/charts/memcached-operator), Creating a chart release (tag and push instructions), Versioning (chart version vs appVersion vs operator version).",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004",
+        "REQ-005",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Update docs/how-to/installation.md to add Helm chart installation option (REQ-007)",
+      "description": "Add a new 'Option C: Helm Chart (recommended)' section to the 'Deploy the Operator' section in docs/how-to/installation.md. Include: helm install command from OCI registry, verify installation steps, link to the chart README for full configuration reference. Keep existing Option A (GitHub Release) and Option B (from source) unchanged.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "helm-lint job path filter — charts/ changes detected",
+      "story": "Chart contributor gets CI feedback on PRs touching charts/",
+      "expected": "When a PR modifies charts/memcached-operator/values.yaml, the paths-filter step outputs charts_changed=true and the helm-lint steps execute",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "helm-lint job path filter — no charts/ changes",
+      "story": "CI does not regress existing Go workflow jobs",
+      "expected": "When a PR only modifies Go files, the paths-filter step outputs charts_changed=false and helm lint/ct lint/unittest steps are skipped",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "helm lint step validates chart templates",
+      "story": "Chart contributor gets CI feedback on PRs touching charts/",
+      "expected": "helm lint charts/memcached-operator succeeds with all default values and fails on invalid template syntax",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "ct lint step validates chart metadata",
+      "story": "Chart contributor gets CI feedback on PRs touching charts/",
+      "expected": "ct lint --config ct.yaml --all validates Chart.yaml schema, version format, and maintainers",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": ".github/workflows/ci.yml",
+      "test_function": "helm unittest step runs all test suites",
+      "story": "Chart contributor gets CI feedback on PRs touching charts/",
+      "expected": "helm unittest charts/memcached-operator runs all YAML test files under charts/memcached-operator/tests/ and reports pass/fail",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": ".github/workflows/helm-release.yml",
+      "test_function": "version validation — tag matches Chart.yaml",
+      "story": "Release engineer publishes chart to GHCR via tag",
+      "expected": "When tag is chart/v0.1.0 and Chart.yaml version is 0.1.0, the validation step passes and workflow proceeds",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": ".github/workflows/helm-release.yml",
+      "test_function": "version validation — tag mismatch fails",
+      "story": "Release engineer gets clear error when tag/version mismatch",
+      "expected": "When tag is chart/v0.2.0 but Chart.yaml version is 0.1.0, the workflow fails with 'Chart version 0.1.0 does not match tag version 0.2.0'",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": ".github/workflows/helm-release.yml",
+      "test_function": "helm push to OCI registry",
+      "story": "Release engineer publishes chart to GHCR via tag",
+      "expected": "helm push pushes the packaged chart to oci://ghcr.io/c5c3/charts/memcached-operator with the correct version tag",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": ".github/workflows/helm-release.yml",
+      "test_function": "lint and unittest run before package",
+      "story": "Release engineer publishes chart to GHCR via tag",
+      "expected": "helm lint and helm unittest steps execute before helm package; if either fails, the workflow stops before push",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": ".github/workflows/helm-release.yml",
+      "test_function": "workflow only triggers on chart/v* tags",
+      "story": "Release engineer publishes chart to GHCR via tag",
+      "expected": "The workflow trigger is 'push: tags: [\"chart/v*\"]' and does not fire on v* operator release tags",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "charts/memcached-operator/README.md",
+      "test_function": "README contains OCI install command",
+      "story": "Chart consumer installs from OCI registry",
+      "expected": "README contains 'helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version'",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "charts/memcached-operator/README.md",
+      "test_function": "README documents both CRD upgrade strategies",
+      "story": "Chart consumer upgrades operator via Helm",
+      "expected": "README contains sections for default crds/ directory behavior and crds.managedByHelm=true option with upgrade commands",
+      "requirement_id": "REQ-007"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "The helm-lint job in ci.yml runs helm lint, ct lint, and helm unittest — all three pass on the current chart in the repository",
+    "The helm-lint job uses path filtering (dorny/paths-filter or equivalent) and does NOT execute when no charts/ files are changed",
+    "All existing CI jobs (lint, test, build, build-push, merge-manifest, validate-manifests, e2e) are byte-identical to the version before this feature",
+    "helm-release.yml triggers only on chart/v* tags, validates version match, runs lint+unittest, and pushes to oci://ghcr.io/c5c3/charts/memcached-operator",
+    "helm-release.yml fails with a clear error message when Chart.yaml version does not match the tag version",
+    "charts/memcached-operator/README.md contains install instructions from OCI registry, upgrade instructions with both CRD strategies, values reference table, and uninstall instructions",
+    "ct.yaml is present in the repository root with chart-dirs pointing to charts/",
+    "docs/reference/backend/ci-pipeline.md is updated with the helm-lint job description",
+    "docs/reference/backend/helm-release-workflow.md exists and follows the pattern of existing reference docs",
+    "docs/how-to/installation.md includes Helm chart installation as an option",
+    "All workflows use least-privilege permissions (packages: write only where needed, contents: read by default)",
+    "YAML syntax of all workflow files is valid (can be validated with yamllint)"
+  ],
+  "implementation_notes": "Architecture: This feature adds two CI/CD artifacts (helm-lint job + helm-release workflow) and documentation. No Go code changes. The helm-lint job in ci.yml uses dorny/paths-filter@v3 for path-based conditional execution since GitHub's native paths filter on the workflow level would skip ALL jobs, not just helm-lint. ct.yaml at the repository root configures chart-testing (ct) CLI to find charts under charts/ and compare against the main branch. The helm-release.yml workflow uses azure/setup-helm@v4 for Helm CLI, extracts the version from the tag by stripping 'chart/v' prefix, and compares it against the version field in Chart.yaml. helm push uses the OCI protocol natively supported since Helm 3.8+. The .helmignore already excludes tests/ and .github/ from packaged charts. The chart README is the primary user-facing doc; the existing docs/how-to/installation.md and docs/reference/backend/ci-pipeline.md are updated to cross-reference the chart. Key patterns to follow: existing ci.yml structure (permissions per-job, action version pinning), existing docs/reference/backend/ naming convention for reference docs, existing docs/how-to/ for user guides. Risks: (1) dorny/paths-filter may need fetch-depth: 0 on push events to detect changes; (2) ct lint may require a git history to detect changed charts on push events — using '--all' flag bypasses this for the lint job.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:36:34.848212"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T21:11:20.659617"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T21:15:18.748042"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "eaf9a084-3125-4a72-bdc2-f45c118b4da4",
+      "timestamp": "2026-02-22T21:15:18.748080",
+      "total_duration": 235.41785764694214,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 235.41785764694214,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
