@@ -2,7 +2,7 @@
 
 Check the operator status:
 
-  kubectl get pods -l {{ include "memcached-operator.selectorLabels" . | replace ": " "=" | replace "\n" "," }}
+  kubectl get pods -l {{ include "memcached-operator.selectorLabelsKubectl" . }}
 
 {{- if .Values.crds.managedByHelm }}
 
@@ -17,4 +17,14 @@ To update the CRD manually:
   kubectl apply -f https://raw.githubusercontent.com/c5c3/memcached-operator/main/config/crd/bases/memcached.c5c3.io_memcacheds.yaml
 
 Or set crds.managedByHelm=true for Helm-managed CRD upgrades.
+{{- end }}
+
+ServiceAccount: {{ include "memcached-operator.serviceAccountName" . }}
+{{- if .Values.rbac.create }}
+
+RBAC: Helm-managed (rbac.create=true)
+{{- else }}
+
+WARNING: RBAC resources are not managed by this chart (rbac.create=false).
+You must manually create ClusterRoles and ClusterRoleBindings for the operator to function.
 {{- end }}

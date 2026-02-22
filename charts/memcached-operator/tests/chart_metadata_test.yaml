@@ -33,3 +33,29 @@ tests:
           pattern: "app\\.kubernetes\\.io/name=memcached-operator"
       - matchRegexRaw:
           pattern: "app\\.kubernetes\\.io/instance=test-release"
+
+  - it: should show ServiceAccount name with defaults
+    asserts:
+      - matchRegexRaw:
+          pattern: "ServiceAccount: test-release-memcached-operator"
+
+  - it: should show custom ServiceAccount name
+    set:
+      serviceAccount.name: "custom-sa"
+    asserts:
+      - matchRegexRaw:
+          pattern: "ServiceAccount: custom-sa"
+
+  - it: should show RBAC is Helm-managed by default
+    asserts:
+      - matchRegexRaw:
+          pattern: "RBAC: Helm-managed \\(rbac\\.create=true\\)"
+
+  - it: should show RBAC warning when rbac.create is false
+    set:
+      rbac.create: false
+    asserts:
+      - matchRegexRaw:
+          pattern: "WARNING: RBAC resources are not managed by this chart"
+      - notMatchRegexRaw:
+          pattern: "RBAC: Helm-managed"

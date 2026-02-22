@@ -1,0 +1,251 @@
+---
+suite: Cross-template integration tests
+templates:
+  - templates/serviceaccount.yaml
+  - templates/deployment.yaml
+  - templates/rbac/clusterrole.yaml
+  - templates/rbac/leader-election-role.yaml
+  - templates/rbac/metrics-role.yaml
+  - templates/networkpolicy.yaml
+release:
+  name: test-release
+  namespace: test-ns
+chart:
+  appVersion: "0.1.0"
+  version: "0.1.0"
+tests:
+  # ====================================================================
+  # Test 1: Default rendering produces correct total resource count
+  # (SA=1, Deployment=1, clusterrole=2, leader-election=2, metrics=3, netpol=1 => 10)
+  # ====================================================================
+
+  - it: should produce 10 resources with all defaults
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: templates/serviceaccount.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/deployment.yaml
+      - hasDocuments:
+          count: 2
+        template: templates/rbac/clusterrole.yaml
+      - hasDocuments:
+          count: 2
+        template: templates/rbac/leader-election-role.yaml
+      - hasDocuments:
+          count: 3
+        template: templates/rbac/metrics-role.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/networkpolicy.yaml
+
+  # ====================================================================
+  # Test 2: rbac.create=false suppresses all 7 RBAC resources
+  #         while Deployment + SA still render (2 resources)
+  # ====================================================================
+
+  - it: should suppress all RBAC resources when rbac.create is false
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 1
+        template: templates/serviceaccount.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/deployment.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/rbac/clusterrole.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/rbac/leader-election-role.yaml
+      - hasDocuments:
+          count: 0
+        template: templates/rbac/metrics-role.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/networkpolicy.yaml
+
+  # ====================================================================
+  # Test 3: serviceAccount.create=false suppresses SA
+  #         while Deployment still references "default" SA name
+  # ====================================================================
+
+  - it: should suppress SA when serviceAccount.create is false
+    set:
+      serviceAccount.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/serviceaccount.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/deployment.yaml
+      - hasDocuments:
+          count: 2
+        template: templates/rbac/clusterrole.yaml
+      - hasDocuments:
+          count: 2
+        template: templates/rbac/leader-election-role.yaml
+      - hasDocuments:
+          count: 3
+        template: templates/rbac/metrics-role.yaml
+      - hasDocuments:
+          count: 1
+        template: templates/networkpolicy.yaml
+
+  - it: should set Deployment serviceAccountName to default when serviceAccount.create is false
+    set:
+      serviceAccount.create: false
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: default
+
+  # ====================================================================
+  # Test 4: fullnameOverride propagates to all resource names
+  # ====================================================================
+
+  - it: should propagate fullnameOverride to Deployment name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name
+
+  - it: should propagate fullnameOverride to ServiceAccount name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/serviceaccount.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name
+
+  - it: should propagate fullnameOverride to manager ClusterRole name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/rbac/clusterrole.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-manager-role
+
+  - it: should propagate fullnameOverride to manager ClusterRoleBinding name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/rbac/clusterrole.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-manager-rolebinding
+
+  - it: should propagate fullnameOverride to leader-election Role name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/rbac/leader-election-role.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-leader-election-role
+
+  - it: should propagate fullnameOverride to leader-election RoleBinding name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/rbac/leader-election-role.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-leader-election-rolebinding
+
+  - it: should propagate fullnameOverride to metrics-auth-role ClusterRole name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/rbac/metrics-role.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-metrics-auth-role
+
+  - it: should propagate fullnameOverride to metrics-auth ClusterRoleBinding name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/rbac/metrics-role.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-metrics-auth-rolebinding
+
+  - it: should propagate fullnameOverride to metrics-reader ClusterRole name
+    set:
+      fullnameOverride: my-custom-name
+    template: templates/rbac/metrics-role.yaml
+    documentIndex: 2
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-custom-name-metrics-reader
+
+  # ====================================================================
+  # Test 5: Custom serviceAccount.name propagates to Deployment
+  #         and all role/clusterrole bindings
+  # ====================================================================
+
+  - it: should propagate custom serviceAccount.name to ServiceAccount metadata.name
+    set:
+      serviceAccount.name: my-sa
+    template: templates/serviceaccount.yaml
+    asserts:
+      - equal:
+          path: metadata.name
+          value: my-sa
+
+  - it: should propagate custom serviceAccount.name to Deployment serviceAccountName
+    set:
+      serviceAccount.name: my-sa
+    template: templates/deployment.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: my-sa
+
+  - it: should propagate custom serviceAccount.name to manager ClusterRoleBinding subjects
+    set:
+      serviceAccount.name: my-sa
+    template: templates/rbac/clusterrole.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: my-sa
+
+  - it: should propagate custom serviceAccount.name to leader-election RoleBinding subjects
+    set:
+      serviceAccount.name: my-sa
+    template: templates/rbac/leader-election-role.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: my-sa
+
+  - it: should propagate custom serviceAccount.name to metrics-auth ClusterRoleBinding subjects
+    set:
+      serviceAccount.name: my-sa
+    template: templates/rbac/metrics-role.yaml
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: my-sa

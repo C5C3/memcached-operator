@@ -1,0 +1,436 @@
+---
+suite: Deployment template
+templates:
+  - templates/deployment.yaml
+release:
+  name: test-release
+  namespace: test-ns
+chart:
+  appVersion: "0.1.0"
+  version: "0.1.0"
+tests:
+  # ====================================================================
+  # Suite 1: Default rendering
+  # ====================================================================
+
+  - it: should render one Deployment document
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: should render correct kind and apiVersion
+    asserts:
+      - isKind:
+          of: Deployment
+      - isAPIVersion:
+          of: apps/v1
+
+  # -- Replicas --
+  - it: should set replicas to 1 by default
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 1
+
+  - it: should use custom replicaCount when set
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  # -- Default image --
+  - it: should set default image to controller:0.1.0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "controller:0.1.0"
+
+  - it: should set default imagePullPolicy to Always
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: Always
+
+  # -- Default resources --
+  - it: should set default resource limits
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 128Mi
+
+  - it: should set default resource requests
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 10m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 64Mi
+
+  - it: should use custom resource limits when set
+    set:
+      resources:
+        limits:
+          cpu: "2"
+          memory: 512Mi
+        requests:
+          cpu: 100m
+          memory: 128Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: "2"
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.memory
+          value: 512Mi
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.cpu
+          value: 100m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 128Mi
+
+  # -- ServiceAccount --
+  - it: should set serviceAccountName from fullname helper
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: test-release-memcached-operator
+
+  # -- Metadata labels --
+  - it: should include standard labels on metadata
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/name"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/instance"]
+      - exists:
+          path: metadata.labels["app.kubernetes.io/version"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  - it: should include control-plane label on metadata
+    asserts:
+      - equal:
+          path: metadata.labels.control-plane
+          value: controller-manager
+
+  # -- Pod template labels --
+  - it: should include standard labels on pod template
+    asserts:
+      - exists:
+          path: spec.template.metadata.labels["helm.sh/chart"]
+      - exists:
+          path: spec.template.metadata.labels["app.kubernetes.io/name"]
+      - exists:
+          path: spec.template.metadata.labels["app.kubernetes.io/instance"]
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  - it: should include control-plane label on pod template
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels.control-plane
+          value: controller-manager
+
+  # -- Selector labels --
+  - it: should use selectorLabels plus control-plane for spec.selector.matchLabels
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: memcached-operator
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/instance"]
+          value: test-release
+      - equal:
+          path: spec.selector.matchLabels.control-plane
+          value: controller-manager
+
+  # -- Namespace --
+  - it: should set namespace to release namespace
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: test-ns
+
+  # -- Container name --
+  - it: should set container name to manager
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].name
+          value: manager
+
+  # -- Container command --
+  - it: should set container command to /manager
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value:
+            - /manager
+
+  # -- Ports --
+  - it: should expose health port 8081
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 8081
+            name: health
+            protocol: TCP
+
+  - it: should expose metrics port 8443
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 8443
+            name: metrics
+            protocol: TCP
+
+  # -- Probes --
+  - it: should configure liveness probe on /healthz port 8081
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.initialDelaySeconds
+          value: 15
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.periodSeconds
+          value: 20
+
+  - it: should configure readiness probe on /readyz port 8081
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.port
+          value: 8081
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.initialDelaySeconds
+          value: 5
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.periodSeconds
+          value: 10
+
+  # -- Pod annotations --
+  - it: should include default-container annotation on pod template
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["kubectl.kubernetes.io/default-container"]
+          value: manager
+
+  # -- Termination grace period --
+  - it: should set terminationGracePeriodSeconds to 10
+    asserts:
+      - equal:
+          path: spec.template.spec.terminationGracePeriodSeconds
+          value: 10
+
+  # ====================================================================
+  # Suite 2: Container args
+  # ====================================================================
+
+  - it: should include --leader-elect arg by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect"
+
+  - it: should not include --leader-elect when leaderElection.enabled is false
+    set:
+      leaderElection.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--leader-elect"
+
+  - it: should always include --health-probe-bind-address
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--health-probe-bind-address=:8081"
+
+  - it: should always include --metrics-bind-address
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--metrics-bind-address=:8443"
+
+  - it: should always include --metrics-secure
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--metrics-secure"
+
+  - it: should not include --watch-namespaces by default
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content:
+            matchRegex: "^--watch-namespaces=.*"
+
+  - it: should include --watch-namespaces when watchNamespaces is set
+    set:
+      watchNamespaces:
+        - ns1
+        - ns2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--watch-namespaces=ns1,ns2"
+
+  # ====================================================================
+  # Suite 3: Custom image
+  # ====================================================================
+
+  - it: should use custom image tag when set
+    set:
+      image.tag: "v1.2.3"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "controller:v1.2.3"
+
+  - it: should use custom repository and tag
+    set:
+      image.repository: "ghcr.io/my-org/my-operator"
+      image.tag: "v2.0.0"
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: "ghcr.io/my-org/my-operator:v2.0.0"
+
+  - it: should render imagePullSecrets when set
+    set:
+      imagePullSecrets:
+        - name: regcred
+    asserts:
+      - equal:
+          path: spec.template.spec.imagePullSecrets[0].name
+          value: regcred
+
+  - it: should not include imagePullSecrets by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.imagePullSecrets
+
+  - it: should use custom pullPolicy
+    set:
+      image.pullPolicy: IfNotPresent
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].imagePullPolicy
+          value: IfNotPresent
+
+  # ====================================================================
+  # Suite 4: Security context
+  # ====================================================================
+
+  - it: should set default podSecurityContext with runAsNonRoot
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+
+  - it: should set default podSecurityContext runAsUser to 65532
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 65532
+
+  - it: should set default podSecurityContext seccompProfile
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+
+  - it: should set default container securityContext allowPrivilegeEscalation to false
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+
+  - it: should set default container securityContext readOnlyRootFilesystem to true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: should drop ALL capabilities by default
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value:
+            - ALL
+
+  # ====================================================================
+  # Suite 5: Scheduling (nodeSelector, tolerations, affinity)
+  # ====================================================================
+
+  - it: should not include nodeSelector by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.nodeSelector
+
+  - it: should set nodeSelector when configured
+    set:
+      nodeSelector:
+        kubernetes.io/os: linux
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector["kubernetes.io/os"]
+          value: linux
+
+  - it: should not include tolerations by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.tolerations
+
+  - it: should set tolerations when configured
+    set:
+      tolerations:
+        - key: "node-role.kubernetes.io/control-plane"
+          operator: "Exists"
+          effect: "NoSchedule"
+    asserts:
+      - contains:
+          path: spec.template.spec.tolerations
+          content:
+            key: "node-role.kubernetes.io/control-plane"
+            operator: "Exists"
+            effect: "NoSchedule"
+
+  - it: should not include affinity by default
+    asserts:
+      - notExists:
+          path: spec.template.spec.affinity
+
+  - it: should set affinity when configured
+    set:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+    asserts:
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity

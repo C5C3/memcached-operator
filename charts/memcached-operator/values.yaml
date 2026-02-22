@@ -14,7 +14,7 @@ image:
   # -- Container image tag (defaults to chart appVersion if empty)
   tag: ""
   # -- Image pull policy
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 # -- Secrets for pulling images from private registries
 imagePullSecrets: []
@@ -67,7 +67,7 @@ serviceMonitor:
 # -- NetworkPolicy configuration
 networkPolicy:
   # -- Enable creation of NetworkPolicy resource
-  enabled: false
+  enabled: true
 
 # -- List of namespaces to watch (empty means all namespaces)
 watchNamespaces: []

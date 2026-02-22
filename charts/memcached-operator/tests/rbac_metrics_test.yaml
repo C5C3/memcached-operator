@@ -1,0 +1,172 @@
+---
+suite: Metrics auth ClusterRole and ClusterRoleBinding templates
+templates:
+  - templates/rbac/metrics-role.yaml
+release:
+  name: test-release
+  namespace: test-ns
+tests:
+  # -- Gate: rbac.create --
+  - it: should render all 3 documents when rbac.create is true (default)
+    asserts:
+      - hasDocuments:
+          count: 3
+
+  - it: should not render any documents when rbac.create is false
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # -- metrics-auth-role ClusterRole (document 0) --
+  - it: should render metrics-auth-role ClusterRole as first document
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - isAPIVersion:
+          of: rbac.authorization.k8s.io/v1
+
+  - it: should set metrics-auth-role name with fullname prefix
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-release-memcached-operator-metrics-auth-role
+
+  - it: should include standard labels on metrics-auth-role
+    documentIndex: 0
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  - it: should have exactly 2 rules in metrics-auth-role
+    documentIndex: 0
+    asserts:
+      - lengthEqual:
+          path: rules
+          count: 2
+
+  - it: should grant create on tokenreviews
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - authentication.k8s.io
+            resources:
+              - tokenreviews
+            verbs:
+              - create
+
+  - it: should grant create on subjectaccessreviews
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - authorization.k8s.io
+            resources:
+              - subjectaccessreviews
+            verbs:
+              - create
+
+  # -- metrics-auth-rolebinding ClusterRoleBinding (document 1) --
+  - it: should render ClusterRoleBinding as second document
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - isAPIVersion:
+          of: rbac.authorization.k8s.io/v1
+
+  - it: should set ClusterRoleBinding name with fullname prefix
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-release-memcached-operator-metrics-auth-rolebinding
+
+  - it: should reference the metrics-auth-role ClusterRole
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: roleRef.apiGroup
+          value: rbac.authorization.k8s.io
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: test-release-memcached-operator-metrics-auth-role
+
+  - it: should bind to the service account in release namespace
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: test-release-memcached-operator
+      - equal:
+          path: subjects[0].namespace
+          value: test-ns
+
+  - it: should include standard labels on ClusterRoleBinding
+    documentIndex: 1
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  # -- metrics-reader ClusterRole (document 2) --
+  - it: should render metrics-reader ClusterRole as third document
+    documentIndex: 2
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - isAPIVersion:
+          of: rbac.authorization.k8s.io/v1
+
+  - it: should set metrics-reader name with fullname prefix
+    documentIndex: 2
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-release-memcached-operator-metrics-reader
+
+  - it: should include standard labels on metrics-reader
+    documentIndex: 2
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  - it: should have exactly 1 rule in metrics-reader
+    documentIndex: 2
+    asserts:
+      - lengthEqual:
+          path: rules
+          count: 1
+
+  - it: should grant get on /metrics nonResourceURL
+    documentIndex: 2
+    asserts:
+      - contains:
+          path: rules
+          content:
+            nonResourceURLs:
+              - "/metrics"
+            verbs:
+              - get

@@ -110,3 +110,9 @@ tests:
     asserts:
       - matchRegexRaw:
           pattern: "aThis-is-a-very-long-fullname-override-that-exceeds-sixty-three has been installed"
+
+  # -- memcached-operator.selectorLabelsKubectl --
+  - it: should render kubectl-compatible selector labels in pod check command
+    asserts:
+      - matchRegexRaw:
+          pattern: "kubectl get pods -l app.kubernetes.io/name=memcached-operator,app.kubernetes.io/instance=test-release"

@@ -1,0 +1,297 @@
+---
+suite: ClusterRole and ClusterRoleBinding templates
+templates:
+  - templates/rbac/clusterrole.yaml
+release:
+  name: test-release
+  namespace: test-ns
+tests:
+  # -- Gate: rbac.create --
+  - it: should render ClusterRole and ClusterRoleBinding when rbac.create is true (default)
+    asserts:
+      - hasDocuments:
+          count: 2
+
+  - it: should not render any documents when rbac.create is false
+    set:
+      rbac.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # -- ClusterRole (document 0) --
+  - it: should render ClusterRole as first document
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - isAPIVersion:
+          of: rbac.authorization.k8s.io/v1
+
+  - it: should set ClusterRole name with fullname prefix
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-release-memcached-operator-manager-role
+
+  - it: should include standard labels on ClusterRole
+    documentIndex: 0
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+
+  - it: should have exactly 11 RBAC rules
+    documentIndex: 0
+    asserts:
+      - lengthEqual:
+          path: rules
+          count: 11
+
+  # -- Memcached CR rules --
+  - it: should grant full CRUD on memcacheds
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - memcached.c5c3.io
+            resources:
+              - memcacheds
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant status update on memcacheds/status
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - memcached.c5c3.io
+            resources:
+              - memcacheds/status
+            verbs:
+              - get
+              - patch
+              - update
+
+  - it: should grant update on memcacheds/finalizers
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - memcached.c5c3.io
+            resources:
+              - memcacheds/finalizers
+            verbs:
+              - update
+
+  # -- Owned resource rules --
+  - it: should grant full CRUD on deployments
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - apps
+            resources:
+              - deployments
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant full CRUD on services
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - services
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant full CRUD on poddisruptionbudgets
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - policy
+            resources:
+              - poddisruptionbudgets
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant full CRUD on networkpolicies
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - networking.k8s.io
+            resources:
+              - networkpolicies
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant full CRUD on servicemonitors
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - monitoring.coreos.com
+            resources:
+              - servicemonitors
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  - it: should grant full CRUD on horizontalpodautoscalers
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - autoscaling
+            resources:
+              - horizontalpodautoscalers
+            verbs:
+              - create
+              - delete
+              - get
+              - list
+              - patch
+              - update
+              - watch
+
+  # -- Read-only and write-only rules --
+  - it: should grant read-only access to secrets
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+            resources:
+              - secrets
+            verbs:
+              - get
+              - list
+              - watch
+
+  - it: should grant create and patch on events
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - ""
+              - events.k8s.io
+            resources:
+              - events
+            verbs:
+              - create
+              - patch
+
+  # -- ClusterRoleBinding (document 1) --
+  - it: should render ClusterRoleBinding as second document
+    documentIndex: 1
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - isAPIVersion:
+          of: rbac.authorization.k8s.io/v1
+
+  - it: should set ClusterRoleBinding name with fullname prefix
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: metadata.name
+          value: test-release-memcached-operator-manager-rolebinding
+
+  - it: should reference the manager-role ClusterRole
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: roleRef.apiGroup
+          value: rbac.authorization.k8s.io
+      - equal:
+          path: roleRef.kind
+          value: ClusterRole
+      - equal:
+          path: roleRef.name
+          value: test-release-memcached-operator-manager-role
+
+  - it: should bind to the service account in release namespace
+    documentIndex: 1
+    asserts:
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount
+      - equal:
+          path: subjects[0].name
+          value: test-release-memcached-operator
+      - equal:
+          path: subjects[0].namespace
+          value: test-ns
+
+  - it: should include standard labels on ClusterRoleBinding
+    documentIndex: 1
+    asserts:
+      - exists:
+          path: metadata.labels["helm.sh/chart"]
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm

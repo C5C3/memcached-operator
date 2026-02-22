@@ -51,6 +51,13 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Selector labels formatted as kubectl -l flag value (comma-separated key=value pairs)
+*/}}
+{{- define "memcached-operator.selectorLabelsKubectl" -}}
+app.kubernetes.io/name={{ include "memcached-operator.name" . }},app.kubernetes.io/instance={{ .Release.Name }}
+{{- end }}
+
+{{/*
 Create the name of the service account to use
 */}}
 {{- define "memcached-operator.serviceAccountName" -}}
