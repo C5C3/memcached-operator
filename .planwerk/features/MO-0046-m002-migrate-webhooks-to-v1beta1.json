@@ -1,0 +1,612 @@
+{
+  "feature_id": "MO-0046",
+  "title": "M002: Migrate webhooks to v1beta1",
+  "slug": "m002-migrate-webhooks-to-v1beta1",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 📦 medium\n**Category:** backend\n**Priority:** critical\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nMove webhook logic from v1alpha1 to v1beta1 and delete the v1alpha1 webhook files:\n\n1. **api/v1beta1/memcached_webhook.go** — Migrate `MemcachedCustomDefaulter` from v1alpha1. Update the webhook path to `/mutate-memcached-c5c3-io-v1beta1-memcached`. Preserve all defaulting constants and logic (default replicas, image, port, memory limit, etc.).\n2. **api/v1beta1/memcached_validation_webhook.go** — Migrate `MemcachedCustomValidator` from v1alpha1. Update the webhook path to `/validate-memcached-c5c3-io-v1beta1-memcached`. Preserve all validation rules.\n3. **Delete** `api/v1alpha1/memcached_webhook.go` — v1alpha1 requests will be converted to v1beta1 by the API server before admission runs.\n4. **Delete** `api/v1alpha1/memcached_validation_webhook.go` — same reason.\n5. **Delete** `api/v1alpha1/memcached_webhook_test.go` and `api/v1alpha1/memcached_validation_webhook_test.go` — tests for deleted code.\n\nWrite new webhook tests in api/v1beta1/ covering both defaulting and validation scenarios (ported from deleted v1alpha1 tests).\n\n**Rationale:** With conversion in place, the API server converts v1alpha1 requests to v1beta1 before admission. Only v1beta1 webhooks are needed, eliminating duplicate webhook logic and ensuring a single source of truth for defaults and validation.\n\n**Affected Areas:**\n- api/v1beta1/memcached_webhook.go\n- api/v1beta1/memcached_validation_webhook.go\n- api/v1alpha1/memcached_webhook.go\n- api/v1alpha1/memcached_validation_webhook.go\n- api/v1alpha1/memcached_webhook_test.go\n- api/v1alpha1/memcached_validation_webhook_test.go",
+  "stories": [
+    {
+      "title": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "role": "cluster operator",
+      "want": "the validation webhook to run against v1beta1 Memcached resources at the v1beta1 webhook path",
+      "so_that": "invalid CRs are rejected regardless of which API version was used to submit them (v1alpha1 requests are converted to v1beta1 by the API server before admission)",
+      "criteria": [
+        "MemcachedCustomValidator is defined in api/v1beta1/memcached_validation_webhook.go",
+        "Kubebuilder marker specifies path=/validate-memcached-c5c3-io-v1beta1-memcached and versions=v1beta1",
+        "All six validation rule categories (memory limit, PDB, graceful shutdown, security secrets, autoscaling, delete bypass) are preserved identically",
+        "Validation errors reference the same field paths as before (spec.resources.limits.memory, etc.)"
+      ]
+    },
+    {
+      "title": "Operator defaults v1beta1 Memcached CRs via migrated webhook",
+      "role": "cluster operator",
+      "want": "the defaulting webhook to run against v1beta1 Memcached resources at the v1beta1 webhook path",
+      "so_that": "omitted fields are populated with sensible defaults for all submissions regardless of API version",
+      "criteria": [
+        "MemcachedCustomDefaulter is defined in api/v1beta1/memcached_webhook.go",
+        "Kubebuilder marker specifies path=/mutate-memcached-c5c3-io-v1beta1-memcached and versions=v1beta1",
+        "All defaulting constants and logic (replicas, image, memcached config, monitoring, HA, autoscaling) are preserved identically",
+        "SetupMemcachedWebhookWithManager registers both defaulter and validator for v1beta1 Memcached type"
+      ]
+    },
+    {
+      "title": "v1alpha1 webhook files are deleted",
+      "role": "developer",
+      "want": "the v1alpha1 webhook, validation webhook, and their test files to be deleted",
+      "so_that": "there is a single source of truth for defaults and validation, eliminating duplicate logic",
+      "criteria": [
+        "api/v1alpha1/memcached_webhook.go is deleted",
+        "api/v1alpha1/memcached_validation_webhook.go is deleted",
+        "api/v1alpha1/memcached_webhook_test.go is deleted",
+        "api/v1alpha1/memcached_validation_webhook_test.go is deleted"
+      ]
+    },
+    {
+      "title": "Entrypoint and test suite reference updated to v1beta1",
+      "role": "developer",
+      "want": "cmd/main.go and internal/controller/suite_test.go to call the v1beta1 SetupMemcachedWebhookWithManager",
+      "so_that": "the operator starts the v1beta1 webhooks and integration tests exercise the new webhook paths",
+      "criteria": [
+        "cmd/main.go imports api/v1beta1 and calls v1beta1.SetupMemcachedWebhookWithManager",
+        "internal/controller/suite_test.go imports api/v1beta1 and calls v1beta1.SetupMemcachedWebhookWithManager",
+        "No remaining references to v1alpha1 webhook setup functions"
+      ]
+    },
+    {
+      "title": "v1beta1 webhook tests cover all defaulting and validation scenarios",
+      "role": "developer",
+      "want": "comprehensive unit tests in api/v1beta1/ covering the migrated webhook logic",
+      "so_that": "the test suite validates that webhook behavior is identical after migration",
+      "criteria": [
+        "api/v1beta1/memcached_webhook_test.go contains all defaulting tests ported from v1alpha1",
+        "api/v1beta1/memcached_validation_webhook_test.go contains all validation tests ported from v1alpha1",
+        "All tests pass with `go test ./api/v1beta1/ -v`",
+        "Test count in v1beta1 matches or exceeds the count from deleted v1alpha1 tests"
+      ]
+    },
+    {
+      "title": "Webhook manifests regenerated for v1beta1 paths",
+      "role": "developer",
+      "want": "running `make manifests` to regenerate webhook configuration manifests with v1beta1 paths",
+      "so_that": "the webhook server configuration points to the correct v1beta1 admission paths",
+      "criteria": [
+        "config/webhook/ manifests contain v1beta1 paths after `make manifests`",
+        "No v1alpha1 webhook paths remain in generated manifests",
+        "`make generate manifests` succeeds without errors"
+      ]
+    },
+    {
+      "title": "Reference documentation updated for v1beta1 webhooks",
+      "role": "developer",
+      "want": "the docs/reference/backend/ webhook documentation to reference v1beta1 source files and paths",
+      "so_that": "documentation accurately reflects the current webhook implementation location",
+      "criteria": [
+        "docs/reference/backend/defaulting-webhook.md references api/v1beta1/ source path and v1beta1 webhook path",
+        "docs/reference/backend/validation-webhook.md references api/v1beta1/ source path and v1beta1 webhook path",
+        "docs/reference/backend/webhook-tests.md references v1beta1 test file paths"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The system SHALL serve the defaulting webhook at /mutate-memcached-c5c3-io-v1beta1-memcached with identical defaulting logic",
+      "priority": "SHALL",
+      "rationale": "With conversion in place, v1alpha1 requests are converted to v1beta1 before admission. The webhook must serve at the v1beta1 path.",
+      "scenarios": [
+        {
+          "name": "Defaulting webhook file created in v1beta1",
+          "when": "api/v1beta1/memcached_webhook.go exists",
+          "then": "it contains MemcachedCustomDefaulter, all defaulting constants, Default() method, and kubebuilder marker with path=/mutate-memcached-c5c3-io-v1beta1-memcached",
+          "and_then": [
+            "the marker specifies versions=v1beta1, name=mmemcached-v1beta1.kb.io"
+          ]
+        },
+        {
+          "name": "All defaulting constants preserved",
+          "when": "the v1beta1 defaulting webhook is inspected",
+          "then": "DefaultReplicas=1, DefaultImage=memcached:1.6, DefaultMaxMemoryMB=64, DefaultMaxConnections=1024, DefaultThreads=4, DefaultMaxItemSize=1m, DefaultExporterImage, DefaultServiceMonitorInterval=30s, DefaultServiceMonitorScrapeTimeout=10s, DefaultAutoscalingCPUUtilization=80, DefaultScaleDownStabilizationSeconds=300 are all present",
+          "and_then": []
+        },
+        {
+          "name": "Default method operates on v1beta1 Memcached type",
+          "when": "MemcachedCustomDefaulter.Default() is called with a v1beta1 Memcached object",
+          "then": "all defaulting logic (replicas, image, memcached config, monitoring, HA, autoscaling) is applied identically to the v1alpha1 behavior",
+          "and_then": [
+            "the function signature uses the v1beta1 Memcached type"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The system SHALL serve the validation webhook at /validate-memcached-c5c3-io-v1beta1-memcached with identical validation logic",
+      "priority": "SHALL",
+      "rationale": "Validation must run on the v1beta1 type since conversion happens before admission.",
+      "scenarios": [
+        {
+          "name": "Validation webhook file created in v1beta1",
+          "when": "api/v1beta1/memcached_validation_webhook.go exists",
+          "then": "it contains MemcachedCustomValidator with ValidateCreate, ValidateUpdate, ValidateDelete and kubebuilder marker with path=/validate-memcached-c5c3-io-v1beta1-memcached",
+          "and_then": [
+            "the marker specifies versions=v1beta1, name=vmemcached-v1beta1.kb.io"
+          ]
+        },
+        {
+          "name": "All five validation rule categories preserved",
+          "when": "validateMemcached() is called on a v1beta1 Memcached",
+          "then": "validateMemoryLimit, validatePDB, validateGracefulShutdown, validateSecuritySecretRefs, and validateAutoscaling are all invoked",
+          "and_then": [
+            "hasCPUUtilizationMetric helper is also present"
+          ]
+        },
+        {
+          "name": "memoryOverhead var preserved",
+          "when": "the v1beta1 validation webhook is inspected",
+          "then": "memoryOverhead = resource.MustParse(\"32Mi\") is present",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The system SHALL register both v1beta1 webhooks via SetupMemcachedWebhookWithManager in api/v1beta1",
+      "priority": "SHALL",
+      "rationale": "A single setup function registers both defaulter and validator, following the existing pattern.",
+      "scenarios": [
+        {
+          "name": "Setup function in v1beta1 package",
+          "when": "SetupMemcachedWebhookWithManager is defined in api/v1beta1/memcached_webhook.go",
+          "then": "it creates a webhook managed by the manager for the v1beta1 Memcached type with both WithDefaulter and WithValidator",
+          "and_then": []
+        },
+        {
+          "name": "cmd/main.go updated",
+          "when": "the operator starts",
+          "then": "cmd/main.go calls v1beta1.SetupMemcachedWebhookWithManager instead of v1alpha1",
+          "and_then": [
+            "the v1alpha1 import for webhook setup is removed"
+          ]
+        },
+        {
+          "name": "suite_test.go updated",
+          "when": "the integration test suite bootstraps",
+          "then": "internal/controller/suite_test.go calls v1beta1.SetupMemcachedWebhookWithManager",
+          "and_then": [
+            "integration tests exercise the v1beta1 webhook paths"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The system SHALL delete all v1alpha1 webhook source files and test files",
+      "priority": "SHALL",
+      "rationale": "Eliminates duplicate webhook logic since v1alpha1 requests are converted to v1beta1 before admission.",
+      "scenarios": [
+        {
+          "name": "v1alpha1 webhook source files deleted",
+          "when": "the migration is complete",
+          "then": "api/v1alpha1/memcached_webhook.go and api/v1alpha1/memcached_validation_webhook.go no longer exist",
+          "and_then": []
+        },
+        {
+          "name": "v1alpha1 webhook test files deleted",
+          "when": "the migration is complete",
+          "then": "api/v1alpha1/memcached_webhook_test.go and api/v1alpha1/memcached_validation_webhook_test.go no longer exist",
+          "and_then": []
+        },
+        {
+          "name": "No compilation errors after deletion",
+          "when": "`go build ./...` is run after deleting v1alpha1 webhook files",
+          "then": "the build succeeds without errors",
+          "and_then": [
+            "no remaining references to deleted types or functions in v1alpha1 package"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The system SHALL have v1beta1 unit tests covering all defaulting scenarios from the deleted v1alpha1 tests",
+      "priority": "SHALL",
+      "rationale": "Test coverage must be maintained after migration to ensure behavioral parity.",
+      "scenarios": [
+        {
+          "name": "Defaulting unit tests ported",
+          "when": "api/v1beta1/memcached_webhook_test.go is inspected",
+          "then": "it contains all test functions from the deleted v1alpha1 webhook test file, adapted to use v1beta1 types",
+          "and_then": [
+            "tests cover empty spec, explicit values, partial config, monitoring, HA, autoscaling, idempotency, and chained default+validate scenarios"
+          ]
+        },
+        {
+          "name": "All defaulting tests pass",
+          "when": "`go test ./api/v1beta1/ -run TestMemcachedDefaulting -v` is executed",
+          "then": "all tests pass",
+          "and_then": []
+        },
+        {
+          "name": "Chained default+validate tests ported",
+          "when": "the v1beta1 test file is inspected",
+          "then": "TestDefaultThenValidate_AutoscalingEnabled, TestDefaultThenValidate_AutoscalingWithExplicitReplicas, TestDefaultThenValidate_NoAutoscaling are present",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The system SHALL have v1beta1 unit tests covering all validation scenarios from the deleted v1alpha1 tests",
+      "priority": "SHALL",
+      "rationale": "Validation test coverage must be maintained after migration.",
+      "scenarios": [
+        {
+          "name": "Validation unit tests ported",
+          "when": "api/v1beta1/memcached_validation_webhook_test.go is inspected",
+          "then": "it contains all test functions from the deleted v1alpha1 validation test file, adapted to use v1beta1 types",
+          "and_then": [
+            "tests cover memory limit, PDB, security secrets, graceful shutdown, autoscaling, error aggregation, delete bypass, update propagation"
+          ]
+        },
+        {
+          "name": "All validation tests pass",
+          "when": "`go test ./api/v1beta1/ -run 'TestValidate|TestValidation' -v` is executed",
+          "then": "all tests pass",
+          "and_then": []
+        },
+        {
+          "name": "Error message tests ported",
+          "when": "the v1beta1 validation test file is inspected",
+          "then": "all error message assertion tests are present (memory error message, PDB error messages, security error messages, graceful shutdown error message, autoscaling error messages)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The system SHALL regenerate webhook manifests with v1beta1 paths",
+      "priority": "SHALL",
+      "rationale": "Kubebuilder markers drive manifest generation; updated markers produce correct v1beta1 webhook paths.",
+      "scenarios": [
+        {
+          "name": "Manifests regenerated",
+          "when": "`make manifests` is run after webhook migration",
+          "then": "config/webhook/ manifests contain paths /mutate-memcached-c5c3-io-v1beta1-memcached and /validate-memcached-c5c3-io-v1beta1-memcached",
+          "and_then": [
+            "no v1alpha1 webhook paths remain in any generated manifest"
+          ]
+        },
+        {
+          "name": "make generate succeeds",
+          "when": "`make generate` is run",
+          "then": "the command completes without errors",
+          "and_then": []
+        },
+        {
+          "name": "make manifests succeeds",
+          "when": "`make manifests` is run",
+          "then": "the command completes without errors",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The system SHALL pass all existing tests after the webhook migration",
+      "priority": "SHALL",
+      "rationale": "Migration must not break any existing functionality or tests.",
+      "scenarios": [
+        {
+          "name": "Full test suite passes",
+          "when": "`make test` is run after migration",
+          "then": "all tests pass (unit + envtest integration)",
+          "and_then": []
+        },
+        {
+          "name": "go vet passes",
+          "when": "`make vet` is run after migration",
+          "then": "no vet errors",
+          "and_then": []
+        },
+        {
+          "name": "golangci-lint passes",
+          "when": "`make lint` is run after migration",
+          "then": "no lint errors",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "Reference documentation SHALL be updated to reflect v1beta1 webhook locations and paths",
+      "priority": "SHALL",
+      "rationale": "Documentation must accurately reflect the current implementation to avoid confusion.",
+      "scenarios": [
+        {
+          "name": "Defaulting webhook doc updated",
+          "when": "docs/reference/backend/defaulting-webhook.md is inspected",
+          "then": "all references to v1alpha1 source paths and webhook paths are replaced with v1beta1 equivalents",
+          "and_then": [
+            "API version examples use v1beta1"
+          ]
+        },
+        {
+          "name": "Validation webhook doc updated",
+          "when": "docs/reference/backend/validation-webhook.md is inspected",
+          "then": "all references to v1alpha1 source paths and webhook paths are replaced with v1beta1 equivalents",
+          "and_then": [
+            "API version examples use v1beta1"
+          ]
+        },
+        {
+          "name": "Webhook tests doc updated",
+          "when": "docs/reference/backend/webhook-tests.md is inspected",
+          "then": "all references to v1alpha1 test file paths are replaced with v1beta1 equivalents",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create v1beta1 defaulting webhook with all constants, logic, and setup function (REQ-001, REQ-003)",
+      "description": "Create api/v1beta1/memcached_webhook.go by migrating the entire contents of api/v1alpha1/memcached_webhook.go. Change package to v1beta1. Update kubebuilder marker: path=/mutate-memcached-c5c3-io-v1beta1-memcached, versions=v1beta1, name=mmemcached-v1beta1.kb.io. All types already exist in v1beta1 (Memcached, MemcachedConfig, etc.) so imports update to use local package types. Preserve all constants (DefaultReplicas, DefaultImage, etc.), MemcachedCustomDefaulter, Default(), defaultMemcachedConfig(), defaultMonitoring(), defaultAutoscaling(), SetupMemcachedWebhookWithManager(). The logger var memcachedlog stays the same.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create v1beta1 validation webhook with all validation rules (REQ-002)",
+      "description": "Create api/v1beta1/memcached_validation_webhook.go by migrating the entire contents of api/v1alpha1/memcached_validation_webhook.go. Change package to v1beta1. Update kubebuilder marker: path=/validate-memcached-c5c3-io-v1beta1-memcached, versions=v1beta1, name=vmemcached-v1beta1.kb.io. All types (Memcached, MemcachedSpec, etc.) already exist in v1beta1 package. Preserve memoryOverhead var, MemcachedCustomValidator, ValidateCreate/Update/Delete, validateMemcached(), validateMemoryLimit(), validatePDB(), validateGracefulShutdown(), validateSecuritySecretRefs(), validateAutoscaling(), hasCPUUtilizationMetric(), and the runtime.Object interface check.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Port defaulting webhook unit tests to v1beta1 (REQ-005)",
+      "description": "Create api/v1beta1/memcached_webhook_test.go by porting all tests from api/v1alpha1/memcached_webhook_test.go. Change package to v1beta1. Remove v1alpha1 type prefixes since types are now in the same package. Port all ~30 test functions including: EmptySpec, PreservesExplicitValues, NilMemcachedConfig, PartialMemcachedConfig, MonitoringExporterImage (and variations), AntiAffinityPreset (and variations), ServiceMonitor (and variations), ReplicasZeroPreserved, FullySpecifiedCRUnchanged, Idempotent (and variations), autoscaling tests (DefaultMetrics, DefaultBehavior, PreservesUserMetrics, PreservesUserBehavior, DisabledNoDefaults, NilStaysNil, Idempotent, ClearsReplicas, NoAutoscalingStillDefaultsReplicas), and chained DefaultThenValidate tests.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Port validation webhook unit tests to v1beta1 (REQ-006)",
+      "description": "Create api/v1beta1/memcached_validation_webhook_test.go by porting all tests from api/v1alpha1/memcached_validation_webhook_test.go. Change package to v1beta1. Port all ~20+ test functions including: ValidateCreate_ValidMinimalCR, ValidateUpdate_ValidMinimalCR, ValidateDelete_AlwaysSucceeds, ValidateCreate_FullyPopulatedValidCR, ValidateMemoryLimit (table-driven 10 cases), ValidateMemoryLimit_ErrorMessage, ValidatePDB (table-driven 14 cases), ValidatePDB_ErrorMessages, ValidateSecuritySecretRefs (table-driven 10 cases), ValidateSecuritySecretRefs_ErrorMessages, ValidateGracefulShutdown (table-driven 7 cases), ValidateGracefulShutdown_ErrorMessage, Validation_MultipleErrorsCollected, Validation_FourSimultaneousViolations, Validation_StatusErrorFormat, ValidateUpdate_PropagatesErrors, ValidateUpdate_ValidToInvalid, ValidateUpdate_ValidCRAccepted, ValidateDelete_InvalidCRStillDeletes, autoscaling validation tests (ReplicasMutualExclusivity, MinMaxReplicas, CPURequests, MultipleErrors, WithExistingErrors, ErrorMessages).",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Update cmd/main.go and suite_test.go to call v1beta1 webhook setup (REQ-003)",
+      "description": "In cmd/main.go: change import from memcachedv1alpha1 to also import memcachedv1beta1 (or adjust existing import alias), and change line 139 from memcachedv1alpha1.SetupMemcachedWebhookWithManager(mgr) to memcachedv1beta1.SetupMemcachedWebhookWithManager(mgr). In internal/controller/suite_test.go: change import and line 104 similarly. Ensure v1alpha1 import remains if still used for other purposes (types, scheme registration).",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Delete v1alpha1 webhook files and test files (REQ-004)",
+      "description": "Delete four files: api/v1alpha1/memcached_webhook.go, api/v1alpha1/memcached_validation_webhook.go, api/v1alpha1/memcached_webhook_test.go, api/v1alpha1/memcached_validation_webhook_test.go. Verify no remaining compilation errors by running `go build ./...`. Check that no other files in v1alpha1 import symbols that only existed in the deleted webhook files (memcachedlog is used by webhooks only, MemcachedCustomDefaulter/Validator only in tests).",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "3.3",
+      "title": "Update integration tests to use v1beta1 types (REQ-003, REQ-008)",
+      "description": "Update internal/controller/memcached_webhook_integration_test.go and internal/controller/memcached_validation_webhook_integration_test.go to import and use v1beta1 types instead of v1alpha1 types. Change import alias from memcachedv1alpha1 to memcachedv1beta1 and update all type references (memcachedv1beta1.Memcached, memcachedv1beta1.MemcachedSpec, etc.). Update the validMemcached and int32Ptr helper references if they moved. Ensure all integration tests pass with `make test`.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Regenerate manifests and verify build (REQ-007, REQ-008)",
+      "description": "Run `make generate manifests` to regenerate webhook configuration manifests from the v1beta1 kubebuilder markers. Verify config/webhook/ manifests contain v1beta1 paths. Run `make vet` and `make lint` to verify no issues. Run `make test` to confirm all tests pass end-to-end.",
+      "level": 4,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "5.1",
+      "title": "Update defaulting webhook reference documentation (REQ-009)",
+      "description": "Update docs/reference/backend/defaulting-webhook.md: change source path from api/v1alpha1/memcached_webhook.go to api/v1beta1/memcached_webhook.go. Update webhook path from /mutate-memcached-c5c3-io-v1alpha1-memcached to /mutate-memcached-c5c3-io-v1beta1-memcached. Update API version references from v1alpha1 to v1beta1 in all YAML examples and code snippets. Update the kubebuilder marker documentation.",
+      "level": 5,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "5.2",
+      "title": "Update validation webhook reference documentation (REQ-009)",
+      "description": "Update docs/reference/backend/validation-webhook.md: change source path from api/v1alpha1/memcached_validation_webhook.go to api/v1beta1/memcached_validation_webhook.go. Update webhook path from /validate-memcached-c5c3-io-v1alpha1-memcached to /validate-memcached-c5c3-io-v1beta1-memcached. Update API version references in YAML examples. Update the registration code snippet and kubebuilder marker documentation.",
+      "level": 5,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "5.3",
+      "title": "Update webhook tests reference documentation (REQ-009)",
+      "description": "Update docs/reference/backend/webhook-tests.md: change all source file references from api/v1alpha1/ to api/v1beta1/ for webhook test files. Update the test inventory tables to reference v1beta1 file paths. Update code examples to show v1beta1 package and types. Update the running instructions for unit tests to reference ./api/v1beta1/.",
+      "level": 5,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1beta1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_EmptySpec",
+      "story": "Operator defaults v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Empty spec gets replicas=1, image=memcached:1.6, full memcached config defaults; monitoring and HA remain nil",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_PreservesExplicitValues",
+      "story": "Operator defaults v1beta1 Memcached CRs via migrated webhook",
+      "expected": "All explicitly set values are preserved (replicas=3, custom image, custom config)",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AutoscalingDefaultMetrics",
+      "story": "Operator defaults v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Autoscaling enabled with no metrics gets default CPU 80% utilization metric",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_webhook_test.go",
+      "test_function": "TestMemcachedDefaulting_AutoscalingClearsReplicas",
+      "story": "Operator defaults v1beta1 Memcached CRs via migrated webhook",
+      "expected": "When autoscaling is enabled, spec.replicas is cleared to nil",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_webhook_test.go",
+      "test_function": "TestDefaultThenValidate_AutoscalingEnabled",
+      "story": "Operator defaults v1beta1 Memcached CRs via migrated webhook",
+      "expected": "After defaulting, autoscaling CR passes validation (replicas cleared, CPU request present)",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateCreate_ValidMinimalCR",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Minimal CR passes validation",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateMemoryLimit",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Table-driven test covers sufficient, exact boundary, insufficient, no limit, nil resources, and edge cases",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidatePDB",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Table-driven test covers all 14 PDB validation cases including mutual exclusivity and replicas comparison",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateSecuritySecretRefs",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Table-driven test covers all 10 security secret reference cases",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateGracefulShutdown",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Table-driven test covers all 7 graceful shutdown timing cases",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateAutoscalingReplicasMutualExclusivity",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Autoscaling enabled + replicas set is rejected; all other combinations accepted",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_MultipleErrorsCollected",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Multiple simultaneous validation violations are all reported in a single error response",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidateDelete_AlwaysSucceeds",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Delete is always allowed even for invalid CRs",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_validation_webhook_test.go",
+      "test_function": "TestValidation_StatusErrorFormat",
+      "story": "Operator validates v1beta1 Memcached CRs via migrated webhook",
+      "expected": "Error is *apierrors.StatusError with Status=Failure, Reason=Invalid",
+      "requirement_id": "REQ-002"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All v1beta1 webhook source files compile without errors (`go build ./...`)",
+    "All v1beta1 webhook unit tests pass (`go test ./api/v1beta1/ -v`)",
+    "All integration tests pass (`make test`) with v1beta1 webhook setup",
+    "v1alpha1 webhook files are fully deleted (4 files: 2 source, 2 test)",
+    "Kubebuilder markers specify v1beta1 paths and versions (not v1alpha1)",
+    "cmd/main.go and suite_test.go reference v1beta1.SetupMemcachedWebhookWithManager",
+    "`make manifests` generates webhook configs with v1beta1 paths only",
+    "`make lint` and `make vet` pass without errors",
+    "Reference documentation (3 files) updated with v1beta1 paths and file references",
+    "No remaining v1alpha1 webhook path strings anywhere in the codebase (excluding git history and planwerk JSON files)"
+  ],
+  "implementation_notes": "This is a pure migration task — no new logic is introduced. The v1beta1 types (Memcached, MemcachedSpec, MemcachedConfig, etc.) are identical to v1alpha1 types and already exist in api/v1beta1/memcached_types.go. The webhook logic is being moved, not rewritten. Key patterns to follow: (1) The defaulting webhook file contains both the setup function and the defaulter, following the v1alpha1 pattern. (2) The validation webhook is in a separate file but references the logger from the defaulting file. (3) Tests use standard Go testing.T with table-driven patterns, not Ginkgo. (4) The integration tests in internal/controller/ use Ginkgo/Gomega and envtest. (5) The suite_test.go registers webhooks at startup, so it must be updated to use v1beta1 setup. (6) cmd/main.go calls the setup function, so it must be updated. (7) After deleting v1alpha1 webhook files, ensure the v1alpha1 package still compiles — it still has types, conversion, and other files. Risks: (a) The memcachedlog variable is defined in the defaulting webhook file and used by the validation webhook — both files must be in the same package (v1beta1). (b) Integration tests reference v1alpha1 types for CR construction — these must be updated to v1beta1 types. (c) The conversion tests in v1alpha1 still need to compile after webhook deletion.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:26:33.927289"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T13:59:54.736608"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T14:03:09.769185"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "f40ab370-049c-4504-855d-ec285e0d177f",
+      "timestamp": "2026-02-22T14:03:09.769227",
+      "total_duration": 191.71957755088806,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 191.71957755088806,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
