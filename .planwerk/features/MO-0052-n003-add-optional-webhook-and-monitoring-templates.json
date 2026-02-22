@@ -1,0 +1,684 @@
+{
+  "feature_id": "MO-0052",
+  "title": "N003: Add optional Webhook and monitoring templates",
+  "slug": "n003-add-optional-webhook-and-monitoring-templates",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** infrastructure\n**Priority:** high\n**Source:** Proposed for 'Helm Chart Packaging\n\nChart structure under charts/'\n\nImplement all conditionally-rendered Helm templates for optional components. Includes: templates/webhook/ with MutatingWebhookConfiguration, ValidatingWebhookConfiguration, and webhook Service (gated by webhook.enabled); templates/certmanager/ with Issuer and Certificate resources (gated by certmanager.enabled, which implies webhook.enabled); templates/servicemonitor.yaml for Prometheus monitoring (gated by serviceMonitor.enabled); and templates/networkpolicy.yaml for metrics ingress policy (gated by networkPolicy.enabled). Each template includes proper conditional blocks and cross-references (e.g., cert-manager Certificate references webhook Service).\n\n**Rationale:** These optional components represent the full feature set of the operator deployment. Webhooks and cert-manager are tightly coupled and must be templated together. ServiceMonitor and NetworkPolicy are independent but complete the chart's parity with the existing Kustomize configuration.\n\n**Affected Areas:**\n- charts/memcached-operator/templates/webhook/mutating-webhook.yaml\n- charts/memcached-operator/templates/webhook/validating-webhook.yaml\n- charts/memcached-operator/templates/webhook/service.yaml\n- charts/memcached-operator/templates/certmanager/issuer.yaml\n- charts/memcached-operator/templates/certmanager/certificate.yaml\n- charts/memcached-operator/templates/servicemonitor.yaml\n- charts/memcached-operator/templates/networkpolicy.yaml\n- config/webhook/\n- config/certmanager/\n- config/prometheus/",
+  "stories": [
+    {
+      "title": "Cluster admin can enable admission webhooks via Helm values",
+      "role": "cluster admin",
+      "want": "to deploy MutatingWebhookConfiguration, ValidatingWebhookConfiguration, and webhook Service by setting webhook.enabled=true",
+      "so_that": "the operator's defaulting and validation webhooks intercept Memcached CR create/update requests",
+      "criteria": [
+        "Setting webhook.enabled=true renders MutatingWebhookConfiguration, ValidatingWebhookConfiguration, and webhook Service (3 documents total across webhook/ templates)",
+        "Setting webhook.enabled=false renders zero documents from templates/webhook/",
+        "Webhook configurations reference the webhook Service by fullname in clientConfig.service.name",
+        "Webhook Service targets pods with selectorLabels + control-plane: controller-manager on port 443 -> targetPort 9443",
+        "All webhook resources include standard Helm labels from _helpers.tpl",
+        "MutatingWebhookConfiguration has correct path /mutate-memcached-c5c3-io-v1beta1-memcached and sideEffects: None",
+        "ValidatingWebhookConfiguration has correct path /validate-memcached-c5c3-io-v1beta1-memcached and sideEffects: None"
+      ]
+    },
+    {
+      "title": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "role": "cluster admin",
+      "want": "to deploy a self-signed Issuer and Certificate for the webhook by setting certmanager.enabled=true",
+      "so_that": "cert-manager automatically provisions and rotates TLS certificates for the webhook server",
+      "criteria": [
+        "Setting certmanager.enabled=true renders Issuer and Certificate resources (2 documents total)",
+        "Setting certmanager.enabled=false renders zero documents from templates/certmanager/",
+        "Certificate dnsNames reference the webhook Service fullname in the release namespace (SERVICE.NAMESPACE.svc and SERVICE.NAMESPACE.svc.cluster.local)",
+        "Certificate issuerRef.name matches the Issuer name",
+        "Certificate secretName is webhook-server-cert",
+        "Both webhook configurations include cert-manager.io/inject-ca-from annotation referencing NAMESPACE/CERT-NAME when certmanager.enabled=true",
+        "Issuer and Certificate include standard Helm labels"
+      ]
+    },
+    {
+      "title": "Cluster admin can enable Prometheus ServiceMonitor",
+      "role": "cluster admin",
+      "want": "to deploy a ServiceMonitor resource by setting serviceMonitor.enabled=true",
+      "so_that": "Prometheus automatically discovers and scrapes operator metrics",
+      "criteria": [
+        "Setting serviceMonitor.enabled=true renders exactly 1 ServiceMonitor document",
+        "Setting serviceMonitor.enabled=false (default) renders zero documents",
+        "ServiceMonitor selector matches pods with selectorLabels + control-plane: controller-manager",
+        "ServiceMonitor endpoint targets port 'https' (8443) with /metrics path, scheme https, and bearerTokenFile",
+        "ServiceMonitor includes standard Helm labels plus control-plane: controller-manager label"
+      ]
+    },
+    {
+      "title": "Cluster admin can customize NetworkPolicy for webhook port access",
+      "role": "cluster admin",
+      "want": "the NetworkPolicy to include webhook port 9443 ingress when webhooks are enabled",
+      "so_that": "the API server can reach the webhook endpoint through the network policy",
+      "criteria": [
+        "When webhook.enabled=true, NetworkPolicy ingress includes port 9443 in addition to health (8081) and metrics (8443) ports",
+        "When webhook.enabled=false, NetworkPolicy ingress does NOT include port 9443",
+        "Existing health and metrics port rules remain unchanged regardless of webhook.enabled"
+      ]
+    },
+    {
+      "title": "Cluster admin gets correct Deployment configuration when webhooks are enabled",
+      "role": "cluster admin",
+      "want": "the Deployment to include webhook server port and certificate volume mount when webhook.enabled=true",
+      "so_that": "the operator manager container can serve webhook requests with TLS",
+      "criteria": [
+        "When webhook.enabled=true, Deployment container ports include port 9443 named webhook-server",
+        "When webhook.enabled=true, Deployment container has volumeMount for /tmp/k8s-webhook-server/serving-certs",
+        "When webhook.enabled=true, Deployment pod spec has volume 'cert' referencing secret webhook-server-cert",
+        "When webhook.enabled=false, none of the webhook port, volumeMount, or volume are present",
+        "Existing ports (health 8081, metrics 8443) remain unchanged"
+      ]
+    },
+    {
+      "title": "Integration: all templates render together without conflicts",
+      "role": "cluster admin",
+      "want": "all templates to render consistently when all features are enabled or selectively disabled",
+      "so_that": "helm install/upgrade produces valid, interconnected Kubernetes resources",
+      "criteria": [
+        "All defaults (webhook=true, certmanager=true, serviceMonitor=false, networkPolicy=true) render correct total document count",
+        "fullnameOverride propagates to all new resource names (webhook service, webhook configs, cert-manager resources, servicemonitor)",
+        "Disabling webhook.enabled suppresses all webhook templates, cert-manager templates (since certmanager implies webhook), and removes webhook port from Deployment and NetworkPolicy",
+        "Cross-references between templates are consistent: webhook configs reference webhook service name, cert-manager Certificate references webhook service DNS, webhook configs have cert-manager CA injection annotation"
+      ]
+    },
+    {
+      "title": "Cluster admin sees NOTES.txt output reflecting enabled optional components",
+      "role": "cluster admin",
+      "want": "the post-install NOTES to mention which optional components are enabled",
+      "so_that": "I know the current deployment configuration at a glance",
+      "criteria": [
+        "NOTES.txt shows 'Webhooks: enabled' when webhook.enabled=true, 'Webhooks: disabled' when false",
+        "NOTES.txt shows 'cert-manager: enabled' when certmanager.enabled=true",
+        "NOTES.txt shows 'ServiceMonitor: enabled' when serviceMonitor.enabled=true"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The chart SHALL render MutatingWebhookConfiguration, ValidatingWebhookConfiguration, and webhook Service when webhook.enabled is true, and SHALL render nothing from templates/webhook/ when false",
+      "priority": "SHALL",
+      "rationale": "Webhook resources are optional and must be conditionally rendered to support installations without webhook infrastructure",
+      "scenarios": [
+        {
+          "name": "Webhooks enabled renders 3 resources",
+          "when": "webhook.enabled=true (default)",
+          "then": "templates/webhook/mutating-webhook.yaml renders 1 MutatingWebhookConfiguration, templates/webhook/validating-webhook.yaml renders 1 ValidatingWebhookConfiguration, templates/webhook/service.yaml renders 1 Service",
+          "and_then": [
+            "all 3 resources include standard Helm labels"
+          ]
+        },
+        {
+          "name": "Webhooks disabled renders nothing",
+          "when": "webhook.enabled=false",
+          "then": "all three webhook templates render 0 documents each",
+          "and_then": []
+        },
+        {
+          "name": "MutatingWebhookConfiguration has correct webhook path and rules",
+          "when": "webhook.enabled=true",
+          "then": "MutatingWebhookConfiguration has webhook entry with path /mutate-memcached-c5c3-io-v1beta1-memcached, failurePolicy Fail, sideEffects None, admissionReviewVersions [v1]",
+          "and_then": [
+            "rules target memcached.c5c3.io/v1beta1 memcacheds for CREATE and UPDATE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The webhook Service SHALL select operator pods via selectorLabels + control-plane: controller-manager and expose port 443 targeting 9443",
+      "priority": "SHALL",
+      "rationale": "The Kubernetes API server sends webhook requests to port 443 of the webhook Service, which must forward to the manager's webhook port 9443",
+      "scenarios": [
+        {
+          "name": "Service selector matches Deployment pods",
+          "when": "webhook.enabled=true",
+          "then": "webhook Service selector includes selectorLabels (app.kubernetes.io/name, app.kubernetes.io/instance) plus control-plane: controller-manager",
+          "and_then": []
+        },
+        {
+          "name": "Service port mapping is correct",
+          "when": "webhook.enabled=true",
+          "then": "webhook Service has port 443 with targetPort 9443 and protocol TCP",
+          "and_then": []
+        },
+        {
+          "name": "Service name uses fullname helper",
+          "when": "webhook.enabled=true with fullnameOverride=custom",
+          "then": "webhook Service name is custom-webhook-service",
+          "and_then": [
+            "webhook configurations reference this name in clientConfig.service.name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The chart SHALL render cert-manager Issuer and Certificate when certmanager.enabled is true, and SHALL render nothing when false",
+      "priority": "SHALL",
+      "rationale": "cert-manager integration provides automated TLS certificate management for webhooks; it must be optional as not all clusters have cert-manager",
+      "scenarios": [
+        {
+          "name": "cert-manager enabled renders Issuer and Certificate",
+          "when": "certmanager.enabled=true (default)",
+          "then": "templates/certmanager/issuer.yaml renders 1 Issuer, templates/certmanager/certificate.yaml renders 1 Certificate",
+          "and_then": [
+            "Issuer is selfSigned, Certificate references the Issuer by name"
+          ]
+        },
+        {
+          "name": "cert-manager disabled renders nothing",
+          "when": "certmanager.enabled=false",
+          "then": "both cert-manager templates render 0 documents",
+          "and_then": []
+        },
+        {
+          "name": "Certificate dnsNames reference webhook Service",
+          "when": "certmanager.enabled=true",
+          "then": "Certificate dnsNames include FULLNAME-webhook-service.NAMESPACE.svc and FULLNAME-webhook-service.NAMESPACE.svc.cluster.local",
+          "and_then": [
+            "secretName is webhook-server-cert",
+            "privateKey.rotationPolicy is Always"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "When certmanager.enabled is true, the MutatingWebhookConfiguration and ValidatingWebhookConfiguration SHALL include the cert-manager.io/inject-ca-from annotation",
+      "priority": "SHALL",
+      "rationale": "cert-manager uses this annotation to inject the CA bundle into webhook configurations so the API server trusts the webhook's TLS certificate",
+      "scenarios": [
+        {
+          "name": "CA injection annotation present when cert-manager enabled",
+          "when": "certmanager.enabled=true and webhook.enabled=true",
+          "then": "both webhook configurations have annotation cert-manager.io/inject-ca-from: NAMESPACE/FULLNAME-serving-cert",
+          "and_then": []
+        },
+        {
+          "name": "CA injection annotation absent when cert-manager disabled",
+          "when": "certmanager.enabled=false and webhook.enabled=true",
+          "then": "webhook configurations do NOT have the cert-manager.io/inject-ca-from annotation",
+          "and_then": []
+        },
+        {
+          "name": "Annotation value matches Certificate resource",
+          "when": "certmanager.enabled=true in namespace my-ns with fullnameOverride=custom",
+          "then": "annotation value is my-ns/custom-serving-cert matching the Certificate metadata.name",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The chart SHALL render a ServiceMonitor when serviceMonitor.enabled is true, targeting the operator's metrics endpoint on port https (8443)",
+      "priority": "SHALL",
+      "rationale": "ServiceMonitor enables Prometheus service discovery for the operator's metrics; it's disabled by default as not all clusters run Prometheus Operator",
+      "scenarios": [
+        {
+          "name": "ServiceMonitor enabled renders 1 resource",
+          "when": "serviceMonitor.enabled=true",
+          "then": "templates/servicemonitor.yaml renders 1 ServiceMonitor with apiVersion monitoring.coreos.com/v1",
+          "and_then": [
+            "includes standard Helm labels plus control-plane: controller-manager"
+          ]
+        },
+        {
+          "name": "ServiceMonitor disabled renders nothing",
+          "when": "serviceMonitor.enabled=false (default)",
+          "then": "templates/servicemonitor.yaml renders 0 documents",
+          "and_then": []
+        },
+        {
+          "name": "ServiceMonitor endpoint configuration is correct",
+          "when": "serviceMonitor.enabled=true",
+          "then": "endpoint has path /metrics, port https, scheme https, bearerTokenFile /var/run/secrets/kubernetes.io/serviceaccount/token, tlsConfig.insecureSkipVerify true",
+          "and_then": [
+            "selector matchLabels includes selectorLabels + control-plane: controller-manager"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The NetworkPolicy SHALL conditionally include webhook port 9443 in ingress rules when webhook.enabled is true",
+      "priority": "SHALL",
+      "rationale": "When webhooks are enabled, the API server must be able to reach port 9443 through the NetworkPolicy",
+      "scenarios": [
+        {
+          "name": "Webhook port included when webhooks enabled",
+          "when": "networkPolicy.enabled=true and webhook.enabled=true",
+          "then": "NetworkPolicy ingress rules include port 9443 TCP in addition to ports 8081 and 8443",
+          "and_then": []
+        },
+        {
+          "name": "Webhook port excluded when webhooks disabled",
+          "when": "networkPolicy.enabled=true and webhook.enabled=false",
+          "then": "NetworkPolicy ingress rules include only ports 8081 and 8443, NOT 9443",
+          "and_then": []
+        },
+        {
+          "name": "NetworkPolicy disabled renders nothing regardless",
+          "when": "networkPolicy.enabled=false",
+          "then": "networkpolicy.yaml renders 0 documents",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The Deployment SHALL conditionally include webhook port, volume mount, and cert volume when webhook.enabled is true",
+      "priority": "SHALL",
+      "rationale": "The operator manager needs the webhook port exposed and TLS certs mounted to serve admission webhook requests",
+      "scenarios": [
+        {
+          "name": "Webhook port and volumes added when enabled",
+          "when": "webhook.enabled=true",
+          "then": "Deployment container ports include containerPort 9443 named webhook-server, container has volumeMount at /tmp/k8s-webhook-server/serving-certs, pod has volume 'cert' from secret webhook-server-cert",
+          "and_then": []
+        },
+        {
+          "name": "No webhook artifacts when disabled",
+          "when": "webhook.enabled=false",
+          "then": "Deployment container ports do NOT include 9443, no serving-certs volumeMount, no cert volume",
+          "and_then": []
+        },
+        {
+          "name": "Existing ports unchanged",
+          "when": "webhook.enabled=true or false",
+          "then": "Deployment always includes health port 8081 and metrics port 8443",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The webhook configurations SHALL reference the webhook Service via clientConfig.service using the fullname-derived service name and the release namespace",
+      "priority": "SHALL",
+      "rationale": "Webhook configurations must correctly reference the Service so the API server can route admission requests",
+      "scenarios": [
+        {
+          "name": "Default service reference",
+          "when": "webhook.enabled=true with default names",
+          "then": "clientConfig.service.name is FULLNAME-webhook-service and clientConfig.service.namespace is .Release.Namespace",
+          "and_then": []
+        },
+        {
+          "name": "fullnameOverride propagates to service reference",
+          "when": "webhook.enabled=true with fullnameOverride=custom",
+          "then": "clientConfig.service.name is custom-webhook-service",
+          "and_then": []
+        },
+        {
+          "name": "Both webhook configs use same service reference",
+          "when": "webhook.enabled=true",
+          "then": "MutatingWebhookConfiguration and ValidatingWebhookConfiguration both reference the same service name and namespace",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The NOTES.txt SHOULD display status of optional components (webhooks, cert-manager, ServiceMonitor)",
+      "priority": "SHOULD",
+      "rationale": "Post-install notes help the admin verify which optional features are active in the deployment",
+      "scenarios": [
+        {
+          "name": "All enabled shows all components",
+          "when": "webhook.enabled=true, certmanager.enabled=true, serviceMonitor.enabled=true",
+          "then": "NOTES output includes lines indicating webhooks enabled, cert-manager enabled, ServiceMonitor enabled",
+          "and_then": []
+        },
+        {
+          "name": "Webhooks without cert-manager shows warning",
+          "when": "webhook.enabled=true, certmanager.enabled=false",
+          "then": "NOTES output includes warning that webhook TLS certificates must be managed manually",
+          "and_then": []
+        },
+        {
+          "name": "Webhooks disabled shows disabled status",
+          "when": "webhook.enabled=false",
+          "then": "NOTES output indicates webhooks are disabled",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create webhook Service template (REQ-002)",
+      "description": "Create `charts/memcached-operator/templates/webhook/service.yaml`. Gated by `{{- if .Values.webhook.enabled }}`. Translates `config/webhook/service.yaml` into Helm template: name `{{ include \"memcached-operator.fullname\" . }}-webhook-service`, namespace `{{ .Release.Namespace }}`, standard labels from `_helpers.tpl`, port 443 -> targetPort 9443, selector using `selectorLabels` + `control-plane: controller-manager`. Create test file `charts/memcached-operator/tests/webhook_service_test.yaml` with tests for: renders 1 doc when enabled, renders 0 when disabled, correct name/namespace/labels/port/selector, fullnameOverride propagation.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create MutatingWebhookConfiguration template (REQ-001, REQ-004, REQ-008)",
+      "description": "Create `charts/memcached-operator/templates/webhook/mutating-webhook.yaml`. Gated by `{{- if .Values.webhook.enabled }}`. Translates `config/webhook/manifests.yaml` (mutating section): name `{{ include \"memcached-operator.fullname\" . }}-mutating-webhook-configuration`, standard labels, clientConfig.service.name referencing the webhook service (`{{ include \"memcached-operator.fullname\" . }}-webhook-service`), clientConfig.service.namespace `{{ .Release.Namespace }}`, path `/mutate-memcached-c5c3-io-v1beta1-memcached`, failurePolicy Fail, sideEffects None, admissionReviewVersions [v1], rules for memcached.c5c3.io/v1beta1 CREATE+UPDATE. Conditionally add `cert-manager.io/inject-ca-from` annotation when `certmanager.enabled=true`. Create test file `charts/memcached-operator/tests/webhook_mutating_test.yaml`.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Create ValidatingWebhookConfiguration template (REQ-001, REQ-004, REQ-008)",
+      "description": "Create `charts/memcached-operator/templates/webhook/validating-webhook.yaml`. Same pattern as task 1.2 but for validating webhook: name `{{ include \"memcached-operator.fullname\" . }}-validating-webhook-configuration`, path `/validate-memcached-c5c3-io-v1beta1-memcached`, webhook name `vmemcached-v1beta1.kb.io`. Same conditional cert-manager annotation. Create test file `charts/memcached-operator/tests/webhook_validating_test.yaml`.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-001",
+        "REQ-004",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "1.4",
+      "title": "Create cert-manager Issuer template (REQ-003)",
+      "description": "Create `charts/memcached-operator/templates/certmanager/issuer.yaml`. Gated by `{{- if .Values.certmanager.enabled }}`. Translates `config/certmanager/certificate.yaml` (Issuer section): apiVersion cert-manager.io/v1, kind Issuer, name `{{ include \"memcached-operator.fullname\" . }}-selfsigned-issuer`, namespace `{{ .Release.Namespace }}`, standard labels, spec.selfSigned {}. Create test file `charts/memcached-operator/tests/certmanager_issuer_test.yaml` with tests for: renders when enabled, doesn't render when disabled, correct name/namespace/labels, selfSigned spec.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.5",
+      "title": "Create cert-manager Certificate template (REQ-003)",
+      "description": "Create `charts/memcached-operator/templates/certmanager/certificate.yaml`. Gated by `{{- if .Values.certmanager.enabled }}`. Translates `config/certmanager/certificate.yaml` (Certificate section): apiVersion cert-manager.io/v1, kind Certificate, name `{{ include \"memcached-operator.fullname\" . }}-serving-cert`, namespace `{{ .Release.Namespace }}`, standard labels, dnsNames using webhook service fullname (`{{ include \"memcached-operator.fullname\" . }}-webhook-service.{{ .Release.Namespace }}.svc` and `.svc.cluster.local`), issuerRef.name referencing the Issuer (`{{ include \"memcached-operator.fullname\" . }}-selfsigned-issuer`), issuerRef.kind Issuer, secretName webhook-server-cert, privateKey.rotationPolicy Always. Create test file `charts/memcached-operator/tests/certmanager_certificate_test.yaml`.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "1.6",
+      "title": "Create ServiceMonitor template (REQ-005)",
+      "description": "Create `charts/memcached-operator/templates/servicemonitor.yaml`. Gated by `{{- if .Values.serviceMonitor.enabled }}`. Translates `config/prometheus/monitor.yaml`: apiVersion monitoring.coreos.com/v1, kind ServiceMonitor, name `{{ include \"memcached-operator.fullname\" . }}-metrics-monitor`, namespace `{{ .Release.Namespace }}`, standard labels + `control-plane: controller-manager`, endpoint with path /metrics, port https, scheme https, bearerTokenFile, tlsConfig.insecureSkipVerify true, selector.matchLabels using selectorLabels + control-plane: controller-manager. Create test file `charts/memcached-operator/tests/servicemonitor_test.yaml`.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Update Deployment template for conditional webhook port/volumes (REQ-007)",
+      "description": "Modify `charts/memcached-operator/templates/deployment.yaml` to conditionally add webhook artifacts when `webhook.enabled=true`: (1) Add containerPort 9443 named webhook-server to container ports, (2) Add volumeMount for /tmp/k8s-webhook-server/serving-certs with name cert and readOnly true, (3) Add volume 'cert' from secret webhook-server-cert with defaultMode 420. All three gated by `{{- if .Values.webhook.enabled }}`. Pattern follows `config/default/manager_webhook_patch.yaml`. Update `charts/memcached-operator/tests/deployment_test.yaml` with new test cases for webhook port/volume presence when enabled and absence when disabled.",
+      "level": 2,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Update NetworkPolicy template for conditional webhook port (REQ-006)",
+      "description": "Modify `charts/memcached-operator/templates/networkpolicy.yaml` to conditionally add port 9443 TCP to ingress rules when `webhook.enabled=true`. Add `{{- if .Values.webhook.enabled }}` block for the additional port entry. Update existing tests in a new or existing test file to verify: port 9443 present when webhook.enabled=true, absent when false, other ports unchanged.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Update NOTES.txt with optional component status (REQ-009)",
+      "description": "Modify `charts/memcached-operator/templates/NOTES.txt` to add sections for: (1) Webhooks status (enabled/disabled), (2) cert-manager status with warning if webhook.enabled=true but certmanager.enabled=false about manual TLS cert management, (3) ServiceMonitor status. Use `{{- if .Values.webhook.enabled }}` etc. conditionals. Update `charts/memcached-operator/tests/helpers_test.yaml` (NOTES.txt suite) with tests for NOTES output under different value combinations.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Update integration tests for new templates (REQ-001 through REQ-008)",
+      "description": "Update `charts/memcached-operator/tests/integration_test.yaml` to: (1) Add all new templates to the templates list (webhook/mutating-webhook.yaml, webhook/validating-webhook.yaml, webhook/service.yaml, certmanager/issuer.yaml, certmanager/certificate.yaml, servicemonitor.yaml), (2) Update default resource count test to include webhook (3), certmanager (2), servicemonitor (0) documents, (3) Add test for webhook.enabled=false suppressing all webhook + certmanager templates, (4) Add test for certmanager.enabled=false suppressing certmanager templates while webhook templates remain, (5) Add test for serviceMonitor.enabled=true producing 1 ServiceMonitor, (6) Add fullnameOverride propagation tests for new resources, (7) Verify cross-references: webhook configs reference correct service name, cert annotation references correct Certificate name.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add _helpers.tpl webhook service name helper",
+      "description": "Add a helper `memcached-operator.webhookServiceName` to `charts/memcached-operator/templates/_helpers.tpl` that returns `{{ include \"memcached-operator.fullname\" . }}-webhook-service`. This centralizes the webhook service name used by webhook/service.yaml, webhook configurations clientConfig, and Certificate dnsNames. Add a helper `memcached-operator.servingCertName` that returns `{{ include \"memcached-operator.fullname\" . }}-serving-cert` for the Certificate name and the cert-manager annotation. Update _helpers.tpl tests to verify these new helpers.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-002",
+        "REQ-008"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_service_test.yaml",
+      "test_function": "should render 1 Service document when webhook.enabled is true",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "hasDocuments count: 1, isKind Service, isAPIVersion v1",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_service_test.yaml",
+      "test_function": "should not render when webhook.enabled is false",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "hasDocuments count: 0 when webhook.enabled=false",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_service_test.yaml",
+      "test_function": "should expose port 443 targeting 9443",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "port 443, targetPort 9443, protocol TCP",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_mutating_test.yaml",
+      "test_function": "should render MutatingWebhookConfiguration when webhook.enabled is true",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "hasDocuments count: 1, isKind MutatingWebhookConfiguration",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_mutating_test.yaml",
+      "test_function": "should not render when webhook.enabled is false",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "hasDocuments count: 0",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_mutating_test.yaml",
+      "test_function": "should set correct webhook path and rules",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "path /mutate-memcached-c5c3-io-v1beta1-memcached, failurePolicy Fail, sideEffects None",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_mutating_test.yaml",
+      "test_function": "should include cert-manager CA injection annotation when certmanager.enabled is true",
+      "story": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "expected": "annotation cert-manager.io/inject-ca-from with correct namespace/cert-name",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_mutating_test.yaml",
+      "test_function": "should NOT include cert-manager annotation when certmanager.enabled is false",
+      "story": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "expected": "annotation cert-manager.io/inject-ca-from does not exist",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_validating_test.yaml",
+      "test_function": "should render ValidatingWebhookConfiguration when webhook.enabled is true",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "hasDocuments count: 1, isKind ValidatingWebhookConfiguration",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/webhook_validating_test.yaml",
+      "test_function": "should set correct webhook path for validation",
+      "story": "Cluster admin can enable admission webhooks via Helm values",
+      "expected": "path /validate-memcached-c5c3-io-v1beta1-memcached",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_issuer_test.yaml",
+      "test_function": "should render Issuer when certmanager.enabled is true",
+      "story": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "expected": "hasDocuments count: 1, isKind Issuer, apiVersion cert-manager.io/v1",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_issuer_test.yaml",
+      "test_function": "should not render when certmanager.enabled is false",
+      "story": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "expected": "hasDocuments count: 0",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_certificate_test.yaml",
+      "test_function": "should render Certificate when certmanager.enabled is true",
+      "story": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "expected": "hasDocuments count: 1, isKind Certificate, apiVersion cert-manager.io/v1",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_certificate_test.yaml",
+      "test_function": "should set dnsNames referencing webhook service",
+      "story": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "expected": "dnsNames include FULLNAME-webhook-service.NAMESPACE.svc and .svc.cluster.local",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/certmanager_certificate_test.yaml",
+      "test_function": "should reference the Issuer in issuerRef",
+      "story": "Cluster admin can enable cert-manager integration for webhook TLS",
+      "expected": "issuerRef.name matches FULLNAME-selfsigned-issuer, issuerRef.kind is Issuer",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/servicemonitor_test.yaml",
+      "test_function": "should render ServiceMonitor when serviceMonitor.enabled is true",
+      "story": "Cluster admin can enable Prometheus ServiceMonitor",
+      "expected": "hasDocuments count: 1, isKind ServiceMonitor, apiVersion monitoring.coreos.com/v1",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/servicemonitor_test.yaml",
+      "test_function": "should not render when serviceMonitor.enabled is false",
+      "story": "Cluster admin can enable Prometheus ServiceMonitor",
+      "expected": "hasDocuments count: 0 (default)",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/servicemonitor_test.yaml",
+      "test_function": "should configure endpoint for https metrics scraping",
+      "story": "Cluster admin can enable Prometheus ServiceMonitor",
+      "expected": "endpoint path /metrics, port https, scheme https, bearerTokenFile set",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should include webhook-server port 9443 when webhook.enabled is true",
+      "story": "Cluster admin gets correct Deployment configuration when webhooks are enabled",
+      "expected": "container ports contain containerPort 9443 named webhook-server",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should not include webhook port when webhook.enabled is false",
+      "story": "Cluster admin gets correct Deployment configuration when webhooks are enabled",
+      "expected": "container ports do NOT contain 9443",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/deployment_test.yaml",
+      "test_function": "should include cert volume and volumeMount when webhook.enabled is true",
+      "story": "Cluster admin gets correct Deployment configuration when webhooks are enabled",
+      "expected": "volume cert from secret webhook-server-cert, volumeMount at /tmp/k8s-webhook-server/serving-certs",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/integration_test.yaml",
+      "test_function": "should produce correct total resource count with all defaults",
+      "story": "Integration: all templates render together without conflicts",
+      "expected": "Updated count: SA=1, Deploy=1, clusterrole=2, leader=2, metrics=3, netpol=1, webhook=3, certmanager=2, servicemonitor=0 = 15",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator/tests/integration_test.yaml",
+      "test_function": "should suppress all webhook and certmanager resources when webhook.enabled is false",
+      "story": "Integration: all templates render together without conflicts",
+      "expected": "webhook templates produce 0, certmanager templates produce 0, deployment has no webhook port",
+      "requirement_id": "REQ-001"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All webhook templates (mutating-webhook.yaml, validating-webhook.yaml, service.yaml) render correctly when webhook.enabled=true and produce 0 documents when false",
+    "cert-manager templates (issuer.yaml, certificate.yaml) render correctly when certmanager.enabled=true and produce 0 documents when false; Certificate dnsNames correctly reference webhook service fullname",
+    "ServiceMonitor template renders when serviceMonitor.enabled=true with correct endpoint config (port https, path /metrics, scheme https, bearerTokenFile) and produces 0 documents when false",
+    "NetworkPolicy conditionally includes port 9443 only when webhook.enabled=true; existing ports 8081 and 8443 remain unconditional",
+    "Deployment conditionally includes webhook port 9443, cert volumeMount, and cert volume only when webhook.enabled=true; existing container config unchanged",
+    "cert-manager.io/inject-ca-from annotation conditionally present on both webhook configurations only when certmanager.enabled=true, with correct NAMESPACE/CERT-NAME value",
+    "fullnameOverride propagates correctly to all new resource names and cross-references (webhook service name in clientConfig, Certificate dnsNames, cert-manager annotation value)",
+    "All helm-unittest test files pass: webhook_service_test, webhook_mutating_test, webhook_validating_test, certmanager_issuer_test, certmanager_certificate_test, servicemonitor_test, updated deployment_test, updated integration_test",
+    "NOTES.txt displays correct status for webhooks, cert-manager, and ServiceMonitor components",
+    "All new templates follow existing patterns: {{- if .Values.X.enabled }} guard, standard labels via _helpers.tpl, namespace from .Release.Namespace, names from fullname helper"
+  ],
+  "implementation_notes": "All templates translate existing Kustomize manifests from config/ into Helm templates. Key patterns:\n\n1. **Naming convention**: All new resources use `{{ include \"memcached-operator.fullname\" . }}-SUFFIX` pattern (e.g., -webhook-service, -mutating-webhook-configuration, -selfsigned-issuer, -serving-cert, -metrics-monitor).\n\n2. **Helper functions**: Add `memcached-operator.webhookServiceName` and `memcached-operator.servingCertName` to _helpers.tpl to centralize names used across multiple templates.\n\n3. **Conditional rendering**: Each template file starts with `{{- if .Values.COMPONENT.enabled }}` and ends with `{{- end }}`. The cert-manager annotation on webhook configs uses a nested conditional.\n\n4. **Cross-references**: Webhook configs reference webhook Service by helper name. Certificate dnsNames reference webhook Service fullname + namespace. cert-manager annotation references namespace + Certificate name. These must stay consistent under fullnameOverride.\n\n5. **NetworkPolicy update**: Add conditional port 9443 inside the existing ingress ports list. Use `{{- if .Values.webhook.enabled }}` around just the additional port entry.\n\n6. **Deployment update**: Follow the pattern from config/default/manager_webhook_patch.yaml — add webhook port, volumeMount, and volume conditionally.\n\n7. **Test conventions**: Follow existing helm-unittest YAML format with suite/templates/release/tests structure. Each test file covers: gate test (enabled/disabled), kind/apiVersion, name/namespace/labels, specific fields, fullnameOverride propagation.\n\n8. **Reference configs**: config/webhook/manifests.yaml (webhook configs), config/webhook/service.yaml (webhook service), config/certmanager/certificate.yaml (issuer + certificate), config/prometheus/monitor.yaml (servicemonitor), config/network-policy/allow-metrics-traffic.yaml (networkpolicy reference), config/default/manager_webhook_patch.yaml (deployment webhook patch).",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:36:34.846997"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T19:30:34.898508"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T19:34:38.911373"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "2a71d959-feb0-49cb-812a-de8f07817c2c",
+      "timestamp": "2026-02-22T19:34:38.911399",
+      "total_duration": 241.5087342262268,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 241.5087342262268,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
