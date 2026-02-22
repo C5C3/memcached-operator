@@ -8,7 +8,7 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 const testReleaseLabel = "prometheus"
@@ -16,14 +16,14 @@ const testReleaseLabel = "prometheus"
 func TestConstructServiceMonitor(t *testing.T) {
 	tests := []struct {
 		name              string
-		monitoringSpec    *memcachedv1alpha1.MonitoringSpec
+		monitoringSpec    *memcachedv1beta1.MonitoringSpec
 		wantInterval      monitoringv1.Duration
 		wantScrapeTimeout monitoringv1.Duration
 		wantEndpointPort  string
 	}{
 		{
 			name: "default interval and scrapeTimeout",
-			monitoringSpec: &memcachedv1alpha1.MonitoringSpec{
+			monitoringSpec: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 			wantInterval:      "30s",
@@ -32,9 +32,9 @@ func TestConstructServiceMonitor(t *testing.T) {
 		},
 		{
 			name: "custom interval",
-			monitoringSpec: &memcachedv1alpha1.MonitoringSpec{
+			monitoringSpec: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval: "60s",
 				},
 			},
@@ -44,9 +44,9 @@ func TestConstructServiceMonitor(t *testing.T) {
 		},
 		{
 			name: "custom scrapeTimeout",
-			monitoringSpec: &memcachedv1alpha1.MonitoringSpec{
+			monitoringSpec: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					ScrapeTimeout: "20s",
 				},
 			},
@@ -56,9 +56,9 @@ func TestConstructServiceMonitor(t *testing.T) {
 		},
 		{
 			name: "custom interval and scrapeTimeout",
-			monitoringSpec: &memcachedv1alpha1.MonitoringSpec{
+			monitoringSpec: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval:      "15s",
 					ScrapeTimeout: "5s",
 				},
@@ -71,12 +71,12 @@ func TestConstructServiceMonitor(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
 					Monitoring: tt.monitoringSpec,
 				},
 			}
@@ -103,13 +103,13 @@ func TestConstructServiceMonitor(t *testing.T) {
 }
 
 func TestConstructServiceMonitor_Labels(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "label-test",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -143,15 +143,15 @@ func TestConstructServiceMonitor_Labels(t *testing.T) {
 }
 
 func TestConstructServiceMonitor_AdditionalLabels(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "addl-labels",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
 						"release": testReleaseLabel,
 						"team":    "platform",
@@ -183,15 +183,15 @@ func TestConstructServiceMonitor_AdditionalLabels(t *testing.T) {
 }
 
 func TestConstructServiceMonitor_AdditionalLabelsConflict(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "conflict-labels",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
 						"app.kubernetes.io/name": "override",
 						"release":                testReleaseLabel,
@@ -221,13 +221,13 @@ func TestConstructServiceMonitor_AdditionalLabelsConflict(t *testing.T) {
 }
 
 func TestConstructServiceMonitor_NamespaceSelector(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ns-test",
 			Namespace: "production",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -255,13 +255,13 @@ func TestConstructServiceMonitor_InstanceScopedSelector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tt.instanceName,
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Monitoring: &memcachedv1beta1.MonitoringSpec{
 						Enabled: true,
 					},
 				},
@@ -281,41 +281,41 @@ func TestConstructServiceMonitor_InstanceScopedSelector(t *testing.T) {
 func TestServiceMonitorEnabled(t *testing.T) {
 	tests := []struct {
 		name string
-		mc   *memcachedv1alpha1.Memcached
+		mc   *memcachedv1beta1.Memcached
 		want bool
 	}{
 		{
 			name: "nil Monitoring",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Monitoring: nil},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Monitoring: nil},
 			},
 			want: false,
 		},
 		{
 			name: "monitoring disabled",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: false},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false},
 				},
 			},
 			want: false,
 		},
 		{
 			name: "monitoring enabled but serviceMonitor nil",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: true},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
 				},
 			},
 			want: false,
 		},
 		{
 			name: "monitoring enabled with ServiceMonitor spec",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Monitoring: &memcachedv1alpha1.MonitoringSpec{
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Monitoring: &memcachedv1beta1.MonitoringSpec{
 						Enabled: true,
-						ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+						ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 							Interval: "60s",
 						},
 					},
@@ -337,15 +337,15 @@ func TestServiceMonitorEnabled(t *testing.T) {
 
 func TestConstructServiceMonitor_Idempotent(t *testing.T) {
 	releaseLabel := testReleaseLabel
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "idem-test",
 			Namespace: "monitoring",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
 						"release": releaseLabel,
 						"team":    "platform",

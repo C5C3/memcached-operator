@@ -10,27 +10,27 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 func TestNetworkPolicyEnabled(t *testing.T) {
 	tests := []struct {
 		name string
-		mc   *memcachedv1alpha1.Memcached
+		mc   *memcachedv1beta1.Memcached
 		want bool
 	}{
 		{
 			name: "nil Security",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Security: nil},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Security: nil},
 			},
 			want: false,
 		},
 		{
 			name: "nil NetworkPolicy",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
 						NetworkPolicy: nil,
 					},
 				},
@@ -39,10 +39,10 @@ func TestNetworkPolicyEnabled(t *testing.T) {
 		},
 		{
 			name: "enabled is false",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: false},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: false},
 					},
 				},
 			},
@@ -50,10 +50,10 @@ func TestNetworkPolicyEnabled(t *testing.T) {
 		},
 		{
 			name: "enabled is true",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 					},
 				},
 			},
@@ -76,17 +76,17 @@ func TestConstructNetworkPolicy(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		mc        *memcachedv1alpha1.Memcached
+		mc        *memcachedv1beta1.Memcached
 		wantPorts []networkingv1.NetworkPolicyPort
 		wantFrom  []networkingv1.NetworkPolicyPeer
 	}{
 		{
 			name: "basic with only memcached port",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 					},
 				},
 			},
@@ -97,12 +97,12 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "with monitoring enabled adds metrics port",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: true},
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 					},
 				},
 			},
@@ -114,12 +114,12 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "with TLS enabled adds TLS port",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						TLS:           &memcachedv1alpha1.TLSSpec{Enabled: true},
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						TLS:           &memcachedv1beta1.TLSSpec{Enabled: true},
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 					},
 				},
 			},
@@ -131,13 +131,13 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "with both monitoring and TLS",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: true},
-					Security: &memcachedv1alpha1.SecuritySpec{
-						TLS:           &memcachedv1alpha1.TLSSpec{Enabled: true},
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
+					Security: &memcachedv1beta1.SecuritySpec{
+						TLS:           &memcachedv1beta1.TLSSpec{Enabled: true},
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 					},
 				},
 			},
@@ -150,11 +150,11 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "with allowedSources containing namespaceSelector",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 							Enabled: true,
 							AllowedSources: []networkingv1.NetworkPolicyPeer{
 								{
@@ -180,11 +180,11 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "with allowedSources containing podSelector",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 							Enabled: true,
 							AllowedSources: []networkingv1.NetworkPolicyPeer{
 								{
@@ -210,11 +210,11 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		},
 		{
 			name: "empty allowedSources produces no from field",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 							Enabled:        true,
 							AllowedSources: []networkingv1.NetworkPolicyPeer{},
 						},
@@ -288,14 +288,14 @@ func TestConstructNetworkPolicy(t *testing.T) {
 }
 
 func TestConstructNetworkPolicy_Labels(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "label-test",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			},
 		},
 	}
@@ -337,14 +337,14 @@ func TestConstructNetworkPolicy_InstanceScopedSelector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tt.instanceName,
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Security: &memcachedv1alpha1.SecuritySpec{
-						NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Security: &memcachedv1beta1.SecuritySpec{
+						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 					},
 				},
 			}
@@ -361,14 +361,14 @@ func TestConstructNetworkPolicy_InstanceScopedSelector(t *testing.T) {
 }
 
 func TestConstructNetworkPolicy_MultiplePeers(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "multi-peer",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
@@ -430,16 +430,16 @@ func TestConstructNetworkPolicy_MultiplePeers(t *testing.T) {
 }
 
 func TestConstructNetworkPolicy_Idempotent(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "idem-np",
 			Namespace: "production",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: true},
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{Enabled: true},
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{Enabled: true},
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{

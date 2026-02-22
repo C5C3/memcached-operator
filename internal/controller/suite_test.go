@@ -23,7 +23,6 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
@@ -83,9 +82,6 @@ var _ = BeforeSuite(func() {
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
-
-	err = memcachedv1alpha1.AddToScheme(scheme.Scheme)
-	Expect(err).NotTo(HaveOccurred())
 
 	err = memcachedv1beta1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())

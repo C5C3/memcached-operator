@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // labelsForMemcached returns the standard Kubernetes recommended labels for a Memcached resource.
@@ -26,10 +26,10 @@ func labelsForMemcached(name string) map[string]string {
 // If config is nil, defaults are used. When SASL is enabled, the -Y flag is
 // appended pointing to the mounted password file. When TLS is enabled, the -Z flag
 // and ssl_chain_cert/ssl_key options are appended.
-func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig, sasl *memcachedv1alpha1.SASLSpec, tls *memcachedv1alpha1.TLSSpec) []string {
+func buildMemcachedArgs(config *memcachedv1beta1.MemcachedConfig, sasl *memcachedv1beta1.SASLSpec, tls *memcachedv1beta1.TLSSpec) []string {
 	// Apply defaults when config is nil.
 	if config == nil {
-		config = &memcachedv1alpha1.MemcachedConfig{}
+		config = &memcachedv1beta1.MemcachedConfig{}
 	}
 
 	maxMemoryMB := config.MaxMemoryMB
@@ -94,7 +94,7 @@ func buildMemcachedArgs(config *memcachedv1alpha1.MemcachedConfig, sasl *memcach
 
 // buildAntiAffinity returns a PodAntiAffinity-based Affinity for the given Memcached CR,
 // or nil if no anti-affinity is configured.
-func buildAntiAffinity(mc *memcachedv1alpha1.Memcached) *corev1.Affinity {
+func buildAntiAffinity(mc *memcachedv1beta1.Memcached) *corev1.Affinity {
 	if mc.Spec.HighAvailability == nil || mc.Spec.HighAvailability.AntiAffinityPreset == nil {
 		return nil
 	}
@@ -107,7 +107,7 @@ func buildAntiAffinity(mc *memcachedv1alpha1.Memcached) *corev1.Affinity {
 	}
 
 	switch *mc.Spec.HighAvailability.AntiAffinityPreset {
-	case memcachedv1alpha1.AntiAffinityPresetSoft:
+	case memcachedv1beta1.AntiAffinityPresetSoft:
 		return &corev1.Affinity{
 			PodAntiAffinity: &corev1.PodAntiAffinity{
 				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
@@ -121,7 +121,7 @@ func buildAntiAffinity(mc *memcachedv1alpha1.Memcached) *corev1.Affinity {
 				},
 			},
 		}
-	case memcachedv1alpha1.AntiAffinityPresetHard:
+	case memcachedv1beta1.AntiAffinityPresetHard:
 		return &corev1.Affinity{
 			PodAntiAffinity: &corev1.PodAntiAffinity{
 				RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
@@ -139,7 +139,7 @@ func buildAntiAffinity(mc *memcachedv1alpha1.Memcached) *corev1.Affinity {
 
 // buildTopologySpreadConstraints returns the topology spread constraints from the Memcached CR,
 // or nil if none are configured.
-func buildTopologySpreadConstraints(mc *memcachedv1alpha1.Memcached) []corev1.TopologySpreadConstraint {
+func buildTopologySpreadConstraints(mc *memcachedv1beta1.Memcached) []corev1.TopologySpreadConstraint {
 	if mc.Spec.HighAvailability == nil || len(mc.Spec.HighAvailability.TopologySpreadConstraints) == 0 {
 		return nil
 	}
@@ -148,7 +148,7 @@ func buildTopologySpreadConstraints(mc *memcachedv1alpha1.Memcached) []corev1.To
 
 // buildGracefulShutdown returns the Lifecycle hook and terminationGracePeriodSeconds for graceful
 // shutdown, or (nil, nil) if graceful shutdown is not enabled.
-func buildGracefulShutdown(mc *memcachedv1alpha1.Memcached) (*corev1.Lifecycle, *int64) {
+func buildGracefulShutdown(mc *memcachedv1beta1.Memcached) (*corev1.Lifecycle, *int64) {
 	if mc.Spec.HighAvailability == nil || mc.Spec.HighAvailability.GracefulShutdown == nil ||
 		!mc.Spec.HighAvailability.GracefulShutdown.Enabled {
 		return nil, nil
@@ -179,7 +179,7 @@ func buildGracefulShutdown(mc *memcachedv1alpha1.Memcached) (*corev1.Lifecycle, 
 
 // buildExporterContainer returns a memcached-exporter sidecar container when monitoring is enabled,
 // or nil if monitoring is disabled or not configured.
-func buildExporterContainer(mc *memcachedv1alpha1.Memcached) *corev1.Container {
+func buildExporterContainer(mc *memcachedv1beta1.Memcached) *corev1.Container {
 	if mc.Spec.Monitoring == nil || !mc.Spec.Monitoring.Enabled {
 		return nil
 	}
@@ -222,7 +222,7 @@ const saslMountPath = "/etc/memcached/sasl"
 
 // buildSASLVolume returns a Volume that projects the SASL credentials Secret,
 // or nil if SASL is not enabled.
-func buildSASLVolume(mc *memcachedv1alpha1.Memcached) *corev1.Volume {
+func buildSASLVolume(mc *memcachedv1beta1.Memcached) *corev1.Volume {
 	if mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled {
 		return nil
 	}
@@ -241,7 +241,7 @@ func buildSASLVolume(mc *memcachedv1alpha1.Memcached) *corev1.Volume {
 
 // buildSASLVolumeMount returns a VolumeMount for the SASL credentials,
 // or nil if SASL is not enabled.
-func buildSASLVolumeMount(mc *memcachedv1alpha1.Memcached) *corev1.VolumeMount {
+func buildSASLVolumeMount(mc *memcachedv1beta1.Memcached) *corev1.VolumeMount {
 	if mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled {
 		return nil
 	}
@@ -263,7 +263,7 @@ const tlsPortName = "memcached-tls"
 
 // buildTLSVolume returns a Volume that projects the TLS certificate Secret,
 // or nil if TLS is not enabled.
-func buildTLSVolume(mc *memcachedv1alpha1.Memcached) *corev1.Volume {
+func buildTLSVolume(mc *memcachedv1beta1.Memcached) *corev1.Volume {
 	if mc.Spec.Security == nil || mc.Spec.Security.TLS == nil || !mc.Spec.Security.TLS.Enabled {
 		return nil
 	}
@@ -287,7 +287,7 @@ func buildTLSVolume(mc *memcachedv1alpha1.Memcached) *corev1.Volume {
 
 // buildTLSVolumeMount returns a VolumeMount for the TLS certificates,
 // or nil if TLS is not enabled.
-func buildTLSVolumeMount(mc *memcachedv1alpha1.Memcached) *corev1.VolumeMount {
+func buildTLSVolumeMount(mc *memcachedv1beta1.Memcached) *corev1.VolumeMount {
 	if mc.Spec.Security == nil || mc.Spec.Security.TLS == nil || !mc.Spec.Security.TLS.Enabled {
 		return nil
 	}
@@ -300,7 +300,7 @@ func buildTLSVolumeMount(mc *memcachedv1alpha1.Memcached) *corev1.VolumeMount {
 
 // buildPodSecurityContext returns the PodSecurityContext from the Memcached CR,
 // or nil if no pod security context is configured.
-func buildPodSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.PodSecurityContext {
+func buildPodSecurityContext(mc *memcachedv1beta1.Memcached) *corev1.PodSecurityContext {
 	if mc.Spec.Security == nil || mc.Spec.Security.PodSecurityContext == nil {
 		return nil
 	}
@@ -309,7 +309,7 @@ func buildPodSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.PodSecurit
 
 // buildContainerSecurityContext returns the container SecurityContext from the Memcached CR,
 // or nil if no container security context is configured.
-func buildContainerSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.SecurityContext {
+func buildContainerSecurityContext(mc *memcachedv1beta1.Memcached) *corev1.SecurityContext {
 	if mc.Spec.Security == nil || mc.Spec.Security.ContainerSecurityContext == nil {
 		return nil
 	}
@@ -319,7 +319,7 @@ func buildContainerSecurityContext(mc *memcachedv1alpha1.Memcached) *corev1.Secu
 // constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
 // It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
 // secretHash and restartTrigger are propagated as Pod template annotations to trigger rolling updates.
-func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, secretHash, restartTrigger string) {
+func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment, secretHash, restartTrigger string) {
 	labels := labelsForMemcached(mc.Name)
 
 	// Determine replicas: nil when HPA is active (let HPA control scaling),
@@ -338,8 +338,8 @@ func constructDeployment(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment
 	}
 
 	// Resolve SASL and TLS specs for args and volume/mount helpers.
-	var saslSpec *memcachedv1alpha1.SASLSpec
-	var tlsSpec *memcachedv1alpha1.TLSSpec
+	var saslSpec *memcachedv1beta1.SASLSpec
+	var tlsSpec *memcachedv1beta1.TLSSpec
 	if mc.Spec.Security != nil {
 		saslSpec = mc.Spec.Security.SASL
 		tlsSpec = mc.Spec.Security.TLS

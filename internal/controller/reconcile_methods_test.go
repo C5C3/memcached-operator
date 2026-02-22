@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	// Import metrics package to ensure init() registration runs.
 	_ "github.com/c5c3/memcached-operator/internal/metrics"
 )
@@ -32,7 +32,7 @@ const (
 func testSchemeWithMonitoring() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = scheme.AddToScheme(s)
-	_ = memcachedv1alpha1.AddToScheme(s)
+	_ = memcachedv1beta1.AddToScheme(s)
 	_ = monitoringv1.AddToScheme(s)
 	return s
 }
@@ -51,9 +51,9 @@ func newTestReconcilerWithMonitoring(c client.Client) *MemcachedReconciler {
 // --- reconcileDeployment ---
 
 func TestReconcileDeployment_CreatesDeployment(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -103,9 +103,9 @@ func TestReconcileDeployment_CreatesDeployment(t *testing.T) {
 
 func TestReconcileDeployment_UpdatesExistingDeployment(t *testing.T) {
 	replicas3 := int32(3)
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{Replicas: &replicas3},
+		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: &replicas3},
 	}
 	// Create an existing deployment with different replicas.
 	replicas1 := int32(1)
@@ -143,9 +143,9 @@ func TestReconcileDeployment_UpdatesExistingDeployment(t *testing.T) {
 
 func TestReconcileDeployment_SetsContainerImage(t *testing.T) {
 	customImage := "memcached:1.7-alpine"
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "img-mc", Namespace: testDefaultNamespace, UID: "uid-2"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{Image: &customImage},
+		Spec:       memcachedv1beta1.MemcachedSpec{Image: &customImage},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -170,9 +170,9 @@ func TestReconcileDeployment_SetsContainerImage(t *testing.T) {
 // --- reconcileService ---
 
 func TestReconcileService_CreatesService(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -217,9 +217,9 @@ func TestReconcileService_CreatesService(t *testing.T) {
 }
 
 func TestReconcileService_UpdatesExistingService(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace},
@@ -250,9 +250,9 @@ func TestReconcileService_UpdatesExistingService(t *testing.T) {
 // --- reconcilePDB ---
 
 func TestReconcilePDB_SkipsWhenDisabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -270,11 +270,11 @@ func TestReconcilePDB_SkipsWhenDisabled(t *testing.T) {
 }
 
 func TestReconcilePDB_CreatesPDB(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: intOrStringPtr(intstr.FromInt32(2)),
 				},
@@ -313,11 +313,11 @@ func TestReconcilePDB_CreatesPDB(t *testing.T) {
 }
 
 func TestReconcilePDB_UpdatesExistingPDB(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:        true,
 					MaxUnavailable: intOrStringPtr(intstr.FromInt32(1)),
 				},
@@ -356,9 +356,9 @@ func TestReconcilePDB_UpdatesExistingPDB(t *testing.T) {
 // --- reconcileServiceMonitor ---
 
 func TestReconcileServiceMonitor_SkipsWhenDisabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClientWithMonitoring(mc)
 	r := newTestReconcilerWithMonitoring(c)
@@ -376,12 +376,12 @@ func TestReconcileServiceMonitor_SkipsWhenDisabled(t *testing.T) {
 }
 
 func TestReconcileServiceMonitor_CreatesServiceMonitor(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval: "60s",
 				},
 			},
@@ -425,10 +425,10 @@ func TestReconcileServiceMonitor_CreatesServiceMonitor(t *testing.T) {
 }
 
 func TestReconcileServiceMonitor_SkipsWhenMonitoringEnabledButNoServiceMonitorSpec(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				// ServiceMonitor is nil.
 			},
@@ -452,9 +452,9 @@ func TestReconcileServiceMonitor_SkipsWhenMonitoringEnabledButNoServiceMonitorSp
 // --- reconcileNetworkPolicy ---
 
 func TestReconcileNetworkPolicy_SkipsWhenDisabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -472,11 +472,11 @@ func TestReconcileNetworkPolicy_SkipsWhenDisabled(t *testing.T) {
 }
 
 func TestReconcileNetworkPolicy_CreatesNetworkPolicy(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 				},
 			},
@@ -525,12 +525,12 @@ func TestReconcileNetworkPolicy_CreatesNetworkPolicy(t *testing.T) {
 }
 
 func TestReconcileNetworkPolicy_UpdatesExistingNetworkPolicy(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: testInstanceName, Namespace: testDefaultNamespace, UID: "uid-1"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: true},
-			Security: &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
+			Security: &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 				},
 			},

@@ -10,11 +10,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // fetchServiceMonitor retrieves the ServiceMonitor with the same name/namespace as the Memcached CR.
-func fetchServiceMonitor(mc *memcachedv1alpha1.Memcached) *monitoringv1.ServiceMonitor {
+func fetchServiceMonitor(mc *memcachedv1beta1.Memcached) *monitoringv1.ServiceMonitor {
 	sm := &monitoringv1.ServiceMonitor{}
 	ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), sm)).To(Succeed())
 	return sm
@@ -25,13 +25,13 @@ func fetchServiceMonitor(mc *memcachedv1alpha1.Memcached) *monitoringv1.ServiceM
 var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 	Context("ServiceMonitor creation with defaults (REQ-001, REQ-002, REQ-003)", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("sm-defaults"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -71,7 +71,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			sm := fetchServiceMonitor(mc)
 			Expect(sm.OwnerReferences).To(HaveLen(1))
 			ownerRef := sm.OwnerReferences[0]
-			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1alpha1"))
+			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1beta1"))
 			Expect(ownerRef.Kind).To(Equal("Memcached"))
 			Expect(ownerRef.Name).To(Equal(mc.Name))
 			Expect(ownerRef.UID).To(Equal(mc.UID))
@@ -83,9 +83,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("ServiceMonitor with custom interval", func() {
 		It("should use custom interval", func() {
 			mc := validMemcached(uniqueName("sm-custint"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval: "60s",
 				},
 			}
@@ -103,9 +103,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("ServiceMonitor with custom scrapeTimeout", func() {
 		It("should use custom scrapeTimeout", func() {
 			mc := validMemcached(uniqueName("sm-custto"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					ScrapeTimeout: "20s",
 				},
 			}
@@ -123,9 +123,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("ServiceMonitor with custom interval and scrapeTimeout", func() {
 		It("should use both custom values", func() {
 			mc := validMemcached(uniqueName("sm-custboth"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval:      "15s",
 					ScrapeTimeout: "5s",
 				},
@@ -144,9 +144,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("ServiceMonitor with additional labels", func() {
 		It("should include additional labels on metadata but not on selector", func() {
 			mc := validMemcached(uniqueName("sm-addlbl"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
 						"release": "prometheus",
 						"team":    "platform",
@@ -172,9 +172,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should not allow additionalLabels to override standard labels", func() {
 			mc := validMemcached(uniqueName("sm-lbl-ovr"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
 						"app.kubernetes.io/name": "override",
 						"release":                "prometheus",
@@ -199,16 +199,16 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("ServiceMonitor instance-scoped selector", func() {
 		It("should scope selector to the specific CR instance", func() {
 			mcA := validMemcached(uniqueName("sm-inst-a"))
-			mcA.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mcA.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mcA)).To(Succeed())
 
 			mcB := validMemcached(uniqueName("sm-inst-b"))
-			mcB.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mcB.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mcB)).To(Succeed())
 
@@ -242,7 +242,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should not create a ServiceMonitor when monitoring is enabled but serviceMonitor is nil", func() {
 			mc := validMemcached(uniqueName("sm-nil-sm"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -257,9 +257,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should not create a ServiceMonitor when monitoring.enabled is false with serviceMonitor set", func() {
 			mc := validMemcached(uniqueName("sm-false"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: false,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval: "30s",
 				},
 			}
@@ -279,9 +279,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("Idempotent ServiceMonitor reconciliation (REQ-006)", func() {
 		It("should not change ServiceMonitor resource version on second reconcile", func() {
 			mc := validMemcached(uniqueName("sm-idemp"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -303,9 +303,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("ServiceMonitor drift correction (REQ-006)", func() {
 		It("should restore ServiceMonitor endpoint after manual modification", func() {
 			mc := validMemcached(uniqueName("sm-drift"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -334,9 +334,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should restore ServiceMonitor labels after manual modification", func() {
 			mc := validMemcached(uniqueName("sm-drift-lbl"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -366,9 +366,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 	Context("ServiceMonitor update when spec changes (REQ-006)", func() {
 		It("should update ServiceMonitor when interval changes", func() {
 			mc := validMemcached(uniqueName("sm-update"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -392,9 +392,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should update ServiceMonitor when additional labels change", func() {
 			mc := validMemcached(uniqueName("sm-updlbl"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
 						"release": "prometheus",
 					},
@@ -434,12 +434,12 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -469,22 +469,22 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should coexist with graceful shutdown and anti-affinity", func() {
 			mc := validMemcached(uniqueName("sm-coex-ha"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
 				},
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval: "15s",
 					AdditionalLabels: map[string]string{
 						"release": "prometheus",
@@ -520,15 +520,15 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(2)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					ScrapeTimeout: "5s",
 				},
 			}
@@ -548,9 +548,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 		It("should handle toggling monitoring off and back on", func() {
 			mc := validMemcached(uniqueName("sm-toggle"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -581,7 +581,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			// Step 3: Re-enable monitoring — ServiceMonitor should be created again.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 			mc.Spec.Monitoring.Enabled = true
-			mc.Spec.Monitoring.ServiceMonitor = &memcachedv1alpha1.ServiceMonitorSpec{
+			mc.Spec.Monitoring.ServiceMonitor = &memcachedv1beta1.ServiceMonitorSpec{
 				Interval: "45s",
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
@@ -600,10 +600,10 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())

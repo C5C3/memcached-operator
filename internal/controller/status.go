@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // Condition type constants following Kubernetes API conventions.
@@ -44,7 +44,7 @@ const (
 // When missingSecrets is non-empty, the Degraded condition is set to SecretNotFound regardless of replica counts.
 // When hpaActive is true, the desired replica count is sourced from the Deployment status (HPA-managed)
 // rather than from mc.Spec.Replicas.
-func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, missingSecrets []string, hpaActive bool) []metav1.Condition {
+func computeConditions(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment, missingSecrets []string, hpaActive bool) []metav1.Condition {
 	var desiredReplicas int32
 	if hpaActive && dep != nil {
 		// HPA controls replicas — use the Deployment's current total as the desired count.
@@ -141,7 +141,7 @@ func computeConditions(mc *memcachedv1alpha1.Memcached, dep *appsv1.Deployment, 
 
 // reconcileStatus fetches the owned Deployment, computes conditions, and updates the Memcached status.
 // missingSecrets is the list of Secret names that could not be found during deployment reconciliation.
-func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1alpha1.Memcached, missingSecrets []string) error {
+func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1beta1.Memcached, missingSecrets []string) error {
 	logger := log.FromContext(ctx)
 
 	// Fetch the current Deployment.

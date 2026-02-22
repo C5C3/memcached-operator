@@ -9,7 +9,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 var _ = Describe("TLS Service Reconciliation", func() {
@@ -18,8 +18,8 @@ var _ = Describe("TLS Service Reconciliation", func() {
 
 		It("should add TLS port to Service when TLS is enabled", func() {
 			mc := validMemcached(uniqueName("tls-svc-on"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -73,8 +73,8 @@ var _ = Describe("TLS Service Reconciliation", func() {
 
 			// Enable TLS.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -107,8 +107,8 @@ var _ = Describe("TLS Service Reconciliation", func() {
 
 		It("should be idempotent when reconciling Service with TLS enabled", func() {
 			mc := validMemcached(uniqueName("tls-svc-idemp"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -134,13 +134,13 @@ var _ = Describe("TLS Service Reconciliation", func() {
 
 		It("should have all three ports when TLS and monitoring are both enabled", func() {
 			mc := validMemcached(uniqueName("tls-svc-mon"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())

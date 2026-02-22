@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/controller"
 )
 
@@ -93,7 +93,7 @@ var _ = Describe("Memcached Reconcile", func() {
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			// Ensure the CR exists.
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			// Delete the CR.
@@ -390,7 +390,7 @@ var _ = Describe("Conflict retry", func() {
 			mc.Spec.Replicas = int32Ptr(1)
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme.Scheme).
-				WithStatusSubresource(&memcachedv1alpha1.Memcached{}).
+				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
 				WithObjects(mc).
 				Build()
 
@@ -456,7 +456,7 @@ var _ = Describe("Conflict retry", func() {
 			mc.Spec.Replicas = int32Ptr(1)
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme.Scheme).
-				WithStatusSubresource(&memcachedv1alpha1.Memcached{}).
+				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
 				WithObjects(mc).
 				Build()
 

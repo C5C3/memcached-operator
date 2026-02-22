@@ -8,7 +8,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 func TestComputeConditions(t *testing.T) {
@@ -115,8 +115,8 @@ func TestComputeConditions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
+			mc := &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: tt.replicas,
 				},
 			}
@@ -131,8 +131,8 @@ func TestComputeConditions(t *testing.T) {
 }
 
 func TestComputeConditions_ReturnsThreeConditions(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(1),
 		},
 	}
@@ -155,8 +155,8 @@ func TestComputeConditions_ReturnsThreeConditions(t *testing.T) {
 }
 
 func TestComputeConditions_MessagesAreNonEmpty(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}
@@ -171,11 +171,11 @@ func TestComputeConditions_MessagesAreNonEmpty(t *testing.T) {
 }
 
 func TestComputeConditions_ObservedGeneration(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Generation: 5,
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}
@@ -190,11 +190,11 @@ func TestComputeConditions_ObservedGeneration(t *testing.T) {
 }
 
 func TestComputeConditions_ObservedGeneration_NilDeployment(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Generation: 3,
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(1),
 		},
 	}
@@ -220,8 +220,8 @@ func depWithStatus(ready, updated, total int32) *appsv1.Deployment {
 }
 
 func TestComputeConditions_SecretNotFound_SingleMissing(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}
@@ -233,8 +233,8 @@ func TestComputeConditions_SecretNotFound_SingleMissing(t *testing.T) {
 }
 
 func TestComputeConditions_SecretNotFound_MultipleMissing(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}
@@ -247,8 +247,8 @@ func TestComputeConditions_SecretNotFound_MultipleMissing(t *testing.T) {
 }
 
 func TestComputeConditions_SecretNotFound_PrecedenceOverReplica(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}
@@ -260,8 +260,8 @@ func TestComputeConditions_SecretNotFound_PrecedenceOverReplica(t *testing.T) {
 }
 
 func TestComputeConditions_NoMissingSecrets_NilSlice(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}
@@ -272,8 +272,8 @@ func TestComputeConditions_NoMissingSecrets_NilSlice(t *testing.T) {
 }
 
 func TestComputeConditions_NoMissingSecrets_EmptySlice(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}
@@ -284,8 +284,8 @@ func TestComputeConditions_NoMissingSecrets_EmptySlice(t *testing.T) {
 }
 
 func TestComputeConditions_HPAActive_UsesDeploymentReplicas(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(2), // CR says 2, but HPA scaled to 5
 		},
 	}
@@ -301,8 +301,8 @@ func TestComputeConditions_HPAActive_UsesDeploymentReplicas(t *testing.T) {
 }
 
 func TestComputeConditions_HPAActive_PartiallyReady(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(2),
 		},
 	}
@@ -317,8 +317,8 @@ func TestComputeConditions_HPAActive_PartiallyReady(t *testing.T) {
 }
 
 func TestComputeConditions_HPAActive_NilDeployment(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(2),
 		},
 	}
@@ -332,8 +332,8 @@ func TestComputeConditions_HPAActive_NilDeployment(t *testing.T) {
 }
 
 func TestComputeConditions_HPAInactive_IgnoresDeploymentTotal(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 		},
 	}

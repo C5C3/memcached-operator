@@ -8,7 +8,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 const testTLSVolumeName = "tls-certificates"
@@ -19,8 +19,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 		It("should add TLS volume, mount, args, and port when TLS is enabled", func() {
 			mc := validMemcached(uniqueName("tls-dep-on"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -81,8 +81,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 		It("should include ssl_ca_cert arg and ca.crt item when enableClientCert is true", func() {
 			mc := validMemcached(uniqueName("tls-dep-mtls"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "mtls-secret"},
 					EnableClientCert:     true,
@@ -160,8 +160,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 			// Enable TLS.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -208,8 +208,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 		It("should be idempotent when reconciling with TLS enabled", func() {
 			mc := validMemcached(uniqueName("tls-dep-idemp"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -232,8 +232,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 		It("should be idempotent when reconciling with mTLS enabled", func() {
 			mc := validMemcached(uniqueName("tls-dep-idemp-mtls"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "mtls-secret"},
 					EnableClientCert:     true,
@@ -260,12 +260,12 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 		It("should support TLS and SASL simultaneously", func() {
 			mc := validMemcached(uniqueName("tls-dep-sasl"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -317,8 +317,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 		It("should update Deployment when TLS secret reference changes", func() {
 			mc := validMemcached(uniqueName("tls-dep-secupd"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret-v1"},
 				},

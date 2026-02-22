@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/controller"
 )
 
@@ -35,7 +35,7 @@ var _ = Describe("Status Reconciliation", func() {
 	// --- Task 3.1: Status after initial reconciliation ---
 
 	Context("initial reconciliation with default 1 replica (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("status-init"))
@@ -198,12 +198,12 @@ var _ = Describe("Status Reconciliation", func() {
 		It("should propagate status update errors while Deployment and Service are created", func() {
 			statusErr := fmt.Errorf("simulated status update error")
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
-				WithStatusSubresource(&memcachedv1alpha1.Memcached{}).
+				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
 				Build()
 			failingClient := interceptor.NewClient(fakeClient, interceptor.Funcs{
 				SubResourceUpdate: func(_ context.Context, _ client.Client, _ string, obj client.Object, _ ...client.SubResourceUpdateOption) error {
 					// Fail status updates for Memcached CR.
-					if _, ok := obj.(*memcachedv1alpha1.Memcached); ok {
+					if _, ok := obj.(*memcachedv1beta1.Memcached); ok {
 						return statusErr
 					}
 					return nil

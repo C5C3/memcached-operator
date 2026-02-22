@@ -13,7 +13,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // computeSecretHash returns a deterministic SHA-256 hex digest over the given Secrets' data.
@@ -65,7 +65,7 @@ func computeSecretHash(secrets ...*corev1.Secret) string {
 // fetchReferencedSecrets collects the Secrets referenced by the Memcached CR's Security spec
 // (SASL credentials and TLS certificates). It returns the found Secrets and the names of
 // any that could not be fetched.
-func fetchReferencedSecrets(ctx context.Context, c client.Client, mc *memcachedv1alpha1.Memcached) ([]*corev1.Secret, []string) {
+func fetchReferencedSecrets(ctx context.Context, c client.Client, mc *memcachedv1beta1.Memcached) ([]*corev1.Secret, []string) {
 	if mc.Spec.Security == nil {
 		return nil, nil
 	}
@@ -111,7 +111,7 @@ func mapSecretToMemcached(c client.Client) handler.MapFunc {
 		secretName := obj.GetName()
 		secretNamespace := obj.GetNamespace()
 
-		var list memcachedv1alpha1.MemcachedList
+		var list memcachedv1beta1.MemcachedList
 		if err := c.List(ctx, &list, client.InNamespace(secretNamespace)); err != nil {
 			return nil
 		}

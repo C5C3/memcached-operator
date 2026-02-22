@@ -1,0 +1,56 @@
+{
+  "feature_id": "MO-0047",
+  "title": "M003: Switch controllers and builders to v1beta1",
+  "date": "2026-02-22",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "Mechanical import/type swap from memcachedv1alpha1 to memcachedv1beta1 across all controller production files, test files, and documentation. All 39 files changed correctly. Tests pass, lint clean, go vet clean. One defect: suite_test.go has a duplicate memcachedv1beta1.AddToScheme call left over from the mechanical replacement of the v1alpha1 call.",
+  "tests_checklist": [
+    {"item": "All existing tests pass (make test exits 0)", "checked": true},
+    {"item": "Tests use v1beta1 types matching production code", "checked": true},
+    {"item": "No v1alpha1 references remain in test files (except suite_test.go if needed)", "checked": true},
+    {"item": "Integration tests validate v1beta1 reconciliation path", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing code patterns (mechanical find-and-replace)", "checked": true},
+    {"item": "No dead code or redundant calls", "checked": false},
+    {"item": "Import aliases consistent (memcachedv1beta1 everywhere)", "checked": true},
+    {"item": "No functional changes introduced (pure type swap)", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No security-relevant changes (import/type swap only)", "checked": true},
+    {"item": "No hardcoded secrets introduced", "checked": true},
+    {"item": "No new input paths or API boundaries", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Controller reconciles storage version (v1beta1)", "checked": true},
+    {"item": "cmd/main.go retains both v1alpha1 and v1beta1 AddToScheme", "checked": true},
+    {"item": "cmd/main.go uses only v1beta1 webhook setup", "checked": true},
+    {"item": "Solution is minimal (no functional changes)", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code introduced", "checked": false},
+    {"item": "No unnecessary abstractions added", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "No new error handling paths (type swap only)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "No new external inputs (type swap only)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "Q7-1",
+      "severity": "major",
+      "check_id": "Q7",
+      "description": "Duplicate memcachedv1beta1.AddToScheme(scheme.Scheme) call. The original memcachedv1alpha1.AddToScheme was mechanically replaced with memcachedv1beta1.AddToScheme, but the file already had a memcachedv1beta1.AddToScheme call on the next line. This results in two identical consecutive calls.",
+      "location": "internal/controller/suite_test.go:86-90",
+      "fix": "Remove the duplicate AddToScheme block. Keep only one call to memcachedv1beta1.AddToScheme(scheme.Scheme) with its Expect assertion (lines 89-90). Delete lines 86-87."
+    }
+  ],
+  "suggested_improvements": [],
+  "next_steps": [
+    "Remove duplicate memcachedv1beta1.AddToScheme call in suite_test.go (lines 86-87)"
+  ]
+}

@@ -6,12 +6,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // constructPDB sets the desired state of the PodDisruptionBudget based on the Memcached CR spec.
 // It mutates pdb in-place and is designed to be called from within controllerutil.CreateOrUpdate.
-func constructPDB(mc *memcachedv1alpha1.Memcached, pdb *policyv1.PodDisruptionBudget) {
+func constructPDB(mc *memcachedv1beta1.Memcached, pdb *policyv1.PodDisruptionBudget) {
 	labels := labelsForMemcached(mc.Name)
 
 	pdb.Labels = labels
@@ -39,7 +39,7 @@ func constructPDB(mc *memcachedv1alpha1.Memcached, pdb *policyv1.PodDisruptionBu
 }
 
 // pdbEnabled returns true only when PDB creation is explicitly enabled in the CR spec.
-func pdbEnabled(mc *memcachedv1alpha1.Memcached) bool {
+func pdbEnabled(mc *memcachedv1beta1.Memcached) bool {
 	return mc.Spec.HighAvailability != nil &&
 		mc.Spec.HighAvailability.PodDisruptionBudget != nil &&
 		mc.Spec.HighAvailability.PodDisruptionBudget.Enabled

@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 const (
@@ -98,19 +98,19 @@ func TestLabelsForMemcached(t *testing.T) {
 func TestBuildMemcachedArgs(t *testing.T) {
 	tests := []struct {
 		name     string
-		config   *memcachedv1alpha1.MemcachedConfig
+		config   *memcachedv1beta1.MemcachedConfig
 		expected []string
 	}{
 		{
 			name:   "default config",
-			config: &memcachedv1alpha1.MemcachedConfig{},
+			config: &memcachedv1beta1.MemcachedConfig{},
 			expected: []string{
 				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
 			},
 		},
 		{
 			name: "custom values",
-			config: &memcachedv1alpha1.MemcachedConfig{
+			config: &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB:    256,
 				MaxConnections: 2048,
 				Threads:        8,
@@ -122,7 +122,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 		},
 		{
 			name: "verbosity 0 produces no verbosity flag",
-			config: &memcachedv1alpha1.MemcachedConfig{
+			config: &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 0,
 			},
 			expected: []string{
@@ -131,7 +131,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 		},
 		{
 			name: "verbosity 1 produces -v flag",
-			config: &memcachedv1alpha1.MemcachedConfig{
+			config: &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 1,
 			},
 			expected: []string{
@@ -140,7 +140,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 		},
 		{
 			name: "verbosity 2 produces -vv flag",
-			config: &memcachedv1alpha1.MemcachedConfig{
+			config: &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 2,
 			},
 			expected: []string{
@@ -149,7 +149,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 		},
 		{
 			name: "extra args appended after standard flags",
-			config: &memcachedv1alpha1.MemcachedConfig{
+			config: &memcachedv1beta1.MemcachedConfig{
 				ExtraArgs: []string{"-o", "modern"},
 			},
 			expected: []string{
@@ -165,7 +165,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 		},
 		{
 			name: "combined verbosity 2 and extra args",
-			config: &memcachedv1alpha1.MemcachedConfig{
+			config: &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 2,
 				ExtraArgs: []string{"-o", "modern"},
 			},
@@ -175,7 +175,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 		},
 		{
 			name: "empty extra args produces no extra args",
-			config: &memcachedv1alpha1.MemcachedConfig{
+			config: &memcachedv1beta1.MemcachedConfig{
 				ExtraArgs: []string{},
 			},
 			expected: []string{
@@ -210,12 +210,12 @@ func int32Ptr(i int32) *int32 { return &i }
 func stringPtr(s string) *string { return &s }
 
 func TestConstructDeployment_MinimalSpec(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-cache",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{},
+		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -291,12 +291,12 @@ func TestConstructDeployment_MinimalSpec(t *testing.T) {
 }
 
 func TestConstructDeployment_CustomSpec(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "custom-cache",
 			Namespace: "production",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(5),
 			Image:    stringPtr("memcached:1.6.29"),
 			Resources: &corev1.ResourceRequirements{
@@ -309,7 +309,7 @@ func TestConstructDeployment_CustomSpec(t *testing.T) {
 					corev1.ResourceMemory: resource.MustParse("256Mi"),
 				},
 			},
-			Memcached: &memcachedv1alpha1.MemcachedConfig{
+			Memcached: &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB:    256,
 				MaxConnections: 2048,
 				Threads:        8,
@@ -353,9 +353,9 @@ func TestConstructDeployment_CustomSpec(t *testing.T) {
 }
 
 func TestConstructDeployment_ContainerPort(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "port-test", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -383,9 +383,9 @@ func TestConstructDeployment_ContainerPort(t *testing.T) {
 }
 
 func TestConstructDeployment_Probes(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "probe-test", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -459,9 +459,9 @@ func TestConstructDeployment_Resources(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "res-test", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
 					Resources: tt.resources,
 				},
 			}
@@ -497,7 +497,7 @@ func TestConstructDeployment_Resources(t *testing.T) {
 	}
 }
 
-func antiAffinityPresetPtr(p memcachedv1alpha1.AntiAffinityPreset) *memcachedv1alpha1.AntiAffinityPreset {
+func antiAffinityPresetPtr(p memcachedv1beta1.AntiAffinityPreset) *memcachedv1beta1.AntiAffinityPreset {
 	return &p
 }
 
@@ -511,11 +511,11 @@ func zoneSpreadConstraint() corev1.TopologySpreadConstraint {
 }
 
 func TestBuildAntiAffinity_Soft(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
 			},
 		},
 	}
@@ -553,11 +553,11 @@ func TestBuildAntiAffinity_Soft(t *testing.T) {
 }
 
 func TestBuildAntiAffinity_Hard(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetHard),
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetHard),
 			},
 		},
 	}
@@ -594,17 +594,17 @@ func TestBuildAntiAffinity_Hard(t *testing.T) {
 func TestBuildAntiAffinity_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name string
-		ha   *memcachedv1alpha1.HighAvailabilitySpec
+		ha   *memcachedv1beta1.HighAvailabilitySpec
 	}{
 		{name: "nil HighAvailability", ha: nil},
-		{name: "nil AntiAffinityPreset", ha: &memcachedv1alpha1.HighAvailabilitySpec{}},
+		{name: "nil AntiAffinityPreset", ha: &memcachedv1beta1.HighAvailabilitySpec{}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec:       memcachedv1alpha1.MemcachedSpec{HighAvailability: tt.ha},
+				Spec:       memcachedv1beta1.MemcachedSpec{HighAvailability: tt.ha},
 			}
 
 			if affinity := buildAntiAffinity(mc); affinity != nil {
@@ -626,11 +626,11 @@ func TestBuildAntiAffinity_InstanceScopedLabels(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: tt.crName, Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-						AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+				Spec: memcachedv1beta1.MemcachedSpec{
+					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+						AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
 					},
 				},
 			}
@@ -652,13 +652,13 @@ func TestBuildAntiAffinity_InstanceScopedLabels(t *testing.T) {
 func TestConstructDeployment_AntiAffinity(t *testing.T) {
 	tests := []struct {
 		name  string
-		ha    *memcachedv1alpha1.HighAvailabilitySpec
+		ha    *memcachedv1beta1.HighAvailabilitySpec
 		check func(t *testing.T, affinity *corev1.Affinity)
 	}{
 		{
 			name: "soft preset sets preferred anti-affinity",
-			ha: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+			ha: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
 			},
 			check: func(t *testing.T, affinity *corev1.Affinity) {
 				t.Helper()
@@ -673,8 +673,8 @@ func TestConstructDeployment_AntiAffinity(t *testing.T) {
 		},
 		{
 			name: "hard preset sets required anti-affinity",
-			ha: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetHard),
+			ha: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetHard),
 			},
 			check: func(t *testing.T, affinity *corev1.Affinity) {
 				t.Helper()
@@ -701,9 +701,9 @@ func TestConstructDeployment_AntiAffinity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "aa-test", Namespace: "default"},
-				Spec:       memcachedv1alpha1.MemcachedSpec{HighAvailability: tt.ha},
+				Spec:       memcachedv1beta1.MemcachedSpec{HighAvailability: tt.ha},
 			}
 			dep := &appsv1.Deployment{}
 
@@ -715,10 +715,10 @@ func TestConstructDeployment_AntiAffinity(t *testing.T) {
 }
 
 func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					{
 						MaxSkew:           1,
@@ -755,10 +755,10 @@ func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
 }
 
 func TestBuildTopologySpreadConstraints_MultipleConstraints(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					zoneSpreadConstraint(),
 					{
@@ -787,7 +787,7 @@ func TestBuildTopologySpreadConstraints_MultipleConstraints(t *testing.T) {
 func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name string
-		ha   *memcachedv1alpha1.HighAvailabilitySpec
+		ha   *memcachedv1beta1.HighAvailabilitySpec
 	}{
 		{
 			name: "nil HighAvailability",
@@ -795,11 +795,11 @@ func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 		},
 		{
 			name: "nil constraints",
-			ha:   &memcachedv1alpha1.HighAvailabilitySpec{},
+			ha:   &memcachedv1beta1.HighAvailabilitySpec{},
 		},
 		{
 			name: "empty slice",
-			ha: &memcachedv1alpha1.HighAvailabilitySpec{
+			ha: &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{},
 			},
 		},
@@ -807,9 +807,9 @@ func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
 					HighAvailability: tt.ha,
 				},
 			}
@@ -824,10 +824,10 @@ func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 }
 
 func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tsc-test", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			},
 		},
@@ -849,9 +849,9 @@ func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
 }
 
 func TestConstructDeployment_TopologySpreadConstraints_NilHA(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tsc-nil-test", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -863,11 +863,11 @@ func TestConstructDeployment_TopologySpreadConstraints_NilHA(t *testing.T) {
 }
 
 func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "both-test", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			},
 		},
@@ -895,9 +895,9 @@ func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
 }
 
 func TestConstructDeployment_RollingUpdateStrategy(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "strategy-test", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -924,11 +924,11 @@ func TestConstructDeployment_RollingUpdateStrategy(t *testing.T) {
 }
 
 func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-default", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -967,11 +967,11 @@ func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
 }
 
 func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-custom", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           15,
 					TerminationGracePeriodSeconds: 45,
@@ -1001,11 +1001,11 @@ func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
 }
 
 func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-zeros", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           0,
 					TerminationGracePeriodSeconds: 0,
@@ -1038,11 +1038,11 @@ func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
 }
 
 func TestBuildGracefulShutdown_Disabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-disabled", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled: false,
 				},
 			},
@@ -1060,9 +1060,9 @@ func TestBuildGracefulShutdown_Disabled(t *testing.T) {
 }
 
 func TestBuildGracefulShutdown_NilHA(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-nilha", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 
 	lifecycle, terminationGracePeriod := buildGracefulShutdown(mc)
@@ -1076,11 +1076,11 @@ func TestBuildGracefulShutdown_NilHA(t *testing.T) {
 }
 
 func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-on", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -1119,9 +1119,9 @@ func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
 }
 
 func TestConstructDeployment_GracefulShutdownDisabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-off", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -1137,13 +1137,13 @@ func TestConstructDeployment_GracefulShutdownDisabled(t *testing.T) {
 }
 
 func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-all", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -1185,10 +1185,10 @@ func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
 }
 
 func TestBuildExporterContainer_Enabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "exp-test", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -1217,17 +1217,17 @@ func TestBuildExporterContainer_Enabled(t *testing.T) {
 func TestBuildExporterContainer_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name       string
-		monitoring *memcachedv1alpha1.MonitoringSpec
+		monitoring *memcachedv1beta1.MonitoringSpec
 	}{
-		{name: "monitoring disabled", monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: false}},
+		{name: "monitoring disabled", monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false}},
 		{name: "nil monitoring", monitoring: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "exp-nil", Namespace: "default"},
-				Spec:       memcachedv1alpha1.MemcachedSpec{Monitoring: tt.monitoring},
+				Spec:       memcachedv1beta1.MemcachedSpec{Monitoring: tt.monitoring},
 			}
 
 			if container := buildExporterContainer(mc); container != nil {
@@ -1239,10 +1239,10 @@ func TestBuildExporterContainer_ReturnsNil(t *testing.T) {
 
 func TestBuildExporterContainer_CustomImage(t *testing.T) {
 	customImage := testExporterImage
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "exp-custom", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled:       true,
 				ExporterImage: &customImage,
 			},
@@ -1260,10 +1260,10 @@ func TestBuildExporterContainer_CustomImage(t *testing.T) {
 }
 
 func TestBuildExporterContainer_WithResources(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "exp-res", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ExporterResources: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -1303,10 +1303,10 @@ func TestBuildExporterContainer_WithResources(t *testing.T) {
 }
 
 func TestBuildExporterContainer_NilResources(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "exp-nilres", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -1324,10 +1324,10 @@ func TestBuildExporterContainer_NilResources(t *testing.T) {
 }
 
 func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mon-on", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -1349,9 +1349,9 @@ func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
 }
 
 func TestConstructDeployment_MonitoringDisabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -1371,9 +1371,9 @@ func TestConstructDeployment_MonitoringDisabled(t *testing.T) {
 func TestBuildPodSecurityContext_WithValue(t *testing.T) {
 	runAsNonRoot := true
 	fsGroup := int64(1000)
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 					FSGroup:      &fsGroup,
@@ -1398,16 +1398,16 @@ func TestBuildPodSecurityContext_WithValue(t *testing.T) {
 func TestBuildPodSecurityContext_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string
-		security *memcachedv1alpha1.SecuritySpec
+		security *memcachedv1beta1.SecuritySpec
 	}{
 		{name: "nil Security", security: nil},
-		{name: "nil PodSecurityContext", security: &memcachedv1alpha1.SecuritySpec{}},
+		{name: "nil PodSecurityContext", security: &memcachedv1beta1.SecuritySpec{}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			mc := &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 
 			if got := buildPodSecurityContext(mc); got != nil {
@@ -1420,9 +1420,9 @@ func TestBuildPodSecurityContext_ReturnsNil(t *testing.T) {
 func TestBuildContainerSecurityContext_WithValue(t *testing.T) {
 	runAsUser := int64(1000)
 	readOnly := true
-	mc := &memcachedv1alpha1.Memcached{
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
+	mc := &memcachedv1beta1.Memcached{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
 				ContainerSecurityContext: &corev1.SecurityContext{
 					RunAsUser:              &runAsUser,
 					ReadOnlyRootFilesystem: &readOnly,
@@ -1447,16 +1447,16 @@ func TestBuildContainerSecurityContext_WithValue(t *testing.T) {
 func TestBuildContainerSecurityContext_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string
-		security *memcachedv1alpha1.SecuritySpec
+		security *memcachedv1beta1.SecuritySpec
 	}{
 		{name: "nil Security", security: nil},
-		{name: "nil ContainerSecurityContext", security: &memcachedv1alpha1.SecuritySpec{}},
+		{name: "nil ContainerSecurityContext", security: &memcachedv1beta1.SecuritySpec{}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			mc := &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 
 			if got := buildContainerSecurityContext(mc); got != nil {
@@ -1471,10 +1471,10 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 	fsGroup := int64(1000)
 	runAsUser := int64(1000)
 	readOnly := true
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sec-test", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 					FSGroup:      &fsGroup,
@@ -1516,9 +1516,9 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 }
 
 func TestConstructDeployment_SecurityContextsNil(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sec-nil", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -1535,16 +1535,16 @@ func TestConstructDeployment_SecurityContextsNil(t *testing.T) {
 func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 	runAsUser := int64(1000)
 	readOnly := true
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sec-exp", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
 				ContainerSecurityContext: &corev1.SecurityContext{
 					RunAsUser:              &runAsUser,
 					ReadOnlyRootFilesystem: &readOnly,
 				},
 			},
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -1582,11 +1582,11 @@ func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 // --- SASL Authentication Tests ---
 
 func TestBuildSASLVolume_Enabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-vol", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: testSASLSecret,
@@ -1624,22 +1624,22 @@ func TestBuildSASLVolume_Enabled(t *testing.T) {
 func TestBuildSASLVolume_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string
-		security *memcachedv1alpha1.SecuritySpec
+		security *memcachedv1beta1.SecuritySpec
 	}{
 		{name: "nil Security", security: nil},
-		{name: "nil SASL", security: &memcachedv1alpha1.SecuritySpec{}},
+		{name: "nil SASL", security: &memcachedv1beta1.SecuritySpec{}},
 		{
 			name: "SASL disabled",
-			security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{Enabled: false},
+			security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{Enabled: false},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			mc := &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 
 			if vol := buildSASLVolume(mc); vol != nil {
@@ -1650,11 +1650,11 @@ func TestBuildSASLVolume_ReturnsNil(t *testing.T) {
 }
 
 func TestBuildSASLVolumeMount_Enabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mount", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: testSASLSecret,
@@ -1683,22 +1683,22 @@ func TestBuildSASLVolumeMount_Enabled(t *testing.T) {
 func TestBuildSASLVolumeMount_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string
-		security *memcachedv1alpha1.SecuritySpec
+		security *memcachedv1beta1.SecuritySpec
 	}{
 		{name: "nil Security", security: nil},
-		{name: "nil SASL", security: &memcachedv1alpha1.SecuritySpec{}},
+		{name: "nil SASL", security: &memcachedv1beta1.SecuritySpec{}},
 		{
 			name: "SASL disabled",
-			security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{Enabled: false},
+			security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{Enabled: false},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			mc := &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 
 			if vm := buildSASLVolumeMount(mc); vm != nil {
@@ -1709,7 +1709,7 @@ func TestBuildSASLVolumeMount_ReturnsNil(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_SASLEnabled(t *testing.T) {
-	sasl := &memcachedv1alpha1.SASLSpec{
+	sasl := &memcachedv1beta1.SASLSpec{
 		Enabled: true,
 		CredentialsSecretRef: corev1.LocalObjectReference{
 			Name: testSASLSecret,
@@ -1736,7 +1736,7 @@ func TestBuildMemcachedArgs_SASLEnabled(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_SASLDisabled(t *testing.T) {
-	sasl := &memcachedv1alpha1.SASLSpec{
+	sasl := &memcachedv1beta1.SASLSpec{
 		Enabled: false,
 	}
 
@@ -1766,11 +1766,11 @@ func TestBuildMemcachedArgs_SASLNil(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
-	config := &memcachedv1alpha1.MemcachedConfig{
+	config := &memcachedv1beta1.MemcachedConfig{
 		Verbosity: 1,
 		ExtraArgs: []string{"-o", "modern"},
 	}
-	sasl := &memcachedv1alpha1.SASLSpec{
+	sasl := &memcachedv1beta1.SASLSpec{
 		Enabled: true,
 		CredentialsSecretRef: corev1.LocalObjectReference{
 			Name: testSASLSecret,
@@ -1799,11 +1799,11 @@ func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
 }
 
 func TestConstructDeployment_SASLEnabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-dep", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: testSASLSecret,
@@ -1874,9 +1874,9 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 }
 
 func TestConstructDeployment_SASLDisabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-off", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -1903,18 +1903,18 @@ func TestConstructDeployment_SASLDisabled(t *testing.T) {
 }
 
 func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mon", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: "sasl-creds",
 					},
 				},
 			},
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -1947,19 +1947,19 @@ func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
 }
 
 func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-gs", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: "sasl-secret",
 					},
 				},
 			},
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -2032,11 +2032,11 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	runAsNonRoot := true
 	runAsUser := int64(1000)
 	readOnly := true
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-sec", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: "sasl-secret",
@@ -2109,11 +2109,11 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 }
 
 func TestBuildTLSVolume_Enabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-vol", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: testTLSSecret,
@@ -2157,22 +2157,22 @@ func TestBuildTLSVolume_Enabled(t *testing.T) {
 func TestBuildTLSVolume_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string
-		security *memcachedv1alpha1.SecuritySpec
+		security *memcachedv1beta1.SecuritySpec
 	}{
 		{name: "nil Security", security: nil},
-		{name: "nil TLS", security: &memcachedv1alpha1.SecuritySpec{}},
+		{name: "nil TLS", security: &memcachedv1beta1.SecuritySpec{}},
 		{
 			name: "TLS disabled",
-			security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{Enabled: false},
+			security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{Enabled: false},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			mc := &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 
 			if vol := buildTLSVolume(mc); vol != nil {
@@ -2183,11 +2183,11 @@ func TestBuildTLSVolume_ReturnsNil(t *testing.T) {
 }
 
 func TestBuildTLSVolume_WithClientCert(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-mtls", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:          true,
 					EnableClientCert: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
@@ -2215,11 +2215,11 @@ func TestBuildTLSVolume_WithClientCert(t *testing.T) {
 }
 
 func TestBuildTLSVolumeMount_Enabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-mount", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: testTLSSecret,
@@ -2248,22 +2248,22 @@ func TestBuildTLSVolumeMount_Enabled(t *testing.T) {
 func TestBuildTLSVolumeMount_ReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string
-		security *memcachedv1alpha1.SecuritySpec
+		security *memcachedv1beta1.SecuritySpec
 	}{
 		{name: "nil Security", security: nil},
-		{name: "nil TLS", security: &memcachedv1alpha1.SecuritySpec{}},
+		{name: "nil TLS", security: &memcachedv1beta1.SecuritySpec{}},
 		{
 			name: "TLS disabled",
-			security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{Enabled: false},
+			security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{Enabled: false},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+			mc := &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 
 			if vm := buildTLSVolumeMount(mc); vm != nil {
@@ -2274,7 +2274,7 @@ func TestBuildTLSVolumeMount_ReturnsNil(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_TLSEnabled(t *testing.T) {
-	tls := &memcachedv1alpha1.TLSSpec{
+	tls := &memcachedv1beta1.TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
 			Name: testTLSSecret,
@@ -2302,7 +2302,7 @@ func TestBuildMemcachedArgs_TLSEnabled(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_TLSDisabled(t *testing.T) {
-	tls := &memcachedv1alpha1.TLSSpec{
+	tls := &memcachedv1beta1.TLSSpec{
 		Enabled: false,
 	}
 
@@ -2331,7 +2331,7 @@ func TestBuildMemcachedArgs_TLSNil(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_TLSWithClientCert(t *testing.T) {
-	tls := &memcachedv1alpha1.TLSSpec{
+	tls := &memcachedv1beta1.TLSSpec{
 		Enabled:          true,
 		EnableClientCert: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
@@ -2361,13 +2361,13 @@ func TestBuildMemcachedArgs_TLSWithClientCert(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_TLSWithSASL(t *testing.T) {
-	sasl := &memcachedv1alpha1.SASLSpec{
+	sasl := &memcachedv1beta1.SASLSpec{
 		Enabled: true,
 		CredentialsSecretRef: corev1.LocalObjectReference{
 			Name: testSASLSecret,
 		},
 	}
-	tls := &memcachedv1alpha1.TLSSpec{
+	tls := &memcachedv1beta1.TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
 			Name: testTLSSecret,
@@ -2397,11 +2397,11 @@ func TestBuildMemcachedArgs_TLSWithSASL(t *testing.T) {
 }
 
 func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
-	config := &memcachedv1alpha1.MemcachedConfig{
+	config := &memcachedv1beta1.MemcachedConfig{
 		Verbosity: 1,
 		ExtraArgs: []string{"-o", "modern"},
 	}
-	tls := &memcachedv1alpha1.TLSSpec{
+	tls := &memcachedv1beta1.TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
 			Name: testTLSSecret,
@@ -2432,11 +2432,11 @@ func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
 }
 
 func TestConstructDeployment_TLSEnabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-dep", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: testTLSSecret,
@@ -2523,9 +2523,9 @@ func TestConstructDeployment_TLSEnabled(t *testing.T) {
 }
 
 func TestConstructDeployment_TLSDisabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	dep := &appsv1.Deployment{}
 
@@ -2560,17 +2560,17 @@ func TestConstructDeployment_TLSDisabled(t *testing.T) {
 }
 
 func TestConstructDeployment_TLSWithSASL(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-sasl", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: "sasl-creds",
 					},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-certs",
@@ -2646,11 +2646,11 @@ func TestConstructDeployment_TLSWithSASL(t *testing.T) {
 }
 
 func TestConstructDeployment_TLSPort(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-port", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: testTLSSecret,
@@ -2695,11 +2695,11 @@ func TestConstructDeployment_TLSPort(t *testing.T) {
 func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) {
 	runAsNonRoot := true
 	readOnly := true
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-full", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-certs",
@@ -2712,7 +2712,7 @@ func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) 
 					ReadOnlyRootFilesystem: &readOnly,
 				},
 			},
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -2778,12 +2778,12 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 	allowPrivEsc := false
 	exporterImg := testExporterImage
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kitchen-sink",
 			Namespace: "production",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 			Image:    stringPtr("memcached:1.6.29"),
 			Resources: &corev1.ResourceRequirements{
@@ -2796,7 +2796,7 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 					corev1.ResourceMemory: resource.MustParse("1Gi"),
 				},
 			},
-			Memcached: &memcachedv1alpha1.MemcachedConfig{
+			Memcached: &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB:    256,
 				MaxConnections: 2048,
 				Threads:        8,
@@ -2804,16 +2804,16 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 				Verbosity:      2,
 				ExtraArgs:      []string{"--max-reqs-per-event", "20"},
 			},
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           15,
 					TerminationGracePeriodSeconds: 45,
 				},
 			},
-			Security: &memcachedv1alpha1.SecuritySpec{
+			Security: &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 					RunAsUser:    &runAsUser,
@@ -2822,13 +2822,13 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 					ReadOnlyRootFilesystem:   &readOnlyRootFS,
 					AllowPrivilegeEscalation: &allowPrivEsc,
 				},
-				SASL: &memcachedv1alpha1.SASLSpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: testSASLSecret,
 					},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:          true,
 					EnableClientCert: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
@@ -2836,7 +2836,7 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 					},
 				},
 			},
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled:       true,
 				ExporterImage: &exporterImg,
 				ExporterResources: &corev1.ResourceRequirements{
@@ -2850,7 +2850,7 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 					},
 				},
 			},
-			Service: &memcachedv1alpha1.ServiceSpec{
+			Service: &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
 					"prometheus.io/scrape": "true",
 				},
@@ -3148,12 +3148,12 @@ func TestConstructDeployment_KitchenSink_StrategyAndLabels(t *testing.T) {
 }
 
 func TestConstructDeployment_ZeroReplicas(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "zero-replicas",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(0),
 		},
 	}
@@ -3181,12 +3181,12 @@ func TestConstructDeployment_ZeroReplicas(t *testing.T) {
 }
 
 func TestConstructDeployment_Idempotent(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "idempotent-test",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
 			Image:    stringPtr("memcached:1.6.29"),
 			Resources: &corev1.ResourceRequirements{
@@ -3195,7 +3195,7 @@ func TestConstructDeployment_Idempotent(t *testing.T) {
 					corev1.ResourceMemory: resource.MustParse(testMem128Mi),
 				},
 			},
-			Memcached: &memcachedv1alpha1.MemcachedConfig{
+			Memcached: &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB:    128,
 				MaxConnections: 512,
 				Threads:        4,
@@ -3203,30 +3203,30 @@ func TestConstructDeployment_Idempotent(t *testing.T) {
 				Verbosity:      1,
 				ExtraArgs:      []string{"-o", "modern"},
 			},
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1alpha1.AntiAffinityPresetSoft),
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
 				},
 			},
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: "sasl-secret",
 					},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-secret",
 					},
 				},
 			},
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -3298,12 +3298,12 @@ func TestConstructDeployment_Annotations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{},
+				Spec: memcachedv1beta1.MemcachedSpec{},
 			}
 			dep := &appsv1.Deployment{}
 
@@ -3359,17 +3359,17 @@ func TestAnnotationKeyConstants(t *testing.T) {
 func TestConstructDeployment_HPAReplicas(t *testing.T) {
 	tests := []struct {
 		name         string
-		mc           *memcachedv1alpha1.Memcached
+		mc           *memcachedv1beta1.Memcached
 		wantReplicas *int32
 	}{
 		{
 			name: "HPA disabled with replicas set",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: int32Ptr(5),
 				},
 			},
@@ -3377,25 +3377,25 @@ func TestConstructDeployment_HPAReplicas(t *testing.T) {
 		},
 		{
 			name: "HPA disabled with replicas nil uses default",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{},
+				Spec: memcachedv1beta1.MemcachedSpec{},
 			},
 			wantReplicas: int32Ptr(1),
 		},
 		{
 			name: "HPA enabled with replicas set returns nil",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: int32Ptr(5),
-					Autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+					Autoscaling: &memcachedv1beta1.AutoscalingSpec{
 						Enabled:     true,
 						MaxReplicas: 10,
 					},
@@ -3405,13 +3405,13 @@ func TestConstructDeployment_HPAReplicas(t *testing.T) {
 		},
 		{
 			name: "HPA enabled with replicas nil returns nil",
-			mc: &memcachedv1alpha1.Memcached{
+			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Autoscaling: &memcachedv1beta1.AutoscalingSpec{
 						Enabled:     true,
 						MaxReplicas: 10,
 					},

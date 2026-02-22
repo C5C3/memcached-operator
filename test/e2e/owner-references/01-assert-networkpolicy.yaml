@@ -4,7 +4,7 @@ kind: NetworkPolicy
 metadata:
   name: test-owner-refs
   ownerReferences:
-    - apiVersion: memcached.c5c3.io/v1alpha1
+    - apiVersion: memcached.c5c3.io/v1beta1
       kind: Memcached
       name: test-owner-refs
       controller: true

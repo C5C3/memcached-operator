@@ -10,7 +10,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 var _ = Describe("Monitoring Reconciliation", func() {
@@ -19,7 +19,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should create Deployment with exporter sidecar and Service with metrics port", func() {
 			mc := validMemcached(uniqueName("mon-create"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -54,7 +54,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 		It("should use custom exporter image when specified", func() {
 			mc := validMemcached(uniqueName("mon-custimg"))
 			customImage := "my-registry/memcached-exporter:v1.0.0"
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:       true,
 				ExporterImage: &customImage,
 			}
@@ -70,7 +70,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should apply exporter resources when specified", func() {
 			mc := validMemcached(uniqueName("mon-res"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ExporterResources: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -99,7 +99,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should have no exporter resources when exporterResources is nil", func() {
 			mc := validMemcached(uniqueName("mon-nilres"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -131,7 +131,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 			// Enable monitoring.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
@@ -151,7 +151,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should remove exporter sidecar when monitoring is disabled", func() {
 			mc := validMemcached(uniqueName("mon-toggle-off"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -183,7 +183,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should remove exporter sidecar when monitoring section is removed", func() {
 			mc := validMemcached(uniqueName("mon-remove"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -212,7 +212,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should update exporter image when exporterImage changes", func() {
 			mc := validMemcached(uniqueName("mon-imgchg"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -238,7 +238,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should update exporter resources when exporterResources changes", func() {
 			mc := validMemcached(uniqueName("mon-reschg"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -270,7 +270,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should be idempotent with monitoring enabled", func() {
 			mc := validMemcached(uniqueName("mon-idemp"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -295,7 +295,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should converge after drift (manual container removal)", func() {
 			mc := validMemcached(uniqueName("mon-drift"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -329,19 +329,19 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 		It("should coexist with graceful shutdown and anti-affinity", func() {
 			mc := validMemcached(uniqueName("mon-coexist"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					zoneSpreadConstraint(),
 				},
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
 				},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())

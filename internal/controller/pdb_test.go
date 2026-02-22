@@ -10,49 +10,49 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 func TestConstructPDB(t *testing.T) {
 	tests := []struct {
 		name               string
-		pdbSpec            *memcachedv1alpha1.PDBSpec
+		pdbSpec            *memcachedv1beta1.PDBSpec
 		wantMinAvailable   *intstr.IntOrString
 		wantMaxUnavailable *intstr.IntOrString
 	}{
 		{
 			name:               "default minAvailable when neither set",
-			pdbSpec:            &memcachedv1alpha1.PDBSpec{Enabled: true},
+			pdbSpec:            &memcachedv1beta1.PDBSpec{Enabled: true},
 			wantMinAvailable:   intOrStringPtr(intstr.FromInt32(1)),
 			wantMaxUnavailable: nil,
 		},
 		{
 			name:               "custom minAvailable integer",
-			pdbSpec:            &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: intOrStringPtr(intstr.FromInt32(2))},
+			pdbSpec:            &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: intOrStringPtr(intstr.FromInt32(2))},
 			wantMinAvailable:   intOrStringPtr(intstr.FromInt32(2)),
 			wantMaxUnavailable: nil,
 		},
 		{
 			name:               "minAvailable percentage",
-			pdbSpec:            &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: intOrStringPtr(intstr.FromString("50%"))},
+			pdbSpec:            &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: intOrStringPtr(intstr.FromString("50%"))},
 			wantMinAvailable:   intOrStringPtr(intstr.FromString("50%")),
 			wantMaxUnavailable: nil,
 		},
 		{
 			name:               "maxUnavailable integer",
-			pdbSpec:            &memcachedv1alpha1.PDBSpec{Enabled: true, MaxUnavailable: intOrStringPtr(intstr.FromInt32(1))},
+			pdbSpec:            &memcachedv1beta1.PDBSpec{Enabled: true, MaxUnavailable: intOrStringPtr(intstr.FromInt32(1))},
 			wantMinAvailable:   nil,
 			wantMaxUnavailable: intOrStringPtr(intstr.FromInt32(1)),
 		},
 		{
 			name:               "maxUnavailable percentage",
-			pdbSpec:            &memcachedv1alpha1.PDBSpec{Enabled: true, MaxUnavailable: intOrStringPtr(intstr.FromString("25%"))},
+			pdbSpec:            &memcachedv1beta1.PDBSpec{Enabled: true, MaxUnavailable: intOrStringPtr(intstr.FromString("25%"))},
 			wantMinAvailable:   nil,
 			wantMaxUnavailable: intOrStringPtr(intstr.FromString("25%")),
 		},
 		{
 			name: "minAvailable takes precedence when both set",
-			pdbSpec: &memcachedv1alpha1.PDBSpec{
+			pdbSpec: &memcachedv1beta1.PDBSpec{
 				Enabled:        true,
 				MinAvailable:   intOrStringPtr(intstr.FromInt32(1)),
 				MaxUnavailable: intOrStringPtr(intstr.FromInt32(1)),
@@ -64,13 +64,13 @@ func TestConstructPDB(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 						PodDisruptionBudget: tt.pdbSpec,
 					},
 				},
@@ -109,14 +109,14 @@ func TestConstructPDB(t *testing.T) {
 }
 
 func TestConstructPDB_Labels(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "label-test",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true},
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true},
 			},
 		},
 	}
@@ -161,14 +161,14 @@ func TestConstructPDB_InstanceScopedSelector(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tt.instanceName,
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-						PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+						PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true},
 					},
 				},
 			}
@@ -187,21 +187,21 @@ func TestConstructPDB_InstanceScopedSelector(t *testing.T) {
 func TestPDBEnabled(t *testing.T) {
 	tests := []struct {
 		name string
-		mc   *memcachedv1alpha1.Memcached
+		mc   *memcachedv1beta1.Memcached
 		want bool
 	}{
 		{
 			name: "nil HighAvailability",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{HighAvailability: nil},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{HighAvailability: nil},
 			},
 			want: false,
 		},
 		{
 			name: "nil PodDisruptionBudget",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 						PodDisruptionBudget: nil,
 					},
 				},
@@ -210,10 +210,10 @@ func TestPDBEnabled(t *testing.T) {
 		},
 		{
 			name: "enabled is false",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-						PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: false},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+						PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: false},
 					},
 				},
 			},
@@ -221,10 +221,10 @@ func TestPDBEnabled(t *testing.T) {
 		},
 		{
 			name: "enabled is true",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-						PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+						PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true},
 					},
 				},
 			},
@@ -244,11 +244,11 @@ func TestPDBEnabled(t *testing.T) {
 
 func TestConstructPDB_SwitchMinAvailableToMaxUnavailable(t *testing.T) {
 	// Step 1: Create a PDB with minAvailable=2.
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "switch-min-max", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: intOrStringPtr(intstr.FromInt32(2)),
 				},
@@ -272,7 +272,7 @@ func TestConstructPDB_SwitchMinAvailableToMaxUnavailable(t *testing.T) {
 	}
 
 	// Step 2: Change the CR to use maxUnavailable=1, removing minAvailable.
-	mc.Spec.HighAvailability.PodDisruptionBudget = &memcachedv1alpha1.PDBSpec{
+	mc.Spec.HighAvailability.PodDisruptionBudget = &memcachedv1beta1.PDBSpec{
 		Enabled:        true,
 		MaxUnavailable: intOrStringPtr(intstr.FromInt32(1)),
 	}
@@ -310,11 +310,11 @@ func TestConstructPDB_SwitchMinAvailableToMaxUnavailable(t *testing.T) {
 
 func TestConstructPDB_SwitchMaxUnavailableToMinAvailable(t *testing.T) {
 	// Step 1: Create a PDB with maxUnavailable=1.
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "switch-max-min", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:        true,
 					MaxUnavailable: intOrStringPtr(intstr.FromInt32(1)),
 				},
@@ -338,7 +338,7 @@ func TestConstructPDB_SwitchMaxUnavailableToMinAvailable(t *testing.T) {
 	}
 
 	// Step 2: Change the CR to use minAvailable=3, removing maxUnavailable.
-	mc.Spec.HighAvailability.PodDisruptionBudget = &memcachedv1alpha1.PDBSpec{
+	mc.Spec.HighAvailability.PodDisruptionBudget = &memcachedv1beta1.PDBSpec{
 		Enabled:      true,
 		MinAvailable: intOrStringPtr(intstr.FromInt32(3)),
 	}
@@ -375,11 +375,11 @@ func TestConstructPDB_SwitchMaxUnavailableToMinAvailable(t *testing.T) {
 }
 
 func TestConstructPDB_Idempotent(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-pdb", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: intOrStringPtr(intstr.FromInt32(2)),
 				},

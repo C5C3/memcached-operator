@@ -10,11 +10,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // fetchPDB retrieves the PDB with the same name/namespace as the Memcached CR.
-func fetchPDB(mc *memcachedv1alpha1.Memcached) *policyv1.PodDisruptionBudget {
+func fetchPDB(mc *memcachedv1beta1.Memcached) *policyv1.PodDisruptionBudget {
 	pdb := &policyv1.PodDisruptionBudget{}
 	ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), pdb)).To(Succeed())
 	return pdb
@@ -23,15 +23,15 @@ func fetchPDB(mc *memcachedv1alpha1.Memcached) *policyv1.PodDisruptionBudget {
 var _ = Describe("PDB Reconciliation", func() {
 
 	Context("PDB creation with defaults", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("pdb-defaults"))
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -62,7 +62,7 @@ var _ = Describe("PDB Reconciliation", func() {
 			pdb := fetchPDB(mc)
 			Expect(pdb.OwnerReferences).To(HaveLen(1))
 			ownerRef := pdb.OwnerReferences[0]
-			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1alpha1"))
+			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1beta1"))
 			Expect(ownerRef.Kind).To(Equal("Memcached"))
 			Expect(ownerRef.Name).To(Equal(mc.Name))
 			Expect(ownerRef.UID).To(Equal(mc.UID))
@@ -77,8 +77,8 @@ var _ = Describe("PDB Reconciliation", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(2)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
@@ -99,8 +99,8 @@ var _ = Describe("PDB Reconciliation", func() {
 		It("should create PDB with maxUnavailable=1 and no minAvailable", func() {
 			mc := validMemcached(uniqueName("pdb-maxunavail"))
 			maxUnavail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:        true,
 					MaxUnavailable: &maxUnavail,
 				},
@@ -121,8 +121,8 @@ var _ = Describe("PDB Reconciliation", func() {
 		It("should create PDB with minAvailable=50%", func() {
 			mc := validMemcached(uniqueName("pdb-minavail-pct"))
 			minAvail := intstr.FromString("50%")
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
@@ -143,8 +143,8 @@ var _ = Describe("PDB Reconciliation", func() {
 		It("should create PDB with maxUnavailable=25%", func() {
 			mc := validMemcached(uniqueName("pdb-maxunavail-pct"))
 			maxUnavail := intstr.FromString("25%")
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:        true,
 					MaxUnavailable: &maxUnavail,
 				},
@@ -166,8 +166,8 @@ var _ = Describe("PDB Reconciliation", func() {
 			mc := validMemcached(uniqueName("pdb-both-set"))
 			minAvail := intstr.FromInt32(2)
 			maxUnavail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:        true,
 					MinAvailable:   &minAvail,
 					MaxUnavailable: &maxUnavail,
@@ -199,8 +199,8 @@ var _ = Describe("PDB Reconciliation", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -231,8 +231,8 @@ var _ = Describe("PDB Reconciliation", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{Enabled: true, MinAvailable: &minAvail},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 

@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // ---------------------------------------------------------------------------
@@ -134,15 +134,15 @@ func TestFetchReferencedSecrets_BothExist(t *testing.T) {
 	}
 	c := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(saslSecret, tlsSecret).Build()
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -166,15 +166,15 @@ func TestFetchReferencedSecrets_SASLMissing(t *testing.T) {
 	}
 	c := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(tlsSecret).Build()
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -198,15 +198,15 @@ func TestFetchReferencedSecrets_TLSMissing(t *testing.T) {
 	}
 	c := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(saslSecret).Build()
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
@@ -226,9 +226,9 @@ func TestFetchReferencedSecrets_TLSMissing(t *testing.T) {
 func TestFetchReferencedSecrets_NilSecuritySpec(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(testScheme()).Build()
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 
 	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
@@ -243,12 +243,12 @@ func TestFetchReferencedSecrets_NilSecuritySpec(t *testing.T) {
 func TestFetchReferencedSecrets_NeitherEnabled(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(testScheme()).Build()
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{Enabled: false},
-				TLS:  &memcachedv1alpha1.TLSSpec{Enabled: false},
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{Enabled: false},
+				TLS:  &memcachedv1beta1.TLSSpec{Enabled: false},
 			},
 		},
 	}
@@ -269,15 +269,15 @@ func TestFetchReferencedSecrets_Dedup(t *testing.T) {
 	}
 	c := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(sharedSecret).Build()
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "shared-secret"},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "shared-secret"},
 				},
@@ -297,15 +297,15 @@ func TestFetchReferencedSecrets_Dedup(t *testing.T) {
 func TestFetchReferencedSecrets_DedupMissing(t *testing.T) {
 	c := fake.NewClientBuilder().WithScheme(testScheme()).Build()
 
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "shared-secret"},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "shared-secret"},
 				},
@@ -327,11 +327,11 @@ func TestFetchReferencedSecrets_DedupMissing(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestMapSecretToMemcached_SASLRef(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc1", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "my-secret"},
 				},
@@ -353,11 +353,11 @@ func TestMapSecretToMemcached_SASLRef(t *testing.T) {
 }
 
 func TestMapSecretToMemcached_TLSRef(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc1", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "my-tls"},
 				},
@@ -379,11 +379,11 @@ func TestMapSecretToMemcached_TLSRef(t *testing.T) {
 }
 
 func TestMapSecretToMemcached_Unreferenced(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc1", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "other-secret"},
 				},
@@ -402,11 +402,11 @@ func TestMapSecretToMemcached_Unreferenced(t *testing.T) {
 }
 
 func TestMapSecretToMemcached_NamespaceScoping(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc1", Namespace: "other-ns"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "my-secret"},
 				},
@@ -425,9 +425,9 @@ func TestMapSecretToMemcached_NamespaceScoping(t *testing.T) {
 }
 
 func TestMapSecretToMemcached_NilSecuritySpec(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc1", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(mc).Build()
 
@@ -441,22 +441,22 @@ func TestMapSecretToMemcached_NilSecuritySpec(t *testing.T) {
 }
 
 func TestMapSecretToMemcached_MultipleCRs(t *testing.T) {
-	mc1 := &memcachedv1alpha1.Memcached{
+	mc1 := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc1", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
 					CredentialsSecretRef: corev1.LocalObjectReference{Name: "shared"},
 				},
 			},
 		},
 	}
-	mc2 := &memcachedv1alpha1.Memcached{
+	mc2 := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mc2", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "shared"},
 				},

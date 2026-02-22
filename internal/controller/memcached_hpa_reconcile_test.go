@@ -11,11 +11,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // fetchHPA retrieves the HPA with the same name/namespace as the Memcached CR.
-func fetchHPA(mc *memcachedv1alpha1.Memcached) *autoscalingv2.HorizontalPodAutoscaler {
+func fetchHPA(mc *memcachedv1beta1.Memcached) *autoscalingv2.HorizontalPodAutoscaler {
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
 	ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), hpa)).To(Succeed())
 	return hpa
@@ -36,12 +36,12 @@ func cpuResourceRequirements() *corev1.ResourceRequirements {
 var _ = Describe("HPA Reconciliation", func() {
 
 	Context("HPA creation with full spec", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("hpa-create"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(2),
 				MaxReplicas: 10,
@@ -117,7 +117,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should create HPA with default CPU metric and scaleDown behavior when not specified", func() {
 			mc := validMemcached(uniqueName("hpa-defaults"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -149,7 +149,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should create HPA where Kubernetes defaults minReplicas to 1", func() {
 			mc := validMemcached(uniqueName("hpa-nilmin"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 3,
 			}
@@ -173,7 +173,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should update HPA maxReplicas when CR spec changes", func() {
 			mc := validMemcached(uniqueName("hpa-update-max"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(2),
 				MaxReplicas: 5,
@@ -201,7 +201,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should update HPA minReplicas when CR spec changes", func() {
 			mc := validMemcached(uniqueName("hpa-update-min"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(1),
 				MaxReplicas: 5,
@@ -229,7 +229,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should update HPA metrics when CR spec changes", func() {
 			mc := validMemcached(uniqueName("hpa-update-met"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 				Metrics: []autoscalingv2.MetricSpec{
@@ -270,7 +270,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should not change HPA resource version on second reconcile", func() {
 			mc := validMemcached(uniqueName("hpa-idempotent"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(2),
 				MaxReplicas: 5,
@@ -310,7 +310,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should delete HPA when autoscaling is disabled after being enabled", func() {
 			mc := validMemcached(uniqueName("hpa-toggle"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -353,7 +353,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should handle idempotent deletion when reconciled twice with autoscaling disabled", func() {
 			mc := validMemcached(uniqueName("hpa-del-idem"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -388,7 +388,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should re-enable HPA after disabling and re-enabling", func() {
 			mc := validMemcached(uniqueName("hpa-reenable"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(2),
 				MaxReplicas: 5,
@@ -433,7 +433,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should not hardcode Deployment replicas from CR spec when autoscaling is enabled", func() {
 			mc := validMemcached(uniqueName("hpa-dep-nil"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -453,7 +453,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should restore Deployment spec.replicas when autoscaling is disabled", func() {
 			mc := validMemcached(uniqueName("hpa-dep-restore"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -483,7 +483,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should not override Deployment replicas from CR spec when autoscaling is active", func() {
 			mc := validMemcached(uniqueName("hpa-dep-noset"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(2),
 				MaxReplicas: 10,
@@ -516,7 +516,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should include HPA-managed annotation in Available condition message", func() {
 			mc := validMemcached(uniqueName("hpa-status-msg"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -552,7 +552,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should set all three conditions with HPA active", func() {
 			mc := validMemcached(uniqueName("hpa-status-all"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -580,7 +580,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should use Deployment status replicas as desired count when HPA active", func() {
 			mc := validMemcached(uniqueName("hpa-status-dep"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -606,7 +606,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should transition status when switching from HPA to manual scaling", func() {
 			mc := validMemcached(uniqueName("hpa-status-trans"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			}
@@ -644,7 +644,7 @@ var _ = Describe("HPA Reconciliation", func() {
 		It("should recreate the HPA on next reconcile after external deletion", func() {
 			mc := validMemcached(uniqueName("hpa-recreate"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(2),
 				MaxReplicas: 5,
@@ -681,22 +681,22 @@ var _ = Describe("HPA Reconciliation", func() {
 var _ = Describe("Full-featured CR with HPA", func() {
 
 	Context("when all features including autoscaling are enabled", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("hpa-full"))
 			mc.Spec.Resources = cpuResourceRequirements()
-			mc.Spec.Autoscaling = &memcachedv1alpha1.AutoscalingSpec{
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: int32Ptr(2),
 				MaxReplicas: 10,
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())

@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/controller"
 )
 
@@ -37,16 +37,16 @@ func newTLSSecret(name string) *corev1.Secret {
 }
 
 // saslSpec returns a SASLSpec referencing the given Secret.
-func saslSpec(secretName string) *memcachedv1alpha1.SASLSpec {
-	return &memcachedv1alpha1.SASLSpec{
+func saslSpec(secretName string) *memcachedv1beta1.SASLSpec {
+	return &memcachedv1beta1.SASLSpec{
 		Enabled:              true,
 		CredentialsSecretRef: corev1.LocalObjectReference{Name: secretName},
 	}
 }
 
 // tlsSpec returns a TLSSpec referencing the given Secret.
-func tlsSpec(secretName string) *memcachedv1alpha1.TLSSpec {
-	return &memcachedv1alpha1.TLSSpec{
+func tlsSpec(secretName string) *memcachedv1beta1.TLSSpec {
+	return &memcachedv1beta1.TLSSpec{
 		Enabled:              true,
 		CertificateSecretRef: corev1.LocalObjectReference{Name: secretName},
 	}
@@ -60,7 +60,7 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			Expect(k8sClient.Create(ctx, newSASLSecret(secretName, "initial-password"))).To(Succeed())
 
 			mc := validMemcached(uniqueName("rot-sasl"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretName)}
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretName)}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
@@ -78,7 +78,7 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 
 			mc := validMemcached(uniqueName("rot-sasl-upd"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretName)}
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretName)}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
@@ -110,7 +110,7 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			Expect(k8sClient.Create(ctx, newTLSSecret(secretName))).To(Succeed())
 
 			mc := validMemcached(uniqueName("rot-tls"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{TLS: tlsSpec(secretName)}
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{TLS: tlsSpec(secretName)}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
@@ -133,7 +133,7 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			Expect(k8sClient.Create(ctx, newTLSSecret(tlsName))).To(Succeed())
 
 			mc := validMemcached(uniqueName("rot-both"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				SASL: saslSpec(saslName),
 				TLS:  tlsSpec(tlsName),
 			}
@@ -182,7 +182,7 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			Expect(k8sClient.Create(ctx, newSASLSecret(secretName, "stable-password"))).To(Succeed())
 
 			mc := validMemcached(uniqueName("rot-idemp"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretName)}
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretName)}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
@@ -207,7 +207,7 @@ var _ = Describe("Missing Secret Degraded condition", func() {
 		missingName := uniqueName("missing-sasl")
 
 		mc := validMemcached(uniqueName("deg-missing"))
-		mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(missingName)}
+		mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(missingName)}
 		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 		_, err := reconcileOnce(mc)
@@ -226,7 +226,7 @@ var _ = Describe("Missing Secret Degraded condition", func() {
 		secretName := uniqueName("missing-then-create")
 
 		mc := validMemcached(uniqueName("deg-clear"))
-		mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretName)}
+		mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretName)}
 		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 		// First reconcile — Secret missing.
@@ -256,7 +256,7 @@ var _ = Describe("Missing Secret Degraded condition", func() {
 		tlsMissing := uniqueName("miss-tls")
 
 		mc := validMemcached(uniqueName("deg-multi"))
-		mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+		mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 			SASL: saslSpec(saslMissing),
 			TLS:  tlsSpec(tlsMissing),
 		}
@@ -283,7 +283,7 @@ var _ = Describe("Manual restart trigger", func() {
 		Expect(k8sClient.Create(ctx, newSASLSecret(secretName, "pass"))).To(Succeed())
 
 		mc := validMemcached(uniqueName("restart-prop"))
-		mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretName)}
+		mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretName)}
 		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 		_, err := reconcileOnce(mc)
@@ -343,7 +343,7 @@ var _ = Describe("Manual restart trigger", func() {
 		mc.Annotations = map[string]string{
 			controller.AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
 		}
-		mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretName)}
+		mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretName)}
 		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 		_, err := reconcileOnce(mc)
@@ -394,9 +394,9 @@ var _ = Describe("Secret watch filtering", func() {
 		Expect(k8sClient.Create(ctx, newSASLSecret(secretBName, "password-b"))).To(Succeed())
 
 		mcA := validMemcached(uniqueName("filter-a"))
-		mcA.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretAName)}
+		mcA.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretAName)}
 		mcB := validMemcached(uniqueName("filter-b"))
-		mcB.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(secretBName)}
+		mcB.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretBName)}
 
 		Expect(k8sClient.Create(ctx, mcA)).To(Succeed())
 		Expect(k8sClient.Create(ctx, mcB)).To(Succeed())
@@ -440,9 +440,9 @@ var _ = Describe("Secret watch filtering", func() {
 		Expect(k8sClient.Create(ctx, sharedSecret)).To(Succeed())
 
 		mcA := validMemcached(uniqueName("shared-a"))
-		mcA.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(sharedName)}
+		mcA.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(sharedName)}
 		mcB := validMemcached(uniqueName("shared-b"))
-		mcB.Spec.Security = &memcachedv1alpha1.SecuritySpec{SASL: saslSpec(sharedName)}
+		mcB.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(sharedName)}
 
 		Expect(k8sClient.Create(ctx, mcA)).To(Succeed())
 		Expect(k8sClient.Create(ctx, mcB)).To(Succeed())

@@ -15,12 +15,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/controller"
 )
 
 // fetchService retrieves the Service with the same name/namespace as the Memcached CR.
-func fetchService(mc *memcachedv1alpha1.Memcached) *corev1.Service {
+func fetchService(mc *memcachedv1beta1.Memcached) *corev1.Service {
 	svc := &corev1.Service{}
 	ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), svc)).To(Succeed())
 	return svc
@@ -29,7 +29,7 @@ func fetchService(mc *memcachedv1alpha1.Memcached) *corev1.Service {
 var _ = Describe("Service Reconciliation", func() {
 
 	Context("minimal CR with defaults", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("svc-minimal"))
@@ -55,7 +55,7 @@ var _ = Describe("Service Reconciliation", func() {
 			svc := fetchService(mc)
 			Expect(svc.OwnerReferences).To(HaveLen(1))
 			ownerRef := svc.OwnerReferences[0]
-			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1alpha1"))
+			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1beta1"))
 			Expect(ownerRef.Kind).To(Equal("Memcached"))
 			Expect(ownerRef.Name).To(Equal(mc.Name))
 			Expect(ownerRef.UID).To(Equal(mc.UID))
@@ -81,7 +81,7 @@ var _ = Describe("Service Reconciliation", func() {
 	Context("custom annotations", func() {
 		It("should apply custom annotations from spec.service.annotations", func() {
 			mc := validMemcached(uniqueName("svc-anno"))
-			mc.Spec.Service = &memcachedv1alpha1.ServiceSpec{
+			mc.Spec.Service = &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
 					"prometheus.io/scrape": "true",
 					"prometheus.io/port":   "9150",
@@ -99,7 +99,7 @@ var _ = Describe("Service Reconciliation", func() {
 
 		It("should update annotations when CR spec changes", func() {
 			mc := validMemcached(uniqueName("svc-anno-upd"))
-			mc.Spec.Service = &memcachedv1alpha1.ServiceSpec{
+			mc.Spec.Service = &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
 					"prometheus.io/scrape": "true",
 				},
@@ -114,7 +114,7 @@ var _ = Describe("Service Reconciliation", func() {
 
 			// Update annotations.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Service = &memcachedv1alpha1.ServiceSpec{
+			mc.Spec.Service = &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
 					"custom/key": "new-value",
 				},

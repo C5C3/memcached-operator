@@ -5,14 +5,14 @@ import (
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // constructServiceMonitor sets the desired state of the ServiceMonitor based on the Memcached CR spec.
 // It mutates sm in-place and is designed to be called from within controllerutil.CreateOrUpdate.
-func constructServiceMonitor(mc *memcachedv1alpha1.Memcached, sm *monitoringv1.ServiceMonitor) {
+func constructServiceMonitor(mc *memcachedv1beta1.Memcached, sm *monitoringv1.ServiceMonitor) {
 	// Resolve the optional ServiceMonitor spec once to avoid repeated nil-checks.
-	var smSpec *memcachedv1alpha1.ServiceMonitorSpec
+	var smSpec *memcachedv1beta1.ServiceMonitorSpec
 	if mc.Spec.Monitoring != nil {
 		smSpec = mc.Spec.Monitoring.ServiceMonitor
 	}
@@ -60,7 +60,7 @@ func constructServiceMonitor(mc *memcachedv1alpha1.Memcached, sm *monitoringv1.S
 
 // serviceMonitorEnabled returns true when monitoring is enabled and the ServiceMonitor
 // sub-section is present in the CR spec.
-func serviceMonitorEnabled(mc *memcachedv1alpha1.Memcached) bool {
+func serviceMonitorEnabled(mc *memcachedv1beta1.Memcached) bool {
 	return mc.Spec.Monitoring != nil &&
 		mc.Spec.Monitoring.Enabled &&
 		mc.Spec.Monitoring.ServiceMonitor != nil

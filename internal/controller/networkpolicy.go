@@ -7,12 +7,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // constructNetworkPolicy sets the desired state of the NetworkPolicy based on the Memcached CR spec.
 // It mutates np in-place and is designed to be called from within controllerutil.CreateOrUpdate.
-func constructNetworkPolicy(mc *memcachedv1alpha1.Memcached, np *networkingv1.NetworkPolicy) {
+func constructNetworkPolicy(mc *memcachedv1beta1.Memcached, np *networkingv1.NetworkPolicy) {
 	labels := labelsForMemcached(mc.Name)
 
 	np.Labels = labels
@@ -60,7 +60,7 @@ func constructNetworkPolicy(mc *memcachedv1alpha1.Memcached, np *networkingv1.Ne
 }
 
 // networkPolicyEnabled returns true only when NetworkPolicy creation is explicitly enabled in the CR spec.
-func networkPolicyEnabled(mc *memcachedv1alpha1.Memcached) bool {
+func networkPolicyEnabled(mc *memcachedv1beta1.Memcached) bool {
 	return mc.Spec.Security != nil &&
 		mc.Spec.Security.NetworkPolicy != nil &&
 		mc.Spec.Security.NetworkPolicy.Enabled

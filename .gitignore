@@ -1,5 +1,6 @@
 # Binaries and build output
 bin/
+main
 testbin/
 *.exe
 *.exe~

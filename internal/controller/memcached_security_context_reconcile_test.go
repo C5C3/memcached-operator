@@ -8,7 +8,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 var _ = Describe("Security Context Reconciliation", func() {
@@ -22,7 +22,7 @@ var _ = Describe("Security Context Reconciliation", func() {
 			runAsUser := int64(11211)
 			readOnly := true
 			noPrivEsc := false
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 					FSGroup:      &fsGroup,
@@ -71,7 +71,7 @@ var _ = Describe("Security Context Reconciliation", func() {
 			mc := validMemcached(uniqueName("sec-pod-only"))
 			runAsNonRoot := true
 			fsGroup := int64(11211)
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 					FSGroup:      &fsGroup,
@@ -99,7 +99,7 @@ var _ = Describe("Security Context Reconciliation", func() {
 			mc := validMemcached(uniqueName("sec-ctr-only"))
 			runAsUser := int64(1000)
 			readOnly := true
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				ContainerSecurityContext: &corev1.SecurityContext{
 					RunAsUser:              &runAsUser,
 					ReadOnlyRootFilesystem: &readOnly,
@@ -142,13 +142,13 @@ var _ = Describe("Security Context Reconciliation", func() {
 			mc := validMemcached(uniqueName("sec-exp"))
 			runAsUser := int64(1000)
 			readOnly := true
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				ContainerSecurityContext: &corev1.SecurityContext{
 					RunAsUser:              &runAsUser,
 					ReadOnlyRootFilesystem: &readOnly,
 				},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -187,7 +187,7 @@ var _ = Describe("Security Context Reconciliation", func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 			runAsNonRoot := true
 			runAsUser := int64(1000)
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 				},
@@ -239,7 +239,7 @@ var _ = Describe("Security Context Reconciliation", func() {
 			mc := validMemcached(uniqueName("sec-idemp"))
 			runAsNonRoot := true
 			runAsUser := int64(1000)
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 				},
@@ -267,8 +267,8 @@ var _ = Describe("Security Context Reconciliation", func() {
 			mc := validMemcached(uniqueName("sec-coex"))
 			runAsNonRoot := true
 			runAsUser := int64(1000)
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 				},
@@ -276,13 +276,13 @@ var _ = Describe("Security Context Reconciliation", func() {
 					RunAsUser: &runAsUser,
 				},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			}
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        &soft,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,

@@ -12,7 +12,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
@@ -22,13 +21,13 @@ func uniqueName(prefix string) string {
 }
 
 // validMemcached returns a minimal valid Memcached resource for use in tests.
-func validMemcached(name string) *memcachedv1alpha1.Memcached {
-	return &memcachedv1alpha1.Memcached{
+func validMemcached(name string) *memcachedv1beta1.Memcached {
+	return &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{},
+		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
 }
 
@@ -86,7 +85,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 	Context("spec.memcached.maxMemoryMB validation", func() {
 		It("should accept maxMemoryMB=16", func() {
 			mc := validMemcached(uniqueName("mem16"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB: 16,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -94,7 +93,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should accept maxMemoryMB=65536", func() {
 			mc := validMemcached(uniqueName("mem65536"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB: 65536,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -102,7 +101,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should reject maxMemoryMB=15", func() {
 			mc := validMemcached(uniqueName("mem15"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB: 15,
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -110,7 +109,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should reject maxMemoryMB > 65536", func() {
 			mc := validMemcached(uniqueName("memover"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB: 65537,
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -120,7 +119,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 	Context("spec.memcached.maxConnections validation", func() {
 		It("should accept maxConnections=1", func() {
 			mc := validMemcached(uniqueName("conn1"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxConnections: 1,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -128,7 +127,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should accept maxConnections=65536", func() {
 			mc := validMemcached(uniqueName("conn65536"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxConnections: 65536,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -136,7 +135,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should accept maxConnections=0 (omitempty sends zero value as omitted, server applies default)", func() {
 			mc := validMemcached(uniqueName("conn0"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxConnections: 0,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -144,7 +143,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should reject maxConnections > 65536", func() {
 			mc := validMemcached(uniqueName("connover"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxConnections: 65537,
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -154,7 +153,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 	Context("spec.memcached.threads validation", func() {
 		It("should accept threads=1", func() {
 			mc := validMemcached(uniqueName("thr1"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Threads: 1,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -162,7 +161,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should accept threads=128", func() {
 			mc := validMemcached(uniqueName("thr128"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Threads: 128,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -170,7 +169,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should reject threads > 128", func() {
 			mc := validMemcached(uniqueName("throver"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Threads: 129,
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -180,7 +179,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 	Context("spec.memcached.maxItemSize validation (pattern)", func() {
 		It("should accept '1m'", func() {
 			mc := validMemcached(uniqueName("item1m"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxItemSize: "1m",
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -188,7 +187,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should accept '512k'", func() {
 			mc := validMemcached(uniqueName("item512k"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxItemSize: "512k",
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -196,7 +195,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should accept '2m'", func() {
 			mc := validMemcached(uniqueName("item2m"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxItemSize: "2m",
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -204,7 +203,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should reject '1g' (invalid unit)", func() {
 			mc := validMemcached(uniqueName("item1g"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxItemSize: "1g",
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -212,7 +211,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should reject 'abc' (non-numeric)", func() {
 			mc := validMemcached(uniqueName("itemabc"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxItemSize: "abc",
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -222,7 +221,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 	Context("spec.memcached.verbosity validation", func() {
 		It("should accept verbosity=0", func() {
 			mc := validMemcached(uniqueName("verb0"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 0,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -230,7 +229,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should accept verbosity=2", func() {
 			mc := validMemcached(uniqueName("verb2"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 2,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -238,7 +237,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 
 		It("should reject verbosity=3", func() {
 			mc := validMemcached(uniqueName("verb3"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 3,
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -248,7 +247,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 	Context("spec.memcached.extraArgs", func() {
 		It("should accept a list of extra args", func() {
 			mc := validMemcached(uniqueName("extra"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				ExtraArgs: []string{"-o", "modern", "-B", "binary"},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -283,7 +282,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 	Context("all MemcachedConfig fields together", func() {
 		It("should accept all fields set to valid values", func() {
 			mc := validMemcached(uniqueName("allcfg"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB:    256,
 				MaxConnections: 4096,
 				Threads:        8,
@@ -303,8 +302,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.highAvailability.antiAffinityPreset (enum)", func() {
 		It("should accept 'soft'", func() {
 			mc := validMemcached(uniqueName("ha-soft"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -312,8 +311,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept 'hard'", func() {
 			mc := validMemcached(uniqueName("ha-hard"))
-			hard := memcachedv1alpha1.AntiAffinityPresetHard
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			hard := memcachedv1beta1.AntiAffinityPresetHard
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &hard,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -321,8 +320,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should reject invalid enum value", func() {
 			mc := validMemcached(uniqueName("ha-invalid"))
-			invalid := memcachedv1alpha1.AntiAffinityPreset("medium")
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			invalid := memcachedv1beta1.AntiAffinityPreset("medium")
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &invalid,
 			}
 			Expect(k8sClient.Create(ctx, mc)).NotTo(Succeed())
@@ -334,8 +333,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			mc := validMemcached(uniqueName("pdb-int"))
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 2},
 				},
@@ -345,8 +344,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept PDB with percentage minAvailable", func() {
 			mc := validMemcached(uniqueName("pdb-pct"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &intstr.IntOrString{Type: intstr.String, StrVal: "50%"},
 				},
@@ -356,8 +355,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept PDB with maxUnavailable", func() {
 			mc := validMemcached(uniqueName("pdb-maxu"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:        true,
 					MaxUnavailable: &intstr.IntOrString{Type: intstr.String, StrVal: "25%"},
 				},
@@ -367,8 +366,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept PDB disabled", func() {
 			mc := validMemcached(uniqueName("pdb-off"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled: false,
 				},
 			}
@@ -379,7 +378,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.highAvailability.topologySpreadConstraints", func() {
 		It("should accept valid topology spread constraints", func() {
 			mc := validMemcached(uniqueName("tsc"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					{
 						MaxSkew:           1,
@@ -396,8 +395,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 		It("should accept gracefulShutdown with valid preStopDelaySeconds", func() {
 			// Minimum: 1
 			mc := validMemcached(uniqueName("gs-min"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           1,
 					TerminationGracePeriodSeconds: 30,
@@ -407,8 +406,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 			// Maximum: 300
 			mc2 := validMemcached(uniqueName("gs-max"))
-			mc2.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc2.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           300,
 					TerminationGracePeriodSeconds: 600,
@@ -422,8 +421,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			// With omitempty on int32, 0 is treated as omitted and server applies default=10.
 			// So we test 301 which exceeds max.
 			mc := validMemcached(uniqueName("gs-over"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           301,
 					TerminationGracePeriodSeconds: 600,
@@ -435,8 +434,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 		It("should accept gracefulShutdown with valid terminationGracePeriodSeconds", func() {
 			// Minimum: terminationGracePeriodSeconds must exceed preStopDelaySeconds.
 			mc := validMemcached(uniqueName("gs-tgps-min"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           1,
 					TerminationGracePeriodSeconds: 2,
@@ -446,8 +445,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 			// Maximum: 600
 			mc2 := validMemcached(uniqueName("gs-tgps-max"))
-			mc2.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc2.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           300,
 					TerminationGracePeriodSeconds: 600,
@@ -459,8 +458,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 		It("should reject gracefulShutdown with invalid terminationGracePeriodSeconds", func() {
 			// terminationGracePeriodSeconds=601 exceeds max of 600.
 			mc := validMemcached(uniqueName("gs-tgps-over"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 601,
@@ -475,8 +474,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			mc := validMemcached(uniqueName("ha-full"))
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
-			hard := memcachedv1alpha1.AntiAffinityPresetHard
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			hard := memcachedv1beta1.AntiAffinityPresetHard
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &hard,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					{
@@ -485,11 +484,11 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 						WhenUnsatisfiable: corev1.ScheduleAnyway,
 					},
 				},
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
 				},
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -502,7 +501,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.monitoring", func() {
 		It("should accept monitoring disabled (default)", func() {
 			mc := validMemcached(uniqueName("mon-off"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: false,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -510,7 +509,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept monitoring enabled with custom exporter image", func() {
 			mc := validMemcached(uniqueName("mon-img"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:       true,
 				ExporterImage: strPtr("prom/memcached-exporter:v0.15.4"),
 			}
@@ -519,7 +518,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept monitoring with exporter resources", func() {
 			mc := validMemcached(uniqueName("mon-res"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ExporterResources: &corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -533,9 +532,9 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept monitoring with service monitor", func() {
 			mc := validMemcached(uniqueName("mon-sm"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval:      "30s",
 					ScrapeTimeout: "10s",
 					AdditionalLabels: map[string]string{
@@ -548,7 +547,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept fully populated monitoring spec", func() {
 			mc := validMemcached(uniqueName("mon-full"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:       true,
 				ExporterImage: strPtr("custom/exporter:latest"),
 				ExporterResources: &corev1.ResourceRequirements{
@@ -557,7 +556,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 						corev1.ResourceMemory: resource.MustParse("128Mi"),
 					},
 				},
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					Interval:      "15s",
 					ScrapeTimeout: "5s",
 					AdditionalLabels: map[string]string{
@@ -572,8 +571,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.security.sasl", func() {
 		It("should accept SASL enabled with credentialsSecretRef", func() {
 			mc := validMemcached(uniqueName("sasl-on"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: "sasl-secret",
@@ -585,8 +584,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept SASL disabled", func() {
 			mc := validMemcached(uniqueName("sasl-off"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				SASL: &memcachedv1alpha1.SASLSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: false,
 				},
 			}
@@ -597,8 +596,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.security.tls", func() {
 		It("should accept TLS enabled with certificateSecretRef", func() {
 			mc := validMemcached(uniqueName("tls-on"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-cert",
@@ -610,8 +609,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept TLS disabled", func() {
 			mc := validMemcached(uniqueName("tls-off"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: false,
 				},
 			}
@@ -620,8 +619,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept TLS with enableClientCert=true", func() {
 			mc := validMemcached(uniqueName("tls-mtls"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-cert",
@@ -632,7 +631,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			// Verify round-trip: enableClientCert persists correctly.
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			Expect(fetched.Spec.Security.TLS.EnableClientCert).To(BeTrue())
 			Expect(fetched.Spec.Security.TLS.Enabled).To(BeTrue())
@@ -641,8 +640,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should default enableClientCert to false when not specified", func() {
 			mc := validMemcached(uniqueName("tls-nomtls"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-cert",
@@ -651,7 +650,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			Expect(fetched.Spec.Security.TLS.EnableClientCert).To(BeFalse())
 		})
@@ -660,8 +659,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 	Context("spec.security.networkPolicy", func() {
 		It("should accept networkPolicy enabled", func() {
 			mc := validMemcached(uniqueName("np-on"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 				},
 			}
@@ -670,8 +669,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept networkPolicy disabled", func() {
 			mc := validMemcached(uniqueName("np-off"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: false,
 				},
 			}
@@ -680,8 +679,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept networkPolicy with allowedSources containing namespaceSelector", func() {
 			mc := validMemcached(uniqueName("np-ns"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
@@ -695,7 +694,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			// Verify round-trip: allowedSources persists correctly.
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			Expect(fetched.Spec.Security.NetworkPolicy).NotTo(BeNil())
 			Expect(fetched.Spec.Security.NetworkPolicy.Enabled).To(BeTrue())
@@ -708,8 +707,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept networkPolicy with allowedSources containing podSelector", func() {
 			mc := validMemcached(uniqueName("np-pod"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
@@ -723,7 +722,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			// Verify round-trip.
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources).To(HaveLen(1))
 			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources[0].PodSelector).NotTo(BeNil())
@@ -734,8 +733,8 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 
 		It("should accept networkPolicy with multiple allowedSources", func() {
 			mc := validMemcached(uniqueName("np-multi"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
@@ -753,7 +752,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			Expect(fetched.Spec.Security.NetworkPolicy.AllowedSources).To(HaveLen(2))
 		})
@@ -764,7 +763,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			mc := validMemcached(uniqueName("sec-ctx"))
 			runAsNonRoot := true
 			runAsUser := int64(1000)
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 				},
@@ -774,7 +773,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			Expect(*fetched.Spec.Security.PodSecurityContext.RunAsNonRoot).To(BeTrue())
 			Expect(*fetched.Spec.Security.ContainerSecurityContext.RunAsUser).To(Equal(int64(1000)))
@@ -785,23 +784,23 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 		It("should accept a fully populated security spec", func() {
 			mc := validMemcached(uniqueName("sec-full"))
 			runAsNonRoot := true
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
 					RunAsNonRoot: &runAsNonRoot,
 				},
-				SASL: &memcachedv1alpha1.SASLSpec{
+				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
 						Name: "sasl-creds",
 					},
 				},
-				TLS: &memcachedv1alpha1.TLSSpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "tls-cert",
 					},
 				},
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
@@ -828,7 +827,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			// Fetch the created resource to get the resource version.
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			// Update status fields.
@@ -837,7 +836,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 
 			// Verify status was persisted.
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Status.ReadyReplicas).To(Equal(int32(2)))
 			Expect(updated.Status.ObservedGeneration).To(Equal(fetched.Generation))
@@ -847,14 +846,14 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			mc := validMemcached(uniqueName("status-gen"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			genBefore := fetched.Generation
 
 			fetched.Status.ReadyReplicas = 1
 			Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Generation).To(Equal(genBefore))
 		})
@@ -865,7 +864,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			mc := validMemcached(uniqueName("status-cond"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			now := metav1.Now()
@@ -881,7 +880,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			}
 			Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Status.Conditions).To(HaveLen(1))
 			Expect(updated.Status.Conditions[0].Type).To(Equal("Available"))
@@ -893,7 +892,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			mc := validMemcached(uniqueName("status-multi"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			now := metav1.Now()
@@ -917,7 +916,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			}
 			Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Status.Conditions).To(HaveLen(2))
 		})
@@ -928,13 +927,13 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			mc := validMemcached(uniqueName("ready0"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			fetched.Status.ReadyReplicas = 0
 			Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Status.ReadyReplicas).To(Equal(int32(0)))
 		})
@@ -944,13 +943,13 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			mc.Spec.Replicas = int32Ptr(5)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			fetched.Status.ReadyReplicas = 5
 			Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Status.ReadyReplicas).To(Equal(int32(5)))
 		})
@@ -962,7 +961,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			mc.Spec.Replicas = int32Ptr(1)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			gen1 := fetched.Generation
 
@@ -970,7 +969,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			fetched.Spec.Replicas = int32Ptr(3)
 			Expect(k8sClient.Update(ctx, fetched)).To(Succeed())
 
-			refetched := &memcachedv1alpha1.Memcached{}
+			refetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), refetched)).To(Succeed())
 			gen2 := refetched.Generation
 			Expect(gen2).To(BeNumerically(">", gen1))
@@ -979,7 +978,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			refetched.Status.ObservedGeneration = gen2
 			Expect(k8sClient.Status().Update(ctx, refetched)).To(Succeed())
 
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Status.ObservedGeneration).To(Equal(gen2))
 		})
@@ -991,7 +990,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			mc.Spec.Replicas = int32Ptr(3)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			// Verify the spec.replicas field (Replicas column source) is accessible.
@@ -1001,7 +1000,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			fetched.Status.ReadyReplicas = 2
 			Expect(k8sClient.Status().Update(ctx, fetched)).To(Succeed())
 
-			updated := &memcachedv1alpha1.Memcached{}
+			updated := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), updated)).To(Succeed())
 			Expect(updated.Status.ReadyReplicas).To(Equal(int32(2)))
 
@@ -1013,9 +1012,9 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 	Context("full resource with all fields", func() {
 		It("should accept a fully populated Memcached resource", func() {
 			mc := validMemcached(uniqueName("full"))
-			hard := memcachedv1alpha1.AntiAffinityPresetHard
+			hard := memcachedv1beta1.AntiAffinityPresetHard
 			runAsNonRoot := true
-			mc.Spec = memcachedv1alpha1.MemcachedSpec{
+			mc.Spec = memcachedv1beta1.MemcachedSpec{
 				Replicas: int32Ptr(3),
 				Image:    strPtr("memcached:1.6.33"),
 				Resources: &corev1.ResourceRequirements{
@@ -1028,7 +1027,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 						corev1.ResourceMemory: resource.MustParse("256Mi"),
 					},
 				},
-				Memcached: &memcachedv1alpha1.MemcachedConfig{
+				Memcached: &memcachedv1beta1.MemcachedConfig{
 					MaxMemoryMB:    128,
 					MaxConnections: 2048,
 					Threads:        4,
@@ -1036,37 +1035,37 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 					Verbosity:      1,
 					ExtraArgs:      []string{"-o", "modern"},
 				},
-				HighAvailability: &memcachedv1alpha1.HighAvailabilitySpec{
+				HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 					AntiAffinityPreset: &hard,
-					PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+					PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 						Enabled:      true,
 						MinAvailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
 					},
 				},
-				Monitoring: &memcachedv1alpha1.MonitoringSpec{
+				Monitoring: &memcachedv1beta1.MonitoringSpec{
 					Enabled:       true,
 					ExporterImage: strPtr("prom/memcached-exporter:v0.15.4"),
-					ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{
+					ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 						Interval: "30s",
 					},
 				},
-				Security: &memcachedv1alpha1.SecuritySpec{
+				Security: &memcachedv1beta1.SecuritySpec{
 					PodSecurityContext: &corev1.PodSecurityContext{
 						RunAsNonRoot: &runAsNonRoot,
 					},
-					SASL: &memcachedv1alpha1.SASLSpec{
+					SASL: &memcachedv1beta1.SASLSpec{
 						Enabled: true,
 						CredentialsSecretRef: corev1.LocalObjectReference{
 							Name: "sasl-creds",
 						},
 					},
-					TLS: &memcachedv1alpha1.TLSSpec{
+					TLS: &memcachedv1beta1.TLSSpec{
 						Enabled: true,
 						CertificateSecretRef: corev1.LocalObjectReference{
 							Name: "tls-cert",
 						},
 					},
-					NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+					NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 						Enabled: true,
 						AllowedSources: []networkingv1.NetworkPolicyPeer{
 							{
@@ -1081,12 +1080,12 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			// Verify round-trip.
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 			Expect(*fetched.Spec.Replicas).To(Equal(int32(3)))
 			Expect(*fetched.Spec.Image).To(Equal("memcached:1.6.33"))
 			Expect(fetched.Spec.Memcached.MaxMemoryMB).To(Equal(int32(128)))
-			Expect(*fetched.Spec.HighAvailability.AntiAffinityPreset).To(Equal(memcachedv1alpha1.AntiAffinityPresetHard))
+			Expect(*fetched.Spec.HighAvailability.AntiAffinityPreset).To(Equal(memcachedv1beta1.AntiAffinityPresetHard))
 			Expect(fetched.Spec.Monitoring.Enabled).To(BeTrue())
 			Expect(fetched.Spec.Security.SASL.Enabled).To(BeTrue())
 			Expect(fetched.Spec.Security.TLS.Enabled).To(BeTrue())
@@ -1104,10 +1103,10 @@ var _ = Describe("CRD Defaults: Server-applied defaults verification", func() {
 	Context("MemcachedConfig defaults", func() {
 		It("should apply defaults when creating CR with empty memcached block", func() {
 			mc := validMemcached(uniqueName("defaults"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{}
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			Expect(fetched.Spec.Memcached).NotTo(BeNil())
@@ -1124,7 +1123,7 @@ var _ = Describe("CRD Defaults: Server-applied defaults verification", func() {
 			mc := validMemcached(uniqueName("spec-defaults"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			Expect(fetched.Spec.Replicas).NotTo(BeNil())
@@ -1137,13 +1136,13 @@ var _ = Describe("CRD Defaults: Server-applied defaults verification", func() {
 	Context("ServiceMonitorSpec defaults", func() {
 		It("should apply interval and scrapeTimeout defaults", func() {
 			mc := validMemcached(uniqueName("sm-defaults"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			fetched := &memcachedv1alpha1.Memcached{}
+			fetched := &memcachedv1beta1.Memcached{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), fetched)).To(Succeed())
 
 			Expect(fetched.Spec.Monitoring.ServiceMonitor).NotTo(BeNil())

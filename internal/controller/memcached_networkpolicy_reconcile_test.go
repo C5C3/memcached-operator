@@ -12,11 +12,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // fetchNetworkPolicy retrieves the NetworkPolicy with the same name/namespace as the Memcached CR.
-func fetchNetworkPolicy(mc *memcachedv1alpha1.Memcached) *networkingv1.NetworkPolicy {
+func fetchNetworkPolicy(mc *memcachedv1beta1.Memcached) *networkingv1.NetworkPolicy {
 	np := &networkingv1.NetworkPolicy{}
 	ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), np)).To(Succeed())
 	return np
@@ -25,12 +25,12 @@ func fetchNetworkPolicy(mc *memcachedv1alpha1.Memcached) *networkingv1.NetworkPo
 var _ = Describe("NetworkPolicy Reconciliation", func() {
 
 	Context("NetworkPolicy creation with defaults", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("np-defaults"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -68,7 +68,7 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 			np := fetchNetworkPolicy(mc)
 			Expect(np.OwnerReferences).To(HaveLen(1))
 			ownerRef := np.OwnerReferences[0]
-			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1alpha1"))
+			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1beta1"))
 			Expect(ownerRef.Kind).To(Equal("Memcached"))
 			Expect(ownerRef.Name).To(Equal(mc.Name))
 			Expect(ownerRef.UID).To(Equal(mc.UID))
@@ -80,9 +80,9 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("NetworkPolicy with monitoring enabled", func() {
 		It("should include metrics port 9150", func() {
 			mc := validMemcached(uniqueName("np-monitoring"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{Enabled: true}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{Enabled: true}
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -102,12 +102,12 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("NetworkPolicy with TLS enabled", func() {
 		It("should include TLS port 11212", func() {
 			mc := validMemcached(uniqueName("np-tls"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -127,13 +127,13 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("NetworkPolicy with monitoring and TLS enabled", func() {
 		It("should include all three ports", func() {
 			mc := validMemcached(uniqueName("np-all-ports"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{Enabled: true}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{Enabled: true}
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
 					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
 				},
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -154,8 +154,8 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("NetworkPolicy with allowedSources", func() {
 		It("should populate ingress from peers", func() {
 			mc := validMemcached(uniqueName("np-allowed"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
 					Enabled: true,
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
@@ -197,8 +197,8 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("NetworkPolicy update when monitoring toggled on", func() {
 		It("should add metrics port 9150 on update", func() {
 			mc := validMemcached(uniqueName("np-toggle-mon"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -210,7 +210,7 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 
 			// Enable monitoring.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{Enabled: true}
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{Enabled: true}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
 			_, err = reconcileOnce(mc)
@@ -225,8 +225,8 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("Idempotent NetworkPolicy reconciliation", func() {
 		It("should not change NetworkPolicy resource version on second reconcile", func() {
 			mc := validMemcached(uniqueName("np-idempotent"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -248,8 +248,8 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("NetworkPolicy drift correction (REQ-007)", func() {
 		It("should restore NetworkPolicy ports after external modification", func() {
 			mc := validMemcached(uniqueName("np-drift-ports"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -286,8 +286,8 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 	Context("NetworkPolicy ingress from field when allowedSources is nil", func() {
 		It("should have nil from field allowing all sources", func() {
 			mc := validMemcached(uniqueName("np-nil-sources"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 

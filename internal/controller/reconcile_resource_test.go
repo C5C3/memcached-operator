@@ -22,7 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	// Import metrics package to ensure init() registration runs.
 	_ "github.com/c5c3/memcached-operator/internal/metrics"
 )
@@ -31,7 +31,7 @@ import (
 func testScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = scheme.AddToScheme(s)
-	_ = memcachedv1alpha1.AddToScheme(s)
+	_ = memcachedv1beta1.AddToScheme(s)
 	return s
 }
 
@@ -55,9 +55,9 @@ func newFakeClient(objs ...client.Object) client.WithWatch {
 }
 
 func TestReconcileResource_CreatesNewResource(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -86,9 +86,9 @@ func TestReconcileResource_CreatesNewResource(t *testing.T) {
 }
 
 func TestReconcileResource_UpdatesExistingResource(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
@@ -125,9 +125,9 @@ func TestReconcileResource_UpdatesExistingResource(t *testing.T) {
 }
 
 func TestReconcileResource_RetriesOnConflict(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
@@ -179,9 +179,9 @@ func TestReconcileResource_RetriesOnConflict(t *testing.T) {
 }
 
 func TestReconcileResource_ExhaustsRetriesOnConflict(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
@@ -223,9 +223,9 @@ func TestReconcileResource_ExhaustsRetriesOnConflict(t *testing.T) {
 }
 
 func TestReconcileResource_DoesNotRetryNonConflictErrors(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
@@ -265,9 +265,9 @@ func TestReconcileResource_DoesNotRetryNonConflictErrors(t *testing.T) {
 }
 
 func TestReconcileResource_PropagatesMutateError(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -290,9 +290,9 @@ func TestReconcileResource_PropagatesMutateError(t *testing.T) {
 }
 
 func TestReconcileResource_SetsOwnerReference(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -337,9 +337,9 @@ func TestReconcileResource_SetsOwnerReference(t *testing.T) {
 }
 
 func TestReconcileResource_EmitsCreatedEvent(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	recorder := events.NewFakeRecorder(10)
@@ -370,9 +370,9 @@ func TestReconcileResource_EmitsCreatedEvent(t *testing.T) {
 }
 
 func TestReconcileResource_EmitsUpdatedEvent(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
@@ -411,9 +411,9 @@ func TestReconcileResource_EmitsUpdatedEvent(t *testing.T) {
 }
 
 func TestReconcileResource_NoEventOnUnchanged(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	recorder := events.NewFakeRecorder(10)
@@ -452,9 +452,9 @@ func TestReconcileResource_NoEventOnUnchanged(t *testing.T) {
 }
 
 func TestReconcileResource_NilRecorderDoesNotPanic(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	// Use newTestReconciler which does not set a Recorder (nil).
@@ -516,9 +516,9 @@ func matchLabels(labels []*dto.LabelPair, resourceKind, result string) bool {
 }
 
 func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: "default", UID: "m-1"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -543,9 +543,9 @@ func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
 }
 
 func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default", UID: "m-2"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default"},
@@ -576,9 +576,9 @@ func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
 }
 
 func TestReconcileResource_IncrementsMetricOnUnchanged(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-unchanged", Namespace: "default", UID: "m-3"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
@@ -613,9 +613,9 @@ func TestReconcileResource_IncrementsMetricOnUnchanged(t *testing.T) {
 }
 
 func TestReconcileResource_DoesNotIncrementMetricOnError(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default", UID: "m-4"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default"},

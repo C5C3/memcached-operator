@@ -10,36 +10,36 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 func TestHpaEnabled(t *testing.T) {
 	tests := []struct {
 		name string
-		mc   *memcachedv1alpha1.Memcached
+		mc   *memcachedv1beta1.Memcached
 		want bool
 	}{
 		{
 			name: "nil Autoscaling",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{Autoscaling: nil},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{Autoscaling: nil},
 			},
 			want: false,
 		},
 		{
 			name: "Autoscaling with Enabled=false",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Autoscaling: &memcachedv1alpha1.AutoscalingSpec{Enabled: false},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Autoscaling: &memcachedv1beta1.AutoscalingSpec{Enabled: false},
 				},
 			},
 			want: false,
 		},
 		{
 			name: "Autoscaling with Enabled=true",
-			mc: &memcachedv1alpha1.Memcached{
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Autoscaling: &memcachedv1alpha1.AutoscalingSpec{Enabled: true},
+			mc: &memcachedv1beta1.Memcached{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Autoscaling: &memcachedv1beta1.AutoscalingSpec{Enabled: true},
 				},
 			},
 			want: true,
@@ -61,7 +61,7 @@ func TestConstructHPA(t *testing.T) {
 
 	tests := []struct {
 		name            string
-		autoscaling     *memcachedv1alpha1.AutoscalingSpec
+		autoscaling     *memcachedv1beta1.AutoscalingSpec
 		wantMinReplicas *int32
 		wantMaxReplicas int32
 		wantMetrics     []autoscalingv2.MetricSpec
@@ -69,7 +69,7 @@ func TestConstructHPA(t *testing.T) {
 	}{
 		{
 			name: "basic with minReplicas and maxReplicas",
-			autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+			autoscaling: &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: &minReplicas,
 				MaxReplicas: 10,
@@ -81,7 +81,7 @@ func TestConstructHPA(t *testing.T) {
 		},
 		{
 			name: "with metrics",
-			autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+			autoscaling: &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: &minReplicas,
 				MaxReplicas: 10,
@@ -116,7 +116,7 @@ func TestConstructHPA(t *testing.T) {
 		},
 		{
 			name: "with behavior",
-			autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+			autoscaling: &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: &minReplicas,
 				MaxReplicas: 10,
@@ -137,7 +137,7 @@ func TestConstructHPA(t *testing.T) {
 		},
 		{
 			name: "nil minReplicas",
-			autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+			autoscaling: &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MaxReplicas: 5,
 			},
@@ -148,7 +148,7 @@ func TestConstructHPA(t *testing.T) {
 		},
 		{
 			name: "full configuration",
-			autoscaling: &memcachedv1alpha1.AutoscalingSpec{
+			autoscaling: &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,
 				MinReplicas: &minReplicas,
 				MaxReplicas: 20,
@@ -220,12 +220,12 @@ func TestConstructHPA(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
 					Namespace: "default",
 				},
-				Spec: memcachedv1alpha1.MemcachedSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
 					Autoscaling: tt.autoscaling,
 				},
 			}

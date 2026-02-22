@@ -15,16 +15,16 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // expectOwnerRef asserts that obj has exactly one owner reference pointing to mc
 // with all required fields: apiVersion, kind, name, uid, controller, blockOwnerDeletion.
-func expectOwnerRef(obj client.Object, mc *memcachedv1alpha1.Memcached) {
+func expectOwnerRef(obj client.Object, mc *memcachedv1beta1.Memcached) {
 	refs := obj.GetOwnerReferences()
 	ExpectWithOffset(1, refs).To(HaveLen(1))
 	ref := refs[0]
-	ExpectWithOffset(1, ref.APIVersion).To(Equal("memcached.c5c3.io/v1alpha1"))
+	ExpectWithOffset(1, ref.APIVersion).To(Equal("memcached.c5c3.io/v1beta1"))
 	ExpectWithOffset(1, ref.Kind).To(Equal("Memcached"))
 	ExpectWithOffset(1, ref.Name).To(Equal(mc.Name))
 	ExpectWithOffset(1, ref.UID).To(Equal(mc.UID))
@@ -37,7 +37,7 @@ func expectOwnerRef(obj client.Object, mc *memcachedv1alpha1.Memcached) {
 var _ = Describe("Full reconciliation loop: minimal CR", func() {
 
 	Context("when a minimal Memcached CR is created with only defaults", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("integ-minimal"))
@@ -109,7 +109,7 @@ var _ = Describe("Full reconciliation loop: minimal CR", func() {
 var _ = Describe("Full reconciliation loop: full-featured CR", func() {
 
 	Context("when a Memcached CR has all features enabled", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("integ-full"))
@@ -117,19 +117,19 @@ var _ = Describe("Full reconciliation loop: full-featured CR", func() {
 			mc.Spec.Replicas = &replicas
 			image := "memcached:1.6.29"
 			mc.Spec.Image = &image
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -271,7 +271,7 @@ var _ = Describe("Spec update propagation", func() {
 
 			// Enable monitoring.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{Enabled: true}
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{Enabled: true}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
 			_, err = reconcileOnce(mc)
@@ -292,8 +292,8 @@ var _ = Describe("Spec update propagation", func() {
 	Context("monitoring enable affects NetworkPolicy ports", func() {
 		It("should add metrics port to NetworkPolicy when monitoring is enabled", func() {
 			mc := validMemcached(uniqueName("integ-mon-np"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -305,7 +305,7 @@ var _ = Describe("Spec update propagation", func() {
 
 			// Enable monitoring.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{Enabled: true}
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{Enabled: true}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
 			_, err = reconcileOnce(mc)
@@ -352,8 +352,8 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
@@ -386,9 +386,9 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 	Context("ServiceMonitor enable and then disable", func() {
 		It("should create ServiceMonitor on enable and skip when disabled", func() {
 			mc := validMemcached(uniqueName("integ-sm-toggle"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -410,7 +410,7 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			// Re-enable with different interval.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 			mc.Spec.Monitoring.Enabled = true
-			mc.Spec.Monitoring.ServiceMonitor = &memcachedv1alpha1.ServiceMonitorSpec{
+			mc.Spec.Monitoring.ServiceMonitor = &memcachedv1beta1.ServiceMonitorSpec{
 				Interval: "60s",
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
@@ -426,8 +426,8 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 	Context("NetworkPolicy enable and then disable", func() {
 		It("should create NetworkPolicy on enable and skip when disabled", func() {
 			mc := validMemcached(uniqueName("integ-np-toggle"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -458,18 +458,18 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -511,19 +511,19 @@ var _ = Describe("Full idempotency: three consecutive reconciles on full-feature
 			mc := validMemcached(uniqueName("integ-idemp-full"))
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -762,19 +762,19 @@ var _ = Describe("Status conditions lifecycle", func() {
 			mc := validMemcached(uniqueName("integ-status-full"))
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -816,19 +816,19 @@ var _ = Describe("CR deletion and garbage collection", func() {
 			mc := validMemcached(uniqueName("integ-gc-full"))
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -945,8 +945,8 @@ var _ = Describe("Owned resource recreation after external deletion", func() {
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
@@ -976,9 +976,9 @@ var _ = Describe("Owned resource recreation after external deletion", func() {
 	Context("when a ServiceMonitor is externally deleted", func() {
 		It("should recreate the ServiceMonitor on next reconcile", func() {
 			mc := validMemcached(uniqueName("integ-recreate-sm"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -1005,8 +1005,8 @@ var _ = Describe("Owned resource recreation after external deletion", func() {
 	Context("when a NetworkPolicy is externally deleted", func() {
 		It("should recreate the NetworkPolicy on next reconcile", func() {
 			mc := validMemcached(uniqueName("integ-recreate-np"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -1035,19 +1035,19 @@ var _ = Describe("Owned resource recreation after external deletion", func() {
 			mc := validMemcached(uniqueName("integ-recreate-all"))
 			replicas := int32(3)
 			mc.Spec.Replicas = &replicas
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			minAvail := intstr.FromInt32(1)
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -1084,7 +1084,7 @@ var _ = Describe("Owned resource recreation after external deletion", func() {
 var _ = Describe("Multi-instance isolation: two CRs in same namespace", func() {
 
 	Context("when two minimal CRs exist in the same namespace", func() {
-		var mcA, mcB *memcachedv1alpha1.Memcached
+		var mcA, mcB *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mcA = validMemcached(uniqueName("integ-iso-a"))
@@ -1148,43 +1148,43 @@ var _ = Describe("Multi-instance isolation: two CRs in same namespace", func() {
 	})
 
 	Context("when two full-featured CRs exist in the same namespace", func() {
-		var mcA, mcB *memcachedv1alpha1.Memcached
+		var mcA, mcB *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mcA = validMemcached(uniqueName("integ-iso-full-a"))
 			replicas := int32(2)
 			mcA.Spec.Replicas = &replicas
-			mcA.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mcA.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			minAvail := intstr.FromInt32(1)
-			mcA.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mcA.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvail,
 				},
 			}
-			mcA.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mcA.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 
 			mcB = validMemcached(uniqueName("integ-iso-full-b"))
 			replicasB := int32(4)
 			mcB.Spec.Replicas = &replicasB
-			mcB.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mcB.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			minAvailB := intstr.FromInt32(2)
-			mcB.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+			mcB.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 					Enabled:      true,
 					MinAvailable: &minAvailB,
 				},
 			}
-			mcB.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mcB.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 
 			Expect(k8sClient.Create(ctx, mcA)).To(Succeed())
@@ -1258,8 +1258,8 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 	Context("when monitoring is enabled on a CR with NetworkPolicy", func() {
 		It("should update Deployment (sidecar), Service (metrics port), and NetworkPolicy (metrics port) in one reconcile", func() {
 			mc := validMemcached(uniqueName("integ-cross-mon"))
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -1276,9 +1276,9 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 
 			// Enable monitoring.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
@@ -1312,12 +1312,12 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 	Context("when monitoring is disabled on a full-featured CR", func() {
 		It("should remove sidecar from Deployment, metrics port from Service and NetworkPolicy in one reconcile", func() {
 			mc := validMemcached(uniqueName("integ-cross-mon-off"))
-			mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
-				ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 			}
-			mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-				NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -1389,19 +1389,19 @@ var _ = Describe("Full create-update-delete lifecycle", func() {
 		// Phase 2: Update — scale up, enable all optional resources.
 		mc.Spec.Replicas = int32Ptr(3)
 		mc.Spec.Image = strPtr("memcached:1.6.29")
-		mc.Spec.Monitoring = &memcachedv1alpha1.MonitoringSpec{
+		mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 			Enabled:        true,
-			ServiceMonitor: &memcachedv1alpha1.ServiceMonitorSpec{},
+			ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{},
 		}
 		minAvail := intstr.FromInt32(1)
-		mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-			PodDisruptionBudget: &memcachedv1alpha1.PDBSpec{
+		mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+			PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
 				Enabled:      true,
 				MinAvailable: &minAvail,
 			},
 		}
-		mc.Spec.Security = &memcachedv1alpha1.SecuritySpec{
-			NetworkPolicy: &memcachedv1alpha1.NetworkPolicySpec{Enabled: true},
+		mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+			NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 		}
 		Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 

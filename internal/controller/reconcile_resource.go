@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/metrics"
 )
 
@@ -31,7 +31,7 @@ const maxConflictRetries = 5
 // "Service").
 func (r *MemcachedReconciler) reconcileResource(
 	ctx context.Context,
-	mc *memcachedv1alpha1.Memcached,
+	mc *memcachedv1beta1.Memcached,
 	obj client.Object,
 	mutate func() error,
 	resourceKind string,
@@ -94,7 +94,7 @@ func (r *MemcachedReconciler) deleteOwnedResource(ctx context.Context, obj clien
 // emitEventForResult emits a Kubernetes event on the Memcached CR for resource
 // creation or update operations. No event is emitted for unchanged resources.
 func (r *MemcachedReconciler) emitEventForResult(
-	mc *memcachedv1alpha1.Memcached,
+	mc *memcachedv1beta1.Memcached,
 	obj client.Object,
 	resourceKind string,
 	result controllerutil.OperationResult,

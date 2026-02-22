@@ -9,18 +9,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 const testPortName = "memcached"
 
 func TestConstructService_MinimalSpec(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-cache",
 			Namespace: "default",
 		},
-		Spec: memcachedv1alpha1.MemcachedSpec{},
+		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
 	svc := &corev1.Service{}
 
@@ -71,9 +71,9 @@ func TestConstructService_MinimalSpec(t *testing.T) {
 }
 
 func TestConstructService_ClusterIPNone(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	svc := &corev1.Service{}
 
@@ -85,9 +85,9 @@ func TestConstructService_ClusterIPNone(t *testing.T) {
 }
 
 func TestConstructService_PortConfig(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "port-test", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	svc := &corev1.Service{}
 
@@ -113,9 +113,9 @@ func TestConstructService_PortConfig(t *testing.T) {
 }
 
 func TestConstructService_Labels(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "label-test", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{},
+		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	svc := &corev1.Service{}
 
@@ -145,10 +145,10 @@ func TestConstructService_Labels(t *testing.T) {
 }
 
 func TestConstructService_CustomAnnotations(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "anno-test", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Service: &memcachedv1alpha1.ServiceSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Service: &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
 					"prometheus.io/scrape": "true",
 					"prometheus.io/port":   "9150",
@@ -172,9 +172,9 @@ func TestConstructService_CustomAnnotations(t *testing.T) {
 }
 
 func TestConstructService_NilServiceSpec(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "nil-svc", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{Service: nil},
+		Spec:       memcachedv1beta1.MemcachedSpec{Service: nil},
 	}
 	svc := &corev1.Service{}
 
@@ -197,10 +197,10 @@ func TestConstructService_NilServiceSpec(t *testing.T) {
 }
 
 func TestConstructService_MonitoringEnabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mon-enabled", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -231,17 +231,17 @@ func TestConstructService_MonitoringEnabled(t *testing.T) {
 func TestConstructService_MonitoringOff(t *testing.T) {
 	tests := []struct {
 		name       string
-		monitoring *memcachedv1alpha1.MonitoringSpec
+		monitoring *memcachedv1beta1.MonitoringSpec
 	}{
-		{name: "monitoring disabled", monitoring: &memcachedv1alpha1.MonitoringSpec{Enabled: false}},
+		{name: "monitoring disabled", monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false}},
 		{name: "nil monitoring", monitoring: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: "default"},
-				Spec:       memcachedv1alpha1.MemcachedSpec{Monitoring: tt.monitoring},
+				Spec:       memcachedv1beta1.MemcachedSpec{Monitoring: tt.monitoring},
 			}
 			svc := &corev1.Service{}
 
@@ -261,10 +261,10 @@ func TestConstructService_MonitoringOff(t *testing.T) {
 }
 
 func TestConstructService_MonitoringEnabledPortDetails(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mon-details", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -294,11 +294,11 @@ func TestConstructService_MonitoringEnabledPortDetails(t *testing.T) {
 }
 
 func TestConstructService_TLSEnabled(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-svc", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "my-tls-secret",
@@ -339,23 +339,23 @@ func TestConstructService_TLSEnabled(t *testing.T) {
 func TestConstructService_TLSDisabled(t *testing.T) {
 	tests := []struct {
 		name     string
-		security *memcachedv1alpha1.SecuritySpec
+		security *memcachedv1beta1.SecuritySpec
 	}{
 		{name: "nil Security", security: nil},
-		{name: "nil TLS", security: &memcachedv1alpha1.SecuritySpec{}},
+		{name: "nil TLS", security: &memcachedv1beta1.SecuritySpec{}},
 		{
 			name: "TLS disabled",
-			security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{Enabled: false},
+			security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{Enabled: false},
 			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: "default"},
-				Spec:       memcachedv1alpha1.MemcachedSpec{Security: tt.security},
+				Spec:       memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 			svc := &corev1.Service{}
 
@@ -375,18 +375,18 @@ func TestConstructService_TLSDisabled(t *testing.T) {
 }
 
 func TestConstructService_TLSWithMonitoring(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-mon", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Security: &memcachedv1alpha1.SecuritySpec{
-				TLS: &memcachedv1alpha1.TLSSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
 						Name: "my-tls-secret",
 					},
 				},
 			},
-			Monitoring: &memcachedv1alpha1.MonitoringSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 			},
 		},
@@ -425,9 +425,9 @@ func TestConstructService_TLSWithMonitoring(t *testing.T) {
 }
 
 func TestConstructService_TLSNilSecurity(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-nil", Namespace: "default"},
-		Spec:       memcachedv1alpha1.MemcachedSpec{Security: nil},
+		Spec:       memcachedv1beta1.MemcachedSpec{Security: nil},
 	}
 	svc := &corev1.Service{}
 
@@ -445,24 +445,24 @@ func TestConstructService_TLSNilSecurity(t *testing.T) {
 func TestConstructService_AnnotationClearing(t *testing.T) {
 	tests := []struct {
 		name       string
-		secondSpec memcachedv1alpha1.MemcachedSpec
+		secondSpec memcachedv1beta1.MemcachedSpec
 	}{
 		{
 			name:       "Service field set to nil clears annotations",
-			secondSpec: memcachedv1alpha1.MemcachedSpec{Service: nil},
+			secondSpec: memcachedv1beta1.MemcachedSpec{Service: nil},
 		},
 		{
 			name: "empty annotations map clears annotations",
-			secondSpec: memcachedv1alpha1.MemcachedSpec{
-				Service: &memcachedv1alpha1.ServiceSpec{
+			secondSpec: memcachedv1beta1.MemcachedSpec{
+				Service: &memcachedv1beta1.ServiceSpec{
 					Annotations: map[string]string{},
 				},
 			},
 		},
 		{
 			name: "nil annotations map clears annotations",
-			secondSpec: memcachedv1alpha1.MemcachedSpec{
-				Service: &memcachedv1alpha1.ServiceSpec{
+			secondSpec: memcachedv1beta1.MemcachedSpec{
+				Service: &memcachedv1beta1.ServiceSpec{
 					Annotations: nil,
 				},
 			},
@@ -472,10 +472,10 @@ func TestConstructService_AnnotationClearing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Step 1: Create a CR with annotations and apply to Service.
-			mc := &memcachedv1alpha1.Memcached{
+			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{Name: "anno-clear", Namespace: "default"},
-				Spec: memcachedv1alpha1.MemcachedSpec{
-					Service: &memcachedv1alpha1.ServiceSpec{
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Service: &memcachedv1beta1.ServiceSpec{
 						Annotations: map[string]string{
 							"prometheus.io/scrape": "true",
 							"custom/key":           "value",
@@ -523,10 +523,10 @@ func TestConstructService_AnnotationClearing(t *testing.T) {
 }
 
 func TestConstructService_Idempotent(t *testing.T) {
-	mc := &memcachedv1alpha1.Memcached{
+	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-test", Namespace: "default"},
-		Spec: memcachedv1alpha1.MemcachedSpec{
-			Service: &memcachedv1alpha1.ServiceSpec{
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Service: &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
 					"example.com/key": "val",
 				},

@@ -5,12 +5,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
 // constructService sets the desired state of the headless Service based on the Memcached CR spec.
 // It mutates svc in-place and is designed to be called from within controllerutil.CreateOrUpdate.
-func constructService(mc *memcachedv1alpha1.Memcached, svc *corev1.Service) {
+func constructService(mc *memcachedv1beta1.Memcached, svc *corev1.Service) {
 	labels := labelsForMemcached(mc.Name)
 
 	svc.Labels = labels

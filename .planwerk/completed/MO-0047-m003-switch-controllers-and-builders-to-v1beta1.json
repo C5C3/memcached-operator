@@ -2,8 +2,8 @@
   "feature_id": "MO-0047",
   "title": "M003: Switch controllers and builders to v1beta1",
   "slug": "m003-switch-controllers-and-builders-to-v1beta1",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "approved",
   "summary": "",
   "description": "**Size:** 🏗️ large\n**Category:** backend\n**Priority:** high\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nUpdate the entire controller layer and cmd/main.go to use v1beta1 types:\n\n1. **cmd/main.go** — Add `memcachedv1beta1` import for `api/v1beta1`, call `memcachedv1beta1.AddToScheme(scheme)`, replace v1alpha1 webhook setup with v1beta1 webhook setup (`SetupMemcachedWebhookWithManager` or equivalent).\n2. **internal/controller/memcached_controller.go** — Change import alias from `memcachedv1alpha1` to `memcachedv1beta1`, update `MemcachedReconciler` to reconcile `v1beta1.Memcached`, update `SetupWithManager` builder, update all type references in Reconcile function.\n3. **internal/controller/deployment.go** — Change `constructDeployment` parameter from `*v1alpha1.Memcached` to `*v1beta1.Memcached`.\n4. **internal/controller/service.go** — Change `constructService` parameter type.\n5. **internal/controller/status.go** — Change status update functions parameter types.\n6. **internal/controller/pdb.go** — Change `constructPDB` parameter type.\n7. **internal/controller/networkpolicy.go** — Change `constructNetworkPolicy` parameter type.\n8. **internal/controller/servicemonitor.go** — Change `constructServiceMonitor` parameter type.\n9. **internal/controller/reconcile_resource.go** — Update owner reference type if applicable.\n\nAll changes are mechanical import/type swaps since schema is identical.\n\n**Rationale:** The controller must reconcile the storage version (v1beta1) to correctly watch and process resources as stored in etcd. This is the core operational change that makes the operator work with the new API version.\n\n**Affected Areas:**\n- cmd/main.go\n- internal/controller/memcached_controller.go\n- internal/controller/deployment.go\n- internal/controller/service.go\n- internal/controller/status.go\n- internal/controller/pdb.go\n- internal/controller/networkpolicy.go\n- internal/controller/servicemonitor.go\n- internal/controller/reconcile_resource.go",
   "stories": [
@@ -428,6 +428,7 @@
       "description": "In internal/controller/memcached_controller.go: (1) change import alias from `memcachedv1alpha1 \"github.com/c5c3/memcached-operator/api/v1alpha1\"` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"`, (2) update Reconcile to create `memcachedv1beta1.Memcached{}` instead of `memcachedv1alpha1.Memcached{}`, (3) update all reconcile sub-method parameters from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`, (4) update SetupWithManager to use `For(&memcachedv1beta1.Memcached{})`. This is a mechanical find-and-replace of `memcachedv1alpha1` → `memcachedv1beta1` in this file. Verify: `go build ./internal/controller/` compiles (will fail until downstream files updated, but this is the anchor task).",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -438,6 +439,7 @@
       "description": "In internal/controller/deployment.go: (1) change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"`, (2) update all type references: `*memcachedv1alpha1.Memcached` → `*memcachedv1beta1.Memcached`, `memcachedv1alpha1.MemcachedConfig` → `memcachedv1beta1.MemcachedConfig`, `memcachedv1alpha1.SASLSpec` → `memcachedv1beta1.SASLSpec`, `memcachedv1alpha1.TLSSpec` → `memcachedv1beta1.TLSSpec`, `memcachedv1alpha1.AntiAffinityPresetSoft` → `memcachedv1beta1.AntiAffinityPresetSoft`, `memcachedv1alpha1.AntiAffinityPresetHard` → `memcachedv1beta1.AntiAffinityPresetHard`. All functions affected: constructDeployment, buildMemcachedArgs, buildAntiAffinity, buildTopologySpreadConstraints, buildGracefulShutdown, buildExporterContainer, buildSASLVolume, buildSASLVolumeMount, buildTLSVolume, buildTLSVolumeMount, buildPodSecurityContext, buildContainerSecurityContext.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -448,6 +450,7 @@
       "description": "In each of these 5 files, change import alias from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and update all type references. Files and functions: (1) service.go — constructService, (2) pdb.go — constructPDB, pdbEnabled, (3) networkpolicy.go — constructNetworkPolicy, networkPolicyEnabled, (4) servicemonitor.go — constructServiceMonitor, serviceMonitorEnabled, (5) hpa.go — constructHPA, hpaEnabled. Each file has only the import and type references to change.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-002"
       ]
@@ -458,6 +461,7 @@
       "description": "In internal/controller/status.go: change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and update parameter types in computeConditions and reconcileStatus from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-004"
       ]
@@ -468,6 +472,7 @@
       "description": "In internal/controller/reconcile_resource.go: change import to `memcachedv1beta1` and update reconcileResource, emitEventForResult parameters from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`. In internal/controller/secret.go: change import to `memcachedv1beta1`, update fetchReferencedSecrets parameter from `*memcachedv1alpha1.Memcached` to `*memcachedv1beta1.Memcached`, update mapSecretToMemcached to use `memcachedv1beta1.MemcachedList`. Verify: `go build ./internal/controller/` compiles after all 1.x tasks done.",
       "level": 1,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-003",
         "REQ-005"
@@ -479,6 +484,7 @@
       "description": "In each of these 3 files: change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and replace all occurrences of `memcachedv1alpha1.` with `memcachedv1beta1.`. These files use table-driven tests constructing Memcached objects — the type references change but all field names remain identical. Files: internal/controller/deployment_test.go (~272 occurrences), internal/controller/service_test.go (~53 occurrences), internal/controller/status_test.go (~29 occurrences).",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -489,6 +495,7 @@
       "description": "In each of these 5 files: change import from `memcachedv1alpha1` to `memcachedv1beta1 \"github.com/c5c3/memcached-operator/api/v1beta1\"` and replace all occurrences of `memcachedv1alpha1.` with `memcachedv1beta1.`. Files: internal/controller/pdb_test.go (~47 occurrences), internal/controller/networkpolicy_test.go (~66 occurrences), internal/controller/servicemonitor_test.go (~45 occurrences), internal/controller/hpa_test.go (~18 occurrences), internal/controller/secret_test.go (~59 occurrences).",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -499,6 +506,7 @@
       "description": "In internal/controller/reconcile_resource_test.go: change import to `memcachedv1beta1` and replace all `memcachedv1alpha1.` references (~32 occurrences). In internal/controller/reconcile_methods_test.go: same operation (~42 occurrences). These test the reconcileResource helper and the reconcile sub-methods.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-007"
       ]
@@ -509,6 +517,7 @@
       "description": "In internal/controller/memcached_crd_validation_test.go: (1) change `validMemcached()` to return `*memcachedv1beta1.Memcached` instead of `*memcachedv1alpha1.Memcached`, (2) replace all `memcachedv1alpha1.` references with `memcachedv1beta1.` (~132 occurrences), (3) keep `validMemcachedBeta()` as-is (already v1beta1). Note: the import for `memcachedv1beta1` already exists in this file. Remove the `memcachedv1alpha1` import if it becomes unused.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-007",
         "REQ-008"
@@ -520,6 +529,7 @@
       "description": "Switch 4 integration/reconcile test files from v1alpha1 to v1beta1: (1) memcached_deployment_reconcile_test.go (~49 occurrences), (2) memcached_service_reconcile_test.go (~6 occurrences), (3) memcached_status_reconcile_test.go (~4 occurrences), (4) memcached_pdb_reconcile_test.go (~19 occurrences). In each: change import to `memcachedv1beta1` and replace all `memcachedv1alpha1.` references.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -530,6 +540,7 @@
       "description": "Switch 5 integration/reconcile test files: (1) memcached_servicemonitor_reconcile_test.go (~52 occurrences), (2) memcached_networkpolicy_reconcile_test.go (~26 occurrences), (3) memcached_monitoring_reconcile_test.go (~16 occurrences), (4) memcached_security_context_reconcile_test.go (~13 occurrences), (5) memcached_hpa_reconcile_test.go (~27 occurrences). In each: change import to `memcachedv1beta1` and replace all `memcachedv1alpha1.` references.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -540,6 +551,7 @@
       "description": "Switch remaining integration test files: (1) memcached_tls_deployment_reconcile_test.go (~16 occurrences), (2) memcached_tls_service_reconcile_test.go (~10 occurrences), (3) memcached_envtest_integration_test.go (~85 occurrences), (4) memcached_secret_rotation_integration_test.go (~19 occurrences), (5) memcached_setup_test.go (check for any v1alpha1 refs), (6) memcached_crd_installation_test.go (~14 occurrences), (7) memcached_reconcile_test.go (~4 occurrences), (8) memcached_metrics_reconcile_test.go (check for v1alpha1 refs). Also update suite_test.go if the `validMemcached` import alias change requires it. Note: suite_test.go already imports both versions.",
       "level": 2,
       "estimate_minutes": 20,
+      "status": "done",
       "requirements": [
         "REQ-008"
       ]
@@ -550,18 +562,9 @@
       "description": "cmd/main.go already has both v1alpha1 and v1beta1 scheme registrations and uses v1beta1 webhook setup. Verify: (1) memcachedv1alpha1.AddToScheme(scheme) present for conversion support, (2) memcachedv1beta1.AddToScheme(scheme) present, (3) memcachedv1beta1.SetupMemcachedWebhookWithManager(mgr) is the only webhook setup call, (4) no v1alpha1 webhook setup. If already correct (confirmed from reading), this task is a verification-only pass. Run `go build ./cmd/...` to confirm compilation.",
       "level": 3,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-006"
-      ]
-    },
-    {
-      "id": "3.2",
-      "title": "Run full test suite and fix any compilation or test failures (REQ-009)",
-      "description": "Run `make test` to execute all unit and integration tests. Fix any remaining compilation errors from missed v1alpha1 references. Run `make vet` and `make lint` to verify code quality. Ensure zero v1alpha1 references remain in internal/controller/ production (non-test) files by running: `grep -r memcachedv1alpha1 internal/controller/ --include='*.go' --exclude='*_test.go'` — expect zero results. Also verify no unused imports in any file.",
-      "level": 3,
-      "estimate_minutes": 25,
-      "requirements": [
-        "REQ-009"
       ]
     },
     {
@@ -570,6 +573,7 @@
       "description": "Update docs/reference/backend/project-structure.md to reflect that the controller layer now imports and reconciles v1beta1.Memcached. Replace any mentions of v1alpha1 as the controller's reconciled type with v1beta1. Add a note that v1alpha1 remains served for backward compatibility via the conversion webhook, but the controller operates exclusively on v1beta1.",
       "level": 4,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-010"
       ]
@@ -742,6 +746,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-02-22T15:12:46.489810"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:14:31.401065"
+    },
+    "approved": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:37:16.099475"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T15:37:16.120923"
     }
   },
   "execution_history": [
@@ -755,6 +771,56 @@
           "name": "prepare",
           "duration": 269.3104944229126,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "3c8035c1-052d-4a6b-9778-85ae9df764c1",
+      "timestamp": "2026-02-22T15:28:36.990367",
+      "total_duration": 719.6459097862244,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (5 tasks)",
+          "duration": 267.87913966178894,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (7 tasks)",
+          "duration": 85.67481875419617,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 3 (1 tasks)",
+          "duration": 24.66950297355652,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 4 (1 tasks)",
+          "duration": 92.56459283828735,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0047] Code Review",
+          "duration": 140.54082608222961,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0047] Improvements",
+          "duration": 28.229954957962036,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0047] Simplify",
+          "duration": 80.08707451820374,
+          "type": "simplify",
           "status": "done"
         }
       ]

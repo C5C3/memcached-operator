@@ -21,7 +21,7 @@ import (
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/metrics"
 )
 
@@ -49,7 +49,7 @@ type MemcachedReconciler struct {
 func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	memcached := &memcachedv1alpha1.Memcached{}
+	memcached := &memcachedv1beta1.Memcached{}
 	if err := r.Get(ctx, req.NamespacedName, memcached); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Memcached resource not found; ignoring since it must have been deleted")
@@ -122,7 +122,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // It fetches referenced Secrets, computes a hash for rolling-update annotations, reads the
 // restart-trigger annotation from the CR, and passes everything to constructDeployment.
 // It returns the names of any missing Secrets for use by status reconciliation.
-func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) ([]string, error) {
+func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1beta1.Memcached) ([]string, error) {
 	found, missing := fetchReferencedSecrets(ctx, r.Client, mc)
 	secretHash := computeSecretHash(found...)
 	restartTrigger := mc.Annotations[AnnotationRestartTrigger]
@@ -143,7 +143,7 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
 
 // reconcileHPA ensures the HorizontalPodAutoscaler for the Memcached CR matches the desired state.
 // When autoscaling is disabled, it deletes any existing HPA owned by the CR.
-func (r *MemcachedReconciler) reconcileHPA(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+func (r *MemcachedReconciler) reconcileHPA(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
 	if !hpaEnabled(mc) {
 		return r.deleteOwnedResource(ctx, &autoscalingv2.HorizontalPodAutoscaler{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
@@ -166,7 +166,7 @@ func (r *MemcachedReconciler) reconcileHPA(ctx context.Context, mc *memcachedv1a
 
 // reconcileService ensures the headless Service for the Memcached CR matches the desired state.
 // It uses reconcileResource for idempotent create/update with conflict retries.
-func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      mc.Name,
@@ -183,7 +183,7 @@ func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcache
 
 // reconcilePDB ensures the PodDisruptionBudget for the Memcached CR matches the desired state.
 // When PDB is disabled, it deletes any existing PDB owned by the CR.
-func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
 	if !pdbEnabled(mc) {
 		return r.deleteOwnedResource(ctx, &policyv1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
@@ -206,7 +206,7 @@ func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1a
 
 // reconcileServiceMonitor ensures the ServiceMonitor for the Memcached CR matches the desired state.
 // When monitoring is disabled, it deletes any existing ServiceMonitor owned by the CR.
-func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
 	if !serviceMonitorEnabled(mc) {
 		return r.deleteOwnedResource(ctx, &monitoringv1.ServiceMonitor{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
@@ -229,7 +229,7 @@ func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *m
 
 // reconcileNetworkPolicy ensures the NetworkPolicy for the Memcached CR matches the desired state.
 // When NetworkPolicy is disabled, it deletes any existing NetworkPolicy owned by the CR.
-func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
+func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
 	if !networkPolicyEnabled(mc) {
 		return r.deleteOwnedResource(ctx, &networkingv1.NetworkPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
@@ -253,7 +253,7 @@ func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *me
 // SetupWithManager sets up the controller with the Manager.
 func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&memcachedv1alpha1.Memcached{}).
+		For(&memcachedv1beta1.Memcached{}).
 		Owns(&appsv1.Deployment{}).
 		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
 		Owns(&corev1.Service{}).

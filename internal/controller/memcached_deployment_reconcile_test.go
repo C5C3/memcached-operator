@@ -18,12 +18,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
-	memcachedv1alpha1 "github.com/c5c3/memcached-operator/api/v1alpha1"
+	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 	"github.com/c5c3/memcached-operator/internal/controller"
 )
 
 // reconcileOnce runs a single Reconcile cycle for the given Memcached CR.
-func reconcileOnce(mc *memcachedv1alpha1.Memcached) (ctrl.Result, error) {
+func reconcileOnce(mc *memcachedv1beta1.Memcached) (ctrl.Result, error) {
 	r := &controller.MemcachedReconciler{
 		Client: k8sClient,
 		Scheme: scheme.Scheme,
@@ -34,7 +34,7 @@ func reconcileOnce(mc *memcachedv1alpha1.Memcached) (ctrl.Result, error) {
 }
 
 // fetchDeployment retrieves the Deployment with the same name/namespace as the Memcached CR.
-func fetchDeployment(mc *memcachedv1alpha1.Memcached) *appsv1.Deployment {
+func fetchDeployment(mc *memcachedv1beta1.Memcached) *appsv1.Deployment {
 	dep := &appsv1.Deployment{}
 	ExpectWithOffset(1, k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), dep)).To(Succeed())
 	return dep
@@ -54,7 +54,7 @@ func zoneSpreadConstraint() corev1.TopologySpreadConstraint {
 var _ = Describe("Deployment Reconciliation", func() {
 
 	Context("minimal CR with defaults (REQ-002, REQ-004, REQ-005, REQ-007, REQ-008, REQ-009)", func() {
-		var mc *memcachedv1alpha1.Memcached
+		var mc *memcachedv1beta1.Memcached
 
 		BeforeEach(func() {
 			mc = validMemcached(uniqueName("dep-minimal"))
@@ -139,7 +139,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 			dep := fetchDeployment(mc)
 			Expect(dep.OwnerReferences).To(HaveLen(1))
 			ownerRef := dep.OwnerReferences[0]
-			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1alpha1"))
+			Expect(ownerRef.APIVersion).To(Equal("memcached.c5c3.io/v1beta1"))
 			Expect(ownerRef.Kind).To(Equal("Memcached"))
 			Expect(ownerRef.Name).To(Equal(mc.Name))
 			Expect(ownerRef.UID).To(Equal(mc.UID))
@@ -172,7 +172,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 					corev1.ResourceMemory: resource.MustParse("300Mi"),
 				},
 			}
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB:    256,
 				MaxConnections: 2048,
 				Threads:        8,
@@ -316,7 +316,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 			// Update memcached config.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				MaxMemoryMB: 512,
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
@@ -365,7 +365,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 			Expect(dep.OwnerReferences).To(HaveLen(1))
 
 			ref := dep.OwnerReferences[0]
-			Expect(ref.APIVersion).To(Equal("memcached.c5c3.io/v1alpha1"))
+			Expect(ref.APIVersion).To(Equal("memcached.c5c3.io/v1beta1"))
 			Expect(ref.Kind).To(Equal("Memcached"))
 			Expect(ref.Name).To(Equal(mc.Name))
 			Expect(ref.UID).To(Equal(mc.UID))
@@ -417,7 +417,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 			failingClient := interceptor.NewClient(fakeClient, interceptor.Funcs{
 				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 					// Allow Get for Memcached CR but fail for Deployment.
-					if _, ok := obj.(*memcachedv1alpha1.Memcached); ok {
+					if _, ok := obj.(*memcachedv1beta1.Memcached); ok {
 						return c.Get(ctx, key, obj, opts...)
 					}
 					return apiErr
@@ -459,7 +459,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 	Context("verbosity levels (REQ-001)", func() {
 		It("should include -v for verbosity=1", func() {
 			mc := validMemcached(uniqueName("dep-verb1"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 1,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -475,7 +475,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should include -vv for verbosity=2", func() {
 			mc := validMemcached(uniqueName("dep-verb2"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 2,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -491,7 +491,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should not include verbosity flag for verbosity=0", func() {
 			mc := validMemcached(uniqueName("dep-verb0"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 0,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -511,8 +511,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 	Context("pod anti-affinity presets (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)", func() {
 		It("should set preferredDuringScheduling anti-affinity when preset is soft", func() {
 			mc := validMemcached(uniqueName("dep-aa-soft"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -534,8 +534,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should set requiredDuringScheduling anti-affinity when preset is hard", func() {
 			mc := validMemcached(uniqueName("dep-aa-hard"))
-			hard := memcachedv1alpha1.AntiAffinityPresetHard
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			hard := memcachedv1beta1.AntiAffinityPresetHard
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &hard,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -567,8 +567,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should update Deployment affinity when antiAffinityPreset changes from soft to hard", func() {
 			mc := validMemcached(uniqueName("dep-aa-change"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -581,7 +581,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 			// Update to hard.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			hard := memcachedv1alpha1.AntiAffinityPresetHard
+			hard := memcachedv1beta1.AntiAffinityPresetHard
 			mc.Spec.HighAvailability.AntiAffinityPreset = &hard
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
@@ -595,8 +595,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should clear affinity when highAvailability is removed", func() {
 			mc := validMemcached(uniqueName("dep-aa-clear"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -621,8 +621,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should be idempotent with soft anti-affinity", func() {
 			mc := validMemcached(uniqueName("dep-aa-idemp"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: &soft,
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -653,7 +653,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 					"app.kubernetes.io/name": "memcached",
 				},
 			}
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{constraint},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -673,7 +673,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should preserve multiple constraints in order", func() {
 			mc := validMemcached(uniqueName("dep-tsc-multi"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					zoneSpreadConstraint(),
 					{
@@ -701,7 +701,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should update Deployment when topology spread constraints change", func() {
 			mc := validMemcached(uniqueName("dep-tsc-upd"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -726,7 +726,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should clear topology spread constraints when removed from CR", func() {
 			mc := validMemcached(uniqueName("dep-tsc-clear"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -751,8 +751,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should clear only topologySpreadConstraints when field is removed from HA section", func() {
 			mc := validMemcached(uniqueName("dep-tsc-field"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        &soft,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			}
@@ -782,7 +782,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should be idempotent with topology spread constraints", func() {
 			mc := validMemcached(uniqueName("dep-tsc-idemp"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -803,8 +803,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should support both antiAffinityPreset and topologySpreadConstraints", func() {
 			mc := validMemcached(uniqueName("dep-tsc-both"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        &soft,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			}
@@ -828,8 +828,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should keep topologySpreadConstraints when antiAffinityPreset is removed", func() {
 			mc := validMemcached(uniqueName("dep-tsc-keepc"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        &soft,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			}
@@ -860,8 +860,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should keep antiAffinityPreset when topologySpreadConstraints are removed", func() {
 			mc := validMemcached(uniqueName("dep-tsc-keep"))
-			hard := memcachedv1alpha1.AntiAffinityPresetHard
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			hard := memcachedv1beta1.AntiAffinityPresetHard
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        &hard,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
 			}
@@ -898,7 +898,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 	Context("extraArgs edge cases (REQ-001)", func() {
 		It("should append extraArgs after standard flags", func() {
 			mc := validMemcached(uniqueName("dep-extra"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				ExtraArgs: []string{"--extended", "ext_item_size=2M"},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -915,7 +915,7 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should not append extra args when extraArgs is empty", func() {
 			mc := validMemcached(uniqueName("dep-noextra"))
-			mc.Spec.Memcached = &memcachedv1alpha1.MemcachedConfig{
+			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
 				ExtraArgs: []string{},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -935,8 +935,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 	Context("graceful shutdown (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)", func() {
 		It("should create Deployment with preStop hook and terminationGracePeriodSeconds when graceful shutdown is enabled", func() {
 			mc := validMemcached(uniqueName("dep-gs-on"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -960,8 +960,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should create Deployment with custom graceful shutdown values from creation", func() {
 			mc := validMemcached(uniqueName("dep-gs-cust"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           15,
 					TerminationGracePeriodSeconds: 45,
@@ -985,8 +985,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should update Deployment when preStopDelaySeconds changes", func() {
 			mc := validMemcached(uniqueName("dep-gs-upd"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -1016,8 +1016,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should remove preStop hook when graceful shutdown is disabled", func() {
 			mc := validMemcached(uniqueName("dep-gs-rm"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 60,
@@ -1051,8 +1051,8 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should be idempotent with graceful shutdown enabled", func() {
 			mc := validMemcached(uniqueName("dep-gs-idemp"))
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
@@ -1076,11 +1076,11 @@ var _ = Describe("Deployment Reconciliation", func() {
 
 		It("should support graceful shutdown alongside anti-affinity and topology spread", func() {
 			mc := validMemcached(uniqueName("dep-gs-all"))
-			soft := memcachedv1alpha1.AntiAffinityPresetSoft
-			mc.Spec.HighAvailability = &memcachedv1alpha1.HighAvailabilitySpec{
+			soft := memcachedv1beta1.AntiAffinityPresetSoft
+			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        &soft,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
-				GracefulShutdown: &memcachedv1alpha1.GracefulShutdownSpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
 					Enabled:                       true,
 					PreStopDelaySeconds:           10,
 					TerminationGracePeriodSeconds: 30,
