@@ -1,0 +1,583 @@
+{
+  "feature_id": "MO-0045",
+  "title": "M001: Add v1beta1 API types with hub/spoke conversion",
+  "slug": "m001-add-v1beta1-api-types-with-hub-spoke",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🏗️ large\n**Category:** backend\n**Priority:** critical\n**Source:** Proposed for 'API Promotion v1alpha1 → v1beta1\n\nNew package ap'\n\nCreate the new api/v1beta1/ package as the storage version hub:\n\n1. **api/v1beta1/memcached_types.go** — Copy all types from v1alpha1 (MemcachedSpec, MemcachedStatus, MemcachedConfig, HighAvailabilitySpec, MonitoringSpec, SecuritySpec, etc.) with `+kubebuilder:storageversion` marker on the Memcached root type.\n2. **api/v1beta1/groupversion_info.go** — Register GroupVersion{Group: \"memcached.c5c3.io\", Version: \"v1beta1\"} with SchemeBuilder and AddToScheme.\n3. **api/v1beta1/memcached_conversion.go** — Implement `conversion.Hub` interface: empty `func (m *Memcached) Hub() {}` method.\n4. **api/v1alpha1/memcached_conversion.go** — Implement `conversion.Convertible` interface: `ConvertTo(hub conversion.Hub)` and `ConvertFrom(hub conversion.Hub)` with field-by-field copy (schema is identical so this is a direct mapping).\n5. **api/v1alpha1/memcached_types.go** — Add deprecation comment `// Deprecated: Use v1beta1.Memcached instead` and remove `+kubebuilder:storageversion` marker if present.\n6. Run `make generate` to produce `api/v1beta1/zz_generated.deepcopy.go`.\n\nWrite tests for the conversion functions: round-trip test (v1alpha1 → v1beta1 → v1alpha1) ensuring no data loss.\n\n**Rationale:** Foundation for all other features. The v1beta1 types and conversion interfaces must exist before webhooks, controller, or tests can reference them. The hub/spoke pattern is the standard Kubernetes multi-version CRD mechanism.\n\n**Affected Areas:**\n- api/v1beta1/memcached_types.go\n- api/v1beta1/groupversion_info.go\n- api/v1beta1/memcached_conversion.go\n- api/v1beta1/zz_generated.deepcopy.go\n- api/v1alpha1/memcached_conversion.go\n- api/v1alpha1/memcached_types.go",
+  "stories": [
+    {
+      "title": "Operator developer creates v1beta1 API package as storage version hub",
+      "role": "operator developer",
+      "want": "a new api/v1beta1/ package containing all Memcached types with the +kubebuilder:storageversion marker on the root Memcached type",
+      "so_that": "the v1beta1 API becomes the storage version hub for the multi-version CRD, enabling future webhook and controller migration",
+      "criteria": [
+        "api/v1beta1/memcached_types.go contains all types from v1alpha1: MemcachedSpec, MemcachedStatus, MemcachedConfig, HighAvailabilitySpec, GracefulShutdownSpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec, NetworkPolicySpec, AutoscalingSpec, ServiceSpec, Memcached, MemcachedList, AntiAffinityPreset",
+        "The Memcached root type has +kubebuilder:storageversion marker in addition to existing +kubebuilder:object:root=true and +kubebuilder:subresource:status markers",
+        "All kubebuilder validation markers (+kubebuilder:validation:Minimum, +kubebuilder:validation:Maximum, +kubebuilder:validation:Enum, +kubebuilder:validation:Pattern, +kubebuilder:default) are preserved identically",
+        "All JSON struct tags (json:\"...\") are preserved identically",
+        "go vet passes for the new package"
+      ]
+    },
+    {
+      "title": "Operator developer registers v1beta1 GroupVersion with scheme",
+      "role": "operator developer",
+      "want": "a groupversion_info.go that registers memcached.c5c3.io/v1beta1 with SchemeBuilder and AddToScheme",
+      "so_that": "the v1beta1 types can be registered with the runtime scheme and used by controller-runtime",
+      "criteria": [
+        "api/v1beta1/groupversion_info.go declares GroupVersion = schema.GroupVersion{Group: \"memcached.c5c3.io\", Version: \"v1beta1\"}",
+        "SchemeBuilder and AddToScheme are exported and functional",
+        "AddToScheme registers Memcached and MemcachedList with the scheme",
+        "GVK resolution returns {Group: memcached.c5c3.io, Version: v1beta1, Kind: Memcached}"
+      ]
+    },
+    {
+      "title": "Operator developer implements hub/spoke conversion interfaces",
+      "role": "operator developer",
+      "want": "v1beta1.Memcached to implement conversion.Hub and v1alpha1.Memcached to implement conversion.Convertible with lossless field-by-field copy",
+      "so_that": "the Kubernetes API server can automatically convert between v1alpha1 and v1beta1 using the standard hub/spoke pattern",
+      "criteria": [
+        "v1beta1.Memcached has an empty Hub() method satisfying sigs.k8s.io/controller-runtime/pkg/conversion.Hub",
+        "v1alpha1.Memcached has ConvertTo(hub conversion.Hub) error method that copies all fields to v1beta1.Memcached",
+        "v1alpha1.Memcached has ConvertFrom(hub conversion.Hub) error method that copies all fields from v1beta1.Memcached",
+        "Compile-time interface assertions verify both interfaces are satisfied"
+      ]
+    },
+    {
+      "title": "Operator developer verifies lossless round-trip conversion",
+      "role": "operator developer",
+      "want": "round-trip tests that convert v1alpha1 -> v1beta1 -> v1alpha1 and verify no data loss",
+      "so_that": "I am confident the conversion is correct for all fields including deeply nested optional structs, slices, maps, and pointer fields",
+      "criteria": [
+        "Round-trip test creates a fully-populated v1alpha1.Memcached with all fields set (including all nested specs: MemcachedConfig, HighAvailabilitySpec, GracefulShutdownSpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec, NetworkPolicySpec, AutoscalingSpec, ServiceSpec)",
+        "Test converts v1alpha1 -> v1beta1 via ConvertTo, then v1beta1 -> v1alpha1 via ConvertFrom",
+        "Test asserts the original and round-tripped objects are deeply equal (reflect.DeepEqual or field-by-field comparison)",
+        "Test covers edge cases: nil optional fields, empty slices, zero-value structs",
+        "Test covers ObjectMeta fields (Name, Namespace, Labels, Annotations) are preserved"
+      ]
+    },
+    {
+      "title": "Operator developer deprecates v1alpha1 API types",
+      "role": "operator developer",
+      "want": "v1alpha1 types to carry a deprecation comment directing users to v1beta1",
+      "so_that": "developers reading the code know that v1alpha1 is deprecated and should use v1beta1 instead",
+      "criteria": [
+        "api/v1alpha1/memcached_types.go has a deprecation comment on the Memcached type: '// Deprecated: Use v1beta1.Memcached instead'",
+        "No +kubebuilder:storageversion marker exists on v1alpha1 Memcached (confirmed: none exists currently)",
+        "Existing functionality of v1alpha1 types is not broken (existing tests still pass)"
+      ]
+    },
+    {
+      "title": "Operator developer generates deepcopy methods for v1beta1",
+      "role": "operator developer",
+      "want": "controller-gen to generate zz_generated.deepcopy.go for the v1beta1 package",
+      "so_that": "v1beta1 types have DeepCopy, DeepCopyInto, and DeepCopyObject methods required by the runtime.Object interface",
+      "criteria": [
+        "api/v1beta1/zz_generated.deepcopy.go is generated by make generate",
+        "All v1beta1 types have DeepCopy() and DeepCopyInto() methods",
+        "Memcached and MemcachedList have DeepCopyObject() methods",
+        "go build ./... succeeds after generation"
+      ]
+    },
+    {
+      "title": "Operator developer has reference documentation for v1beta1 conversion",
+      "role": "operator developer",
+      "want": "reference documentation explaining the v1beta1 hub/spoke conversion architecture",
+      "so_that": "future contributors understand the multi-version CRD conversion pattern and how to extend it",
+      "criteria": [
+        "docs/reference/backend/api-version-conversion.md exists",
+        "Document explains hub/spoke pattern, lists conversion interfaces, and describes the field mapping",
+        "Document includes deprecation timeline for v1alpha1"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The v1beta1 package SHALL contain all type definitions from v1alpha1 with identical schema (fields, JSON tags, kubebuilder markers)",
+      "priority": "SHALL",
+      "rationale": "Schema identity between versions ensures lossless conversion. Any missing or mismatched field would cause data loss or validation failure.",
+      "scenarios": [
+        {
+          "name": "All types present in v1beta1",
+          "when": "the v1beta1 package is compiled",
+          "then": "it contains all 17 type definitions matching v1alpha1: AntiAffinityPreset, MemcachedConfig, HighAvailabilitySpec, GracefulShutdownSpec, PDBSpec, MonitoringSpec, ServiceMonitorSpec, SecuritySpec, SASLSpec, TLSSpec, NetworkPolicySpec, AutoscalingSpec, ServiceSpec, MemcachedSpec, MemcachedStatus, Memcached, MemcachedList",
+          "and_then": []
+        },
+        {
+          "name": "Kubebuilder validation markers preserved",
+          "when": "controller-gen processes api/v1beta1/memcached_types.go",
+          "then": "all validation markers produce the same OpenAPI schema as v1alpha1",
+          "and_then": []
+        },
+        {
+          "name": "Constants preserved",
+          "when": "the v1beta1 package is inspected",
+          "then": "AntiAffinityPresetSoft and AntiAffinityPresetHard constants are defined with values 'soft' and 'hard'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The v1beta1 Memcached root type SHALL have the +kubebuilder:storageversion marker",
+      "priority": "SHALL",
+      "rationale": "The storageversion marker designates v1beta1 as the version stored in etcd. Without it, the CRD generation would not produce correct multi-version configuration.",
+      "scenarios": [
+        {
+          "name": "Storage version marker present",
+          "when": "api/v1beta1/memcached_types.go is inspected",
+          "then": "the Memcached type has +kubebuilder:storageversion marker",
+          "and_then": []
+        },
+        {
+          "name": "v1alpha1 has no storage version marker",
+          "when": "api/v1alpha1/memcached_types.go is inspected",
+          "then": "no +kubebuilder:storageversion marker is present",
+          "and_then": []
+        },
+        {
+          "name": "PrintColumn markers preserved on v1beta1",
+          "when": "v1beta1 Memcached markers are inspected",
+          "then": "+kubebuilder:printcolumn for Replicas, Ready, and Age are present",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The v1beta1 Memcached type SHALL implement the conversion.Hub interface",
+      "priority": "SHALL",
+      "rationale": "The Hub interface is the marker interface for the storage version in Kubernetes' multi-version CRD conversion mechanism.",
+      "scenarios": [
+        {
+          "name": "Hub interface satisfied at compile time",
+          "when": "the v1beta1 package is compiled with var _ conversion.Hub = &Memcached{}",
+          "then": "compilation succeeds",
+          "and_then": []
+        },
+        {
+          "name": "Hub method is empty",
+          "when": "Hub() is called on a v1beta1.Memcached",
+          "then": "the method returns immediately with no side effects",
+          "and_then": []
+        },
+        {
+          "name": "Hub method has correct receiver",
+          "when": "the Hub() method signature is inspected",
+          "then": "it is defined as func (m *Memcached) Hub() {} with pointer receiver",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The v1alpha1 Memcached type SHALL implement the conversion.Convertible interface",
+      "priority": "SHALL",
+      "rationale": "The Convertible interface enables the Kubernetes API server to automatically convert v1alpha1 requests to the v1beta1 storage version.",
+      "scenarios": [
+        {
+          "name": "Convertible interface satisfied at compile time",
+          "when": "the v1alpha1 package is compiled with var _ conversion.Convertible = &Memcached{}",
+          "then": "compilation succeeds",
+          "and_then": []
+        },
+        {
+          "name": "ConvertTo copies all fields to v1beta1 hub",
+          "when": "ConvertTo is called with a fully-populated v1alpha1 Memcached",
+          "then": "all Spec, Status, and ObjectMeta fields are copied to the v1beta1 hub",
+          "and_then": []
+        },
+        {
+          "name": "ConvertFrom copies all fields from v1beta1 hub",
+          "when": "ConvertFrom is called with a fully-populated v1beta1 hub",
+          "then": "all Spec, Status, and ObjectMeta fields are copied to the v1alpha1 spoke",
+          "and_then": []
+        },
+        {
+          "name": "ConvertTo returns error for wrong hub type",
+          "when": "ConvertTo is called with a non-v1beta1 hub",
+          "then": "a descriptive error is returned (fmt.Errorf with expected type info)",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "Conversion between v1alpha1 and v1beta1 SHALL be lossless for all fields",
+      "priority": "SHALL",
+      "rationale": "Data loss during conversion would corrupt user resources. Since schemas are identical, every field must survive a round trip v1alpha1 -> v1beta1 -> v1alpha1.",
+      "scenarios": [
+        {
+          "name": "Round-trip with fully populated object preserves all data",
+          "when": "a v1alpha1 Memcached with all fields set is converted to v1beta1 and back",
+          "then": "Spec and Status are deeply equal to the original",
+          "and_then": [
+            "nested pointer fields, slices, maps, and IntOrString fields are preserved"
+          ]
+        },
+        {
+          "name": "Round-trip with minimal object preserves nil fields",
+          "when": "a v1alpha1 Memcached with only Name set is converted round-trip",
+          "then": "all optional fields remain nil/zero",
+          "and_then": []
+        },
+        {
+          "name": "Round-trip preserves ObjectMeta",
+          "when": "a Memcached with Labels, Annotations, ResourceVersion is converted round-trip",
+          "then": "all ObjectMeta fields are preserved unchanged",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The v1alpha1 Memcached type SHALL have a deprecation comment directing users to v1beta1",
+      "priority": "SHALL",
+      "rationale": "Code documentation must signal deprecation so developers know to migrate. Standard Go pattern per godoc conventions.",
+      "scenarios": [
+        {
+          "name": "Deprecation comment present on Memcached type",
+          "when": "api/v1alpha1/memcached_types.go is read",
+          "then": "the Memcached type has comment containing 'Deprecated: Use v1beta1.Memcached instead'",
+          "and_then": []
+        },
+        {
+          "name": "Existing v1alpha1 tests still pass",
+          "when": "go test ./api/v1alpha1/... is run",
+          "then": "all existing tests pass without modification",
+          "and_then": []
+        },
+        {
+          "name": "Deprecation comment only on root type",
+          "when": "the deprecation comment placement is inspected",
+          "then": "only the Memcached root type has the deprecation comment, not sub-types like MemcachedSpec",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The v1beta1 GroupVersion SHALL be registered correctly with group memcached.c5c3.io and version v1beta1",
+      "priority": "SHALL",
+      "rationale": "Correct scheme registration is essential for the API server, webhook routing, and controller-runtime to recognize v1beta1 types.",
+      "scenarios": [
+        {
+          "name": "GroupVersion fields correct",
+          "when": "v1beta1.GroupVersion is accessed",
+          "then": "Group is 'memcached.c5c3.io' and Version is 'v1beta1'",
+          "and_then": []
+        },
+        {
+          "name": "AddToScheme registers types correctly",
+          "when": "AddToScheme is called on a new scheme",
+          "then": "scheme.ObjectKinds(&Memcached{}) returns [{memcached.c5c3.io v1beta1 Memcached}]",
+          "and_then": []
+        },
+        {
+          "name": "Package has +kubebuilder:object:generate=true marker",
+          "when": "groupversion_info.go is inspected",
+          "then": "the +kubebuilder:object:generate=true and +groupName=memcached.c5c3.io markers are present",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The generated deepcopy methods for v1beta1 SHALL produce independent copies of all types",
+      "priority": "SHALL",
+      "rationale": "DeepCopy independence is required by the Kubernetes API machinery for safe concurrent access to cached objects.",
+      "scenarios": [
+        {
+          "name": "make generate produces deepcopy file",
+          "when": "make generate is run",
+          "then": "api/v1beta1/zz_generated.deepcopy.go is created",
+          "and_then": [
+            "go build ./... succeeds"
+          ]
+        },
+        {
+          "name": "DeepCopy produces independent copy",
+          "when": "a v1beta1 Memcached is deep-copied and the original is mutated",
+          "then": "the copy is not affected",
+          "and_then": []
+        },
+        {
+          "name": "DeepCopyObject returns correct type",
+          "when": "DeepCopyObject is called on Memcached",
+          "then": "the result can be type-asserted to *Memcached",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create api/v1beta1/groupversion_info.go with scheme registration (REQ-007)",
+      "description": "Create api/v1beta1/groupversion_info.go following the exact pattern from api/v1alpha1/groupversion_info.go. Declare package v1beta1 with +kubebuilder:object:generate=true and +groupName=memcached.c5c3.io markers. Register GroupVersion{Group: 'memcached.c5c3.io', Version: 'v1beta1'} with SchemeBuilder and export AddToScheme. Write scheme_registration_test.go in the same package with tests: TestSchemeBuilder_IsNotNil, TestScheme_GroupVersionFields (assert Group/Version), TestScheme_AddToSchemeSucceeds, TestScheme_GVKResolution (Memcached+MemcachedList), TestScheme_TypeMappingFromGVK. Follow the exact test patterns from api/v1alpha1/scheme_registration_test.go. Note: these tests depend on the types existing from task 1.2, so they won't compile until 1.2 is done — write both files but verify compilation after both tasks.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Create api/v1beta1/memcached_types.go with all types and +kubebuilder:storageversion (REQ-001, REQ-002)",
+      "description": "Create api/v1beta1/memcached_types.go by copying all type definitions from api/v1alpha1/memcached_types.go. Change the package declaration to 'v1beta1'. Preserve ALL imports, type definitions, constants (AntiAffinityPresetSoft, AntiAffinityPresetHard), kubebuilder markers, JSON tags, and the init() function that registers Memcached and MemcachedList. Add +kubebuilder:storageversion marker to the Memcached root type alongside the existing +kubebuilder:object:root=true and +kubebuilder:subresource:status markers. Do NOT copy webhook-related code (webhooks are separate files). Write api/v1beta1/memcached_types_test.go with basic type tests: TestMemcachedSpec_AllFieldsPresent (create a MemcachedSpec with all 9 fields set), TestAntiAffinityPreset_ValidValues, TestMemcached_FullResource. Follow v1alpha1/memcached_types_test.go test pattern (stdlib testing.T).",
+      "level": 1,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002"
+      ]
+    },
+    {
+      "id": "1.3",
+      "title": "Add deprecation comment to v1alpha1 Memcached type (REQ-006)",
+      "description": "Edit api/v1alpha1/memcached_types.go to add a deprecation comment to the Memcached root type. Add '// Deprecated: Use v1beta1.Memcached instead.' as a line in the comment block above the Memcached struct definition (before the existing '// Memcached is the Schema for the memcacheds API.' line). Do NOT modify any other types, markers, or code. Run existing v1alpha1 tests to verify nothing breaks.",
+      "level": 1,
+      "estimate_minutes": 5,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Create api/v1beta1/memcached_conversion.go with Hub interface (REQ-003)",
+      "description": "Create api/v1beta1/memcached_conversion.go. Import sigs.k8s.io/controller-runtime/pkg/conversion. Add compile-time assertion: var _ conversion.Hub = &Memcached{}. Implement the empty Hub method: func (m *Memcached) Hub() {}. Add a brief doc comment explaining this marks v1beta1 as the hub (storage) version. Write api/v1beta1/memcached_conversion_test.go with TestHub_InterfaceSatisfied (call Hub() method, verify no panic).",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-003"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Create api/v1alpha1/memcached_conversion.go with ConvertTo/ConvertFrom (REQ-004, REQ-005)",
+      "description": "Create api/v1alpha1/memcached_conversion.go. Import sigs.k8s.io/controller-runtime/pkg/conversion and v1beta1 package (github.com/c5c3/memcached-operator/api/v1beta1). Add compile-time assertion: var _ conversion.Convertible = &Memcached{}. Implement ConvertTo(dstRaw conversion.Hub) error: type-assert dstRaw to *v1beta1.Memcached (return fmt.Errorf on wrong type), copy ObjectMeta, copy Spec field-by-field using a helper that maps v1alpha1 types to v1beta1 types. Since schemas are identical, use direct field assignment for all nested structs. Since the types are in separate packages, you need to copy each field explicitly even though they have the same names (Go doesn't allow direct struct assignment across packages with the same field names but different types). Implement ConvertFrom(srcRaw conversion.Hub) error with the reverse mapping. Write api/v1alpha1/memcached_conversion_test.go with: TestConvertible_InterfaceSatisfied, TestConvertTo_FullyPopulatedObject, TestConvertFrom_FullyPopulatedObject, TestConvertTo_WrongHubType_ReturnsError, TestConvertFrom_WrongHubType_ReturnsError, TestRoundTrip_FullyPopulated_NoDataLoss, TestRoundTrip_MinimalObject_PreservesNils, TestRoundTrip_ObjectMeta_Preserved, TestConvertTo_MinimalObject.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Run make generate to produce v1beta1 deepcopy and verify compilation (REQ-008)",
+      "description": "Run 'make generate' to produce api/v1beta1/zz_generated.deepcopy.go. Verify api/v1beta1/zz_generated.deepcopy.go exists and contains DeepCopy, DeepCopyInto, DeepCopyObject for all types. Run 'go build ./...' to verify compilation. Run 'go vet ./...' to verify no vet issues. Write api/v1beta1/deepcopy_test.go following the exact pattern from api/v1alpha1/deepcopy_test.go: TestMemcachedDeepCopy_Independence (fully populated object, mutate original, verify clone unaffected), TestMemcachedDeepCopyObject_ReturnsRuntimeObject, TestMemcachedDeepCopy_NilReceiver, TestMemcachedListDeepCopy_Independence, TestMemcachedListDeepCopyObject_ReturnsRuntimeObject, TestMemcachedListDeepCopy_NilReceiver.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Run all tests and lint to verify correctness (REQ-001 through REQ-008)",
+      "description": "Run 'go test ./api/v1beta1/...' to verify all v1beta1 tests pass (scheme registration, types, deepcopy, conversion hub). Run 'go test ./api/v1alpha1/...' to verify all v1alpha1 tests pass including new conversion tests and existing tests. Run 'golangci-lint run ./api/...' to verify no lint errors. Run 'go vet ./...' to verify no vet issues. Fix any issues found.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Write reference documentation for v1beta1 API conversion architecture",
+      "description": "Create docs/reference/backend/api-version-conversion.md documenting: (1) the hub/spoke conversion pattern and why v1beta1 is the hub, (2) the conversion.Hub and conversion.Convertible interfaces with file locations, (3) the field mapping strategy (identical schema = direct field copy), (4) deprecation status of v1alpha1 and migration guidance, (5) how to test conversion (round-trip pattern). Follow the existing documentation style in docs/reference/backend/. Keep it concise and reference-oriented per the Diataxis framework.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-003",
+        "REQ-004"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "api/v1beta1/scheme_registration_test.go",
+      "test_function": "TestScheme_GroupVersionFields",
+      "story": "Operator developer registers v1beta1 GroupVersion with scheme",
+      "expected": "GroupVersion.Group is 'memcached.c5c3.io' and GroupVersion.Version is 'v1beta1'",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "api/v1beta1/scheme_registration_test.go",
+      "test_function": "TestScheme_GVKResolution",
+      "story": "Operator developer registers v1beta1 GroupVersion with scheme",
+      "expected": "Memcached resolves to {memcached.c5c3.io, v1beta1, Memcached} and MemcachedList to {memcached.c5c3.io, v1beta1, MemcachedList}",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "api/v1beta1/scheme_registration_test.go",
+      "test_function": "TestScheme_AddToSchemeSucceeds",
+      "story": "Operator developer registers v1beta1 GroupVersion with scheme",
+      "expected": "AddToScheme on a new scheme does not return an error",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "api/v1beta1/scheme_registration_test.go",
+      "test_function": "TestScheme_TypeMappingFromGVK",
+      "story": "Operator developer registers v1beta1 GroupVersion with scheme",
+      "expected": "scheme.New(GVK) returns the correct Go type for Memcached and MemcachedList",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_conversion_test.go",
+      "test_function": "TestHub_InterfaceSatisfied",
+      "story": "Operator developer implements hub/spoke conversion interfaces",
+      "expected": "var _ conversion.Hub = &Memcached{} compiles; Hub() can be called without panic",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestConvertible_InterfaceSatisfied",
+      "story": "Operator developer implements hub/spoke conversion interfaces",
+      "expected": "var _ conversion.Convertible = &Memcached{} compiles",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestConvertTo_FullyPopulatedObject",
+      "story": "Operator developer implements hub/spoke conversion interfaces",
+      "expected": "All Spec and Status fields are copied to the v1beta1 hub including deeply nested structs",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestConvertFrom_FullyPopulatedObject",
+      "story": "Operator developer implements hub/spoke conversion interfaces",
+      "expected": "All Spec and Status fields are copied from the v1beta1 hub to the v1alpha1 spoke",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestConvertTo_WrongHubType_ReturnsError",
+      "story": "Operator developer implements hub/spoke conversion interfaces",
+      "expected": "ConvertTo with a non-v1beta1 hub returns a descriptive error",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestConvertFrom_WrongHubType_ReturnsError",
+      "story": "Operator developer implements hub/spoke conversion interfaces",
+      "expected": "ConvertFrom with a non-v1beta1 hub returns a descriptive error",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestRoundTrip_FullyPopulated_NoDataLoss",
+      "story": "Operator developer verifies lossless round-trip conversion",
+      "expected": "v1alpha1 -> v1beta1 -> v1alpha1 with every field set produces deeply equal Spec and Status",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestRoundTrip_MinimalObject_PreservesNils",
+      "story": "Operator developer verifies lossless round-trip conversion",
+      "expected": "Round-trip of a minimal object (only Name/Namespace) preserves nil/zero optional fields",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestRoundTrip_ObjectMeta_Preserved",
+      "story": "Operator developer verifies lossless round-trip conversion",
+      "expected": "Labels, Annotations, Name, Namespace, ResourceVersion survive the round trip",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestConvertTo_MinimalObject",
+      "story": "Operator developer verifies lossless round-trip conversion",
+      "expected": "ConvertTo with a minimal object (nil Spec fields) succeeds without panic",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_types_test.go",
+      "test_function": "TestMemcachedSpec_AllFieldsPresent",
+      "story": "Operator developer creates v1beta1 API package as storage version hub",
+      "expected": "v1beta1 MemcachedSpec has all 9 fields matching v1alpha1 (Replicas, Image, Resources, Memcached, HighAvailability, Monitoring, Security, Autoscaling, Service)",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1beta1/memcached_types_test.go",
+      "test_function": "TestAntiAffinityPreset_ValidValues",
+      "story": "Operator developer creates v1beta1 API package as storage version hub",
+      "expected": "AntiAffinityPresetSoft='soft' and AntiAffinityPresetHard='hard' constants exist in v1beta1",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "api/v1beta1/deepcopy_test.go",
+      "test_function": "TestMemcachedDeepCopy_Independence",
+      "story": "Operator developer generates deepcopy methods for v1beta1",
+      "expected": "Mutating original after DeepCopy does not affect the clone",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "api/v1beta1/deepcopy_test.go",
+      "test_function": "TestMemcachedDeepCopyObject_ReturnsRuntimeObject",
+      "story": "Operator developer generates deepcopy methods for v1beta1",
+      "expected": "DeepCopyObject returns a *Memcached that is an independent copy",
+      "requirement_id": "REQ-008"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All v1beta1 types match v1alpha1 exactly: same fields, same JSON tags, same kubebuilder markers (verified by comparing type definitions side by side)",
+    "+kubebuilder:storageversion marker is present on v1beta1.Memcached and absent from v1alpha1.Memcached",
+    "conversion.Hub interface is satisfied by v1beta1.Memcached (compile-time assertion present)",
+    "conversion.Convertible interface is satisfied by v1alpha1.Memcached (compile-time assertion present)",
+    "Round-trip conversion test (v1alpha1 -> v1beta1 -> v1alpha1) passes with a fully-populated object and all Spec/Status/ObjectMeta fields are preserved",
+    "ConvertTo and ConvertFrom return descriptive errors when called with wrong hub type",
+    "Deprecation comment '// Deprecated: Use v1beta1.Memcached instead.' is present on v1alpha1 Memcached type",
+    "All existing v1alpha1 tests pass without modification (no regressions)",
+    "go vet ./... passes with no errors",
+    "golangci-lint run passes with no errors",
+    "api/v1beta1/zz_generated.deepcopy.go is generated and committed",
+    "Reference documentation for API version conversion exists at docs/reference/backend/api-version-conversion.md"
+  ],
+  "implementation_notes": "**Architecture:** This task implements the hub/spoke conversion pattern standard in Kubernetes multi-version CRDs. v1beta1 is the 'hub' (storage version) and v1alpha1 is the 'spoke'. The conversion.Hub interface is a marker (empty Hub() method), while conversion.Convertible requires ConvertTo/ConvertFrom methods on the spoke.\n\n**Field mapping strategy:** Since v1alpha1 and v1beta1 have identical schemas, the conversion is a direct field-by-field copy. However, because the types are in separate Go packages, you cannot use direct struct assignment — each field must be copied explicitly. For deeply nested types (HighAvailabilitySpec, SecuritySpec, etc.), the copy must be recursive. Use the same pattern for both ConvertTo and ConvertFrom (reversed direction).\n\n**Important: Cross-package type conversion.** Although the schemas are identical, Go treats v1alpha1.MemcachedConfig and v1beta1.MemcachedConfig as different types. Each nested struct's fields must be copied individually. For types that embed Kubernetes API types (corev1.ResourceRequirements, metav1.Condition, etc.), these CAN be directly assigned since they are the same type from the same package.\n\n**Pitfalls to avoid:**\n1. Do NOT copy TypeMeta in ConvertTo/ConvertFrom — the conversion framework sets this.\n2. DO copy ObjectMeta — the framework expects this.\n3. Ensure all pointer fields are nil-checked before dereferencing in conversion. Since schemas are identical and we're copying the pointer itself (not dereferencing), nil pointers are safe to copy.\n4. For slice fields (ExtraArgs, Conditions, TopologySpreadConstraints, Metrics, AllowedSources), copy the slice header — DeepCopy is not needed here since the conversion creates a new object.\n5. For map fields (AdditionalLabels, Annotations), copy the map reference — same reasoning.\n\n**Testing strategy:** The round-trip test is the most critical. Create a fully-populated v1alpha1.Memcached with EVERY field set (including all nested optional structs, slices, maps, IntOrString fields). Convert to v1beta1 via ConvertTo, then back via ConvertFrom. Compare Spec and Status with reflect.DeepEqual. Also test minimal/nil cases.\n\n**Key files to reference:**\n- api/v1alpha1/memcached_types.go — source types to copy\n- api/v1alpha1/groupversion_info.go — pattern for groupversion registration\n- api/v1alpha1/scheme_registration_test.go — pattern for scheme tests\n- api/v1alpha1/deepcopy_test.go — pattern for deepcopy tests\n- api/v1alpha1/memcached_types_test.go — pattern for type unit tests\n- hack/boilerplate.go.txt — license header for generated files\n\n**Import path for conversion:** sigs.k8s.io/controller-runtime/pkg/conversion (available in controller-runtime v0.23.1)\n\n**controller-runtime version:** v0.23.1 (supports conversion.Hub and conversion.Convertible interfaces)",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:26:33.926617"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T12:08:09.255994"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T12:14:17.065133"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "c7c81292-a62d-4d17-8295-89d6e193b304",
+      "timestamp": "2026-02-22T12:14:17.065161",
+      "total_duration": 364.71142172813416,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 364.71142172813416,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
