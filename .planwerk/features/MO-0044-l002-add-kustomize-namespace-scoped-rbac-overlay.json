@@ -1,0 +1,656 @@
+{
+  "feature_id": "MO-0044",
+  "title": "L002: Add Kustomize namespace-scoped RBAC overlay",
+  "slug": "l002-add-kustomize-namespace-scoped-rbac-overlay",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🔧 small\n**Category:** infrastructure\n**Priority:** medium\n**Source:** Proposed for 'Namespace-Scoped Operator Mode\n\nNew flag --watch'\n\nCreate new directory config/namespace-scoped/ with: (1) kustomization.yaml referencing ../rbac as base and applying patches, (2) role_patch.yaml with JSON or strategic merge patches that convert ClusterRole manager-role to Role and ClusterRoleBinding manager-rolebinding to RoleBinding (updating roleRef.kind accordingly). Leave leader-election-role (already a Role), metrics-auth-role, metrics-auth-rolebinding, metrics-reader, and service_account untouched. Verify with kustomize build that output produces correct Role/RoleBinding resources. Add documentation note that CRDs must be installed cluster-wide by an admin.\n\n**Rationale:** Namespace-scoped deployments require Role/RoleBinding instead of ClusterRole/ClusterRoleBinding for least-privilege RBAC. Providing a ready-made Kustomize overlay eliminates error-prone manual RBAC conversion and ensures correct configuration for namespace-scoped operator deployments.\n\n**Affected Areas:**\n- config/namespace-scoped/kustomization.yaml\n- config/namespace-scoped/role_patch.yaml",
+  "stories": [
+    {
+      "title": "Operator deployer can build namespace-scoped RBAC via Kustomize overlay",
+      "role": "operator deployer",
+      "want": "to run kustomize build config/namespace-scoped/ and get Role/RoleBinding resources instead of ClusterRole/ClusterRoleBinding",
+      "so_that": "I can deploy the operator with least-privilege namespace-scoped RBAC without manually editing YAML",
+      "criteria": [
+        "kustomize build config/namespace-scoped/ succeeds without errors",
+        "Output contains Role (not ClusterRole) named manager-role",
+        "Output contains RoleBinding (not ClusterRoleBinding) named manager-rolebinding",
+        "role_patch.yaml exists in config/namespace-scoped/ with JSON patch operations"
+      ]
+    },
+    {
+      "title": "Operator deployer gets correct RoleBinding with proper roleRef",
+      "role": "operator deployer",
+      "want": "the RoleBinding produced by the overlay to reference roleRef.kind=Role (not ClusterRole)",
+      "so_that": "the RoleBinding correctly references the namespace-scoped Role and Kubernetes accepts the binding",
+      "criteria": [
+        "RoleBinding manager-rolebinding has roleRef.kind set to Role",
+        "RoleBinding manager-rolebinding has roleRef.name set to manager-role",
+        "RoleBinding subjects reference ServiceAccount controller-manager in namespace system"
+      ]
+    },
+    {
+      "title": "Operator deployer retains cluster-scoped RBAC for metrics and leader election",
+      "role": "operator deployer",
+      "want": "the overlay to leave leader-election, metrics, and service-account resources unchanged",
+      "so_that": "cluster-scoped resources that require ClusterRole remain functional",
+      "criteria": [
+        "leader-election-role remains kind: Role (unchanged, already namespace-scoped)",
+        "leader-election-rolebinding remains kind: RoleBinding (unchanged)",
+        "metrics-auth-role remains kind: ClusterRole",
+        "metrics-auth-rolebinding remains kind: ClusterRoleBinding",
+        "metrics-reader remains kind: ClusterRole",
+        "service_account controller-manager remains unchanged"
+      ]
+    },
+    {
+      "title": "Operator deployer gets all RBAC rules preserved in the namespace-scoped Role",
+      "role": "operator deployer",
+      "want": "the Role produced by the overlay to contain all the same RBAC rules as the original ClusterRole",
+      "so_that": "the operator retains all necessary permissions when deployed namespace-scoped",
+      "criteria": [
+        "Role manager-role contains rules for memcacheds (full CRUD)",
+        "Role manager-role contains rules for deployments, services, PDBs, NetworkPolicies, ServiceMonitors",
+        "Role manager-role contains read-only rules for secrets",
+        "Role manager-role contains create/patch rules for events"
+      ]
+    },
+    {
+      "title": "Operator deployer understands CRD cluster-wide installation requirement",
+      "role": "operator deployer",
+      "want": "documentation that clearly states CRDs must be installed cluster-wide by an admin even in namespace-scoped mode",
+      "so_that": "I do not misconfigure the deployment by assuming CRDs are namespace-scoped",
+      "criteria": [
+        "Documentation states CRDs are cluster-scoped and must be installed by a cluster admin",
+        "Documentation references kubectl apply -f config/crd/bases/ for CRD installation",
+        "Documentation is in docs/reference/backend/ following existing doc conventions"
+      ]
+    },
+    {
+      "title": "Developer can verify namespace-scoped overlay via automated tests",
+      "role": "developer",
+      "want": "Go tests that validate the kustomize build output of config/namespace-scoped/",
+      "so_that": "regressions in the overlay are caught automatically in CI",
+      "criteria": [
+        "Tests exist in internal/controller/kustomize_build_test.go using cachedNamespaceScopedOutput",
+        "Tests verify Role/RoleBinding conversion",
+        "Tests verify unchanged resources are preserved",
+        "Tests follow existing table-driven test patterns in the file"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The overlay SHALL convert ClusterRole manager-role to Role via JSON patch in role_patch.yaml",
+      "priority": "SHALL",
+      "rationale": "Namespace-scoped deployments require Role instead of ClusterRole for the operator's primary RBAC permissions",
+      "scenarios": [
+        {
+          "name": "ClusterRole converted to Role",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the output contains kind: Role for the manager-role resource",
+          "and_then": [
+            "the resource name remains manager-role",
+            "apiVersion remains rbac.authorization.k8s.io/v1"
+          ]
+        },
+        {
+          "name": "role_patch.yaml contains the JSON patch",
+          "when": "role_patch.yaml is read",
+          "then": "it contains a JSON patch with op: replace, path: /kind, value: Role",
+          "and_then": [
+            "the file is valid YAML"
+          ]
+        },
+        {
+          "name": "All RBAC rules preserved in Role",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the Role manager-role contains the same rules as the original ClusterRole",
+          "and_then": [
+            "rules for memcacheds, deployments, services, PDBs, NetworkPolicies, ServiceMonitors, secrets, events are all present"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "The kustomization.yaml SHALL reference ../rbac as the base resource",
+      "priority": "SHALL",
+      "rationale": "The overlay modifies the base rbac resources via patches rather than duplicating them",
+      "scenarios": [
+        {
+          "name": "Base reference is correct",
+          "when": "kustomization.yaml is parsed",
+          "then": "the resources section contains ../rbac",
+          "and_then": [
+            "no other resources are listed"
+          ]
+        },
+        {
+          "name": "All base rbac resources appear in output",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "all 8 resources from config/rbac/ appear in the output",
+          "and_then": [
+            "role.yaml, role_binding.yaml, leader_election_role.yaml, leader_election_role_binding.yaml, service_account.yaml, metrics_auth_role.yaml, metrics_auth_role_binding.yaml, metrics_reader_role.yaml"
+          ]
+        },
+        {
+          "name": "Base rbac build is unaffected",
+          "when": "kustomize build config/rbac/ is executed separately",
+          "then": "the output still contains ClusterRole and ClusterRoleBinding (not Role/RoleBinding)",
+          "and_then": [
+            "the overlay does not modify the base files"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "The overlay SHALL convert ClusterRoleBinding manager-rolebinding to RoleBinding via JSON patch",
+      "priority": "SHALL",
+      "rationale": "A namespace-scoped Role must be bound via RoleBinding, not ClusterRoleBinding",
+      "scenarios": [
+        {
+          "name": "ClusterRoleBinding converted to RoleBinding",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the output contains kind: RoleBinding for the manager-rolebinding resource",
+          "and_then": [
+            "the resource name remains manager-rolebinding"
+          ]
+        },
+        {
+          "name": "Labels preserved on RoleBinding",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the RoleBinding retains app.kubernetes.io/name and app.kubernetes.io/managed-by labels",
+          "and_then": []
+        },
+        {
+          "name": "Subjects preserved on RoleBinding",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the RoleBinding subjects reference ServiceAccount controller-manager in namespace system",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "The overlay SHALL update roleRef.kind from ClusterRole to Role in the RoleBinding",
+      "priority": "SHALL",
+      "rationale": "The roleRef.kind must match the actual kind of the referenced role; a RoleBinding must reference a Role, not a ClusterRole",
+      "scenarios": [
+        {
+          "name": "roleRef.kind updated to Role",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the RoleBinding manager-rolebinding has roleRef.kind: Role",
+          "and_then": [
+            "roleRef.name remains manager-role",
+            "roleRef.apiGroup remains rbac.authorization.k8s.io"
+          ]
+        },
+        {
+          "name": "Invalid roleRef.kind causes Kubernetes rejection",
+          "when": "a RoleBinding references roleRef.kind: ClusterRole",
+          "then": "Kubernetes API server rejects the binding at apply time",
+          "and_then": [
+            "this scenario is prevented by the patch"
+          ]
+        },
+        {
+          "name": "Patch applies both kind and roleRef.kind changes",
+          "when": "the ClusterRoleBinding target patch is applied",
+          "then": "both kind (ClusterRoleBinding→RoleBinding) and roleRef.kind (ClusterRole→Role) are changed",
+          "and_then": [
+            "no partial application occurs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The overlay SHALL produce valid Kubernetes YAML when running kustomize build",
+      "priority": "SHALL",
+      "rationale": "The output must be directly applicable to a Kubernetes cluster via kubectl apply",
+      "scenarios": [
+        {
+          "name": "kustomize build succeeds",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the command exits with code 0 and produces non-empty YAML output",
+          "and_then": [
+            "no warnings or errors are printed to stderr"
+          ]
+        },
+        {
+          "name": "Output contains expected resource count",
+          "when": "kustomize build config/namespace-scoped/ output is split by YAML document separator",
+          "then": "exactly 8 YAML documents are produced (matching the 8 resources in config/rbac/)",
+          "and_then": []
+        },
+        {
+          "name": "Each resource has valid apiVersion and kind",
+          "when": "each YAML document in the output is examined",
+          "then": "every document has a non-empty apiVersion and kind field",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "The overlay SHALL NOT modify leader-election-role or leader-election-rolebinding resources",
+      "priority": "SHALL",
+      "rationale": "leader-election-role is already a namespace-scoped Role; no conversion needed",
+      "scenarios": [
+        {
+          "name": "leader-election-role remains Role",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the output contains kind: Role for leader-election-role",
+          "and_then": [
+            "this is the same kind as in the base resource"
+          ]
+        },
+        {
+          "name": "leader-election-rolebinding remains RoleBinding",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the output contains kind: RoleBinding for leader-election-rolebinding",
+          "and_then": [
+            "this is the same kind as in the base resource"
+          ]
+        },
+        {
+          "name": "leader-election-role rules unchanged",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the leader-election-role contains rules for configmaps, leases, and events",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "The overlay SHALL NOT modify metrics-auth-role, metrics-auth-rolebinding, metrics-reader, or service_account resources",
+      "priority": "SHALL",
+      "rationale": "metrics-auth-role references cluster-scoped tokenreviews/subjectaccessreviews APIs; metrics-reader uses non-resource URLs; both require ClusterRole. ServiceAccount is unrelated to RBAC kind conversion.",
+      "scenarios": [
+        {
+          "name": "metrics-auth-role remains ClusterRole",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the output contains kind: ClusterRole for metrics-auth-role",
+          "and_then": []
+        },
+        {
+          "name": "metrics-auth-rolebinding remains ClusterRoleBinding",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the output contains kind: ClusterRoleBinding for metrics-auth-rolebinding",
+          "and_then": []
+        },
+        {
+          "name": "metrics-reader remains ClusterRole",
+          "when": "kustomize build config/namespace-scoped/ is executed",
+          "then": "the output contains kind: ClusterRole for metrics-reader with nonResourceURLs /metrics",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "The documentation SHALL note that CRDs must be installed cluster-wide by an administrator",
+      "priority": "SHALL",
+      "rationale": "CRDs are cluster-scoped by design; deployers must understand this when using namespace-scoped mode to avoid incomplete deployments",
+      "scenarios": [
+        {
+          "name": "CRD installation note in documentation",
+          "when": "the namespace-scoped reference documentation is read",
+          "then": "it contains a section stating CRDs must be installed cluster-wide",
+          "and_then": [
+            "it provides the kubectl command for CRD installation"
+          ]
+        },
+        {
+          "name": "Documentation references role_patch.yaml",
+          "when": "the namespace-scoped reference documentation is read",
+          "then": "it lists role_patch.yaml as a file in the overlay",
+          "and_then": [
+            "it explains what the patch does"
+          ]
+        },
+        {
+          "name": "Documentation explains what is and is not patched",
+          "when": "the namespace-scoped reference documentation is read",
+          "then": "it lists which resources are converted and which are left unchanged with rationale",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "The kustomize deployment manifests documentation SHOULD include the namespace-scoped overlay in the directory structure",
+      "priority": "SHOULD",
+      "rationale": "Deployers consulting the config/ directory reference should see the namespace-scoped overlay listed alongside other overlays",
+      "scenarios": [
+        {
+          "name": "Directory tree includes namespace-scoped",
+          "when": "docs/reference/backend/kustomize-deployment-manifests.md is read",
+          "then": "the config/ directory tree includes a namespace-scoped/ entry with kustomization.yaml and role_patch.yaml",
+          "and_then": []
+        },
+        {
+          "name": "Component description added",
+          "when": "docs/reference/backend/kustomize-deployment-manifests.md is read",
+          "then": "a Component Bases section describes config/namespace-scoped/ with its purpose and files",
+          "and_then": []
+        },
+        {
+          "name": "No other existing content changed",
+          "when": "docs/reference/backend/kustomize-deployment-manifests.md diff is examined",
+          "then": "only additive changes are made; no existing content is modified or removed",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Create config/namespace-scoped/role_patch.yaml with JSON patch for ClusterRole-to-Role conversion (REQ-001)",
+      "description": "Create config/namespace-scoped/role_patch.yaml containing a JSON patch array with a single operation: op: replace, path: /kind, value: Role. This file will be referenced by kustomization.yaml to convert the ClusterRole manager-role to a namespace-scoped Role. The file format is a YAML list of JSON patch operations compatible with kustomize's patches[].path directive.",
+      "level": 1,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Update config/namespace-scoped/kustomization.yaml to reference role_patch.yaml and maintain RoleBinding conversion (REQ-002, REQ-003, REQ-004)",
+      "description": "Update the existing config/namespace-scoped/kustomization.yaml to: (1) keep resources: [../rbac] as base, (2) replace the inline ClusterRole patch with a path reference to role_patch.yaml targeting kind: ClusterRole, name: manager-role, (3) keep the inline JSON patches for ClusterRoleBinding→RoleBinding conversion (op: replace path: /kind value: RoleBinding AND op: replace path: /roleRef/kind value: Role) targeting kind: ClusterRoleBinding, name: manager-rolebinding. The ClusterRoleBinding patches must remain inline because they require different replacement values than role_patch.yaml.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-002",
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Write Go test verifying ClusterRole manager-role is converted to Role in overlay output (REQ-001, REQ-005)",
+      "description": "Add TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleToRole in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput (already populated in TestMain). Split output by '\\n---\\n', find the document containing 'name: manager-role', and verify: (1) it contains 'kind: Role' (not 'kind: ClusterRole'), (2) it contains 'apiVersion: rbac.authorization.k8s.io/v1', (3) it contains rules for memcacheds, deployments, services, secrets, events. Follow the existing test pattern of strings.Contains checks on YAML documents.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Write Go test verifying ClusterRoleBinding is converted to RoleBinding with roleRef.kind=Role (REQ-003, REQ-004, REQ-005)",
+      "description": "Add TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleBindingToRoleBinding in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Split output by '\\n---\\n', find the document containing 'name: manager-rolebinding', and verify: (1) it contains 'kind: RoleBinding' (not 'kind: ClusterRoleBinding'), (2) it does NOT contain 'kind: ClusterRoleBinding', (3) roleRef.kind is Role (check for 'kind: Role' within the roleRef block), (4) subjects reference ServiceAccount controller-manager.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-003",
+        "REQ-004",
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.3",
+      "title": "Write Go test verifying leader-election resources are unchanged in overlay output (REQ-006)",
+      "description": "Add TestKustomizeBuildNamespaceScoped_PreservesLeaderElectionResources in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Verify: (1) output contains a Role named leader-election-role (it was already Role in base), (2) output contains a RoleBinding named leader-election-rolebinding. Use table-driven subtests for each resource.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "2.4",
+      "title": "Write Go test verifying metrics and service account resources are unchanged in overlay output (REQ-007)",
+      "description": "Add TestKustomizeBuildNamespaceScoped_PreservesClusterScopedResources in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Use table-driven subtests to verify: (1) metrics-auth-role remains ClusterRole, (2) metrics-auth-rolebinding remains ClusterRoleBinding, (3) metrics-reader remains ClusterRole, (4) service_account controller-manager is present. For each, find the YAML document by name and check kind.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-007"
+      ]
+    },
+    {
+      "id": "2.5",
+      "title": "Write Go test verifying the overlay produces the expected total resource count (REQ-005)",
+      "description": "Add TestKustomizeBuildNamespaceScoped_OutputIsNonEmpty in internal/controller/kustomize_build_test.go. Verify cachedNamespaceScopedOutput is non-empty. Count YAML documents by splitting on '\\n---\\n' and verify there are exactly 8 documents (matching the 8 resources in config/rbac/kustomization.yaml: role, role_binding, leader_election_role, leader_election_role_binding, service_account, metrics_auth_role, metrics_auth_role_binding, metrics_reader_role).",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.6",
+      "title": "Write Go test verifying Role preserves all RBAC rules from the original ClusterRole (REQ-001)",
+      "description": "Add TestKustomizeBuildNamespaceScoped_RolePreservesAllRules in internal/controller/kustomize_build_test.go. Use cachedNamespaceScopedOutput. Find the manager-role document and use table-driven subtests to verify it contains rules for: (1) memcacheds (full CRUD), (2) memcacheds/status, (3) memcacheds/finalizers, (4) deployments, (5) services, (6) poddisruptionbudgets, (7) networkpolicies, (8) servicemonitors, (9) secrets (read-only), (10) events (create/patch). Check for each resource name string in the document.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Update docs/reference/backend/kustomize-deployment-manifests.md to include namespace-scoped overlay (REQ-009)",
+      "description": "Update docs/reference/backend/kustomize-deployment-manifests.md: (1) Add config/namespace-scoped/ entry to the Directory Structure tree with kustomization.yaml and role_patch.yaml files, (2) Add a new Component Bases subsection '### config/namespace-scoped/' describing it as a Kustomize overlay that converts ClusterRole/ClusterRoleBinding to Role/RoleBinding for namespace-scoped deployments. Include a table listing the two files (kustomization.yaml and role_patch.yaml) with their descriptions. Place the section after config/rbac/ section.",
+      "level": 3,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Update docs/reference/backend/namespace-scoped-mode.md to reference role_patch.yaml (REQ-008)",
+      "description": "Update docs/reference/backend/namespace-scoped-mode.md: (1) Update the Source line to include role_patch.yaml, (2) In the 'Kustomize Overlay: Namespace-Scoped RBAC' section, update the description to mention that JSON patches are defined in role_patch.yaml and referenced from kustomization.yaml, (3) Verify the 'What It Patches' table is accurate, (4) Verify the CRD cluster-wide installation note is present (it already exists at line 151-159). Only make additive changes.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Run kustomize build config/namespace-scoped/ and verify correct output manually (REQ-005)",
+      "description": "Run 'make kustomize && bin/kustomize build config/namespace-scoped/' from the project root. Manually inspect the output to verify: (1) no errors, (2) Role manager-role appears (not ClusterRole), (3) RoleBinding manager-rolebinding appears with roleRef.kind=Role (not ClusterRoleBinding), (4) leader-election-role remains Role, (5) metrics resources remain ClusterRole/ClusterRoleBinding, (6) all 8 resources present.",
+      "level": 4,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "4.2",
+      "title": "Run full kustomize build test suite and verify all tests pass (REQ-001 through REQ-007)",
+      "description": "Run 'make kustomize && go test ./internal/controller/ -run TestKustomizeBuild -v -count=1' to execute all kustomize build tests including the new namespace-scoped tests. Verify all tests pass. If any test fails, investigate and fix the issue in the implementation (tasks 1.1-1.2) or test code (tasks 2.1-2.6).",
+      "level": 4,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004",
+        "REQ-005",
+        "REQ-006",
+        "REQ-007"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleToRole",
+      "story": "Operator deployer can build namespace-scoped RBAC via Kustomize overlay",
+      "expected": "Output contains kind: Role (not ClusterRole) for the manager-role resource with apiVersion rbac.authorization.k8s.io/v1",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_RolePreservesAllRules",
+      "story": "Operator deployer gets all RBAC rules preserved in the namespace-scoped Role",
+      "expected": "Role manager-role contains all 10 rule groups from the original ClusterRole: memcacheds, memcacheds/status, memcacheds/finalizers, deployments, services, PDBs, NetworkPolicies, ServiceMonitors, secrets, events",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_OutputIsNonEmpty",
+      "story": "Operator deployer can build namespace-scoped RBAC via Kustomize overlay",
+      "expected": "kustomize build produces non-empty output and the correct number of YAML documents (8 resources)",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_OutputIsNonEmpty/resource_count",
+      "story": "Operator deployer can build namespace-scoped RBAC via Kustomize overlay",
+      "expected": "Output contains exactly 8 YAML documents matching the 8 resources from config/rbac/kustomization.yaml",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleBindingToRoleBinding",
+      "story": "Operator deployer gets correct RoleBinding with proper roleRef",
+      "expected": "Output contains kind: RoleBinding (not ClusterRoleBinding) for manager-rolebinding, does not contain ClusterRoleBinding for this resource",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleBindingToRoleBinding/roleRef_kind_is_Role",
+      "story": "Operator deployer gets correct RoleBinding with proper roleRef",
+      "expected": "RoleBinding manager-rolebinding has roleRef.kind set to Role and roleRef.name set to manager-role",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_ConvertsClusterRoleBindingToRoleBinding/subjects_preserved",
+      "story": "Operator deployer gets correct RoleBinding with proper roleRef",
+      "expected": "RoleBinding subjects reference ServiceAccount controller-manager in namespace system",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_PreservesLeaderElectionResources/leader-election-role_remains_Role",
+      "story": "Operator deployer retains cluster-scoped RBAC for metrics and leader election",
+      "expected": "Output contains kind: Role for leader-election-role (unchanged from base)",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_PreservesLeaderElectionResources/leader-election-rolebinding_remains_RoleBinding",
+      "story": "Operator deployer retains cluster-scoped RBAC for metrics and leader election",
+      "expected": "Output contains kind: RoleBinding for leader-election-rolebinding (unchanged from base)",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_PreservesClusterScopedResources/metrics-auth-role_remains_ClusterRole",
+      "story": "Operator deployer retains cluster-scoped RBAC for metrics and leader election",
+      "expected": "Output contains kind: ClusterRole for metrics-auth-role (must remain cluster-scoped for tokenreviews/subjectaccessreviews)",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_PreservesClusterScopedResources/metrics-auth-rolebinding_remains_ClusterRoleBinding",
+      "story": "Operator deployer retains cluster-scoped RBAC for metrics and leader election",
+      "expected": "Output contains kind: ClusterRoleBinding for metrics-auth-rolebinding",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_PreservesClusterScopedResources/metrics-reader_remains_ClusterRole",
+      "story": "Operator deployer retains cluster-scoped RBAC for metrics and leader election",
+      "expected": "Output contains kind: ClusterRole for metrics-reader (must remain cluster-scoped for nonResourceURLs)",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_PreservesClusterScopedResources/service_account_present",
+      "story": "Operator deployer retains cluster-scoped RBAC for metrics and leader election",
+      "expected": "Output contains ServiceAccount controller-manager resource unchanged",
+      "requirement_id": "REQ-007"
+    },
+    {
+      "test_file": "internal/controller/kustomize_build_test.go",
+      "test_function": "TestKustomizeBuildNamespaceScoped_OutputIsNonEmpty",
+      "story": "Developer can verify namespace-scoped overlay via automated tests",
+      "expected": "kustomize build config/namespace-scoped/ succeeds (validated in TestMain) and produces non-empty output",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "docs/reference/backend/namespace-scoped-mode.md",
+      "test_function": "manual_review_crd_installation_note",
+      "story": "Operator deployer understands CRD cluster-wide installation requirement",
+      "expected": "Documentation contains section stating CRDs are cluster-scoped and must be installed by admin, with kubectl command",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "docs/reference/backend/namespace-scoped-mode.md",
+      "test_function": "manual_review_role_patch_reference",
+      "story": "Operator deployer understands CRD cluster-wide installation requirement",
+      "expected": "Documentation references role_patch.yaml and explains its purpose in the overlay",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "docs/reference/backend/kustomize-deployment-manifests.md",
+      "test_function": "manual_review_namespace_scoped_entry",
+      "story": "Operator deployer finds namespace-scoped overlay referenced in existing docs",
+      "expected": "Directory tree and Component Bases section include config/namespace-scoped/ with kustomization.yaml and role_patch.yaml",
+      "requirement_id": "REQ-009"
+    },
+    {
+      "test_file": "docs/reference/backend/kustomize-deployment-manifests.md",
+      "test_function": "manual_review_namespace_scoped_description",
+      "story": "Operator deployer finds namespace-scoped overlay referenced in existing docs",
+      "expected": "Component Bases subsection describes namespace-scoped overlay purpose and lists its files with descriptions",
+      "requirement_id": "REQ-009"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "kustomize build config/namespace-scoped/ exits with code 0 and produces valid YAML with exactly 8 resource documents",
+    "Output contains kind: Role (not ClusterRole) for manager-role with all 10 original RBAC rule groups preserved",
+    "Output contains kind: RoleBinding (not ClusterRoleBinding) for manager-rolebinding with roleRef.kind: Role",
+    "leader-election-role (Role), leader-election-rolebinding (RoleBinding), metrics-auth-role (ClusterRole), metrics-auth-rolebinding (ClusterRoleBinding), metrics-reader (ClusterRole), and service_account remain unchanged",
+    "role_patch.yaml exists in config/namespace-scoped/ with valid JSON patch operations",
+    "All new Go tests in kustomize_build_test.go pass: go test ./internal/controller/ -run TestKustomizeBuildNamespaceScoped -v -count=1",
+    "Base config/rbac/ kustomize build output is unaffected (still produces ClusterRole/ClusterRoleBinding)",
+    "docs/reference/backend/kustomize-deployment-manifests.md includes namespace-scoped/ in directory tree and Component Bases",
+    "docs/reference/backend/namespace-scoped-mode.md references role_patch.yaml and CRD cluster-wide installation requirement"
+  ],
+  "implementation_notes": "This is a pure infrastructure/config feature — no Go source code changes, only Kustomize manifests, Go tests, and documentation.\n\n**Patch strategy**: JSON patches (RFC 6902) are the correct approach for changing the `kind` field because strategic merge patches identify resources by kind+name, making it impossible to change the kind itself. The kustomize patches[] directive with target selectors allows applying JSON patches to specific resources.\n\n**File structure**: role_patch.yaml contains the JSON patch for ClusterRole→Role conversion (single op: replace). The ClusterRoleBinding→RoleBinding conversion uses inline patches in kustomization.yaml because it requires different replacement values (RoleBinding for kind, Role for roleRef.kind) that cannot share a file with the ClusterRole patch.\n\n**Why some resources stay cluster-scoped**: metrics-auth-role grants tokenreviews/subjectaccessreviews access (cluster-scoped APIs). metrics-reader grants /metrics non-resource URL access (inherently cluster-scoped). leader-election-role is already a Role. Converting these would break functionality.\n\n**Test infrastructure**: TestMain in kustomize_build_test.go already runs kustomize build for both config/default/ and config/namespace-scoped/, caching output in cachedNamespaceScopedOutput. New tests use this cached output, following the established pattern of strings.Contains/strings.Split checks on YAML documents.\n\n**Key files to reference**:\n- config/namespace-scoped/kustomization.yaml (existing, update)\n- config/namespace-scoped/role_patch.yaml (new)\n- config/rbac/kustomization.yaml (base, unchanged)\n- config/rbac/role.yaml (ClusterRole, unchanged)\n- config/rbac/role_binding.yaml (ClusterRoleBinding, unchanged)\n- internal/controller/kustomize_build_test.go (existing test file, add tests)\n- docs/reference/backend/namespace-scoped-mode.md (existing, minor update)\n- docs/reference/backend/kustomize-deployment-manifests.md (existing, add section)",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-21T16:16:21.782652"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:42:11.569321"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-02-22T10:50:27.647813"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "b387789e-1b5e-4ead-8bc8-38dcde349572",
+      "timestamp": "2026-02-22T10:50:27.647840",
+      "total_duration": 491.7545416355133,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 491.7545416355133,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
