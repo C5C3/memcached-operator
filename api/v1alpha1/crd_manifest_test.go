@@ -32,13 +32,23 @@ func loadCRD(t *testing.T) *apiextensionsv1.CustomResourceDefinition {
 	return crd
 }
 
-// getVersionSchema returns the openAPIV3Schema for the first (and expected only) version.
+// findVersion returns the CRD version with the given name.
+func findVersion(t *testing.T, crd *apiextensionsv1.CustomResourceDefinition, name string) apiextensionsv1.CustomResourceDefinitionVersion {
+	t.Helper()
+	for _, v := range crd.Spec.Versions {
+		if v.Name == name {
+			return v
+		}
+	}
+	t.Fatalf("version %q not found in CRD", name)
+	return apiextensionsv1.CustomResourceDefinitionVersion{}
+}
+
+// getVersionSchema returns the openAPIV3Schema for the v1alpha1 version.
 func getVersionSchema(t *testing.T, crd *apiextensionsv1.CustomResourceDefinition) *apiextensionsv1.JSONSchemaProps {
 	t.Helper()
-	if len(crd.Spec.Versions) == 0 {
-		t.Fatal("CRD has no versions defined")
-	}
-	schema := crd.Spec.Versions[0].Schema
+	v := findVersion(t, crd, "v1alpha1")
+	schema := v.Schema
 	if schema == nil || schema.OpenAPIV3Schema == nil {
 		t.Fatal("CRD version has no OpenAPIV3Schema")
 	}
@@ -89,36 +99,43 @@ func TestCRDMetadata(t *testing.T) {
 func TestCRDVersion(t *testing.T) {
 	crd := loadCRD(t)
 
-	t.Run("exactly one version", func(t *testing.T) {
-		if got := len(crd.Spec.Versions); got != 1 {
-			t.Fatalf("expected 1 version, got %d", got)
-		}
-	})
-
-	v := crd.Spec.Versions[0]
-
-	t.Run("version name is v1alpha1", func(t *testing.T) {
-		if v.Name != "v1alpha1" {
-			t.Errorf("expected version name v1alpha1, got %q", v.Name)
-		}
-	})
-
-	t.Run("version is served", func(t *testing.T) {
+	t.Run("v1alpha1 exists and is served", func(t *testing.T) {
+		v := findVersion(t, crd, "v1alpha1")
 		if !v.Served {
-			t.Error("expected version to be served")
+			t.Error("expected v1alpha1 to be served")
 		}
 	})
 
-	t.Run("version is storage", func(t *testing.T) {
+	t.Run("v1beta1 exists and is served", func(t *testing.T) {
+		v := findVersion(t, crd, "v1beta1")
+		if !v.Served {
+			t.Error("expected v1beta1 to be served")
+		}
+	})
+
+	t.Run("exactly one storage version", func(t *testing.T) {
+		var storageVersions []string
+		for _, v := range crd.Spec.Versions {
+			if v.Storage {
+				storageVersions = append(storageVersions, v.Name)
+			}
+		}
+		if len(storageVersions) != 1 {
+			t.Fatalf("expected exactly 1 storage version, got %v", storageVersions)
+		}
+	})
+
+	t.Run("v1beta1 is storage version", func(t *testing.T) {
+		v := findVersion(t, crd, "v1beta1")
 		if !v.Storage {
-			t.Error("expected version to be storage version")
+			t.Error("expected v1beta1 to be the storage version")
 		}
 	})
 }
 
 func TestCRDSubresources(t *testing.T) {
 	crd := loadCRD(t)
-	v := crd.Spec.Versions[0]
+	v := findVersion(t, crd, "v1alpha1")
 
 	t.Run("status subresource enabled", func(t *testing.T) {
 		if v.Subresources == nil {
@@ -134,7 +151,8 @@ func TestCRDPrinterColumns(t *testing.T) {
 	crd := loadCRD(t)
 
 	columnsByName := make(map[string]apiextensionsv1.CustomResourceColumnDefinition)
-	for _, col := range crd.Spec.Versions[0].AdditionalPrinterColumns {
+	v := findVersion(t, crd, "v1alpha1")
+	for _, col := range v.AdditionalPrinterColumns {
 		columnsByName[col.Name] = col
 	}
 

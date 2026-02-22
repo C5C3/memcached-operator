@@ -1,0 +1,74 @@
+{
+  "feature_id": "MO-0045",
+  "title": "M001: Add v1beta1 API types with hub/spoke conversion",
+  "date": "2026-02-22",
+  "verdict": "NEEDS_CHANGES",
+  "summary": "v1beta1 API types, hub/spoke conversion, scheme registration, deprecation comment, deepcopy generation, and reference documentation are all implemented. All tests pass, go vet is clean, and compilation succeeds. The round-trip conversion tests are thorough with fully-populated and minimal object coverage. One completeness gap: 4 deepcopy tests specified in task 3.1 are missing from api/v1beta1/deepcopy_test.go.",
+  "tests_checklist": [
+    {"item": "All existing v1alpha1 tests pass without modification", "checked": true},
+    {"item": "All new v1beta1 tests pass", "checked": true},
+    {"item": "Round-trip conversion test (v1alpha1 -> v1beta1 -> v1alpha1) passes with fully-populated object", "checked": true},
+    {"item": "Minimal object round-trip preserves nils", "checked": true},
+    {"item": "ObjectMeta preserved through round-trip", "checked": true},
+    {"item": "Wrong hub type returns descriptive error", "checked": true},
+    {"item": "conversion.Hub compile-time assertion present", "checked": true},
+    {"item": "conversion.Convertible compile-time assertion present", "checked": true},
+    {"item": "Deepcopy independence tests for Memcached and MemcachedList", "checked": false},
+    {"item": "Deepcopy nil receiver tests for Memcached and MemcachedList", "checked": false},
+    {"item": "Scheme registration tests (SchemeBuilder, GroupVersion, GVK, type mapping)", "checked": true},
+    {"item": "Type construction tests (AllFieldsPresent, AntiAffinityPreset, FullResource)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "v1beta1/groupversion_info.go follows v1alpha1 pattern exactly", "checked": true},
+    {"item": "v1beta1/memcached_types.go matches v1alpha1 types (fields, JSON tags, markers)", "checked": true},
+    {"item": "Conversion helpers use nil guards for all pointer fields", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "Clear naming (helper functions: convertHighAvailabilityTo/From, etc.)", "checked": true},
+    {"item": "Functions follow single responsibility principle", "checked": true},
+    {"item": "No magic numbers or strings", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input handling (API type definitions only)", "checked": true},
+    {"item": "No hardcoded secrets", "checked": true},
+    {"item": "No sensitive data exposed in error messages", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Hub/spoke pattern follows standard Kubernetes multi-version CRD mechanism", "checked": true},
+    {"item": "+kubebuilder:storageversion on v1beta1 only", "checked": true},
+    {"item": "+kubebuilder:storageversion absent from v1alpha1", "checked": true},
+    {"item": "Conversion is lossless (identical schemas)", "checked": true},
+    {"item": "Makefile verify-manifests updated to include v1beta1 deepcopy", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No unnecessary abstractions — helpers only where type conversion requires them", "checked": true},
+    {"item": "No future-proofing code (e.g., no unused conversion annotations)", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "ConvertTo/ConvertFrom return fmt.Errorf on wrong hub type", "checked": true},
+    {"item": "Type assertion checked with ok pattern", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "All pointer fields nil-checked before conversion", "checked": true},
+    {"item": "ObjectMeta copied directly (no field-by-field risk)", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "FC1-1",
+      "severity": "major",
+      "check_id": "FC1",
+      "description": "Task 3.1 specifies 6 deepcopy tests for v1beta1 but only 2 are implemented. Missing: TestMemcachedDeepCopy_NilReceiver, TestMemcachedListDeepCopy_Independence, TestMemcachedListDeepCopyObject_ReturnsRuntimeObject, TestMemcachedListDeepCopy_NilReceiver. The v1alpha1 package has all 6 equivalent tests.",
+      "location": "api/v1beta1/deepcopy_test.go",
+      "fix": "Add the 4 missing tests following the exact pattern from api/v1alpha1/deepcopy_test.go: TestMemcachedDeepCopy_NilReceiver (verify DeepCopy on nil returns nil), TestMemcachedListDeepCopy_Independence (fully populated list, mutate original, verify clone unaffected), TestMemcachedListDeepCopyObject_ReturnsRuntimeObject (verify type assertion), TestMemcachedListDeepCopy_NilReceiver (verify nil list DeepCopy returns nil)."
+    }
+  ],
+  "suggested_improvements": [
+    "Consider moving compile-time interface assertions (var _ conversion.Hub = &Memcached{}) from test files into the conversion source files themselves for discoverability — this is standard practice in controller-runtime projects."
+  ],
+  "next_steps": [
+    "Add 4 missing deepcopy tests to api/v1beta1/deepcopy_test.go",
+    "Re-run tests to verify all pass",
+    "Re-request review"
+  ]
+}

@@ -72,7 +72,7 @@ func TestSampleYAMLFiles(t *testing.T) {
 			}
 
 			// Verify kind
-			expectedKind := "Memcached"
+			expectedKind := "Memcached" //nolint:goconst // test literal
 			if memcached.Kind != expectedKind {
 				t.Errorf("kind: got %q, want %q", memcached.Kind, expectedKind)
 			}

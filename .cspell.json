@@ -205,6 +205,7 @@
     "softprops",
     "sigs",
     "staticcheck",
+    "storageversion",
     "statefulset",
     "stefanzweifel",
     "subjectaccessreviews",

@@ -144,6 +144,11 @@ func findMarkdownFiles(root string) ([]string, error) {
 			return nil
 		}
 
+		// Skip node_modules (third-party npm packages contain broken internal links)
+		if d.IsDir() && d.Name() == "node_modules" {
+			return filepath.SkipDir
+		}
+
 		// Collect markdown files
 		if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
 			files = append(files, path)

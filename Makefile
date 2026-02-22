@@ -69,7 +69,7 @@ lint-fix: golangci-lint ## Run golangci-lint linter and perform fixes.
 
 .PHONY: verify-manifests
 verify-manifests: manifests generate ## Verify generated manifests and code are up-to-date.
-	@git diff --exit-code -- config/crd/ api/v1alpha1/zz_generated.deepcopy.go || \
+	@git diff --exit-code -- config/crd/ api/v1alpha1/zz_generated.deepcopy.go api/v1beta1/zz_generated.deepcopy.go || \
 		(echo "ERROR: Generated files are out of date. Run 'make manifests generate' and commit the result." && exit 1)
 
 ##@ Build
