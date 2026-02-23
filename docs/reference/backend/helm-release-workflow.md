@@ -7,10 +7,11 @@ and publishes the Helm chart to the GHCR OCI registry on version tags.
 
 ## Overview
 
-The Helm release workflow is triggered when a tag matching `helm-chart-*` is
-pushed (e.g., `helm-chart-0.1.0`). It validates the chart version against the
-tag, runs lint and unit tests, then packages and pushes the chart to the OCI
-registry at `oci://ghcr.io/c5c3/charts`.
+The Helm release workflow is triggered when a tag matching `v*` is pushed
+(e.g., `v0.2.0`). It validates the chart version against the tag, runs lint and
+unit tests, then packages and pushes the chart to the OCI registry at
+`oci://ghcr.io/c5c3/charts`. This means a single version tag releases both the
+container image (via `release.yml`) and the Helm chart.
 
 | Job        | Purpose                                            | Dependencies |
 |------------|----------------------------------------------------|--------------|
@@ -25,12 +26,13 @@ registry at `oci://ghcr.io/c5c3/charts`.
 on:
   push:
     tags:
-      - "helm-chart-*"
+      - "v*"
 ```
 
-The workflow fires when a tag starting with `helm-chart-` is pushed. The tag
-suffix must match the `version` field in `charts/memcached-operator/Chart.yaml`
-(e.g., tag `helm-chart-0.2.0` requires `version: 0.2.0` in `Chart.yaml`).
+The workflow fires when a tag starting with `v` is pushed. The tag suffix
+(without `v`) must match the `version` field in
+`charts/memcached-operator/Chart.yaml` (e.g., tag `v0.2.0` requires
+`version: 0.2.0` in `Chart.yaml`).
 
 ---
 
@@ -63,8 +65,8 @@ cancelled to prevent partial releases.
 Extracts the chart version from the tag, verifies it matches `Chart.yaml`, and
 runs the full chart validation suite.
 
-**Version extraction**: Strips the `helm-chart-` prefix from the tag name to
-derive the expected chart version.
+**Version extraction**: Strips the `v` prefix from the tag name to derive the
+expected chart version.
 
 **Version validation**: Reads the `version` field from
 `charts/memcached-operator/Chart.yaml` and compares it to the tag-derived
@@ -124,14 +126,14 @@ oci://ghcr.io/c5c3/charts/memcached-operator
 ### Installing from the OCI Registry
 
 ```bash
-helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version 0.1.0
+helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version 0.2.0
 ```
 
 To install into a specific namespace:
 
 ```bash
 helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --namespace memcached-system \
   --create-namespace
 ```
@@ -139,45 +141,46 @@ helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
 To download the chart locally:
 
 ```bash
-helm pull oci://ghcr.io/c5c3/charts/memcached-operator --version 0.1.0
+helm pull oci://ghcr.io/c5c3/charts/memcached-operator --version 0.2.0
 ```
 
 ---
 
 ## Creating a Helm Chart Release
 
-To release a new version of the Helm chart:
+To release a new version:
 
 1. **Bump the chart version** in `charts/memcached-operator/Chart.yaml`:
    ```yaml
-   version: 0.2.0
+   version: 0.3.0
+   appVersion: "0.3.0"
    ```
 
 2. **Commit and push** the version change to `main`.
 
 3. **Create and push the release tag**:
    ```bash
-   git tag helm-chart-0.2.0
-   git push origin helm-chart-0.2.0
+   git tag v0.3.0
+   git push origin v0.3.0
    ```
 
-The workflow runs automatically and publishes the chart to the OCI registry.
-Verify the release:
+This single tag triggers both the container image release (`release.yml`) and
+the Helm chart release (`helm-release.yml`). Verify the chart release:
 
 ```bash
-helm show chart oci://ghcr.io/c5c3/charts/memcached-operator --version 0.2.0
+helm show chart oci://ghcr.io/c5c3/charts/memcached-operator --version 0.3.0
 ```
 
 ---
 
 ## Relationship to Other Workflows
 
-| Workflow           | Scope                            | Trigger            |
+| Workflow           | Scope                            | Trigger           |
 |--------------------|----------------------------------|--------------------|
-| `ci.yml`           | Code lint, test, E2E             | PR + push to main  |
-| `release.yml`      | Container image + GitHub Release | Tag `v*`           |
-| `helm-release.yml` | Helm chart OCI package           | Tag `helm-chart-*` |
+| `ci.yml`           | Code lint, test, E2E             | PR + push to main |
+| `release.yml`      | Container image + GitHub Release | Tag `v*`          |
+| `helm-release.yml` | Helm chart OCI package           | Tag `v*`          |
 
-The Helm chart release is independent of the container image release. The chart's
-`appVersion` in `Chart.yaml` should reference the operator image version that the
+Both release workflows are triggered by the same `v*` tag. The chart's
+`appVersion` in `Chart.yaml` should match the operator image version that the
 chart deploys.
