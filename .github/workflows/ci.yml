@@ -394,3 +394,124 @@ jobs:
 
       - name: Run helm-unittest
         run: helm unittest charts/memcached-operator
+
+  helm-e2e:
+    name: Helm E2E
+    needs: [detect-chart-changes]
+    if: always() && (github.event_name == 'push' || needs.detect-chart-changes.outputs.charts-changed == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_NAME: helm-e2e
+      RELEASE_NAMESPACE: helm-e2e-system
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: kind
+
+      - name: Install cert-manager
+        run: |
+          kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.16.1/cert-manager.yaml
+          kubectl wait --for=condition=Available deployment/cert-manager-webhook \
+            -n cert-manager --timeout=120s
+
+      - name: Install ServiceMonitor CRD
+        run: kubectl apply -f config/crd/thirdparty/monitoring.coreos.com_servicemonitors.yaml
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build operator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: controller:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Load image into kind
+        run: kind load docker-image controller:ci
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.17.3
+
+      - name: Helm install
+        run: |
+          helm install "$RELEASE_NAME" charts/memcached-operator \
+            --namespace "$RELEASE_NAMESPACE" --create-namespace \
+            --set image.repository=controller \
+            --set image.tag=ci \
+            --set image.pullPolicy=Never \
+            --wait --timeout 120s
+
+      - name: Wait for certificate
+        run: |
+          kubectl wait --for=condition=Ready \
+            "certificate/${RELEASE_NAME}-memcached-operator-webhook-cert" \
+            -n "$RELEASE_NAMESPACE" --timeout=120s
+
+      - name: Wait for webhook readiness
+        run: |
+          for i in $(seq 1 30); do
+            if kubectl apply --dry-run=server -f test/e2e/resources/memcached-minimal.yaml \
+                 -n default 2>/dev/null; then
+              echo "Webhook is ready"
+              exit 0
+            fi
+            echo "Waiting for webhook... ($i/30)"
+            sleep 2
+          done
+          echo "Webhook did not become ready in time"
+          exit 1
+
+      - name: Smoke test — create Memcached CR
+        run: |
+          kubectl create namespace helm-e2e-test
+          kubectl apply -f config/samples/memcached_v1beta1_minimal.yaml \
+            -n helm-e2e-test
+
+      - name: Smoke test — verify operator reconciles
+        run: |
+          for i in $(seq 1 30); do
+            if kubectl get deployment/memcached-dev -n helm-e2e-test &>/dev/null && \
+               kubectl get service/memcached-dev -n helm-e2e-test &>/dev/null; then
+              echo "Resources created by operator"
+              kubectl rollout status deployment/memcached-dev \
+                -n helm-e2e-test --timeout=120s
+              exit 0
+            fi
+            echo "Waiting for operator to reconcile... ($i/30)"
+            sleep 2
+          done
+          echo "Operator did not reconcile in time"
+          exit 1
+
+      - name: Debug failure
+        if: failure()
+        run: |
+          echo "=== Helm Status ==="
+          helm status "$RELEASE_NAME" -n "$RELEASE_NAMESPACE" || true
+          echo "=== Operator Logs ==="
+          kubectl logs "deployment/${RELEASE_NAME}-memcached-operator" \
+            -n "$RELEASE_NAMESPACE" --all-containers --tail=100 || true
+          echo "=== Operator Pod Status ==="
+          kubectl get pods -n "$RELEASE_NAMESPACE" -o wide || true
+          echo "=== Events (operator namespace) ==="
+          kubectl get events -n "$RELEASE_NAMESPACE" --sort-by='.lastTimestamp' || true
+          echo "=== Memcached CR Status ==="
+          kubectl get memcached -n helm-e2e-test -o yaml || true
+          echo "=== Events (test namespace) ==="
+          kubectl get events -n helm-e2e-test --sort-by='.lastTimestamp' || true
+          echo "=== Certificates ==="
+          kubectl get certificates -n "$RELEASE_NAMESPACE" -o yaml || true
+          echo "=== Webhook Configurations ==="
+          kubectl get validatingwebhookconfigurations,mutatingwebhookconfigurations -o yaml || true
