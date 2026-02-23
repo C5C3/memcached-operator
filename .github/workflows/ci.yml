@@ -74,6 +74,12 @@ jobs:
           path: cover.out
           retention-days: 7
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: cover.out
+          fail_ci_if_error: false
+
   build:
     name: Build ${{ matrix.platform }}
     if: github.event_name == 'pull_request'

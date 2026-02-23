@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/c5c3/memcached-operator/actions/workflows/ci.yml/badge.svg)](https://github.com/c5c3/memcached-operator/actions/workflows/ci.yml)
 [![Release](https://github.com/c5c3/memcached-operator/actions/workflows/release.yml/badge.svg)](https://github.com/c5c3/memcached-operator/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/c5c3/memcached-operator/graph/badge.svg)](https://codecov.io/gh/c5c3/memcached-operator)
 
 A Kubernetes operator for managing Memcached clusters, built with
 [Operator SDK](https://sdk.operatorframework.io/) (Go) and
