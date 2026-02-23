@@ -9,6 +9,248 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// newTestMemcached creates a minimal Memcached resource and applies functional options.
+func newTestMemcached(opts ...func(*Memcached)) *Memcached {
+	mc := &Memcached{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+	}
+	for _, opt := range opts {
+		opt(mc)
+	}
+	return mc
+}
+
+func withSecurity() func(*Memcached) {
+	return func(mc *Memcached) {
+		if mc.Spec.Security == nil {
+			mc.Spec.Security = &SecuritySpec{}
+		}
+	}
+}
+
+func withTLS(enabled bool) func(*Memcached) {
+	return func(mc *Memcached) {
+		withSecurity()(mc)
+		mc.Spec.Security.TLS = &TLSSpec{Enabled: enabled}
+	}
+}
+
+func withSASL(enabled bool) func(*Memcached) {
+	return func(mc *Memcached) {
+		withSecurity()(mc)
+		mc.Spec.Security.SASL = &SASLSpec{Enabled: enabled}
+	}
+}
+
+func withMonitoring(enabled bool) func(*Memcached) {
+	return func(mc *Memcached) {
+		mc.Spec.Monitoring = &MonitoringSpec{Enabled: enabled}
+	}
+}
+
+func withServiceMonitor() func(*Memcached) {
+	return func(mc *Memcached) {
+		withMonitoring(true)(mc)
+		mc.Spec.Monitoring.ServiceMonitor = &ServiceMonitorSpec{}
+	}
+}
+
+func withAutoscaling(enabled bool) func(*Memcached) {
+	return func(mc *Memcached) {
+		mc.Spec.Autoscaling = &AutoscalingSpec{Enabled: enabled, MaxReplicas: 10}
+	}
+}
+
+func withHighAvailability() func(*Memcached) {
+	return func(mc *Memcached) {
+		if mc.Spec.HighAvailability == nil {
+			mc.Spec.HighAvailability = &HighAvailabilitySpec{}
+		}
+	}
+}
+
+func withPDB(enabled bool) func(*Memcached) {
+	return func(mc *Memcached) {
+		withHighAvailability()(mc)
+		mc.Spec.HighAvailability.PodDisruptionBudget = &PDBSpec{Enabled: enabled}
+	}
+}
+
+func withGracefulShutdown(enabled bool) func(*Memcached) {
+	return func(mc *Memcached) {
+		withHighAvailability()(mc)
+		mc.Spec.HighAvailability.GracefulShutdown = &GracefulShutdownSpec{Enabled: enabled}
+	}
+}
+
+func withNetworkPolicy(enabled bool) func(*Memcached) {
+	return func(mc *Memcached) {
+		withSecurity()(mc)
+		mc.Spec.Security.NetworkPolicy = &NetworkPolicySpec{Enabled: enabled}
+	}
+}
+
+func TestMemcached_IsTLSEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil Security", newTestMemcached(), false},
+		{"nil TLS", newTestMemcached(withSecurity()), false},
+		{"TLS disabled", newTestMemcached(withTLS(false)), false},
+		{"TLS enabled", newTestMemcached(withTLS(true)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsTLSEnabled(); got != tt.want {
+				t.Errorf("IsTLSEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMemcached_IsSASLEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil Security", newTestMemcached(), false},
+		{"nil SASL", newTestMemcached(withSecurity()), false},
+		{"SASL disabled", newTestMemcached(withSASL(false)), false},
+		{"SASL enabled", newTestMemcached(withSASL(true)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsSASLEnabled(); got != tt.want {
+				t.Errorf("IsSASLEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMemcached_IsMonitoringEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil Monitoring", newTestMemcached(), false},
+		{"Monitoring disabled", newTestMemcached(withMonitoring(false)), false},
+		{"Monitoring enabled", newTestMemcached(withMonitoring(true)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsMonitoringEnabled(); got != tt.want {
+				t.Errorf("IsMonitoringEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMemcached_IsServiceMonitorEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil Monitoring", newTestMemcached(), false},
+		{"Monitoring disabled", newTestMemcached(withMonitoring(false)), false},
+		{"Monitoring enabled but nil ServiceMonitor", newTestMemcached(withMonitoring(true)), false},
+		{"ServiceMonitor enabled", newTestMemcached(withServiceMonitor()), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsServiceMonitorEnabled(); got != tt.want {
+				t.Errorf("IsServiceMonitorEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMemcached_IsAutoscalingEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil Autoscaling", newTestMemcached(), false},
+		{"Autoscaling disabled", newTestMemcached(withAutoscaling(false)), false},
+		{"Autoscaling enabled", newTestMemcached(withAutoscaling(true)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsAutoscalingEnabled(); got != tt.want {
+				t.Errorf("IsAutoscalingEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMemcached_IsPDBEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil HighAvailability", newTestMemcached(), false},
+		{"nil PDB", newTestMemcached(withHighAvailability()), false},
+		{"PDB disabled", newTestMemcached(withPDB(false)), false},
+		{"PDB enabled", newTestMemcached(withPDB(true)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsPDBEnabled(); got != tt.want {
+				t.Errorf("IsPDBEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMemcached_IsGracefulShutdownEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil HighAvailability", newTestMemcached(), false},
+		{"nil GracefulShutdown", newTestMemcached(withHighAvailability()), false},
+		{"GracefulShutdown disabled", newTestMemcached(withGracefulShutdown(false)), false},
+		{"GracefulShutdown enabled", newTestMemcached(withGracefulShutdown(true)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsGracefulShutdownEnabled(); got != tt.want {
+				t.Errorf("IsGracefulShutdownEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMemcached_IsNetworkPolicyEnabled(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   *Memcached
+		want bool
+	}{
+		{"nil Security", newTestMemcached(), false},
+		{"nil NetworkPolicy", newTestMemcached(withSecurity()), false},
+		{"NetworkPolicy disabled", newTestMemcached(withNetworkPolicy(false)), false},
+		{"NetworkPolicy enabled", newTestMemcached(withNetworkPolicy(true)), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.mc.IsNetworkPolicyEnabled(); got != tt.want {
+				t.Errorf("IsNetworkPolicyEnabled() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMemcachedSpec_AllFieldsPresent(t *testing.T) {
 	replicas := int32(3)
 	img := "memcached:1.6.33"

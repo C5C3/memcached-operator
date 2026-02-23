@@ -184,7 +184,7 @@ func TestConstructPDB_InstanceScopedSelector(t *testing.T) {
 	}
 }
 
-func TestPDBEnabled(t *testing.T) {
+func TestIsPDBEnabled(t *testing.T) {
 	tests := []struct {
 		name string
 		mc   *memcachedv1beta1.Memcached
@@ -234,9 +234,9 @@ func TestPDBEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := pdbEnabled(tt.mc)
+			got := tt.mc.IsPDBEnabled()
 			if got != tt.want {
-				t.Errorf("pdbEnabled() = %v, want %v", got, tt.want)
+				t.Errorf("IsPDBEnabled() = %v, want %v", got, tt.want)
 			}
 		})
 	}

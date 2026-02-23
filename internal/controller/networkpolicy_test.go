@@ -13,7 +13,7 @@ import (
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
-func TestNetworkPolicyEnabled(t *testing.T) {
+func TestIsNetworkPolicyEnabled(t *testing.T) {
 	tests := []struct {
 		name string
 		mc   *memcachedv1beta1.Memcached
@@ -63,9 +63,9 @@ func TestNetworkPolicyEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := networkPolicyEnabled(tt.mc)
+			got := tt.mc.IsNetworkPolicyEnabled()
 			if got != tt.want {
-				t.Errorf("networkPolicyEnabled() = %v, want %v", got, tt.want)
+				t.Errorf("IsNetworkPolicyEnabled() = %v, want %v", got, tt.want)
 			}
 		})
 	}

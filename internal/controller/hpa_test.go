@@ -13,7 +13,7 @@ import (
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
-func TestHpaEnabled(t *testing.T) {
+func TestIsAutoscalingEnabled(t *testing.T) {
 	tests := []struct {
 		name string
 		mc   *memcachedv1beta1.Memcached
@@ -48,9 +48,9 @@ func TestHpaEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := hpaEnabled(tt.mc)
+			got := tt.mc.IsAutoscalingEnabled()
 			if got != tt.want {
-				t.Errorf("hpaEnabled() = %v, want %v", got, tt.want)
+				t.Errorf("IsAutoscalingEnabled() = %v, want %v", got, tt.want)
 			}
 		})
 	}

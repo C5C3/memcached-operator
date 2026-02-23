@@ -149,8 +149,7 @@ func buildTopologySpreadConstraints(mc *memcachedv1beta1.Memcached) []corev1.Top
 // buildGracefulShutdown returns the Lifecycle hook and terminationGracePeriodSeconds for graceful
 // shutdown, or (nil, nil) if graceful shutdown is not enabled.
 func buildGracefulShutdown(mc *memcachedv1beta1.Memcached) (*corev1.Lifecycle, *int64) {
-	if mc.Spec.HighAvailability == nil || mc.Spec.HighAvailability.GracefulShutdown == nil ||
-		!mc.Spec.HighAvailability.GracefulShutdown.Enabled {
+	if !mc.IsGracefulShutdownEnabled() {
 		return nil, nil
 	}
 
@@ -180,7 +179,7 @@ func buildGracefulShutdown(mc *memcachedv1beta1.Memcached) (*corev1.Lifecycle, *
 // buildExporterContainer returns a memcached-exporter sidecar container when monitoring is enabled,
 // or nil if monitoring is disabled or not configured.
 func buildExporterContainer(mc *memcachedv1beta1.Memcached) *corev1.Container {
-	if mc.Spec.Monitoring == nil || !mc.Spec.Monitoring.Enabled {
+	if !mc.IsMonitoringEnabled() {
 		return nil
 	}
 
@@ -223,7 +222,7 @@ const saslMountPath = "/etc/memcached/sasl"
 // buildSASLVolume returns a Volume that projects the SASL credentials Secret,
 // or nil if SASL is not enabled.
 func buildSASLVolume(mc *memcachedv1beta1.Memcached) *corev1.Volume {
-	if mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled {
+	if !mc.IsSASLEnabled() {
 		return nil
 	}
 	return &corev1.Volume{
@@ -242,7 +241,7 @@ func buildSASLVolume(mc *memcachedv1beta1.Memcached) *corev1.Volume {
 // buildSASLVolumeMount returns a VolumeMount for the SASL credentials,
 // or nil if SASL is not enabled.
 func buildSASLVolumeMount(mc *memcachedv1beta1.Memcached) *corev1.VolumeMount {
-	if mc.Spec.Security == nil || mc.Spec.Security.SASL == nil || !mc.Spec.Security.SASL.Enabled {
+	if !mc.IsSASLEnabled() {
 		return nil
 	}
 	return &corev1.VolumeMount{
@@ -264,7 +263,7 @@ const tlsPortName = "memcached-tls"
 // buildTLSVolume returns a Volume that projects the TLS certificate Secret,
 // or nil if TLS is not enabled.
 func buildTLSVolume(mc *memcachedv1beta1.Memcached) *corev1.Volume {
-	if mc.Spec.Security == nil || mc.Spec.Security.TLS == nil || !mc.Spec.Security.TLS.Enabled {
+	if !mc.IsTLSEnabled() {
 		return nil
 	}
 	items := []corev1.KeyToPath{
@@ -288,7 +287,7 @@ func buildTLSVolume(mc *memcachedv1beta1.Memcached) *corev1.Volume {
 // buildTLSVolumeMount returns a VolumeMount for the TLS certificates,
 // or nil if TLS is not enabled.
 func buildTLSVolumeMount(mc *memcachedv1beta1.Memcached) *corev1.VolumeMount {
-	if mc.Spec.Security == nil || mc.Spec.Security.TLS == nil || !mc.Spec.Security.TLS.Enabled {
+	if !mc.IsTLSEnabled() {
 		return nil
 	}
 	return &corev1.VolumeMount{
@@ -325,7 +324,7 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 	// Determine replicas: nil when HPA is active (let HPA control scaling),
 	// otherwise use spec value or default.
 	var replicasPtr *int32
-	if !hpaEnabled(mc) {
+	if !mc.IsAutoscalingEnabled() {
 		replicas := int32(1)
 		if mc.Spec.Replicas != nil {
 			replicas = *mc.Spec.Replicas

@@ -350,6 +350,59 @@ type MemcachedList struct {
 	Items           []Memcached `json:"items"`
 }
 
+// IsTLSEnabled returns true when TLS encryption is explicitly enabled.
+func (mc *Memcached) IsTLSEnabled() bool {
+	return mc.Spec.Security != nil &&
+		mc.Spec.Security.TLS != nil &&
+		mc.Spec.Security.TLS.Enabled
+}
+
+// IsSASLEnabled returns true when SASL authentication is explicitly enabled.
+func (mc *Memcached) IsSASLEnabled() bool {
+	return mc.Spec.Security != nil &&
+		mc.Spec.Security.SASL != nil &&
+		mc.Spec.Security.SASL.Enabled
+}
+
+// IsMonitoringEnabled returns true when the monitoring exporter sidecar is enabled.
+func (mc *Memcached) IsMonitoringEnabled() bool {
+	return mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled
+}
+
+// IsServiceMonitorEnabled returns true when monitoring is enabled and a ServiceMonitor
+// sub-section is present in the CR spec.
+func (mc *Memcached) IsServiceMonitorEnabled() bool {
+	return mc.Spec.Monitoring != nil &&
+		mc.Spec.Monitoring.Enabled &&
+		mc.Spec.Monitoring.ServiceMonitor != nil
+}
+
+// IsAutoscalingEnabled returns true when horizontal pod autoscaling is explicitly enabled.
+func (mc *Memcached) IsAutoscalingEnabled() bool {
+	return mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled
+}
+
+// IsPDBEnabled returns true when PodDisruptionBudget creation is explicitly enabled.
+func (mc *Memcached) IsPDBEnabled() bool {
+	return mc.Spec.HighAvailability != nil &&
+		mc.Spec.HighAvailability.PodDisruptionBudget != nil &&
+		mc.Spec.HighAvailability.PodDisruptionBudget.Enabled
+}
+
+// IsGracefulShutdownEnabled returns true when graceful shutdown is explicitly enabled.
+func (mc *Memcached) IsGracefulShutdownEnabled() bool {
+	return mc.Spec.HighAvailability != nil &&
+		mc.Spec.HighAvailability.GracefulShutdown != nil &&
+		mc.Spec.HighAvailability.GracefulShutdown.Enabled
+}
+
+// IsNetworkPolicyEnabled returns true when NetworkPolicy creation is explicitly enabled.
+func (mc *Memcached) IsNetworkPolicyEnabled() bool {
+	return mc.Spec.Security != nil &&
+		mc.Spec.Security.NetworkPolicy != nil &&
+		mc.Spec.Security.NetworkPolicy.Enabled
+}
+
 func init() {
 	SchemeBuilder.Register(&Memcached{}, &MemcachedList{})
 }

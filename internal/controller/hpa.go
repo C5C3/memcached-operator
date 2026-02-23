@@ -25,8 +25,3 @@ func constructHPA(mc *memcachedv1beta1.Memcached, hpa *autoscalingv2.HorizontalP
 	hpa.Spec.Metrics = mc.Spec.Autoscaling.Metrics
 	hpa.Spec.Behavior = mc.Spec.Autoscaling.Behavior
 }
-
-// hpaEnabled returns true only when HPA creation is explicitly enabled in the CR spec.
-func hpaEnabled(mc *memcachedv1beta1.Memcached) bool {
-	return mc.Spec.Autoscaling != nil && mc.Spec.Autoscaling.Enabled
-}

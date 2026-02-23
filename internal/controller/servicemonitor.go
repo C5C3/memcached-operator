@@ -57,11 +57,3 @@ func constructServiceMonitor(mc *memcachedv1beta1.Memcached, sm *monitoringv1.Se
 		},
 	}
 }
-
-// serviceMonitorEnabled returns true when monitoring is enabled and the ServiceMonitor
-// sub-section is present in the CR spec.
-func serviceMonitorEnabled(mc *memcachedv1beta1.Memcached) bool {
-	return mc.Spec.Monitoring != nil &&
-		mc.Spec.Monitoring.Enabled &&
-		mc.Spec.Monitoring.ServiceMonitor != nil
-}

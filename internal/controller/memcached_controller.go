@@ -144,7 +144,7 @@ func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memca
 // reconcileHPA ensures the HorizontalPodAutoscaler for the Memcached CR matches the desired state.
 // When autoscaling is disabled, it deletes any existing HPA owned by the CR.
 func (r *MemcachedReconciler) reconcileHPA(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
-	if !hpaEnabled(mc) {
+	if !mc.IsAutoscalingEnabled() {
 		return r.deleteOwnedResource(ctx, &autoscalingv2.HorizontalPodAutoscaler{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
 		}, "HorizontalPodAutoscaler")
@@ -184,7 +184,7 @@ func (r *MemcachedReconciler) reconcileService(ctx context.Context, mc *memcache
 // reconcilePDB ensures the PodDisruptionBudget for the Memcached CR matches the desired state.
 // When PDB is disabled, it deletes any existing PDB owned by the CR.
 func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
-	if !pdbEnabled(mc) {
+	if !mc.IsPDBEnabled() {
 		return r.deleteOwnedResource(ctx, &policyv1.PodDisruptionBudget{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
 		}, "PodDisruptionBudget")
@@ -207,7 +207,7 @@ func (r *MemcachedReconciler) reconcilePDB(ctx context.Context, mc *memcachedv1b
 // reconcileServiceMonitor ensures the ServiceMonitor for the Memcached CR matches the desired state.
 // When monitoring is disabled, it deletes any existing ServiceMonitor owned by the CR.
 func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
-	if !serviceMonitorEnabled(mc) {
+	if !mc.IsServiceMonitorEnabled() {
 		return r.deleteOwnedResource(ctx, &monitoringv1.ServiceMonitor{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
 		}, "ServiceMonitor")
@@ -230,7 +230,7 @@ func (r *MemcachedReconciler) reconcileServiceMonitor(ctx context.Context, mc *m
 // reconcileNetworkPolicy ensures the NetworkPolicy for the Memcached CR matches the desired state.
 // When NetworkPolicy is disabled, it deletes any existing NetworkPolicy owned by the CR.
 func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
-	if !networkPolicyEnabled(mc) {
+	if !mc.IsNetworkPolicyEnabled() {
 		return r.deleteOwnedResource(ctx, &networkingv1.NetworkPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
 		}, "NetworkPolicy")

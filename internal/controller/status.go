@@ -156,7 +156,7 @@ func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcached
 	}
 
 	// Compute new conditions.
-	newConditions := computeConditions(mc, dep, missingSecrets, hpaEnabled(mc))
+	newConditions := computeConditions(mc, dep, missingSecrets, mc.IsAutoscalingEnabled())
 	for _, c := range newConditions {
 		meta.SetStatusCondition(&mc.Status.Conditions, c)
 	}

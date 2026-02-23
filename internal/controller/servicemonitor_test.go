@@ -278,7 +278,7 @@ func TestConstructServiceMonitor_InstanceScopedSelector(t *testing.T) {
 	}
 }
 
-func TestServiceMonitorEnabled(t *testing.T) {
+func TestIsServiceMonitorEnabled(t *testing.T) {
 	tests := []struct {
 		name string
 		mc   *memcachedv1beta1.Memcached
@@ -327,9 +327,9 @@ func TestServiceMonitorEnabled(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := serviceMonitorEnabled(tt.mc)
+			got := tt.mc.IsServiceMonitorEnabled()
 			if got != tt.want {
-				t.Errorf("serviceMonitorEnabled() = %v, want %v", got, tt.want)
+				t.Errorf("IsServiceMonitorEnabled() = %v, want %v", got, tt.want)
 			}
 		})
 	}
