@@ -3,6 +3,7 @@ package controller
 
 import (
 	"fmt"
+	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -13,12 +14,27 @@ import (
 )
 
 // labelsForMemcached returns the standard Kubernetes recommended labels for a Memcached resource.
+// These labels are used for selectors and must not include mutable fields like version.
 func labelsForMemcached(name string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "memcached",
 		"app.kubernetes.io/instance":   name,
 		"app.kubernetes.io/managed-by": "memcached-operator",
 	}
+}
+
+// imageVersion extracts the tag portion from a container image reference.
+// For example, "memcached:1.6" returns "1.6" and "registry.io/img:v2" returns "v2".
+// Returns an empty string if no tag is present.
+func imageVersion(image string) string {
+	// Handle digests (image@sha256:...) — no meaningful version tag.
+	if strings.Contains(image, "@") {
+		return ""
+	}
+	if idx := strings.LastIndex(image, ":"); idx != -1 {
+		return image[idx+1:]
+	}
+	return ""
 }
 
 // buildMemcachedArgs constructs the command-line arguments for a memcached process
@@ -343,6 +359,13 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 		image = *mc.Spec.Image
 	}
 
+	// Build versioned labels for metadata and pod template (includes app.kubernetes.io/version).
+	// The selector uses the base labels without the version to allow image updates.
+	versionedLabels := labelsForMemcached(mc.Name)
+	if v := imageVersion(image); v != "" {
+		versionedLabels["app.kubernetes.io/version"] = v
+	}
+
 	// Resolve SASL and TLS specs for args and volume/mount helpers.
 	var saslSpec *memcachedv1beta1.SASLSpec
 	var tlsSpec *memcachedv1beta1.TLSSpec
@@ -435,7 +458,7 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 
 	podAnnotations := buildPodAnnotations(secretHash, restartTrigger)
 
-	dep.Labels = labels
+	dep.Labels = versionedLabels
 	dep.Spec = appsv1.DeploymentSpec{
 		Replicas: replicasPtr,
 		Selector: &metav1.LabelSelector{
@@ -450,7 +473,7 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels:      labels,
+				Labels:      versionedLabels,
 				Annotations: podAnnotations,
 			},
 			Spec: corev1.PodSpec{
