@@ -397,6 +397,7 @@ func TestConstructDeployment_Probes(t *testing.T) {
 	lp := container.LivenessProbe
 	if lp == nil {
 		t.Fatal("expected liveness probe")
+		return
 	}
 	if lp.TCPSocket == nil {
 		t.Fatal("expected tcpSocket liveness probe")
@@ -415,6 +416,7 @@ func TestConstructDeployment_Probes(t *testing.T) {
 	rp := container.ReadinessProbe
 	if rp == nil {
 		t.Fatal("expected readiness probe")
+		return
 	}
 	if rp.TCPSocket == nil {
 		t.Fatal("expected tcpSocket readiness probe")
@@ -524,6 +526,7 @@ func TestBuildAntiAffinity_Soft(t *testing.T) {
 
 	if affinity == nil {
 		t.Fatal("expected non-nil Affinity for soft preset")
+		return
 	}
 	if affinity.PodAntiAffinity == nil {
 		t.Fatal("expected non-nil PodAntiAffinity")
@@ -566,6 +569,7 @@ func TestBuildAntiAffinity_Hard(t *testing.T) {
 
 	if affinity == nil {
 		t.Fatal("expected non-nil Affinity for hard preset")
+		return
 	}
 	if affinity.PodAntiAffinity == nil {
 		t.Fatal("expected non-nil PodAntiAffinity")
@@ -639,6 +643,7 @@ func TestBuildAntiAffinity_InstanceScopedLabels(t *testing.T) {
 
 			if affinity == nil {
 				t.Fatal("expected non-nil Affinity")
+				return
 			}
 			preferred := affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution
 			matchLabels := preferred[0].PodAffinityTerm.LabelSelector.MatchLabels
@@ -941,6 +946,7 @@ func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
 
 	if lifecycle == nil {
 		t.Fatal("expected non-nil Lifecycle")
+		return
 	}
 	if lifecycle.PreStop == nil {
 		t.Fatal("expected non-nil PreStop")
@@ -960,6 +966,7 @@ func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
 
 	if terminationGracePeriod == nil {
 		t.Fatal("expected non-nil terminationGracePeriodSeconds")
+		return
 	}
 	if *terminationGracePeriod != 30 {
 		t.Errorf("terminationGracePeriodSeconds = %d, want 30", *terminationGracePeriod)
@@ -984,6 +991,7 @@ func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
 
 	if lifecycle == nil {
 		t.Fatal("expected non-nil Lifecycle")
+		return
 	}
 	expectedCmd := []string{"sleep", "15"}
 	for i, cmd := range expectedCmd {
@@ -994,6 +1002,7 @@ func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
 
 	if terminationGracePeriod == nil {
 		t.Fatal("expected non-nil terminationGracePeriodSeconds")
+		return
 	}
 	if *terminationGracePeriod != 45 {
 		t.Errorf("terminationGracePeriodSeconds = %d, want 45", *terminationGracePeriod)
@@ -1018,6 +1027,7 @@ func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
 
 	if lifecycle == nil {
 		t.Fatal("expected non-nil Lifecycle")
+		return
 	}
 	expectedCmd := []string{"sleep", "10"}
 	if len(lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
@@ -1031,6 +1041,7 @@ func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
 
 	if terminationGracePeriod == nil {
 		t.Fatal("expected non-nil terminationGracePeriodSeconds")
+		return
 	}
 	if *terminationGracePeriod != 30 {
 		t.Errorf("terminationGracePeriodSeconds = %d, want 30", *terminationGracePeriod)
@@ -1112,6 +1123,7 @@ func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
 	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
 	if tgps == nil {
 		t.Fatal("expected TerminationGracePeriodSeconds on pod spec")
+		return
 	}
 	if *tgps != 30 {
 		t.Errorf("TerminationGracePeriodSeconds = %d, want 30", *tgps)
@@ -1198,6 +1210,7 @@ func TestBuildExporterContainer_Enabled(t *testing.T) {
 
 	if container == nil {
 		t.Fatal("expected non-nil container")
+		return
 	}
 	if container.Name != testExporterContainer {
 		t.Errorf("expected container name 'exporter', got %q", container.Name)
@@ -1253,6 +1266,7 @@ func TestBuildExporterContainer_CustomImage(t *testing.T) {
 
 	if container == nil {
 		t.Fatal("expected non-nil container")
+		return
 	}
 	if container.Image != customImage {
 		t.Errorf("expected custom image %q, got %q", customImage, container.Image)
@@ -1283,6 +1297,7 @@ func TestBuildExporterContainer_WithResources(t *testing.T) {
 
 	if container == nil {
 		t.Fatal("expected non-nil container")
+		return
 	}
 	cpuReq := container.Resources.Requests[corev1.ResourceCPU]
 	if cpuReq.String() != "50m" {
@@ -1316,6 +1331,7 @@ func TestBuildExporterContainer_NilResources(t *testing.T) {
 
 	if container == nil {
 		t.Fatal("expected non-nil container")
+		return
 	}
 	if len(container.Resources.Requests) != 0 || len(container.Resources.Limits) != 0 {
 		t.Errorf("expected empty resources, got requests=%v limits=%v",
@@ -1386,6 +1402,7 @@ func TestBuildPodSecurityContext_WithValue(t *testing.T) {
 
 	if got == nil {
 		t.Fatal("expected non-nil PodSecurityContext")
+		return
 	}
 	if got.RunAsNonRoot == nil || !*got.RunAsNonRoot {
 		t.Error("expected RunAsNonRoot=true")
@@ -1435,6 +1452,7 @@ func TestBuildContainerSecurityContext_WithValue(t *testing.T) {
 
 	if got == nil {
 		t.Fatal("expected non-nil SecurityContext")
+		return
 	}
 	if got.RunAsUser == nil || *got.RunAsUser != 1000 {
 		t.Errorf("expected RunAsUser=1000, got %v", got.RunAsUser)
@@ -1494,6 +1512,7 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 	podSC := dep.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
+		return
 	}
 	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
 		t.Error("expected pod RunAsNonRoot=true")
@@ -1506,6 +1525,7 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 	containerSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
 	if containerSC == nil {
 		t.Fatal("expected non-nil container SecurityContext")
+		return
 	}
 	if containerSC.RunAsUser == nil || *containerSC.RunAsUser != 1000 {
 		t.Errorf("expected container RunAsUser=1000, got %v", containerSC.RunAsUser)
@@ -1561,6 +1581,7 @@ func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 	mcSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
 	if mcSC == nil {
 		t.Fatal("expected non-nil SecurityContext on memcached container")
+		return
 	}
 	if mcSC.RunAsUser == nil || *mcSC.RunAsUser != 1000 {
 		t.Errorf("memcached container RunAsUser = %v, want 1000", mcSC.RunAsUser)
@@ -1570,6 +1591,7 @@ func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 	expSC := dep.Spec.Template.Spec.Containers[1].SecurityContext
 	if expSC == nil {
 		t.Fatal("expected non-nil SecurityContext on exporter container")
+		return
 	}
 	if expSC.RunAsUser == nil || *expSC.RunAsUser != 1000 {
 		t.Errorf("exporter container RunAsUser = %v, want 1000", expSC.RunAsUser)
@@ -1600,6 +1622,7 @@ func TestBuildSASLVolume_Enabled(t *testing.T) {
 
 	if vol == nil {
 		t.Fatal("expected non-nil Volume")
+		return
 	}
 	if vol.Name != saslVolumeName {
 		t.Errorf("volume name = %q, want %q", vol.Name, saslVolumeName)
@@ -1668,6 +1691,7 @@ func TestBuildSASLVolumeMount_Enabled(t *testing.T) {
 
 	if vm == nil {
 		t.Fatal("expected non-nil VolumeMount")
+		return
 	}
 	if vm.Name != saslVolumeName {
 		t.Errorf("volumeMount name = %q, want %q", vm.Name, saslVolumeName)
@@ -2014,6 +2038,7 @@ func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
 	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
 	if tgps == nil {
 		t.Fatal("expected TerminationGracePeriodSeconds on pod spec")
+		return
 	}
 	if *tgps != 30 {
 		t.Errorf("TerminationGracePeriodSeconds = %d, want 30", *tgps)
@@ -2082,6 +2107,7 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	podSC := dep.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
+		return
 	}
 	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
 		t.Error("expected pod RunAsNonRoot=true")
@@ -2091,6 +2117,7 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	containerSC := container.SecurityContext
 	if containerSC == nil {
 		t.Fatal("expected non-nil container SecurityContext")
+		return
 	}
 	if containerSC.RunAsUser == nil || *containerSC.RunAsUser != 1000 {
 		t.Errorf("expected container RunAsUser=1000, got %v", containerSC.RunAsUser)
@@ -2127,6 +2154,7 @@ func TestBuildTLSVolume_Enabled(t *testing.T) {
 
 	if vol == nil {
 		t.Fatal("expected non-nil Volume")
+		return
 	}
 	if vol.Name != tlsVolumeName {
 		t.Errorf("volume name = %q, want %q", vol.Name, tlsVolumeName)
@@ -2202,6 +2230,7 @@ func TestBuildTLSVolume_WithClientCert(t *testing.T) {
 
 	if vol == nil {
 		t.Fatal("expected non-nil Volume")
+		return
 	}
 	if len(vol.Secret.Items) != 3 {
 		t.Fatalf("expected 3 Items entries, got %d", len(vol.Secret.Items))
@@ -2233,6 +2262,7 @@ func TestBuildTLSVolumeMount_Enabled(t *testing.T) {
 
 	if vm == nil {
 		t.Fatal("expected non-nil VolumeMount")
+		return
 	}
 	if vm.Name != tlsVolumeName {
 		t.Errorf("volumeMount name = %q, want %q", vm.Name, tlsVolumeName)
@@ -2750,6 +2780,7 @@ func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) 
 	podSC := dep.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
+		return
 	}
 	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
 		t.Error("expected pod RunAsNonRoot=true")
@@ -2988,6 +3019,7 @@ func TestConstructDeployment_KitchenSink_SecurityContexts(t *testing.T) {
 	podSC := dep.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
+		return
 	}
 	if podSC.RunAsNonRoot == nil || !*podSC.RunAsNonRoot {
 		t.Error("expected pod RunAsNonRoot=true")
@@ -3000,6 +3032,7 @@ func TestConstructDeployment_KitchenSink_SecurityContexts(t *testing.T) {
 	mcSC := mc.SecurityContext
 	if mcSC == nil {
 		t.Fatal("expected non-nil memcached SecurityContext")
+		return
 	}
 	if mcSC.ReadOnlyRootFilesystem == nil || !*mcSC.ReadOnlyRootFilesystem {
 		t.Error("expected memcached ReadOnlyRootFilesystem=true")
@@ -3012,6 +3045,7 @@ func TestConstructDeployment_KitchenSink_SecurityContexts(t *testing.T) {
 	expSC := exp.SecurityContext
 	if expSC == nil {
 		t.Fatal("expected non-nil exporter SecurityContext")
+		return
 	}
 	if expSC.ReadOnlyRootFilesystem == nil || !*expSC.ReadOnlyRootFilesystem {
 		t.Error("expected exporter ReadOnlyRootFilesystem=true")
@@ -3320,6 +3354,7 @@ func TestConstructDeployment_Annotations(t *testing.T) {
 
 			if annotations == nil {
 				t.Fatal("expected non-nil annotations, got nil")
+				return
 			}
 
 			if len(annotations) != len(tt.wantAnnotations) {
@@ -3437,6 +3472,7 @@ func TestConstructDeployment_HPAReplicas(t *testing.T) {
 
 			if gotReplicas == nil {
 				t.Fatalf("expected Replicas to be %d, got nil", *tt.wantReplicas)
+				return
 			}
 
 			if *gotReplicas != *tt.wantReplicas {

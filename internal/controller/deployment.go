@@ -224,7 +224,7 @@ func buildExporterContainer(mc *memcachedv1beta1.Memcached) *corev1.Container {
 }
 
 // AnnotationSecretHash is the Pod template annotation key for the computed secret hash.
-const AnnotationSecretHash = "memcached.c5c3.io/secret-hash"
+const AnnotationSecretHash = "memcached.c5c3.io/secret-hash" //nolint:gosec // annotation key, not a credential
 
 // AnnotationRestartTrigger is the Pod template annotation key for the manual restart trigger.
 const AnnotationRestartTrigger = "memcached.c5c3.io/restart-trigger"
