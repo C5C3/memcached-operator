@@ -21,27 +21,27 @@ func constructNetworkPolicy(mc *memcachedv1beta1.Memcached, np *networkingv1.Net
 	}
 	np.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 
-	// Build ingress ports: always include memcached (11211).
+	// Build ingress ports: always include memcached.
 	ports := []networkingv1.NetworkPolicyPort{
 		{
 			Protocol: protocolPtr(corev1.ProtocolTCP),
-			Port:     intstrPtr(intstr.FromInt32(11211)),
+			Port:     intstrPtr(intstr.FromInt32(PortMemcached)),
 		},
 	}
 
-	// Add TLS port (11212) when TLS is enabled.
+	// Add TLS port when TLS is enabled.
 	if mc.IsTLSEnabled() {
 		ports = append(ports, networkingv1.NetworkPolicyPort{
 			Protocol: protocolPtr(corev1.ProtocolTCP),
-			Port:     intstrPtr(intstr.FromInt32(11212)),
+			Port:     intstrPtr(intstr.FromInt32(PortMemcachedTLS)),
 		})
 	}
 
-	// Add metrics port (9150) when monitoring is enabled.
+	// Add metrics port when monitoring is enabled.
 	if mc.IsMonitoringEnabled() {
 		ports = append(ports, networkingv1.NetworkPolicyPort{
 			Protocol: protocolPtr(corev1.ProtocolTCP),
-			Port:     intstrPtr(intstr.FromInt32(9150)),
+			Port:     intstrPtr(intstr.FromInt32(PortMetrics)),
 		})
 	}
 

@@ -200,7 +200,7 @@ func buildExporterContainer(mc *memcachedv1beta1.Memcached) *corev1.Container {
 		Ports: []corev1.ContainerPort{
 			{
 				Name:          "metrics",
-				ContainerPort: 9150,
+				ContainerPort: PortMetrics,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		},
@@ -259,6 +259,13 @@ const tlsMountPath = "/etc/memcached/tls"
 
 // tlsPortName is the name used for the TLS container and service port.
 const tlsPortName = "memcached-tls"
+
+// Well-known port numbers used across Deployment, Service, NetworkPolicy, and ServiceMonitor.
+const (
+	PortMemcached    = 11211
+	PortMemcachedTLS = 11212
+	PortMetrics      = 9150
+)
 
 // buildTLSVolume returns a Volume that projects the TLS certificate Secret,
 // or nil if TLS is not enabled.
@@ -371,14 +378,14 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 	ports := []corev1.ContainerPort{
 		{
 			Name:          "memcached",
-			ContainerPort: 11211,
+			ContainerPort: PortMemcached,
 			Protocol:      corev1.ProtocolTCP,
 		},
 	}
 	if tlsSpec != nil && tlsSpec.Enabled {
 		ports = append(ports, corev1.ContainerPort{
 			Name:          tlsPortName,
-			ContainerPort: 11212,
+			ContainerPort: PortMemcachedTLS,
 			Protocol:      corev1.ProtocolTCP,
 		})
 	}

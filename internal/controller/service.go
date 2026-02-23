@@ -27,25 +27,25 @@ func constructService(mc *memcachedv1beta1.Memcached, svc *corev1.Service) {
 	ports := []corev1.ServicePort{
 		{
 			Name:       "memcached",
-			Port:       11211,
+			Port:       PortMemcached,
 			TargetPort: intstr.FromString("memcached"),
 			Protocol:   corev1.ProtocolTCP,
 		},
 	}
 
-	if mc.Spec.Security != nil && mc.Spec.Security.TLS != nil && mc.Spec.Security.TLS.Enabled {
+	if mc.IsTLSEnabled() {
 		ports = append(ports, corev1.ServicePort{
 			Name:       tlsPortName,
-			Port:       11212,
+			Port:       PortMemcachedTLS,
 			TargetPort: intstr.FromString(tlsPortName),
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}
 
-	if mc.Spec.Monitoring != nil && mc.Spec.Monitoring.Enabled {
+	if mc.IsMonitoringEnabled() {
 		ports = append(ports, corev1.ServicePort{
 			Name:       "metrics",
-			Port:       9150,
+			Port:       PortMetrics,
 			TargetPort: intstr.FromString("metrics"),
 			Protocol:   corev1.ProtocolTCP,
 		})
