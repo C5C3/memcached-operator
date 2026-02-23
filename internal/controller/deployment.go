@@ -34,22 +34,22 @@ func buildMemcachedArgs(config *memcachedv1beta1.MemcachedConfig, sasl *memcache
 
 	maxMemoryMB := config.MaxMemoryMB
 	if maxMemoryMB == 0 {
-		maxMemoryMB = 64
+		maxMemoryMB = memcachedv1beta1.DefaultMaxMemoryMB
 	}
 
 	maxConnections := config.MaxConnections
 	if maxConnections == 0 {
-		maxConnections = 1024
+		maxConnections = memcachedv1beta1.DefaultMaxConnections
 	}
 
 	threads := config.Threads
 	if threads == 0 {
-		threads = 4
+		threads = memcachedv1beta1.DefaultThreads
 	}
 
 	maxItemSize := config.MaxItemSize
 	if maxItemSize == "" {
-		maxItemSize = "1m"
+		maxItemSize = memcachedv1beta1.DefaultMaxItemSize
 	}
 
 	args := []string{
@@ -183,7 +183,7 @@ func buildExporterContainer(mc *memcachedv1beta1.Memcached) *corev1.Container {
 		return nil
 	}
 
-	image := "prom/memcached-exporter:v0.15.4"
+	image := memcachedv1beta1.DefaultExporterImage
 	if mc.Spec.Monitoring.ExporterImage != nil {
 		image = *mc.Spec.Monitoring.ExporterImage
 	}
@@ -338,7 +338,7 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 		}
 		replicasPtr = &replicas
 	}
-	image := "memcached:1.6"
+	image := memcachedv1beta1.DefaultImage
 	if mc.Spec.Image != nil {
 		image = *mc.Spec.Image
 	}

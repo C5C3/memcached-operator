@@ -73,11 +73,11 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}()
 
 	// Record instance info gauge with current spec values.
-	image := "memcached:1.6"
+	image := memcachedv1beta1.DefaultImage
 	if memcached.Spec.Image != nil {
 		image = *memcached.Spec.Image
 	}
-	desiredReplicas := int32(1)
+	desiredReplicas := memcachedv1beta1.DefaultReplicas
 	if memcached.Spec.Replicas != nil {
 		desiredReplicas = *memcached.Spec.Replicas
 	}

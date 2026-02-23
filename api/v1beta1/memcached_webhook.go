@@ -12,6 +12,10 @@ import (
 )
 
 // Default values applied by the webhook when fields are omitted.
+//
+// NOTE: DefaultImage uses a mutable tag (memcached:1.6). For production
+// deployments, users should specify an exact patch version (e.g.
+// "memcached:1.6.34") or a digest in spec.image to ensure reproducible builds.
 const (
 	DefaultReplicas                      = int32(1)
 	DefaultImage                         = "memcached:1.6"
