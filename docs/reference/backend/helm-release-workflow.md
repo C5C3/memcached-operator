@@ -176,7 +176,7 @@ helm show chart oci://ghcr.io/c5c3/charts/memcached-operator --version 0.3.0
 ## Relationship to Other Workflows
 
 | Workflow           | Scope                            | Trigger           |
-|--------------------|----------------------------------|--------------------|
+|--------------------|----------------------------------|-------------------|
 | `ci.yml`           | Code lint, test, E2E             | PR + push to main |
 | `release.yml`      | Container image + GitHub Release | Tag `v*`          |
 | `helm-release.yml` | Helm chart OCI package           | Tag `v*`          |

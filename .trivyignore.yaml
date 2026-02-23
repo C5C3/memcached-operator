@@ -17,3 +17,5 @@ misconfigurations:
   - id: AVD-KSV-0049
   # Operator legitimately manages Services and NetworkPolicies
   - id: AVD-KSV-0056
+  # ghcr.io is GitHub's official container registry; not untrusted
+  - id: AVD-KSV-0125

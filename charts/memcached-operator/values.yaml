@@ -10,7 +10,7 @@ fullnameOverride: ""
 # -- Operator container image configuration
 image:
   # -- Container image repository
-  repository: controller
+  repository: ghcr.io/c5c3/memcached-operator
   # -- Container image tag (defaults to chart appVersion if empty)
   tag: ""
   # -- Image pull policy
