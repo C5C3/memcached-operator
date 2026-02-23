@@ -71,12 +71,6 @@ rules:
 - apiGroups:
   - memcached.c5c3.io
   resources:
-  - memcacheds/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - memcached.c5c3.io
-  resources:
   - memcacheds/status
   verbs:
   - get

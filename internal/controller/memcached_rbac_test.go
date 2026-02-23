@@ -98,8 +98,8 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 			Expect(role.Name).To(Equal("manager-role"))
 		})
 
-		It("should have exactly 11 rules to prevent permission creep", func() {
-			Expect(role.Rules).To(HaveLen(11), "unexpected number of rules — update this test if a new rule is legitimately needed")
+		It("should have exactly 10 rules to prevent permission creep", func() {
+			Expect(role.Rules).To(HaveLen(10), "unexpected number of rules — update this test if a new rule is legitimately needed")
 		})
 	})
 
@@ -118,11 +118,6 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"get", "patch", "update"}))
 		})
 
-		It("should grant update on memcacheds/finalizers", func() {
-			rule := findRule(role.Rules, "memcached.c5c3.io", "memcacheds/finalizers")
-			Expect(rule).NotTo(BeNil(), "rule for memcacheds/finalizers not found")
-			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"update"}))
-		})
 	})
 
 	Context("owned resource permissions", func() {
