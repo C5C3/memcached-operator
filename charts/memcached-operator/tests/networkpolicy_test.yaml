@@ -156,11 +156,46 @@ tests:
   # Suite 8: Egress rules
   # ====================================================================
 
-  - it: should allow all egress
+  - it: should allow DNS egress on port 53 TCP and UDP
     asserts:
-      - equal:
-          path: spec.egress[0]
-          value: {}
+      - contains:
+          path: spec.egress[0].ports
+          content:
+            port: 53
+            protocol: TCP
+      - contains:
+          path: spec.egress[0].ports
+          content:
+            port: 53
+            protocol: UDP
+
+  - it: should allow Kubernetes API server egress on ports 443 and 6443
+    asserts:
+      - contains:
+          path: spec.egress[1].ports
+          content:
+            port: 443
+            protocol: TCP
+      - contains:
+          path: spec.egress[1].ports
+          content:
+            port: 6443
+            protocol: TCP
+
+  - it: should include webhook egress port 9443 when webhook.enabled is true (default)
+    asserts:
+      - contains:
+          path: spec.egress[2].ports
+          content:
+            port: 9443
+            protocol: TCP
+
+  - it: should not include webhook egress rule when webhook.enabled is false
+    set:
+      webhook.enabled: false
+    asserts:
+      - notExists:
+          path: spec.egress[2]
 
   # ====================================================================
   # Suite 9: fullnameOverride propagation

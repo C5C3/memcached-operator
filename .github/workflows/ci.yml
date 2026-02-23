@@ -439,6 +439,11 @@ jobs:
       - name: Load image into kind
         run: kind load docker-image controller:ci
 
+      - name: Pre-load memcached image into kind
+        run: |
+          docker pull memcached:1.6
+          kind load docker-image memcached:1.6
+
       - name: Set up Helm
         uses: azure/setup-helm@v4
         with:
