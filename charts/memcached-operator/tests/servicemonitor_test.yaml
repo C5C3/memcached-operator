@@ -6,8 +6,8 @@ release:
   name: test-release
   namespace: test-ns
 chart:
-  appVersion: "0.1.0"
-  version: "0.1.0"
+  appVersion: "0.2.0"
+  version: "0.2.0"
 tests:
   # ====================================================================
   # Suite 1: Conditional rendering

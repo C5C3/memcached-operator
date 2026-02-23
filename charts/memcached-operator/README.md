@@ -14,14 +14,14 @@ A Helm chart for the Memcached Kubernetes Operator (`memcached.c5c3.io`).
 Install the chart from the GHCR OCI registry:
 
 ```bash
-helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version 0.1.0
+helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator --version 0.2.0
 ```
 
 To install into a specific namespace:
 
 ```bash
 helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --namespace memcached-system \
   --create-namespace
 ```
@@ -29,13 +29,13 @@ helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
 ### Download chart locally
 
 ```bash
-helm pull oci://ghcr.io/c5c3/charts/memcached-operator --version 0.1.0
+helm pull oci://ghcr.io/c5c3/charts/memcached-operator --version 0.2.0
 ```
 
-This downloads `memcached-operator-0.1.0.tgz` to your current directory. Extract and inspect with:
+This downloads `memcached-operator-0.2.0.tgz` to your current directory. Extract and inspect with:
 
 ```bash
-tar xzf memcached-operator-0.1.0.tgz
+tar xzf memcached-operator-0.2.0.tgz
 ```
 
 ## Configuration
@@ -44,7 +44,7 @@ Override values with `--set` or provide a values file with `-f`:
 
 ```bash
 helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --set image.tag=v0.2.0 \
   --set replicaCount=2 \
   --set webhook.enabled=false

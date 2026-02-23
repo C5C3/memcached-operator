@@ -6,8 +6,8 @@ release:
   name: test-release
   namespace: test-ns
 chart:
-  appVersion: "0.1.0"
-  version: "0.1.0"
+  appVersion: "0.2.0"
+  version: "0.2.0"
 tests:
   # -- memcached-operator.name --
   - it: should use chart name as default name
@@ -34,7 +34,7 @@ tests:
     asserts:
       - equal:
           path: metadata.labels["helm.sh/chart"]
-          value: memcached-operator-0.1.0
+          value: memcached-operator-0.2.0
 
   # -- memcached-operator.labels (all standard labels) --
   - it: should include all standard labels
@@ -58,7 +58,7 @@ tests:
     asserts:
       - equal:
           path: metadata.labels["app.kubernetes.io/version"]
-          value: "0.1.0"
+          value: "0.2.0"
 
   - it: should set managed-by to Helm
     set:

@@ -264,7 +264,7 @@ in `config/manager/` before building, substituting the actual container image.
 
 ```bash
 # Set the image and deploy all resources
-make deploy IMG=ghcr.io/c5c3/memcached-operator:v0.1.0
+make deploy IMG=ghcr.io/c5c3/memcached-operator:v0.2.0
 ```
 
 ### Install only the CRD (local development)
@@ -278,7 +278,7 @@ kustomize build config/crd | kubectl apply -f -
 ### Generate a single install.yaml
 
 ```bash
-make build-installer IMG=ghcr.io/c5c3/memcached-operator:v0.1.0
+make build-installer IMG=ghcr.io/c5c3/memcached-operator:v0.2.0
 # Output: dist/install.yaml
 kubectl apply -f dist/install.yaml
 ```

@@ -63,10 +63,10 @@ into your cluster. Choose one of the following methods:
 Apply the CRD manifest directly from a GitHub Release:
 
 ```bash
-kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/memcached.c5c3.io_memcacheds.yaml
+kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.2.0/memcached.c5c3.io_memcacheds.yaml
 ```
 
-Replace `v0.1.0` with the desired version. Available releases are listed at
+Replace `v0.2.0` with the desired version. Available releases are listed at
 [github.com/c5c3/memcached-operator/releases](https://github.com/c5c3/memcached-operator/releases).
 
 ### Option B: From source
@@ -98,17 +98,17 @@ Install the operator using Helm from the GHCR OCI registry:
 
 ```bash
 helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --namespace memcached-operator-system \
   --create-namespace
 ```
 
-Replace `0.1.0` with the desired chart version. Override default values with
+Replace `0.2.0` with the desired chart version. Override default values with
 `--set` or a values file:
 
 ```bash
 helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
-  --version 0.1.0 \
+  --version 0.2.0 \
   --namespace memcached-operator-system \
   --create-namespace \
   --set serviceMonitor.enabled=true
@@ -123,10 +123,10 @@ Each release includes a ready-to-use `install.yaml` that contains all resources
 (CRDs, RBAC, Deployment, webhooks, cert-manager resources) in a single file:
 
 ```bash
-kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/install.yaml
+kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/v0.2.0/install.yaml
 ```
 
-Replace `v0.1.0` with the desired version. Available releases are listed at
+Replace `v0.2.0` with the desired version. Available releases are listed at
 [github.com/c5c3/memcached-operator/releases](https://github.com/c5c3/memcached-operator/releases).
 
 ### Option C: From source
@@ -134,10 +134,10 @@ Replace `v0.1.0` with the desired version. Available releases are listed at
 If you have the repository cloned, you can deploy using the Makefile:
 
 ```bash
-make deploy IMG=ghcr.io/c5c3/memcached-operator:v0.1.0
+make deploy IMG=ghcr.io/c5c3/memcached-operator:v0.2.0
 ```
 
-Replace `v0.1.0` with the desired version tag. This builds the full manifest
+Replace `v0.2.0` with the desired version tag. This builds the full manifest
 from `config/default/` using Kustomize and applies it to the cluster.
 
 ---
@@ -359,7 +359,7 @@ helm uninstall memcached-operator --namespace memcached-operator-system
 If you installed via the release manifest:
 
 ```bash
-kubectl delete -f https://github.com/c5c3/memcached-operator/releases/download/v0.1.0/install.yaml
+kubectl delete -f https://github.com/c5c3/memcached-operator/releases/download/v0.2.0/install.yaml
 ```
 
 If you installed from source:

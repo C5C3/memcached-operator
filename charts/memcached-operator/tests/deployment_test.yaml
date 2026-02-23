@@ -6,8 +6,8 @@ release:
   name: test-release
   namespace: test-ns
 chart:
-  appVersion: "0.1.0"
-  version: "0.1.0"
+  appVersion: "0.2.0"
+  version: "0.2.0"
 tests:
   # ====================================================================
   # Suite 1: Default rendering
@@ -41,11 +41,11 @@ tests:
           value: 3
 
   # -- Default image --
-  - it: should set default image to controller:0.1.0
+  - it: should set default image to controller:0.2.0
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: "controller:0.1.0"
+          value: "controller:0.2.0"
 
   - it: should set default imagePullPolicy to Always
     asserts:

@@ -18,8 +18,8 @@ release:
   name: test-release
   namespace: test-ns
 chart:
-  appVersion: "0.1.0"
-  version: "0.1.0"
+  appVersion: "0.2.0"
+  version: "0.2.0"
 tests:
   # ====================================================================
   # Test 1: Default rendering produces correct total resource count

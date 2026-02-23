@@ -171,7 +171,7 @@ The release workflow runs automatically and creates:
 | Source         | Tags                    | Registry |
 |----------------|-------------------------|----------|
 | Push to `main` | `latest`, `<short-sha>` | GHCR     |
-| Tag `v0.1.0`   | `0.1.0`, `0.1`          | GHCR     |
+| Tag `v0.2.0`   | `0.2.0`, `0.2`          | GHCR     |
 | Tag `v1.2.3`   | `1.2.3`, `1.2`, `1`     | GHCR     |
 
 All images are multi-architecture manifests (`linux/amd64`, `linux/arm64`).

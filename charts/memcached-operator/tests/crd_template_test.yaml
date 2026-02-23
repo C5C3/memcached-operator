@@ -6,8 +6,8 @@ release:
   name: test-release
   namespace: test-ns
 chart:
-  appVersion: "0.1.0"
-  version: "0.1.0"
+  appVersion: "0.2.0"
+  version: "0.2.0"
 tests:
   - it: should not render CRD when managedByHelm is false (default)
     asserts:
@@ -44,7 +44,7 @@ tests:
     asserts:
       - equal:
           path: metadata.labels["helm.sh/chart"]
-          value: memcached-operator-0.1.0
+          value: memcached-operator-0.2.0
       - equal:
           path: metadata.labels["app.kubernetes.io/name"]
           value: memcached-operator
@@ -53,7 +53,7 @@ tests:
           value: test-release
       - equal:
           path: metadata.labels["app.kubernetes.io/version"]
-          value: "0.1.0"
+          value: "0.2.0"
       - equal:
           path: metadata.labels["app.kubernetes.io/managed-by"]
           value: Helm
