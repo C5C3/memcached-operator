@@ -46,7 +46,8 @@ func (r *MemcachedReconciler) reconcileResource(
 			return controllerutil.SetControllerReference(mc, obj, r.Scheme)
 		})
 		if err == nil {
-			logger.Info(resourceKind+" reconciled",
+			logger.Info("Resource reconciled",
+				"kind", resourceKind,
 				"name", obj.GetName(),
 				"operation", result)
 			r.emitEventForResult(mc, obj, resourceKind, result)
@@ -62,7 +63,8 @@ func (r *MemcachedReconciler) reconcileResource(
 			return "", fmt.Errorf("reconciling %s: %w", resourceKind, err)
 		}
 
-		logger.Info("Conflict retrying "+resourceKind+" reconciliation",
+		logger.Info("Conflict retrying reconciliation",
+			"kind", resourceKind,
 			"name", obj.GetName(),
 			"attempt", attempt+1,
 			"maxRetries", maxConflictRetries)
@@ -87,7 +89,7 @@ func (r *MemcachedReconciler) deleteOwnedResource(ctx context.Context, obj clien
 		}
 		return fmt.Errorf("deleting %s: %w", resourceKind, err)
 	}
-	logger.Info(resourceKind+" deleted", "name", obj.GetName())
+	logger.Info("Resource deleted", "kind", resourceKind, "name", obj.GetName())
 	return nil
 }
 
@@ -110,5 +112,9 @@ func (r *MemcachedReconciler) emitEventForResult(
 	case controllerutil.OperationResultUpdated:
 		r.Recorder.Eventf(mc, nil, corev1.EventTypeNormal, "Updated",
 			"Reconcile", "Updated %s %s", resourceKind, obj.GetName())
+	case controllerutil.OperationResultNone,
+		controllerutil.OperationResultUpdatedStatus,
+		controllerutil.OperationResultUpdatedStatusOnly:
+		// No event emitted for unchanged or status-only updates.
 	}
 }
