@@ -11,6 +11,9 @@ name = "memcached-operator"
 enabled = true
 auto_request = true
 
+[prompts]
+push_enabled = false
+
 [git]
 author = "Christian Berendt <berendt@23technologies.cloud>"
 co_author = ""
