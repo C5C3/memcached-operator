@@ -76,8 +76,8 @@ var _ = Describe("Status Reconciliation", func() {
 			Expect(cond.Status).To(Equal(metav1.ConditionTrue))
 		})
 
-		It("should have all three conditions present", func() {
-			Expect(mc.Status.Conditions).To(HaveLen(3))
+		It("should have all four conditions present", func() {
+			Expect(mc.Status.Conditions).To(HaveLen(4))
 			types := map[string]bool{}
 			for _, c := range mc.Status.Conditions {
 				types[c.Type] = true
@@ -85,6 +85,18 @@ var _ = Describe("Status Reconciliation", func() {
 			Expect(types).To(HaveKey("Available"))
 			Expect(types).To(HaveKey("Progressing"))
 			Expect(types).To(HaveKey("Degraded"))
+			Expect(types).To(HaveKey("Ready"))
+		})
+
+		It("should set Ready=False since not all replicas are ready (MO-0056, REQ-001)", func() {
+			cond := findCondition(mc.Status.Conditions, "Ready")
+			Expect(cond).NotTo(BeNil())
+			Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+			Expect(cond.Reason).To(Equal("MemcachedNotReady"))
+		})
+
+		It("should set serverList to nil when Ready=False (MO-0056, REQ-004)", func() {
+			Expect(mc.Status.ServerList).To(BeNil())
 		})
 
 		It("should set per-condition observedGeneration matching metadata.generation (REQ-006)", func() {
@@ -146,7 +158,7 @@ var _ = Describe("Status Reconciliation", func() {
 	})
 
 	Context("scaled to zero replicas (REQ-003, REQ-005)", func() {
-		It("should set Available=False, Progressing=False, Degraded=False with 0 replicas", func() {
+		It("should set Available=True, Progressing=False, Degraded=False with 0 replicas", func() {
 			mc := validMemcached(uniqueName("status-zero"))
 			mc.Spec.Replicas = int32Ptr(0)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -159,7 +171,7 @@ var _ = Describe("Status Reconciliation", func() {
 
 			available := findCondition(mc.Status.Conditions, "Available")
 			Expect(available).NotTo(BeNil())
-			Expect(available.Status).To(Equal(metav1.ConditionFalse))
+			Expect(available.Status).To(Equal(metav1.ConditionTrue))
 
 			progressing := findCondition(mc.Status.Conditions, "Progressing")
 			Expect(progressing).NotTo(BeNil())
@@ -168,11 +180,17 @@ var _ = Describe("Status Reconciliation", func() {
 			degraded := findCondition(mc.Status.Conditions, "Degraded")
 			Expect(degraded).NotTo(BeNil())
 			Expect(degraded.Status).To(Equal(metav1.ConditionFalse))
+
+			ready := findCondition(mc.Status.Conditions, "Ready")
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+
+			Expect(mc.Status.ServerList).To(BeNil(), "serverList should be nil when Ready=False (MO-0056, REQ-004)")
 		})
 	})
 
-	Context("all three conditions always present after reconciliation (REQ-003, REQ-004, REQ-005)", func() {
-		It("should have exactly three conditions with non-empty messages", func() {
+	Context("all four conditions always present after reconciliation (REQ-003, REQ-004, REQ-005, REQ-006)", func() {
+		It("should have exactly four conditions with non-empty messages", func() {
 			mc := validMemcached(uniqueName("status-allcond"))
 			mc.Spec.Replicas = int32Ptr(2)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -182,7 +200,7 @@ var _ = Describe("Status Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			Expect(mc.Status.Conditions).To(HaveLen(3))
+			Expect(mc.Status.Conditions).To(HaveLen(4))
 
 			for _, c := range mc.Status.Conditions {
 				Expect(c.Message).NotTo(BeEmpty(), "condition %q has empty message", c.Type)
@@ -230,6 +248,86 @@ var _ = Describe("Status Reconciliation", func() {
 
 			svc := &corev1.Service{}
 			Expect(fakeClient.Get(ctx, depKey, svc)).To(Succeed(), "Service should exist despite status update failure")
+		})
+	})
+
+	// --- Task 2.2: ServerList populated based on Ready condition ---
+
+	Context("serverList populated when Ready=True (MO-0056, REQ-004)", func() {
+		It("should set serverList to [name.namespace:11211] when all replicas ready", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
+				Build()
+
+			mc := validMemcached(uniqueName("status-srvlist"))
+			mc.Spec.Replicas = int32Ptr(3)
+			Expect(fakeClient.Create(ctx, mc)).To(Succeed())
+
+			// Create a Deployment with all 3 replicas ready.
+			dep := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mc.Name,
+					Namespace: mc.Namespace,
+				},
+				Status: appsv1.DeploymentStatus{
+					ReadyReplicas:   3,
+					UpdatedReplicas: 3,
+					Replicas:        3,
+				},
+			}
+			Expect(fakeClient.Create(ctx, dep)).To(Succeed())
+			Expect(fakeClient.Status().Update(ctx, dep)).To(Succeed())
+
+			r := &controller.MemcachedReconciler{
+				Client: fakeClient,
+				Scheme: scheme.Scheme,
+			}
+			_, err := r.Reconcile(ctx, ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(mc),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			Expect(mc.Status.ServerList).To(Equal([]string{
+				fmt.Sprintf("%s.%s:11211", mc.Name, mc.Namespace),
+			}))
+		})
+
+		It("should set serverList to nil when not all replicas ready", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
+				Build()
+
+			mc := validMemcached(uniqueName("status-srvnil"))
+			mc.Spec.Replicas = int32Ptr(3)
+			Expect(fakeClient.Create(ctx, mc)).To(Succeed())
+
+			// Create a Deployment with only 1 of 3 replicas ready.
+			dep := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      mc.Name,
+					Namespace: mc.Namespace,
+				},
+				Status: appsv1.DeploymentStatus{
+					ReadyReplicas:   1,
+					UpdatedReplicas: 3,
+					Replicas:        3,
+				},
+			}
+			Expect(fakeClient.Create(ctx, dep)).To(Succeed())
+			Expect(fakeClient.Status().Update(ctx, dep)).To(Succeed())
+
+			r := &controller.MemcachedReconciler{
+				Client: fakeClient,
+				Scheme: scheme.Scheme,
+			}
+			_, err := r.Reconcile(ctx, ctrl.Request{
+				NamespacedName: client.ObjectKeyFromObject(mc),
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			Expect(mc.Status.ServerList).To(BeNil())
 		})
 	})
 })

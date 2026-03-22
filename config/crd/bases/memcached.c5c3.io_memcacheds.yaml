@@ -1863,6 +1863,16 @@ spec:
                   ready.
                 format: int32
                 type: integer
+              serverList:
+                description: |-
+                  ServerList contains the Memcached service DNS entries in host:port format
+                  (e.g. "my-cache.default:11211"). The controller populates this list from
+                  the headless service DNS when the cluster is Ready, so clients can consume
+                  it directly for cache-ring construction. (REQ-005, MO-0056)
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         type: object
     served: true
@@ -3718,6 +3728,16 @@ spec:
                   ready.
                 format: int32
                 type: integer
+              serverList:
+                description: |-
+                  ServerList contains the Memcached service DNS entries in host:port format
+                  (e.g. "my-cache.default:11211"). The controller populates this list from
+                  the headless service DNS when the cluster is Ready, so clients can consume
+                  it directly for cache-ring construction. (REQ-005, MO-0056)
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         type: object
     served: true

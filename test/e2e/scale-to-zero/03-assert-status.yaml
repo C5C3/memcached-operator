@@ -14,3 +14,6 @@ status:
     - type: Degraded
       status: "False"
       reason: NotDegraded
+    - type: Ready
+      status: "False"
+      reason: MemcachedNotReady

@@ -39,6 +39,7 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 			},
 			ReadyReplicas:      3,
 			ObservedGeneration: 1,
+			ServerList:         []string{"10.244.0.5:11211", "10.244.0.6:11211"},
 		},
 	}
 
@@ -93,6 +94,12 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 	original.Status.ObservedGeneration = 99
 	if clone.Status.ObservedGeneration != 1 {
 		t.Error("clone Status.ObservedGeneration was affected by mutating original")
+	}
+
+	// Mutate ServerList slice in original.
+	original.Status.ServerList[0] = "changed:11211"
+	if clone.Status.ServerList[0] != "10.244.0.5:11211" {
+		t.Error("clone Status.ServerList was affected by mutating original")
 	}
 }
 

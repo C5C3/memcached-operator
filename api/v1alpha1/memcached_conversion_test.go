@@ -158,6 +158,7 @@ func fullyPopulated() *Memcached {
 			},
 			ReadyReplicas:      5,
 			ObservedGeneration: 42,
+			ServerList:         []string{"10.244.0.5:11211", "10.244.0.6:11211", "10.244.0.7:11211"},
 		},
 	}
 }
@@ -246,6 +247,9 @@ func TestConvertTo_FullyPopulatedObject(t *testing.T) {
 	}
 	if dst.Status.ObservedGeneration != src.Status.ObservedGeneration {
 		t.Errorf("ObservedGeneration: got %d, want %d", dst.Status.ObservedGeneration, src.Status.ObservedGeneration)
+	}
+	if !reflect.DeepEqual(dst.Status.ServerList, src.Status.ServerList) {
+		t.Errorf("ServerList: got %v, want %v", dst.Status.ServerList, src.Status.ServerList)
 	}
 }
 

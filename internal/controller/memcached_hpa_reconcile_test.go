@@ -563,7 +563,7 @@ var _ = Describe("HPA Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			Expect(mc.Status.Conditions).To(HaveLen(3))
+			Expect(mc.Status.Conditions).To(HaveLen(4))
 
 			available := findCondition(mc.Status.Conditions, "Available")
 			Expect(available).NotTo(BeNil())
@@ -573,6 +573,9 @@ var _ = Describe("HPA Reconciliation", func() {
 
 			degraded := findCondition(mc.Status.Conditions, "Degraded")
 			Expect(degraded).NotTo(BeNil())
+
+			ready := findCondition(mc.Status.Conditions, "Ready")
+			Expect(ready).NotTo(BeNil())
 
 			Expect(mc.Status.ObservedGeneration).To(Equal(mc.Generation))
 		})

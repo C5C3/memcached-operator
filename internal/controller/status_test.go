@@ -22,6 +22,8 @@ func TestComputeConditions(t *testing.T) {
 		progressReason string
 		wantDegraded   metav1.ConditionStatus
 		degradeReason  string
+		wantReady      metav1.ConditionStatus
+		readyReason    string
 	}{
 		{
 			name:           "fully available",
@@ -33,6 +35,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressingComplete,
 			wantDegraded:   metav1.ConditionFalse,
 			degradeReason:  ConditionReasonNotDegraded,
+			wantReady:      metav1.ConditionTrue,
+			readyReason:    ConditionReasonReady,
 		},
 		{
 			name:           "zero replicas desired",
@@ -44,6 +48,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressingComplete,
 			wantDegraded:   metav1.ConditionFalse,
 			degradeReason:  ConditionReasonNotDegraded,
+			wantReady:      metav1.ConditionFalse,
+			readyReason:    ConditionReasonNotReady,
 		},
 		{
 			name:           "nil replicas defaults to 1, fully available",
@@ -55,6 +61,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressingComplete,
 			wantDegraded:   metav1.ConditionFalse,
 			degradeReason:  ConditionReasonNotDegraded,
+			wantReady:      metav1.ConditionTrue,
+			readyReason:    ConditionReasonReady,
 		},
 		{
 			name:           "partially available (1/3 ready, all updated)",
@@ -66,6 +74,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressingComplete,
 			wantDegraded:   metav1.ConditionTrue,
 			degradeReason:  ConditionReasonDegraded,
+			wantReady:      metav1.ConditionFalse,
+			readyReason:    ConditionReasonNotReady,
 		},
 		{
 			name:           "no replicas ready",
@@ -77,6 +87,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressingComplete,
 			wantDegraded:   metav1.ConditionTrue,
 			degradeReason:  ConditionReasonDegraded,
+			wantReady:      metav1.ConditionFalse,
+			readyReason:    ConditionReasonNotReady,
 		},
 		{
 			name:           "rolling update (1/3 updated)",
@@ -88,6 +100,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressing,
 			wantDegraded:   metav1.ConditionFalse,
 			degradeReason:  ConditionReasonNotDegraded,
+			wantReady:      metav1.ConditionTrue,
+			readyReason:    ConditionReasonReady,
 		},
 		{
 			name:           "scaling up (3 ready, desired 5, total 3)",
@@ -99,6 +113,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressing,
 			wantDegraded:   metav1.ConditionTrue,
 			degradeReason:  ConditionReasonDegraded,
+			wantReady:      metav1.ConditionFalse,
+			readyReason:    ConditionReasonNotReady,
 		},
 		{
 			name:           "nil deployment",
@@ -110,6 +126,8 @@ func TestComputeConditions(t *testing.T) {
 			progressReason: ConditionReasonProgressing,
 			wantDegraded:   metav1.ConditionTrue,
 			degradeReason:  ConditionReasonDegraded,
+			wantReady:      metav1.ConditionFalse,
+			readyReason:    ConditionReasonNotReady,
 		},
 	}
 
@@ -126,11 +144,12 @@ func TestComputeConditions(t *testing.T) {
 			assertCondition(t, conditions, ConditionTypeAvailable, tt.wantAvailable, tt.availReason)
 			assertCondition(t, conditions, ConditionTypeProgressing, tt.wantProgress, tt.progressReason)
 			assertCondition(t, conditions, ConditionTypeDegraded, tt.wantDegraded, tt.degradeReason)
+			assertCondition(t, conditions, ConditionTypeReady, tt.wantReady, tt.readyReason)
 		})
 	}
 }
 
-func TestComputeConditions_ReturnsThreeConditions(t *testing.T) {
+func TestComputeConditions_ReturnsFourConditions(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(1),
@@ -139,15 +158,15 @@ func TestComputeConditions_ReturnsThreeConditions(t *testing.T) {
 
 	conditions := computeConditions(mc, depWithStatus(1, 1, 1), nil, false)
 
-	if len(conditions) != 3 {
-		t.Fatalf("expected 3 conditions, got %d", len(conditions))
+	if len(conditions) != 4 {
+		t.Fatalf("expected 4 conditions, got %d", len(conditions))
 	}
 
 	types := map[string]bool{}
 	for _, c := range conditions {
 		types[c.Type] = true
 	}
-	for _, ct := range []string{ConditionTypeAvailable, ConditionTypeProgressing, ConditionTypeDegraded} {
+	for _, ct := range []string{ConditionTypeAvailable, ConditionTypeProgressing, ConditionTypeDegraded, ConditionTypeReady} {
 		if !types[ct] {
 			t.Errorf("missing condition type %q", ct)
 		}
@@ -229,6 +248,7 @@ func TestComputeConditions_SecretNotFound_SingleMissing(t *testing.T) {
 	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret"}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
 	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "sasl-secret")
 }
 
@@ -242,6 +262,7 @@ func TestComputeConditions_SecretNotFound_MultipleMissing(t *testing.T) {
 	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"sasl-secret", "tls-secret"}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
 	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "sasl-secret")
 	assertConditionMessageContains(t, conditions, ConditionTypeDegraded, "tls-secret")
 }
@@ -257,6 +278,7 @@ func TestComputeConditions_SecretNotFound_PrecedenceOverReplica(t *testing.T) {
 	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{"my-secret"}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
 }
 
 func TestComputeConditions_NoMissingSecrets_NilSlice(t *testing.T) {
@@ -269,6 +291,7 @@ func TestComputeConditions_NoMissingSecrets_NilSlice(t *testing.T) {
 	conditions := computeConditions(mc, depWithStatus(3, 3, 3), nil, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
 }
 
 func TestComputeConditions_NoMissingSecrets_EmptySlice(t *testing.T) {
@@ -281,6 +304,7 @@ func TestComputeConditions_NoMissingSecrets_EmptySlice(t *testing.T) {
 	conditions := computeConditions(mc, depWithStatus(3, 3, 3), []string{}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
 }
 
 func TestComputeConditions_HPAActive_UsesDeploymentReplicas(t *testing.T) {
@@ -297,6 +321,7 @@ func TestComputeConditions_HPAActive_UsesDeploymentReplicas(t *testing.T) {
 	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionTrue, ConditionReasonAvailable)
 	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionFalse, ConditionReasonProgressingComplete)
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
 	assertConditionMessageContains(t, conditions, ConditionTypeAvailable, "HPA-managed")
 }
 
@@ -313,6 +338,7 @@ func TestComputeConditions_HPAActive_PartiallyReady(t *testing.T) {
 	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionTrue, ConditionReasonAvailable)
 	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionFalse, ConditionReasonProgressingComplete)
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonDegraded)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionFalse, ConditionReasonNotReady)
 	assertConditionMessageContains(t, conditions, ConditionTypeAvailable, "HPA-managed")
 }
 
@@ -329,6 +355,7 @@ func TestComputeConditions_HPAActive_NilDeployment(t *testing.T) {
 	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionFalse, ConditionReasonUnavailable)
 	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionTrue, ConditionReasonProgressing)
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonDegraded)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionFalse, ConditionReasonNotReady)
 }
 
 func TestComputeConditions_HPAInactive_IgnoresDeploymentTotal(t *testing.T) {
@@ -344,6 +371,7 @@ func TestComputeConditions_HPAInactive_IgnoresDeploymentTotal(t *testing.T) {
 	assertCondition(t, conditions, ConditionTypeAvailable, metav1.ConditionTrue, ConditionReasonAvailable)
 	assertCondition(t, conditions, ConditionTypeProgressing, metav1.ConditionFalse, ConditionReasonProgressingComplete)
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionFalse, ConditionReasonNotDegraded)
+	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
 	// Should NOT have "HPA-managed" in message when HPA is inactive.
 	for _, c := range conditions {
 		if c.Type == ConditionTypeAvailable && strings.Contains(c.Message, "HPA-managed") {
