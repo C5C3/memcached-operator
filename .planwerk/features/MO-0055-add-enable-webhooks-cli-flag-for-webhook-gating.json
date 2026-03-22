@@ -1,0 +1,290 @@
+{
+  "feature_id": "MO-0055",
+  "title": "Add --enable-webhooks CLI flag for webhook gating",
+  "slug": "add-enable-webhooks-cli-flag-for-webhook-gating",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🔧 small\n**Category:** backend\n**Priority:** critical\n**Source:** GitHub Issue [#1](https://github.com/C5C3/memcached-operator/issues/1)\n\nAdd an `--enable-webhooks` boolean CLI flag (default `true`) to `cmd/main.go` that conditionally creates the webhook server and registers admission webhooks. When `false`, skip `webhook.NewServer()` creation (lines 104-106), pass nil `WebhookServer` to `ctrl.NewManager`, skip `SetupMemcachedWebhookWithManager()` call (lines 141-144), and log an info message. Update `charts/memcached-operator/templates/deployment.yaml` (lines 36-45) to pass `--enable-webhooks=false` when `.Values.webhook.enabled` is false. Add table-driven unit test in `cmd/main_test.go` following the existing `TestParseWatchNamespaces` pattern (lines 10-98).\n\n**Rationale:** The operator pod enters CrashLoopBackOff when deployed with `webhook.enabled: false` because the binary unconditionally starts the webhook server and tries to load TLS certs from a volume that isn't mounted. This blocks webhook-less deployments needed for kind clusters and CI environments where cert-manager TLS provisioning is problematic. Observed in production CI with `context deadline exceeded` on Helm install.\n\n**Affected Areas:**\n- cmd/main.go\n- cmd/main_test.go\n- charts/memcached-operator/templates/deployment.yaml",
+  "stories": [
+    {
+      "title": "Operator starts without webhooks in environments lacking cert-manager",
+      "role": "cluster operator",
+      "want": "to deploy the memcached-operator with webhooks disabled so the pod does not CrashLoopBackOff when TLS certs are unavailable",
+      "so_that": "I can run the operator in kind clusters and CI environments where cert-manager TLS provisioning is problematic",
+      "criteria": [
+        "Passing --enable-webhooks=false skips webhook.NewServer() creation and passes nil WebhookServer to ctrl.NewManager",
+        "Passing --enable-webhooks=false skips SetupMemcachedWebhookWithManager() call",
+        "An info-level log message 'webhooks are disabled' is emitted when --enable-webhooks=false",
+        "The operator starts successfully and passes health/readiness probes without TLS certs mounted"
+      ]
+    },
+    {
+      "title": "Operator starts with webhooks enabled by default",
+      "role": "cluster operator",
+      "want": "the operator to create the webhook server and register admission webhooks when --enable-webhooks is not explicitly set",
+      "so_that": "existing deployments are not broken by the new flag and webhook behavior remains the default",
+      "criteria": [
+        "When --enable-webhooks is omitted, the flag defaults to true",
+        "When --enable-webhooks=true (or omitted), webhook.NewServer() is created with TLS opts and passed to ctrl.NewManager",
+        "When --enable-webhooks=true (or omitted), SetupMemcachedWebhookWithManager() is called",
+        "No behavioral change from the current code when the flag is not provided"
+      ]
+    },
+    {
+      "title": "Helm chart passes --enable-webhooks=false when webhook.enabled is false",
+      "role": "Helm user",
+      "want": "the Helm chart deployment template to automatically pass --enable-webhooks=false to the operator binary when I set webhook.enabled: false in values.yaml",
+      "so_that": "I don't have to manually configure CLI args and the Helm value consistently controls all webhook-related resources",
+      "criteria": [
+        "When .Values.webhook.enabled is false, --enable-webhooks=false appears in the container args",
+        "When .Values.webhook.enabled is true (default), --enable-webhooks=false does NOT appear in the container args",
+        "The arg is placed in the existing args block alongside other conditional args (leader-elect, watch-namespaces)"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "The operator binary SHALL accept an --enable-webhooks boolean CLI flag that defaults to true",
+      "priority": "SHALL",
+      "rationale": "Backward compatibility requires the default to be true so existing deployments are unaffected",
+      "scenarios": [
+        {
+          "name": "Flag defaults to true when omitted",
+          "when": "the operator binary is started without --enable-webhooks",
+          "then": "the enableWebhooks variable is true",
+          "and_then": [
+            "webhook server is created and webhooks are registered"
+          ]
+        },
+        {
+          "name": "Flag explicitly set to true",
+          "when": "the operator binary is started with --enable-webhooks=true",
+          "then": "the enableWebhooks variable is true",
+          "and_then": [
+            "webhook server is created and webhooks are registered"
+          ]
+        },
+        {
+          "name": "Flag explicitly set to false",
+          "when": "the operator binary is started with --enable-webhooks=false",
+          "then": "the enableWebhooks variable is false",
+          "and_then": [
+            "webhook server is NOT created and webhooks are NOT registered"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "When --enable-webhooks is false, the operator SHALL skip webhook.NewServer() creation and pass nil WebhookServer to ctrl.NewManager",
+      "priority": "SHALL",
+      "rationale": "The webhook server attempts to load TLS certs on startup; skipping it prevents CrashLoopBackOff when certs are not mounted",
+      "scenarios": [
+        {
+          "name": "Webhook server skipped when disabled",
+          "when": "--enable-webhooks=false is passed",
+          "then": "webhook.NewServer() is not called and WebhookServer field in ctrl.Options is nil",
+          "and_then": [
+            "the manager starts without a webhook listener on port 9443"
+          ]
+        },
+        {
+          "name": "Webhook server created when enabled",
+          "when": "--enable-webhooks=true (or omitted)",
+          "then": "webhook.NewServer() is called with the configured TLS opts and passed as WebhookServer to ctrl.NewManager",
+          "and_then": [
+            "the manager starts with webhook listener on port 9443"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "When --enable-webhooks is false, the operator SHALL skip the SetupMemcachedWebhookWithManager() call",
+      "priority": "SHALL",
+      "rationale": "Registering webhooks without a webhook server would cause a runtime panic or error",
+      "scenarios": [
+        {
+          "name": "Webhook registration skipped when disabled",
+          "when": "--enable-webhooks=false is passed",
+          "then": "SetupMemcachedWebhookWithManager() is not called",
+          "and_then": [
+            "no mutating/validating webhook handlers are registered with the manager"
+          ]
+        },
+        {
+          "name": "Webhook registration performed when enabled",
+          "when": "--enable-webhooks=true (or omitted)",
+          "then": "SetupMemcachedWebhookWithManager() is called",
+          "and_then": [
+            "mutating and validating webhook handlers are registered"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "When --enable-webhooks is false, the operator SHALL log an info-level message indicating webhooks are disabled",
+      "priority": "SHALL",
+      "rationale": "Operators need observability into why webhooks are not running for debugging and audit purposes",
+      "scenarios": [
+        {
+          "name": "Info log emitted when webhooks disabled",
+          "when": "--enable-webhooks=false is passed",
+          "then": "an info-level log message containing 'webhooks are disabled' is emitted via setupLog",
+          "and_then": []
+        },
+        {
+          "name": "No disabled message when webhooks enabled",
+          "when": "--enable-webhooks=true (or omitted)",
+          "then": "no 'webhooks are disabled' log message is emitted",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "The Helm deployment template SHALL pass --enable-webhooks=false to the container args when .Values.webhook.enabled is false",
+      "priority": "SHALL",
+      "rationale": "The Helm chart already gates webhook resources (ports, volumes, cert-manager CRs) on webhook.enabled; the CLI flag must be consistent",
+      "scenarios": [
+        {
+          "name": "Flag injected when webhooks disabled in Helm",
+          "when": ".Values.webhook.enabled is false",
+          "then": "--enable-webhooks=false appears in the container args list in the rendered Deployment",
+          "and_then": [
+            "the arg is placed in the args block between other conditional args"
+          ]
+        },
+        {
+          "name": "Flag not injected when webhooks enabled in Helm",
+          "when": ".Values.webhook.enabled is true (default)",
+          "then": "--enable-webhooks=false does NOT appear in the rendered container args",
+          "and_then": [
+            "the operator starts with webhooks enabled by default"
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add --enable-webhooks flag and conditional webhook logic in cmd/main.go (REQ-001, REQ-002, REQ-003, REQ-004)",
+      "description": "In cmd/main.go: (1) Add `var enableWebhooks bool` alongside existing flag vars at line ~68. (2) Add `flag.BoolVar(&enableWebhooks, \"enable-webhooks\", true, \"Enable webhook server and admission webhook registration.\")` alongside existing flag registrations at line ~76. (3) Wrap lines 104-106 (webhook.NewServer) in `if enableWebhooks { ... }` and declare `var webhookServer *webhook.Server` before the conditional so it remains nil when false. (4) Wrap lines 141-144 (SetupMemcachedWebhookWithManager) in `if enableWebhooks { ... }`. (5) Add `else { setupLog.Info(\"webhooks are disabled\") }` to the webhook server conditional block. (6) Change line 121 to use the conditional webhookServer variable instead of the direct call result.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Add table-driven unit test for --enable-webhooks flag parsing in cmd/main_test.go (REQ-001)",
+      "description": "In cmd/main_test.go: Add a new exported function (e.g., `buildWebhookServer`) in main.go that takes enableWebhooks bool and tlsOpts, returns *webhook.Server (nil when false, real server when true). Then add TestBuildWebhookServer table-driven test following the exact TestParseWatchNamespaces pattern: test cases for (1) enableWebhooks=true returns non-nil *webhook.Server, (2) enableWebhooks=false returns nil. Use reflect.DeepEqual or simple nil checks.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-001"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Update Helm deployment.yaml to pass --enable-webhooks=false when webhook.enabled is false (REQ-005)",
+      "description": "In charts/memcached-operator/templates/deployment.yaml: Add a new conditional arg block in the args section (after the watch-namespaces block at line 45, before the image line at line 46): `{{- if not .Values.webhook.enabled }}\\n            - --enable-webhooks=false\\n            {{- end }}`. This follows the existing pattern used by leaderElection.enabled and watchNamespaces conditionals.",
+      "level": 2,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Add Helm template render test for --enable-webhooks flag injection (REQ-005)",
+      "description": "Verify the Helm template renders correctly by running `helm template` with webhook.enabled=false and webhook.enabled=true, then checking the args output. If the project has existing Helm template tests (e.g., in charts/memcached-operator/tests/), add test cases there. Otherwise, document the manual verification commands. Test cases: (1) default values (webhook.enabled=true) — --enable-webhooks=false must NOT be in args, (2) webhook.enabled=false — --enable-webhooks=false must be in args.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestBuildWebhookServer/enabled_returns_non_nil_server",
+      "story": "Operator starts with webhooks enabled by default",
+      "expected": "When enableWebhooks is true, buildWebhookServer returns a non-nil *webhook.Server",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestBuildWebhookServer/disabled_returns_nil",
+      "story": "Operator starts without webhooks in environments lacking cert-manager",
+      "expected": "When enableWebhooks is false, buildWebhookServer returns nil",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "charts/memcached-operator (helm template test)",
+      "test_function": "helm_template_webhook_enabled_true_no_flag",
+      "story": "Helm chart passes --enable-webhooks=false when webhook.enabled is false",
+      "expected": "helm template with default values does NOT include --enable-webhooks=false in container args",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "charts/memcached-operator (helm template test)",
+      "test_function": "helm_template_webhook_enabled_false_has_flag",
+      "story": "Helm chart passes --enable-webhooks=false when webhook.enabled is false",
+      "expected": "helm template with --set webhook.enabled=false includes --enable-webhooks=false in container args",
+      "requirement_id": "REQ-005"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "The --enable-webhooks flag defaults to true, preserving backward compatibility with existing deployments",
+    "When --enable-webhooks=false, no webhook.NewServer() is called and WebhookServer is nil in ctrl.Options",
+    "When --enable-webhooks=false, SetupMemcachedWebhookWithManager() is not called",
+    "An info-level log message is emitted when webhooks are disabled",
+    "Helm template renders --enable-webhooks=false in args when .Values.webhook.enabled is false and omits it when true",
+    "Table-driven unit test in cmd/main_test.go follows the existing TestParseWatchNamespaces pattern",
+    "golangci-lint passes without errors on modified Go files",
+    "go vet passes without errors on modified Go files"
+  ],
+  "implementation_notes": "Architecture: Extract webhook server construction into a testable function `buildWebhookServer(enableWebhooks bool, tlsOpts []func(*tls.Config)) *webhook.Server` that returns nil when disabled and a configured server when enabled. This follows the same pattern as `parseWatchNamespaces` — a pure function extracted from main() for testability.\n\nKey files to modify:\n- `cmd/main.go:62-160` — Add flag var, flag registration, conditional webhook logic, extract buildWebhookServer\n- `cmd/main_test.go:1-98` — Add TestBuildWebhookServer table-driven test following TestParseWatchNamespaces pattern\n- `charts/memcached-operator/templates/deployment.yaml:36-45` — Add conditional --enable-webhooks=false arg\n\nPitfalls:\n- The webhookServer variable must be declared as `var webhookServer *webhook.Server` (pointer type) so it defaults to nil when webhooks are disabled. controller-runtime's ctrl.Options.WebhookServer accepts the webhook.Server interface, and nil is a valid value that disables the webhook listener.\n- The log message must use setupLog.Info() to be consistent with existing log messages in main.go.\n- The Helm template conditional must use `{{- if not .Values.webhook.enabled }}` (not `{{- if eq .Values.webhook.enabled false }}`) to match the existing negation pattern used elsewhere in the chart.",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T08:09:58.132287"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T08:11:42.227952"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T08:13:56.399118"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "47cd73f9-3d92-4d24-9181-d3103b891e1e",
+      "timestamp": "2026-03-22T08:13:56.399143",
+      "total_duration": 131.28106570243835,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 131.28106570243835,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
