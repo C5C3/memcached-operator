@@ -40,6 +40,19 @@ func init() {
 	utilruntime.Must(monitoringv1.AddToScheme(scheme))
 }
 
+// buildWebhookServer returns a configured webhook server when enabled is true,
+// or nil when false. Passing nil to ctrl.Options.WebhookServer disables the
+// webhook listener, preventing TLS certificate loading errors in environments
+// where cert-manager is not available (MO-0055).
+func buildWebhookServer(enabled bool, tlsOpts []func(*tls.Config)) webhook.Server {
+	if !enabled {
+		return nil
+	}
+	return webhook.NewServer(webhook.Options{
+		TLSOpts: tlsOpts,
+	})
+}
+
 // parseWatchNamespaces splits a comma-separated namespace string into a
 // map[string]cache.Config suitable for controller-runtime's DefaultNamespaces.
 // It returns nil when the input is empty or whitespace-only, which tells the
@@ -65,6 +78,7 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var enableWebhooks bool
 	var watchNamespaces string
 	var tlsOpts []func(*tls.Config)
 
@@ -73,6 +87,7 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.BoolVar(&secureMetrics, "metrics-secure", true, "If set, the metrics endpoint is served securely via HTTPS.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false, "If set, HTTP/2 will be enabled for the metrics and webhook servers.")
+	flag.BoolVar(&enableWebhooks, "enable-webhooks", true, "Enable webhook server and admission webhook registration.")
 	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated list of namespaces to watch. Empty means all namespaces (cluster-scoped).")
 
 	opts := zap.Options{
@@ -101,9 +116,10 @@ func main() {
 		})
 	}
 
-	webhookServer := webhook.NewServer(webhook.Options{
-		TLSOpts: tlsOpts,
-	})
+	webhookServer := buildWebhookServer(enableWebhooks, tlsOpts)
+	if !enableWebhooks {
+		setupLog.Info("webhooks are disabled")
+	}
 
 	metricsServerOptions := metricsserver.Options{
 		BindAddress:   metricsAddr,
@@ -138,9 +154,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = memcachedv1beta1.SetupMemcachedWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "Memcached")
-		os.Exit(1)
+	if enableWebhooks {
+		if err = memcachedv1beta1.SetupMemcachedWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "Memcached")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

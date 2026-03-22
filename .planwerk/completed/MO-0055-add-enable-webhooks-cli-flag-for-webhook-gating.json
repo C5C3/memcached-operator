@@ -2,8 +2,8 @@
   "feature_id": "MO-0055",
   "title": "Add --enable-webhooks CLI flag for webhook gating",
   "slug": "add-enable-webhooks-cli-flag-for-webhook-gating",
-  "status": "prepared",
-  "phase": null,
+  "status": "completed",
+  "phase": "awaiting_external_review",
   "summary": "",
   "description": "**Size:** 🔧 small\n**Category:** backend\n**Priority:** critical\n**Source:** GitHub Issue [#1](https://github.com/C5C3/memcached-operator/issues/1)\n\nAdd an `--enable-webhooks` boolean CLI flag (default `true`) to `cmd/main.go` that conditionally creates the webhook server and registers admission webhooks. When `false`, skip `webhook.NewServer()` creation (lines 104-106), pass nil `WebhookServer` to `ctrl.NewManager`, skip `SetupMemcachedWebhookWithManager()` call (lines 141-144), and log an info message. Update `charts/memcached-operator/templates/deployment.yaml` (lines 36-45) to pass `--enable-webhooks=false` when `.Values.webhook.enabled` is false. Add table-driven unit test in `cmd/main_test.go` following the existing `TestParseWatchNamespaces` pattern (lines 10-98).\n\n**Rationale:** The operator pod enters CrashLoopBackOff when deployed with `webhook.enabled: false` because the binary unconditionally starts the webhook server and tries to load TLS certs from a volume that isn't mounted. This blocks webhook-less deployments needed for kind clusters and CI environments where cert-manager TLS provisioning is problematic. Observed in production CI with `context deadline exceeded` on Helm install.\n\n**Affected Areas:**\n- cmd/main.go\n- cmd/main_test.go\n- charts/memcached-operator/templates/deployment.yaml",
   "stories": [
@@ -176,6 +176,7 @@
       "description": "In cmd/main.go: (1) Add `var enableWebhooks bool` alongside existing flag vars at line ~68. (2) Add `flag.BoolVar(&enableWebhooks, \"enable-webhooks\", true, \"Enable webhook server and admission webhook registration.\")` alongside existing flag registrations at line ~76. (3) Wrap lines 104-106 (webhook.NewServer) in `if enableWebhooks { ... }` and declare `var webhookServer *webhook.Server` before the conditional so it remains nil when false. (4) Wrap lines 141-144 (SetupMemcachedWebhookWithManager) in `if enableWebhooks { ... }`. (5) Add `else { setupLog.Info(\"webhooks are disabled\") }` to the webhook server conditional block. (6) Change line 121 to use the conditional webhookServer variable instead of the direct call result.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001",
         "REQ-002",
@@ -189,6 +190,7 @@
       "description": "In cmd/main_test.go: Add a new exported function (e.g., `buildWebhookServer`) in main.go that takes enableWebhooks bool and tlsOpts, returns *webhook.Server (nil when false, real server when true). Then add TestBuildWebhookServer table-driven test following the exact TestParseWatchNamespaces pattern: test cases for (1) enableWebhooks=true returns non-nil *webhook.Server, (2) enableWebhooks=false returns nil. Use reflect.DeepEqual or simple nil checks.",
       "level": 1,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-001"
       ]
@@ -199,6 +201,7 @@
       "description": "In charts/memcached-operator/templates/deployment.yaml: Add a new conditional arg block in the args section (after the watch-namespaces block at line 45, before the image line at line 46): `{{- if not .Values.webhook.enabled }}\\n            - --enable-webhooks=false\\n            {{- end }}`. This follows the existing pattern used by leaderElection.enabled and watchNamespaces conditionals.",
       "level": 2,
       "estimate_minutes": 10,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -209,6 +212,7 @@
       "description": "Verify the Helm template renders correctly by running `helm template` with webhook.enabled=false and webhook.enabled=true, then checking the args output. If the project has existing Helm template tests (e.g., in charts/memcached-operator/tests/), add test cases there. Otherwise, document the manual verification commands. Test cases: (1) default values (webhook.enabled=true) — --enable-webhooks=false must NOT be in args, (2) webhook.enabled=false — --enable-webhooks=false must be in args.",
       "level": 2,
       "estimate_minutes": 15,
+      "status": "done",
       "requirements": [
         "REQ-005"
       ]
@@ -242,6 +246,20 @@
       "story": "Helm chart passes --enable-webhooks=false when webhook.enabled is false",
       "expected": "helm template with --set webhook.enabled=false includes --enable-webhooks=false in container args",
       "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestBuildWebhookServer",
+      "story": "",
+      "expected": "Discovered during implementation",
+      "requirement_id": ""
+    },
+    {
+      "test_file": "cmd/main_test.go",
+      "test_function": "TestParseWatchNamespaces",
+      "story": "",
+      "expected": "Discovered during implementation",
+      "requirement_id": ""
     }
   ],
   "affected_files": [],
@@ -269,8 +287,18 @@
     "prepared": {
       "github_account": "berendt",
       "timestamp": "2026-03-22T08:13:56.399118"
+    },
+    "processing": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T08:46:27.537128"
+    },
+    "completed": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T10:46:50.782269"
     }
   },
+  "github_pr": "https://github.com/C5C3/memcached-operator/pull/2",
+  "pr_number": 2,
   "execution_history": [
     {
       "run_id": "47cd73f9-3d92-4d24-9181-d3103b891e1e",
@@ -282,6 +310,44 @@
           "name": "prepare",
           "duration": 131.28106570243835,
           "type": "prepare",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "run_id": "662c6a9a-e2ed-4616-b5aa-1d182c022c74",
+      "timestamp": "2026-03-22T09:02:57.423874",
+      "total_duration": 763.3627319335938,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "Level 1 (2 tasks)",
+          "duration": 342.23537588119507,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "Level 2 (2 tasks)",
+          "duration": 162.97504997253418,
+          "type": "level",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0055] Code Review",
+          "duration": 171.0612599849701,
+          "type": "review",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0055] Improvements",
+          "duration": 25.790364980697632,
+          "type": "improve",
+          "status": "done"
+        },
+        {
+          "name": "[MO-0055] Simplify",
+          "duration": 61.30068111419678,
+          "type": "simplify",
           "status": "done"
         }
       ]

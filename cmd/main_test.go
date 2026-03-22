@@ -1,11 +1,62 @@
 package main
 
 import (
+	"crypto/tls"
 	"reflect"
 	"testing"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 )
+
+func TestBuildWebhookServer(t *testing.T) {
+	tests := []struct {
+		name    string
+		enabled bool
+		tlsOpts []func(*tls.Config)
+		wantNil bool
+	}{
+		{
+			name:    "enabled returns non-nil server",
+			enabled: true,
+			tlsOpts: nil,
+			wantNil: false,
+		},
+		{
+			name:    "enabled with TLS opts returns non-nil server",
+			enabled: true,
+			tlsOpts: []func(*tls.Config){
+				func(c *tls.Config) { c.NextProtos = []string{"http/1.1"} },
+			},
+			wantNil: false,
+		},
+		{
+			name:    "disabled returns nil",
+			enabled: false,
+			tlsOpts: nil,
+			wantNil: true,
+		},
+		{
+			name:    "disabled with TLS opts still returns nil",
+			enabled: false,
+			tlsOpts: []func(*tls.Config){
+				func(c *tls.Config) { c.NextProtos = []string{"http/1.1"} },
+			},
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildWebhookServer(tt.enabled, tt.tlsOpts)
+			if tt.wantNil && result != nil {
+				t.Fatalf("expected nil, got %v", result)
+			}
+			if !tt.wantNil && result == nil {
+				t.Fatal("expected non-nil webhook.Server, got nil")
+			}
+		})
+	}
+}
 
 func TestParseWatchNamespaces(t *testing.T) {
 	tests := []struct {
