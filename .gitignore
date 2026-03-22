@@ -31,3 +31,6 @@ docs/.vitepress/cache/
 # OS
 .DS_Store
 Thumbs.db
+
+# Planwerk
+.planwerk/.secrets.toml
