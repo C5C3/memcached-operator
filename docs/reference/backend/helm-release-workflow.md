@@ -152,23 +152,23 @@ To release a new version:
 
 1. **Bump the chart version** in `charts/memcached-operator/Chart.yaml`:
    ```yaml
-   version: 0.3.0
-   appVersion: "0.3.0"
+   version: 0.4.0
+   appVersion: "0.4.0"
    ```
 
 2. **Commit and push** the version change to `main`.
 
 3. **Create and push the release tag**:
    ```bash
-   git tag v0.3.0
-   git push origin v0.3.0
+   git tag v0.4.0
+   git push origin v0.4.0
    ```
 
 This single tag triggers both the container image release (`release.yml`) and
 the Helm chart release (`helm-release.yml`). Verify the chart release:
 
 ```bash
-helm show chart oci://ghcr.io/c5c3/charts/memcached-operator --version 0.3.0
+helm show chart oci://ghcr.io/c5c3/charts/memcached-operator --version 0.4.0
 ```
 
 ---
