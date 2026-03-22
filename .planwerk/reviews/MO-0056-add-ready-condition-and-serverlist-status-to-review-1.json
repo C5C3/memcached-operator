@@ -1,0 +1,107 @@
+{
+  "feature_id": "MO-0056",
+  "title": "Add Ready condition and ServerList status to Memcached CR",
+  "date": "2026-03-22",
+  "verdict": "APPROVED",
+  "summary": "Adds a Ready condition to computeConditions() (True when readyReplicas == desiredReplicas && desiredReplicas > 0) and a ServerList []string field to MemcachedStatus (populated with service DNS when Ready=True, nil otherwise). Both API versions (v1alpha1, v1beta1) are updated with the new field, conversion is wired, CRD manifests regenerated, and docs updated. Comprehensive unit tests cover all 8 table-driven scenarios plus SecretNotFound, HPA, and ObservedGeneration paths. Integration tests verify Ready=False/serverList=nil for initial reconciliation and serverList population via fake client. Deepcopy independence tests cover ServerList in both API versions. All blocking and major checks pass.",
+  "tests_checklist": [
+    {"item": "Unit tests exist for Ready condition across all computeConditions scenarios", "checked": true},
+    {"item": "ReturnsFourConditions test verifies exactly 4 conditions", "checked": true},
+    {"item": "SecretNotFound tests include Ready=True assertion (Ready independent of Degraded)", "checked": true},
+    {"item": "HPA tests include Ready assertions for all 4 variants", "checked": true},
+    {"item": "ObservedGeneration test covers Ready condition", "checked": true},
+    {"item": "Integration test: Ready=False and serverList=nil on initial reconciliation", "checked": true},
+    {"item": "Integration test: serverList populated when all replicas ready (fake client)", "checked": true},
+    {"item": "Integration test: serverList=nil when not all replicas ready (fake client)", "checked": true},
+    {"item": "Integration test: zero replicas → Ready=False and serverList=nil", "checked": true},
+    {"item": "Conversion test: ServerList in fullyPopulated(), explicit DeepEqual assertion", "checked": true},
+    {"item": "Round-trip test automatically covers ServerList via reflect.DeepEqual", "checked": true},
+    {"item": "Deepcopy independence test covers ServerList mutation in v1alpha1 and v1beta1", "checked": true},
+    {"item": "Existing envtest tests updated from HaveLen(3) to HaveLen(4)", "checked": true},
+    {"item": "Existing HPA test updated with Ready condition presence check", "checked": true},
+    {"item": "Edge case: zero replicas → Ready=False (not vacuously true)", "checked": true},
+    {"item": "Edge case: nil deployment → Ready=False", "checked": true},
+    {"item": "Edge case: rolling update with all ready → Ready=True", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Ready condition follows same pattern as Available/Progressing/Degraded", "checked": true},
+    {"item": "computeConditions capacity updated from 3 to 4", "checked": true},
+    {"item": "Constants follow existing naming convention (ConditionType*, ConditionReason*)", "checked": true},
+    {"item": "ServerList field follows existing status field patterns (+optional, json omitempty)", "checked": true},
+    {"item": "Conversion follows existing field-by-field copy pattern", "checked": true},
+    {"item": "reconcileStatus uses meta.FindStatusCondition (K8s idiomatic)", "checked": true},
+    {"item": "Ready condition messages are descriptive and context-sensitive", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input processed (status is controller-computed)", "checked": true},
+    {"item": "No secrets or sensitive data in serverList", "checked": true},
+    {"item": "No external calls or injection vectors", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Ready condition is independent of Available/Progressing/Degraded (additive)", "checked": true},
+    {"item": "serverList computation is in reconcileStatus, not computeConditions (correct separation)", "checked": true},
+    {"item": "Both API versions have identical ServerList field definitions", "checked": true},
+    {"item": "CRD manifest includes serverList in both v1alpha1 and v1beta1 schemas", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated logic between condition computation and serverList computation", "checked": true},
+    {"item": "No over-engineering — simple boolean checks and string formatting", "checked": true},
+    {"item": "No unnecessary abstractions or helpers", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Ready condition computed from same inputs as other conditions (no extra fetches)", "checked": true},
+    {"item": "serverList set to nil when Ready=False (fail-safe default)", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Nil deployment handled (Ready=False)", "checked": true},
+    {"item": "Zero replicas handled (Ready=False, not vacuously true)", "checked": true},
+    {"item": "readyCond nil check before accessing Status field", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [
+    {
+      "id": "Q6-1",
+      "severity": "minor",
+      "check_id": "Q6",
+      "file": "internal/controller/status.go",
+      "line": 197,
+      "description": "Hardcoded port 11211 in serverList format string instead of using the PortMemcached constant defined in deployment.go:281. All other non-test code (service.go:30, networkpolicy.go:28) references PortMemcached.",
+      "fix": "Change `fmt.Sprintf(\"%s.%s:11211\", mc.Name, mc.Namespace)` to `fmt.Sprintf(\"%s.%s:%d\", mc.Name, mc.Namespace, PortMemcached)`"
+    },
+    {
+      "id": "D2-1",
+      "severity": "minor",
+      "check_id": "D2",
+      "file": "api/v1beta1/memcached_types.go",
+      "line": 327,
+      "description": "Godoc comment on ServerList field says 'addresses of the Memcached pods in host:port format (e.g. \"10.244.0.5:11211\")' and 'from the ready pod endpoints', but the actual implementation produces service DNS entries (e.g. \"my-cache.default:11211\"). The CRD reference docs are correct; only the godoc/CRD description is misleading. Same issue in api/v1alpha1/memcached_types.go:327.",
+      "fix": "Update godoc to: 'ServerList contains the Memcached service endpoint in host:port format (e.g. \"my-cache.default:11211\"). The controller populates this with the headless Service DNS entry when the instance is Ready, nil otherwise.'"
+    }
+  ],
+  "suggested_improvements": [
+    "Use PortMemcached constant in status.go:197 instead of hardcoded 11211 for consistency with service.go and networkpolicy.go",
+    "Fix ServerList godoc comment in both API versions to describe service DNS (not pod IPs) to match actual behavior"
+  ],
+  "next_steps": [],
+  "detected_patterns": [
+    {
+      "name": "Status condition computation pattern with capacity-preallocated slice",
+      "component": "internal/controller",
+      "category": "service-structure",
+      "applies_when": "Adding or modifying status conditions in computeConditions()",
+      "description": "All status conditions are computed in computeConditions() as a capacity-preallocated slice (make([]metav1.Condition, 0, N)). Each condition follows the same structure: (1) compute boolean from replica/deployment state, (2) set status/reason pair based on boolean, (3) compute human-readable message with context, (4) append metav1.Condition with Type, Status, Reason, Message, LastTransitionTime, and ObservedGeneration. The capacity N must match the number of conditions. Conditions are then applied to the CR via meta.SetStatusCondition in reconcileStatus().",
+      "examples": [
+        {
+          "location": "internal/controller/status.go:72",
+          "code": "conditions := make([]metav1.Condition, 0, 4)"
+        },
+        {
+          "location": "internal/controller/status.go:145-167",
+          "code": "ready := desiredReplicas > 0 && readyReplicas == desiredReplicas\nreadyStatus, readyReason := metav1.ConditionFalse, ConditionReasonNotReady\nreadyMsg := \"Memcached instance is not ready\"\nif ready {\n\treadyStatus, readyReason = metav1.ConditionTrue, ConditionReasonReady\n\treadyMsg = fmt.Sprintf(\"All %d replicas are ready\", desiredReplicas)\n}\nconditions = append(conditions, metav1.Condition{\n\tType:               ConditionTypeReady,\n\tStatus:             readyStatus,\n\tReason:             readyReason,\n\tMessage:            readyMsg,\n\tLastTransitionTime: now,\n\tObservedGeneration: mc.Generation,\n})"
+        }
+      ]
+    }
+  ]
+}

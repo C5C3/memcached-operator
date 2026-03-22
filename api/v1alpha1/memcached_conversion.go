@@ -55,6 +55,7 @@ func (src *Memcached) ConvertTo(dstRaw conversion.Hub) error {
 	dst.Status.Conditions = src.Status.Conditions
 	dst.Status.ReadyReplicas = src.Status.ReadyReplicas
 	dst.Status.ObservedGeneration = src.Status.ObservedGeneration
+	dst.Status.ServerList = src.Status.ServerList
 
 	return nil
 }
@@ -106,6 +107,7 @@ func (dst *Memcached) ConvertFrom(srcRaw conversion.Hub) error {
 	dst.Status.Conditions = src.Status.Conditions
 	dst.Status.ReadyReplicas = src.Status.ReadyReplicas
 	dst.Status.ObservedGeneration = src.Status.ObservedGeneration
+	dst.Status.ServerList = src.Status.ServerList
 
 	return nil
 }

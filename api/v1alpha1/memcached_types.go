@@ -323,6 +323,14 @@ type MemcachedStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
+	// ServerList contains the Memcached service DNS entries in host:port format
+	// (e.g. "my-cache.default:11211"). The controller populates this list from
+	// the headless service DNS when the cluster is Ready, so clients can consume
+	// it directly for cache-ring construction. (REQ-005, MO-0056)
+	// +optional
+	// +listType=atomic
+	ServerList []string `json:"serverList,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -214,14 +214,38 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 | `conditions`         | `[]metav1.Condition` | Standard Kubernetes conditions representing the latest available observations of the Memcached instance's state. Uses merge-patch with `type` as the merge key. See [Status Conditions](#status-conditions) below. |
 | `readyReplicas`      | `int32`              | Number of Memcached pods that are ready                                                                                                                                                                            |
 | `observedGeneration` | `int64`              | Most recent generation observed by the controller. Clients can compare this to `metadata.generation` to determine if the status is up-to-date with the latest spec changes.                                        |
+| `serverList`         | `[]string`           | Memcached endpoint addresses in `host:port` format (e.g., `"my-cache.production:11211"`). Populated with the headless Service DNS entry when the instance is `Ready`; `nil` otherwise. See [serverList](#serverlist) below. |
 
 ### Status Conditions
 
-| Condition Type | Status Values    | Description                                             |
-|----------------|------------------|---------------------------------------------------------|
-| `Available`    | `True` / `False` | `True` when the Deployment has minimum availability     |
-| `Progressing`  | `True` / `False` | `True` when a rollout or scale operation is in progress |
-| `Degraded`     | `True` / `False` | `True` when fewer replicas than desired are ready       |
+| Condition Type | Status Values    | Description                                                                  |
+|----------------|------------------|------------------------------------------------------------------------------|
+| `Available`    | `True` / `False` | `True` when the Deployment has minimum availability                          |
+| `Progressing`  | `True` / `False` | `True` when a rollout or scale operation is in progress                      |
+| `Degraded`     | `True` / `False` | `True` when fewer replicas than desired are ready                            |
+| `Ready`        | `True` / `False` | `True` when all desired replicas are ready and `desiredReplicas > 0`. See [Ready Condition](#ready-condition) below |
+
+#### Ready Condition
+
+The `Ready` condition indicates whether the Memcached instance is fully operational. It is computed independently of the `Available`, `Progressing`, and `Degraded` conditions.
+
+| Status  | Reason               | When                                                                                    |
+|---------|----------------------|-----------------------------------------------------------------------------------------|
+| `True`  | `MemcachedReady`     | `readyReplicas == desiredReplicas` **and** `desiredReplicas > 0`                        |
+| `False` | `MemcachedNotReady`  | `readyReplicas < desiredReplicas`, or `desiredReplicas == 0`, or Deployment not created |
+
+The condition message provides a human-readable description of the current state (e.g., `"All 3 replicas are ready"`, `"2/3 replicas are ready"`, `"Instance has zero desired replicas"`).
+
+#### serverList
+
+The `serverList` field contains the Memcached service endpoint that clients can use for cache-ring construction. The controller computes `serverList` on every reconciliation cycle based on the `Ready` condition:
+
+| Ready Condition | serverList Value                              | Example                              |
+|-----------------|-----------------------------------------------|--------------------------------------|
+| `True`          | `["<cr-name>.<namespace>:11211"]`             | `["prod-cache.production:11211"]`    |
+| `False`         | `nil`                                         | --                                   |
+
+The address uses the headless Service DNS name (which matches the CR name) and the standard Memcached port `11211`.
 
 ---
 

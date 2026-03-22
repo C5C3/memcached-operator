@@ -683,7 +683,7 @@ var _ = Describe("Status conditions lifecycle", func() {
 			Expect(mc.Status.ObservedGeneration).To(Equal(gen2))
 
 			// Conditions still reflect envtest state (no real pods).
-			Expect(mc.Status.Conditions).To(HaveLen(3))
+			Expect(mc.Status.Conditions).To(HaveLen(4))
 			for _, c := range mc.Status.Conditions {
 				Expect(c.ObservedGeneration).To(Equal(gen2))
 				Expect(c.Reason).NotTo(BeEmpty())
@@ -792,7 +792,7 @@ var _ = Describe("Status conditions lifecycle", func() {
 			fetchNetworkPolicy(mc)
 
 			// Status is set.
-			Expect(mc.Status.Conditions).To(HaveLen(3))
+			Expect(mc.Status.Conditions).To(HaveLen(4))
 			Expect(mc.Status.ObservedGeneration).To(Equal(mc.Generation))
 
 			// In envtest: 3 desired, 0 ready → Degraded=True, Available=False.
@@ -1382,7 +1382,7 @@ var _ = Describe("Full create-update-delete lifecycle", func() {
 
 		// Status set after first reconcile.
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-		Expect(mc.Status.Conditions).To(HaveLen(3))
+		Expect(mc.Status.Conditions).To(HaveLen(4))
 		gen1 := mc.Generation
 		Expect(mc.Status.ObservedGeneration).To(Equal(gen1))
 

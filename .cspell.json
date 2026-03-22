@@ -223,6 +223,8 @@
     "shellcheck",
     "softprops",
     "sigs",
+    "srvlist",
+    "srvnil",
     "staticcheck",
     "storageversion",
     "statefulset",
