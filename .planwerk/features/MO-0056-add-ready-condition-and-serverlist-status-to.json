@@ -1,0 +1,540 @@
+{
+  "feature_id": "MO-0056",
+  "title": "Add Ready condition and ServerList status to Memcached CR",
+  "slug": "add-ready-condition-and-serverlist-status-to",
+  "status": "prepared",
+  "phase": null,
+  "summary": "",
+  "description": "**Size:** 🔧 small\n**Category:** backend\n**Priority:** critical\n**Source:** GitHub Issue [#3](https://github.com/C5C3/memcached-operator/issues/3)\n\nAdd a `Ready` condition type to `computeConditions()` in `internal/controller/status.go` with reasons `MemcachedReady`/`MemcachedNotReady` — true only when `readyReplicas == desiredReplicas && desiredReplicas > 0`. Add `ServerList []string` field to `MemcachedStatus` in both `api/v1beta1/memcached_types.go` and `api/v1alpha1/memcached_types.go`, wired through `memcached_conversion.go`. Compute `serverList` as `[\"<cr-name>.<namespace>:<port>\"]` (service DNS) in `reconcileStatus()` when Ready=True, nil otherwise. Regenerate CRD manifests via `make manifests`. Extend `TestComputeConditions` table in `status_test.go` with Ready assertions across all scenarios. Add integration tests in `memcached_status_reconcile_test.go` for Ready condition and serverList population. Add ServerList to conversion round-trip coverage in `memcached_conversion_test.go`. Update `docs/reference/crd-reference.md` with new status fields.\n\n**Rationale:** The forge repo's Chainsaw E2E tests assert `status.conditions[?type=='Ready'].status == 'True'` on Memcached CRs, matching the contract established by MariaDB and ClusterIssuer CRs. Without a Ready condition, these tests timeout after 5 minutes and fail CI (https://github.com/C5C3/forge/actions/runs/23404038405). The `SimulateMemcachedReady` simulator in forge confirms the expected contract: Ready condition + readyReplicas + serverList. This blocks all forge infrastructure E2E test suites.\n\n**Affected Areas:**\n- api/v1beta1/memcached_types.go\n- api/v1alpha1/memcached_types.go\n- api/v1alpha1/memcached_conversion.go\n- api/v1alpha1/memcached_conversion_test.go\n- internal/controller/status.go\n- internal/controller/status_test.go\n- internal/controller/memcached_status_reconcile_test.go\n- config/crd/bases/memcached.c5c3.io_memcacheds.yaml\n- docs/reference/crd-reference.md",
+  "stories": [
+    {
+      "title": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "role": "forge CI pipeline",
+      "want": "a Ready condition on the Memcached CR that is True when all desired replicas are ready",
+      "so_that": "Chainsaw E2E tests stop timing out and the forge infrastructure test suite passes",
+      "criteria": [
+        "status.conditions contains a condition with type='Ready'",
+        "Ready=True only when readyReplicas == desiredReplicas AND desiredReplicas > 0",
+        "Ready=False when readyReplicas < desiredReplicas or desiredReplicas == 0",
+        "Ready condition has reason 'MemcachedReady' when True and 'MemcachedNotReady' when False",
+        "Ready condition has a non-empty human-readable message"
+      ]
+    },
+    {
+      "title": "Consumer discovers Memcached server endpoint via serverList",
+      "role": "downstream consumer (e.g., forge SimulateMemcachedReady)",
+      "want": "a serverList status field containing the service DNS entry when the instance is ready",
+      "so_that": "I can programmatically discover the Memcached endpoint without hardcoding DNS patterns",
+      "criteria": [
+        "status.serverList contains [\"<cr-name>.<namespace>:11211\"] when Ready=True",
+        "status.serverList is nil/empty when Ready=False",
+        "serverList uses the headless Service DNS name and standard Memcached port 11211",
+        "serverList is updated on every reconciliation cycle alongside conditions"
+      ]
+    },
+    {
+      "title": "v1alpha1 users see ServerList in status after conversion",
+      "role": "API consumer using v1alpha1",
+      "want": "the ServerList field to be preserved during v1alpha1↔v1beta1 conversion",
+      "so_that": "deprecated API consumers see the same status fields as v1beta1 users",
+      "criteria": [
+        "ServerList field exists in both v1alpha1 and v1beta1 MemcachedStatus",
+        "ConvertTo copies ServerList from v1alpha1 to v1beta1",
+        "ConvertFrom copies ServerList from v1beta1 to v1alpha1",
+        "Round-trip conversion preserves ServerList with no data loss"
+      ]
+    },
+    {
+      "title": "Existing conditions remain unchanged after adding Ready",
+      "role": "operator user",
+      "want": "the existing Available, Progressing, and Degraded conditions to be unaffected",
+      "so_that": "adding the Ready condition does not break existing monitoring or tooling",
+      "criteria": [
+        "Available, Progressing, Degraded conditions retain their existing semantics exactly",
+        "computeConditions now returns 4 conditions instead of 3",
+        "All existing unit test assertions for Available/Progressing/Degraded continue to pass",
+        "All existing integration test assertions continue to pass"
+      ]
+    },
+    {
+      "title": "CRD reference documents new status fields",
+      "role": "operator user reading documentation",
+      "want": "the CRD reference to document the Ready condition and serverList field",
+      "so_that": "I understand the semantics of the new status fields without reading source code",
+      "criteria": [
+        "MemcachedStatus table includes serverList field with type and description",
+        "Status Conditions table includes Ready condition with description",
+        "Ready condition semantics (readyReplicas == desiredReplicas && desiredReplicas > 0) are documented",
+        "serverList computation logic (service DNS when Ready=True, nil otherwise) is documented"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "description": "computeConditions() SHALL return a Ready condition that is True only when readyReplicas == desiredReplicas AND desiredReplicas > 0",
+      "priority": "SHALL",
+      "rationale": "Matches the forge Chainsaw E2E test contract: status.conditions[?type=='Ready'].status == 'True'",
+      "scenarios": [
+        {
+          "name": "All replicas ready",
+          "when": "readyReplicas == desiredReplicas (e.g., 3/3) and desiredReplicas > 0",
+          "then": "Ready condition status is True with reason MemcachedReady",
+          "and_then": [
+            "message contains replica count information"
+          ]
+        },
+        {
+          "name": "Partial replicas ready",
+          "when": "readyReplicas < desiredReplicas (e.g., 1/3)",
+          "then": "Ready condition status is False with reason MemcachedNotReady",
+          "and_then": [
+            "message indicates how many replicas are ready vs desired"
+          ]
+        },
+        {
+          "name": "No replicas ready",
+          "when": "readyReplicas == 0 and desiredReplicas > 0",
+          "then": "Ready condition status is False with reason MemcachedNotReady",
+          "and_then": [
+            "message indicates 0 ready replicas"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "description": "Ready condition SHALL be False when desiredReplicas == 0, even though no replicas are 'missing'",
+      "priority": "SHALL",
+      "rationale": "Zero-replica instances are not serving traffic and should not report Ready=True",
+      "scenarios": [
+        {
+          "name": "Zero desired replicas",
+          "when": "spec.replicas == 0 and deployment has 0 ready, 0 total",
+          "then": "Ready condition status is False with reason MemcachedNotReady",
+          "and_then": [
+            "serverList is nil"
+          ]
+        },
+        {
+          "name": "Nil replicas defaults to 1, fully ready",
+          "when": "spec.replicas is nil (defaults to 1) and 1 replica is ready",
+          "then": "Ready condition status is True with reason MemcachedReady",
+          "and_then": [
+            "serverList is populated"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "REQ-003",
+      "description": "Ready condition SHALL be False when deployment is nil (not yet created)",
+      "priority": "SHALL",
+      "rationale": "Before the deployment exists, readyReplicas is 0 so the instance cannot be ready",
+      "scenarios": [
+        {
+          "name": "Nil deployment with positive desired",
+          "when": "deployment has not been created yet and spec.replicas > 0",
+          "then": "Ready condition is False with reason MemcachedNotReady",
+          "and_then": [
+            "message indicates waiting for deployment"
+          ]
+        },
+        {
+          "name": "Nil deployment with HPA active",
+          "when": "HPA is active but deployment is nil",
+          "then": "Ready condition is False, falls back to spec.replicas as desired count",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-004",
+      "description": "reconcileStatus() SHALL populate serverList as [\"<name>.<namespace>:11211\"] when Ready=True, nil otherwise",
+      "priority": "SHALL",
+      "rationale": "The forge SimulateMemcachedReady simulator expects serverList populated alongside Ready=True",
+      "scenarios": [
+        {
+          "name": "Ready instance has serverList",
+          "when": "Ready condition is True after reconciliation",
+          "then": "status.serverList contains exactly [\"<cr-name>.<namespace>:11211\"]",
+          "and_then": [
+            "port is the standard Memcached port 11211"
+          ]
+        },
+        {
+          "name": "Not-ready instance has nil serverList",
+          "when": "Ready condition is False after reconciliation",
+          "then": "status.serverList is nil",
+          "and_then": []
+        },
+        {
+          "name": "ServerList updates on transition",
+          "when": "instance transitions from Ready=True to Ready=False (e.g., scaling up)",
+          "then": "serverList is cleared to nil on the next reconciliation",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-005",
+      "description": "ServerList field SHALL be present in both v1alpha1 and v1beta1 MemcachedStatus and preserved during conversion",
+      "priority": "SHALL",
+      "rationale": "Both API versions must expose the same status contract for downstream consumers",
+      "scenarios": [
+        {
+          "name": "v1alpha1 to v1beta1 preserves ServerList",
+          "when": "a v1alpha1 Memcached with serverList=[\"mc.ns:11211\"] is converted to v1beta1",
+          "then": "the v1beta1 status.serverList equals [\"mc.ns:11211\"]",
+          "and_then": []
+        },
+        {
+          "name": "v1beta1 to v1alpha1 preserves ServerList",
+          "when": "a v1beta1 Memcached with serverList=[\"mc.ns:11211\"] is converted to v1alpha1",
+          "then": "the v1alpha1 status.serverList equals [\"mc.ns:11211\"]",
+          "and_then": []
+        },
+        {
+          "name": "Round-trip preserves nil ServerList",
+          "when": "a minimal Memcached with nil serverList is round-tripped",
+          "then": "serverList remains nil after round-trip",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-006",
+      "description": "computeConditions() SHALL return exactly 4 conditions (Available, Progressing, Degraded, Ready) in all scenarios",
+      "priority": "SHALL",
+      "rationale": "Consumers expect a stable set of condition types; the addition must not break the existing 3",
+      "scenarios": [
+        {
+          "name": "Four conditions returned",
+          "when": "computeConditions is called with any valid input combination",
+          "then": "the returned slice contains exactly 4 conditions with types Available, Progressing, Degraded, Ready",
+          "and_then": [
+            "all conditions have non-empty Message, Reason, and valid LastTransitionTime"
+          ]
+        },
+        {
+          "name": "Existing conditions unchanged",
+          "when": "computeConditions is called with inputs matching existing test scenarios",
+          "then": "Available, Progressing, and Degraded have same status/reason as before the change",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-007",
+      "description": "Ready condition SHALL use reason 'MemcachedReady' when True and 'MemcachedNotReady' when False",
+      "priority": "SHALL",
+      "rationale": "Distinct reason strings allow consumers to programmatically distinguish readiness states",
+      "scenarios": [
+        {
+          "name": "MemcachedReady reason when True",
+          "when": "Ready condition is True",
+          "then": "condition.Reason == 'MemcachedReady'",
+          "and_then": []
+        },
+        {
+          "name": "MemcachedNotReady reason when False",
+          "when": "Ready condition is False",
+          "then": "condition.Reason == 'MemcachedNotReady'",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-008",
+      "description": "Ready condition SHALL correctly handle HPA-managed replica counts",
+      "priority": "SHALL",
+      "rationale": "When HPA is active, desired replicas come from Deployment status — Ready must use the same source",
+      "scenarios": [
+        {
+          "name": "HPA active, all ready",
+          "when": "HPA active, dep.Status.Replicas=5, readyReplicas=5",
+          "then": "Ready=True with reason MemcachedReady",
+          "and_then": []
+        },
+        {
+          "name": "HPA active, partially ready",
+          "when": "HPA active, dep.Status.Replicas=5, readyReplicas=3",
+          "then": "Ready=False with reason MemcachedNotReady",
+          "and_then": []
+        },
+        {
+          "name": "HPA active, nil deployment",
+          "when": "HPA active but deployment nil",
+          "then": "Ready=False, falls back to spec.replicas",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-009",
+      "description": "CRD manifest SHALL include serverList in the status schema after running make manifests",
+      "priority": "SHALL",
+      "rationale": "Generated CRD YAML must reflect the new field for API server validation",
+      "scenarios": [
+        {
+          "name": "serverList in generated CRD",
+          "when": "make manifests is run after adding ServerList to both API version types",
+          "then": "config/crd/bases/memcached.c5c3.io_memcacheds.yaml contains serverList as items:string array in status for both versions",
+          "and_then": []
+        }
+      ]
+    },
+    {
+      "id": "REQ-010",
+      "description": "docs/reference/crd-reference.md SHALL document the Ready condition and serverList field",
+      "priority": "SHALL",
+      "rationale": "Users need documentation to understand new status fields",
+      "scenarios": [
+        {
+          "name": "Ready condition in Status Conditions table",
+          "when": "user reads the Status Conditions section",
+          "then": "Ready condition is listed with True/False values and description matching REQ-001 semantics",
+          "and_then": []
+        },
+        {
+          "name": "serverList in MemcachedStatus table",
+          "when": "user reads the MemcachedStatus section",
+          "then": "serverList is listed with type []string and description of service DNS format",
+          "and_then": []
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "1.1",
+      "title": "Add ServerList field to v1beta1 and v1alpha1 MemcachedStatus + regenerate deepcopy (REQ-005, REQ-009)",
+      "description": "Add `ServerList []string` field with json tag `serverList,omitempty` and kubebuilder +optional marker to MemcachedStatus in api/v1beta1/memcached_types.go (after ObservedGeneration, line ~325). Add the identical field to api/v1alpha1/memcached_types.go. Run `make generate` to regenerate zz_generated.deepcopy.go for both packages. Verify compilation with `go build ./...`.",
+      "level": 1,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-005",
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "1.2",
+      "title": "Wire ServerList through v1alpha1↔v1beta1 conversion + update conversion tests (REQ-005)",
+      "description": "In api/v1alpha1/memcached_conversion.go: add `dst.Status.ServerList = src.Status.ServerList` to both ConvertTo (line ~57) and ConvertFrom (line ~108). In api/v1alpha1/memcached_conversion_test.go: add `ServerList: []string{\"full-mc.prod:11211\"}` to the Status block of fullyPopulated() helper (line ~161). Add ServerList assertion to TestConvertTo_FullyPopulatedObject. The existing TestRoundTrip_FullyPopulated_NoDataLoss uses reflect.DeepEqual on Status so it will automatically cover the new field. Run `go test ./api/...` to verify.",
+      "level": 1,
+      "estimate_minutes": 20,
+      "requirements": [
+        "REQ-005"
+      ]
+    },
+    {
+      "id": "2.1",
+      "title": "Add Ready condition to computeConditions() + extend all unit tests with Ready assertions (REQ-001, REQ-002, REQ-003, REQ-006, REQ-007, REQ-008)",
+      "description": "In internal/controller/status.go: (1) Add constants ConditionTypeReady='Ready', ConditionReasonReady='MemcachedReady', ConditionReasonNotReady='MemcachedNotReady'. (2) Change capacity from 3 to 4 on line 67. (3) After the Degraded condition block (line ~137), add Ready condition: ready := desiredReplicas > 0 && readyReplicas == desiredReplicas; set status/reason/message accordingly. Append to conditions slice. In internal/controller/status_test.go: (1) Add wantReady/readyReason fields to the TestComputeConditions table struct. (2) Add Ready assertions (wantReady + readyReason) to all 8 existing test cases. (3) Update TestComputeConditions_ReturnsThreeConditions → ReturnsFourConditions (expect 4, check for 'Ready' type). (4) Add Ready assertion to all HPA and SecretNotFound tests. (5) Verify ObservedGeneration test covers Ready. Run `go test ./internal/controller/ -run TestComputeConditions`.",
+      "level": 2,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-003",
+        "REQ-006",
+        "REQ-007",
+        "REQ-008"
+      ]
+    },
+    {
+      "id": "2.2",
+      "title": "Compute serverList in reconcileStatus() based on Ready condition (REQ-004)",
+      "description": "In internal/controller/status.go reconcileStatus(): After setting conditions (line ~162) and before setting readyReplicas, check if the Ready condition is True by inspecting the freshly-set conditions via meta.FindStatusCondition. If Ready=True, set mc.Status.ServerList = []string{fmt.Sprintf(\"%s.%s:%d\", mc.Name, mc.Namespace, PortMemcached)}. If Ready=False, set mc.Status.ServerList = nil. Import the PortMemcached constant from the same package (deployment.go). Update the logger.Info call to include serverList. Run `go build ./...` to verify compilation.",
+      "level": 2,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-004"
+      ]
+    },
+    {
+      "id": "3.1",
+      "title": "Regenerate CRD manifests via make manifests (REQ-009)",
+      "description": "Run `make manifests` to regenerate config/crd/bases/memcached.c5c3.io_memcacheds.yaml. Verify the generated CRD contains serverList as type: array with items: type: string under status for both v1alpha1 and v1beta1 versions. Run `go build ./...` and `go vet ./...` to verify no issues.",
+      "level": 3,
+      "estimate_minutes": 10,
+      "requirements": [
+        "REQ-009"
+      ]
+    },
+    {
+      "id": "3.2",
+      "title": "Add integration tests for Ready condition and serverList in memcached_status_reconcile_test.go (REQ-001, REQ-002, REQ-004, REQ-006)",
+      "description": "In internal/controller/memcached_status_reconcile_test.go: (1) In the 'initial reconciliation with default 1 replica' Context, add It block asserting Ready=False (envtest deployment has 0 ready replicas) and serverList is nil. (2) In 'scaled to zero replicas' Context, add It block asserting Ready=False and serverList is nil. (3) In 'all three conditions always present' Context, update to expect 4 conditions (HaveLen(4)) and assert 'Ready' key present. (4) Add It block verifying Ready condition has correct ObservedGeneration. (5) In 'initial reconciliation with explicit 3 replicas' Context, add Ready=False assertion. Run `make test` to verify all tests pass.",
+      "level": 3,
+      "estimate_minutes": 25,
+      "requirements": [
+        "REQ-001",
+        "REQ-002",
+        "REQ-004",
+        "REQ-006"
+      ]
+    },
+    {
+      "id": "4.1",
+      "title": "Update docs/reference/crd-reference.md with Ready condition and serverList (REQ-010)",
+      "description": "In docs/reference/crd-reference.md: (1) Add serverList row to the MemcachedStatus table (after observedGeneration): field=serverList, type=[]string, description='List of Memcached server endpoints in <name>.<namespace>:<port> format. Populated when Ready=True, nil otherwise.' (2) Add Ready row to the Status Conditions table: type=Ready, values=True/False, description='True when all desired replicas are ready (readyReplicas == desiredReplicas && desiredReplicas > 0)'. (3) Verify markdown renders correctly.",
+      "level": 4,
+      "estimate_minutes": 15,
+      "requirements": [
+        "REQ-010"
+      ]
+    }
+  ],
+  "test_specifications": [
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions (extended table — Ready assertions for all 8 existing scenarios)",
+      "story": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "expected": "Each existing scenario asserts wantReady/readyReason: fully available→True/MemcachedReady, zero replicas→False/MemcachedNotReady, nil replicas 1/1→True/MemcachedReady, partially available→False/MemcachedNotReady, no replicas ready→False/MemcachedNotReady, rolling update 3/3 ready→True/MemcachedReady, scaling up 3/5→False/MemcachedNotReady, nil deployment→False/MemcachedNotReady",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_ReturnsFourConditions",
+      "story": "Existing conditions remain unchanged after adding Ready",
+      "expected": "computeConditions returns exactly 4 conditions: Available, Progressing, Degraded, Ready",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_HPAActive_UsesDeploymentReplicas (Ready assertions)",
+      "story": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "expected": "HPA active with 5/5 ready → Ready=True/MemcachedReady",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_HPAActive_PartiallyReady (Ready assertions)",
+      "story": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "expected": "HPA active with 3/5 ready → Ready=False/MemcachedNotReady",
+      "requirement_id": "REQ-008"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_HPAActive_NilDeployment (Ready assertion)",
+      "story": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "expected": "HPA active with nil dep → Ready=False/MemcachedNotReady",
+      "requirement_id": "REQ-003"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_SecretNotFound (Ready assertions)",
+      "story": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "expected": "Missing secrets with all replicas ready → Ready=True (Ready is independent of Degraded/secrets)",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_MessagesAreNonEmpty (verify Ready message non-empty)",
+      "story": "Existing conditions remain unchanged after adding Ready",
+      "expected": "Ready condition message is non-empty in all scenarios",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "internal/controller/status_test.go",
+      "test_function": "TestComputeConditions_ObservedGeneration (verify Ready has correct generation)",
+      "story": "Existing conditions remain unchanged after adding Ready",
+      "expected": "Ready condition ObservedGeneration matches mc.Generation",
+      "requirement_id": "REQ-006"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestRoundTrip_FullyPopulated_NoDataLoss (with ServerList in fullyPopulated)",
+      "story": "v1alpha1 users see ServerList in status after conversion",
+      "expected": "ServerList [\"mc.prod:11211\"] survives v1alpha1→v1beta1→v1alpha1 round-trip via reflect.DeepEqual",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestRoundTrip_MinimalObject_PreservesNils (ServerList remains nil)",
+      "story": "v1alpha1 users see ServerList in status after conversion",
+      "expected": "Minimal object with nil ServerList preserves nil after round-trip",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "api/v1alpha1/memcached_conversion_test.go",
+      "test_function": "TestConvertTo_FullyPopulatedObject (ServerList assertion)",
+      "story": "v1alpha1 users see ServerList in status after conversion",
+      "expected": "ConvertTo copies ServerList from v1alpha1 to v1beta1 correctly",
+      "requirement_id": "REQ-005"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Ready=False on initial reconciliation (no ready replicas in envtest)",
+      "story": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "expected": "After initial reconcileOnce, Ready condition is False since envtest deployment has 0 ready replicas",
+      "requirement_id": "REQ-001"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "serverList is nil when Ready=False (initial reconciliation)",
+      "story": "Consumer discovers Memcached server endpoint via serverList",
+      "expected": "status.serverList is nil/empty after initial reconciliation where Ready=False",
+      "requirement_id": "REQ-004"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Ready=False when scaled to zero replicas",
+      "story": "Forge E2E tests can assert Ready condition on Memcached CR",
+      "expected": "With spec.replicas=0, Ready condition is False after reconciliation",
+      "requirement_id": "REQ-002"
+    },
+    {
+      "test_file": "internal/controller/memcached_status_reconcile_test.go",
+      "test_function": "Ready condition present in all-three-conditions check (now 4)",
+      "story": "Existing conditions remain unchanged after adding Ready",
+      "expected": "After reconciliation, exactly 4 conditions present including Ready",
+      "requirement_id": "REQ-006"
+    }
+  ],
+  "affected_files": [],
+  "similar_patterns": [],
+  "review_criteria": [
+    "All existing unit tests in status_test.go pass unchanged for Available/Progressing/Degraded conditions (backward compatibility)",
+    "All existing integration tests in memcached_status_reconcile_test.go pass (no regressions)",
+    "All existing conversion tests pass (round-trip fidelity preserved with ServerList)",
+    "Ready condition is True only when readyReplicas == desiredReplicas && desiredReplicas > 0 across all test scenarios",
+    "serverList is populated as [\"<name>.<namespace>:11211\"] only when Ready=True, nil otherwise",
+    "computeConditions returns exactly 4 conditions in all code paths",
+    "CRD manifest (make manifests) includes serverList field in both API versions",
+    "go vet ./... and golangci-lint pass with no new warnings",
+    "docs/reference/crd-reference.md accurately documents Ready condition semantics and serverList format"
+  ],
+  "implementation_notes": "Architecture: computeConditions() is a pure function taking (mc, dep, missingSecrets, hpaActive) and returning conditions. The Ready condition uses the same desiredReplicas/readyReplicas variables already computed at the top of the function. The serverList computation happens in reconcileStatus() after conditions are set, checking the Ready condition status via meta.FindStatusCondition(). The service DNS format '<name>.<namespace>:<port>' uses the headless Service created by reconcileService(), which always has the same name as the CR. Port is PortMemcached (11211) from deployment.go.\n\nData Flow:\n1. reconcileStatus() fetches Deployment → calls computeConditions() → sets conditions on mc.Status.Conditions\n2. After conditions set, check Ready condition → if True, set mc.Status.ServerList = [\"name.ns:11211\"], else nil\n3. Set readyReplicas, observedGeneration → r.Status().Update(ctx, mc)\n\nKey patterns to follow:\n- Condition constants: ConditionType* and ConditionReason* in status.go (lines 19-40)\n- Condition construction: metav1.Condition{Type, Status, Reason, Message, LastTransitionTime, ObservedGeneration}\n- Test table structure: TestComputeConditions has wantAvailable/availReason etc. — add wantReady/readyReason\n- assertCondition helper: reuse for Ready assertions\n- Conversion: direct field copy pattern — dst.Status.ServerList = src.Status.ServerList\n- fullyPopulated() test helper: add ServerList to Status block for round-trip coverage\n\nPitfalls:\n- capacity in make([]metav1.Condition, 0, 3) must change to 4\n- TestComputeConditions_ReturnsThreeConditions must be updated to expect 4\n- Integration test 'all three conditions always present' HaveLen(3) must become HaveLen(4)\n- The PortMemcached constant is in deployment.go — same package, no import needed\n- meta.FindStatusCondition works on mc.Status.Conditions after SetStatusCondition has been called",
+  "status_history": {
+    "proposed": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T14:00:37.397675"
+    },
+    "preparing": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T14:01:07.412571"
+    },
+    "prepared": {
+      "github_account": "berendt",
+      "timestamp": "2026-03-22T14:06:30.058261"
+    }
+  },
+  "execution_history": [
+    {
+      "run_id": "cd072eb7-b2c0-4c03-9d50-1a58de3c7a42",
+      "timestamp": "2026-03-22T14:06:30.058288",
+      "total_duration": 319.4055714607239,
+      "status": "completed",
+      "timings": [
+        {
+          "name": "prepare",
+          "duration": 319.4055714607239,
+          "type": "prepare",
+          "status": "done"
+        }
+      ]
+    }
+  ]
+}
