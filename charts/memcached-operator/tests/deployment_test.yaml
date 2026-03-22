@@ -6,8 +6,8 @@ release:
   name: test-release
   namespace: test-ns
 chart:
-  appVersion: "0.2.0"
-  version: "0.2.0"
+  appVersion: "0.3.0"
+  version: "0.3.0"
 tests:
   # ====================================================================
   # Suite 1: Default rendering
@@ -41,11 +41,11 @@ tests:
           value: 3
 
   # -- Default image --
-  - it: should set default image to ghcr.io/c5c3/memcached-operator:0.2.0
+  - it: should set default image to ghcr.io/c5c3/memcached-operator:0.3.0
     asserts:
       - equal:
           path: spec.template.spec.containers[0].image
-          value: "ghcr.io/c5c3/memcached-operator:0.2.0"
+          value: "ghcr.io/c5c3/memcached-operator:0.3.0"
 
   - it: should set default imagePullPolicy to Always
     asserts:
@@ -278,6 +278,20 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: "--metrics-secure"
+
+  - it: should not include --enable-webhooks=false by default (MO-0055)
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--enable-webhooks=false"
+
+  - it: should include --enable-webhooks=false when webhook.enabled is false (MO-0055)
+    set:
+      webhook.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--enable-webhooks=false"
 
   - it: should not include --watch-namespaces by default
     asserts:

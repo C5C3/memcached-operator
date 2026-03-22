@@ -1,0 +1,86 @@
+{
+  "feature_id": "MO-0055",
+  "title": "Add --enable-webhooks CLI flag for webhook gating",
+  "date": "2026-03-22",
+  "summary": "Adds --enable-webhooks boolean CLI flag (default true) to cmd/main.go that conditionally creates the webhook server and registers admission webhooks. Extracts buildWebhookServer() for testability. Helm deployment template passes --enable-webhooks=false when .Values.webhook.enabled is false. Table-driven Go unit tests and Helm template tests cover all cases.",
+  "verdict": "APPROVED",
+  "tests_checklist": [
+    {"item": "Go unit tests exist and pass (11/11 in cmd package)", "checked": true},
+    {"item": "Helm template tests exist and pass (303/303)", "checked": true},
+    {"item": "Edge cases covered (enabled/disabled with and without TLS opts)", "checked": true},
+    {"item": "Default behavior preserved (enabled=true by default)", "checked": true}
+  ],
+  "code_quality_checklist": [
+    {"item": "Follows existing parseWatchNamespaces extraction pattern", "checked": true},
+    {"item": "Table-driven test follows TestParseWatchNamespaces structure", "checked": true},
+    {"item": "Helm conditional follows existing leaderElection.enabled pattern", "checked": true},
+    {"item": "No dead code or commented-out code", "checked": true},
+    {"item": "Functions are small and single-purpose", "checked": true},
+    {"item": "Clear naming (enableWebhooks, buildWebhookServer)", "checked": true}
+  ],
+  "security_checklist": [
+    {"item": "No user input validation needed (boolean CLI flag)", "checked": true},
+    {"item": "No secrets or sensitive data exposed", "checked": true},
+    {"item": "No injection vectors", "checked": true}
+  ],
+  "architecture_checklist": [
+    {"item": "Solution is minimal — extracted function + conditionals", "checked": true},
+    {"item": "Nil webhook.Server correctly disables webhook listener in ctrl.Options", "checked": true},
+    {"item": "Webhook registration skip prevents TLS cert loading", "checked": true},
+    {"item": "Backward compatible — flag defaults to true", "checked": true}
+  ],
+  "dry_yagni_checklist": [
+    {"item": "No duplicated code", "checked": true},
+    {"item": "No unnecessary abstractions", "checked": true},
+    {"item": "No future-proofing or unused code", "checked": true}
+  ],
+  "fail_fast_checklist": [
+    {"item": "Webhook setup errors still exit immediately when enabled", "checked": true},
+    {"item": "Info log emitted when webhooks disabled", "checked": true}
+  ],
+  "defensive_checklist": [
+    {"item": "Flag has safe default (true = existing behavior)", "checked": true},
+    {"item": "No external inputs to validate beyond CLI flag", "checked": true}
+  ],
+  "security_findings": [],
+  "architecture_findings": [],
+  "issues_found": [],
+  "suggested_improvements": [],
+  "next_steps": [],
+  "verification_results": {
+    "go_test": "PASS — 11/11 tests (TestBuildWebhookServer: 4, TestParseWatchNamespaces: 7)",
+    "go_vet": "PASS — no issues",
+    "golangci_lint": "PASS — 0 issues",
+    "helm_unittest": "PASS — 303/303 tests across 17 suites"
+  },
+  "review_steps": {
+    "1_intent": "Add --enable-webhooks CLI flag to prevent CrashLoopBackOff when deployed without cert-manager TLS",
+    "2_scope": "Changes limited to cmd/main.go, cmd/main_test.go, deployment.yaml, deployment_test.yaml, and planwerk tracking JSON — no scope creep",
+    "3_verification": "go test PASS, go vet PASS, golangci-lint 0 issues, helm unittest 303 PASS",
+    "4_patterns": "buildWebhookServer follows parseWatchNamespaces extraction pattern; Helm conditional follows leaderElection.enabled pattern; tests follow table-driven pattern",
+    "5_tests": "4 Go test cases (enabled/disabled x with/without TLS opts) + 2 Helm test cases (default omits flag, webhook.enabled=false includes flag)",
+    "6_security": "No security concerns — boolean CLI flag controlling internal webhook lifecycle",
+    "7_complexity": "Minimal implementation: one extracted function, two conditional blocks, one log statement",
+    "8_completeness": "All 4 tasks implemented (1.1: flag+conditionals, 1.2: Go tests, 2.1: Helm template, 2.2: Helm tests). All 3 user stories satisfied",
+    "9_prompt_quality": "N/A — no new prompt files"
+  },
+  "detected_patterns": [
+    {
+      "name": "Extract flag-dependent logic into testable pure functions",
+      "component": "cmd",
+      "category": "service-structure",
+      "applies_when": "Adding new CLI flags to cmd/main.go whose logic produces a value or side effect that can be isolated from the manager lifecycle",
+      "description": "Flag-dependent logic that produces values consumed by ctrl.NewManager or subsequent setup calls is extracted into standalone functions (not methods, not closures) at package scope. These functions take the flag value and any dependencies as parameters, return the computed result, and contain no side effects beyond construction. This enables table-driven unit testing without starting the manager. Functions are placed between init() and main() in cmd/main.go.",
+      "examples": [
+        {
+          "location": "cmd/main.go:60",
+          "code": "func parseWatchNamespaces(namespaces string) map[string]cache.Config {\n\tvar result map[string]cache.Config\n\tfor _, ns := range strings.Split(namespaces, \",\") {\n\t\tns = strings.TrimSpace(ns)\n\t\tif ns == \"\" {\n\t\t\tcontinue\n\t\t}\n\t\tif result == nil {\n\t\t\tresult = make(map[string]cache.Config)\n\t\t}\n\t\tresult[ns] = cache.Config{}\n\t}\n\treturn result\n}"
+        },
+        {
+          "location": "cmd/main.go:47",
+          "code": "func buildWebhookServer(enabled bool, tlsOpts []func(*tls.Config)) webhook.Server {\n\tif !enabled {\n\t\treturn nil\n\t}\n\treturn webhook.NewServer(webhook.Options{\n\t\tTLSOpts: tlsOpts,\n\t})\n}"
+        }
+      ]
+    }
+  ]
+}
