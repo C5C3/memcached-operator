@@ -265,6 +265,7 @@
     "yamllint",
     "YAMLCRs",
     "YAMLHA",
-    "YAMLTLS"
+    "YAMLTLS",
+    "zizmor"
   ]
 }
