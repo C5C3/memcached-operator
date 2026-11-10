@@ -71,9 +71,10 @@ before upgrading.
 
 Operator releases up to v0.4.0 run the pods of each Memcached instance in a
 Deployment. v0.4.0 publishes a single `status.serverList` entry, the name of the
-headless Service, and earlier releases publish no `serverList`. Later releases
-run the pods in a StatefulSet that the headless Service governs, and publish one
-entry per pod. Read this section before you upgrade across that change.
+headless Service, and earlier releases publish no `serverList`. Starting with
+v0.5.0, the operator runs the pods in a StatefulSet that the headless Service
+governs, and publishes one entry per pod. Read this section before you upgrade
+across that change.
 
 ### The workload is replaced automatically
 
@@ -449,10 +450,13 @@ is running correctly and all Memcached instances are healthy.
 
 ## Version Compatibility Matrix
 
-| Operator Version | Kubernetes Version | CRD API Versions                         | cert-manager Version | Notes                                                                |
-|------------------|--------------------|------------------------------------------|----------------------|----------------------------------------------------------------------|
-| v0.1.0           | v1.28 -- v1.32     | v1alpha1                                 | v1.12+               | Initial release                                                      |
-| v0.2.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | v1beta1 storage version; see [migration guide](migration-v1beta1.md) |
+| Operator Version | Kubernetes Version | CRD API Versions                         | cert-manager Version | Notes                                                                                |
+|------------------|--------------------|------------------------------------------|----------------------|--------------------------------------------------------------------------------------|
+| v0.1.0           | v1.28 -- v1.32     | v1alpha1                                 | v1.12+               | Initial release                                                                      |
+| v0.2.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | v1beta1 storage version; see [migration guide](migration-v1beta1.md)                 |
+| v0.3.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `--enable-webhooks` flag                                                             |
+| v0.4.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `Ready` condition, `status.serverList`                                               |
+| v0.5.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | StatefulSet workload; see [per-pod server lists](#upgrading-to-per-pod-server-lists) |
 
 Check the release notes for each version to confirm compatibility with your
 Kubernetes cluster version. The operator is tested against the Kubernetes
