@@ -51,7 +51,7 @@ vars:
       version: v1
       name: serving-cert # this name should match the one in certificate.yaml
     fieldref:
-      fieldpath: metadata.namespace
+      fieldPath: metadata.namespace
   - name: CERTIFICATE_NAME
     objref:
       kind: Certificate
@@ -64,7 +64,7 @@ vars:
       version: v1
       name: webhook-service
     fieldref:
-      fieldpath: metadata.namespace
+      fieldPath: metadata.namespace
   - name: SERVICE_NAME
     objref:
       kind: Service
