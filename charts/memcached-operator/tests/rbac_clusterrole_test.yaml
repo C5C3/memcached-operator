@@ -44,12 +44,12 @@ tests:
           path: metadata.labels["app.kubernetes.io/managed-by"]
           value: Helm
 
-  - it: should have exactly 11 RBAC rules
+  - it: should have exactly 12 RBAC rules
     documentIndex: 0
     asserts:
       - lengthEqual:
           path: rules
-          count: 11
+          count: 12
 
   # -- Memcached CR rules --
   - it: should grant full CRUD on memcacheds
@@ -100,7 +100,7 @@ tests:
               - update
 
   # -- Owned resource rules --
-  - it: should grant full CRUD on deployments
+  - it: should grant get, list, watch and delete on deployments for the legacy migration
     documentIndex: 0
     asserts:
       - contains:
@@ -110,6 +110,22 @@ tests:
               - apps
             resources:
               - deployments
+            verbs:
+              - delete
+              - get
+              - list
+              - watch
+
+  - it: should grant full CRUD on statefulsets
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups:
+              - apps
+            resources:
+              - statefulsets
             verbs:
               - create
               - delete

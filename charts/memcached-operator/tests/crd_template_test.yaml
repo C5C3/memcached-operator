@@ -74,3 +74,12 @@ tests:
       - equal:
           path: spec.scope
           value: Namespaced
+
+  - it: should include status.serverList in both served versions
+    set:
+      crds.managedByHelm: true
+    asserts:
+      - exists:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.serverList
+      - exists:
+          path: spec.versions[1].schema.openAPIV3Schema.properties.status.properties.serverList
