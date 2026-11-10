@@ -12,5 +12,5 @@ spec:
   maxReplicas: 5
   scaleTargetRef:
     apiVersion: apps/v1
-    kind: Deployment
+    kind: StatefulSet
     name: test-autoscaling-update

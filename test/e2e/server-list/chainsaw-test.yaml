@@ -1,0 +1,44 @@
+---
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: server-list
+spec:
+  description: >
+    Verify that a Memcached CR with three replicas runs its pods in a
+    StatefulSet governed by the headless Service, that status.serverList
+    holds one "<statefulset>-<i>.<name>.<namespace>.svc:11211" entry per
+    pod in pod index order, that the name of another pod resolves from
+    inside a pod, and that scaling down to two replicas shrinks
+    status.serverList to the entries for pods 0 and 1.
+  timeouts:
+    apply: 30s
+    assert: 120s
+    delete: 30s
+    exec: 30s
+  steps:
+    - name: create-memcached-cr
+      try:
+        - apply:
+            file: 00-memcached.yaml
+    - name: assert-statefulset-ready
+      try:
+        - assert:
+            file: 01-assert-statefulset.yaml
+    - name: assert-server-list
+      try:
+        - assert:
+            file: 02-assert-status.yaml
+    - name: resolve-pod-dns-name
+      try:
+        - script:
+            content: |
+              kubectl -n "$NAMESPACE" exec test-server-list-0 -c memcached -- getent hosts "test-server-list-2.test-server-list.$NAMESPACE.svc"
+    - name: scale-down-to-2
+      try:
+        - patch:
+            file: 03-patch-scale-down.yaml
+    - name: assert-server-list-scaled-down
+      try:
+        - assert:
+            file: 04-assert-status.yaml

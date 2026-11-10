@@ -493,10 +493,10 @@ jobs:
       - name: Smoke test — verify operator reconciles
         run: |
           for i in $(seq 1 30); do
-            if kubectl get deployment/memcached-dev -n helm-e2e-test &>/dev/null && \
+            if kubectl get statefulset/memcached-dev -n helm-e2e-test &>/dev/null && \
                kubectl get service/memcached-dev -n helm-e2e-test &>/dev/null; then
               echo "Resources created by operator"
-              kubectl rollout status deployment/memcached-dev \
+              kubectl rollout status statefulset/memcached-dev \
                 -n helm-e2e-test --timeout=120s
               exit 0
             fi
@@ -504,6 +504,22 @@ jobs:
             sleep 2
           done
           echo "Operator did not reconcile in time"
+          exit 1
+
+      - name: Smoke test - verify status.serverList
+        run: |
+          expected="memcached-dev-0.memcached-dev.helm-e2e-test.svc:11211"
+          for i in $(seq 1 30); do
+            actual=$(kubectl get memcached memcached-dev -n helm-e2e-test \
+              -o jsonpath='{.status.serverList[0]}' 2>/dev/null || true)
+            echo "status.serverList[0]: '${actual}' ($i/30)"
+            if [ "$actual" = "$expected" ]; then
+              echo "status.serverList[0] matches the expected entry"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Expected status.serverList[0] to be '${expected}', got '${actual}'"
           exit 1
 
       - name: Debug failure

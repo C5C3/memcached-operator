@@ -1,0 +1,11 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: test-server-list
+spec:
+  replicas: 3
+  serviceName: test-server-list
+  podManagementPolicy: Parallel
+status:
+  readyReplicas: 3

@@ -5,7 +5,7 @@ metadata:
   name: owner-references
 spec:
   description: >
-    Verify that all child resources (Deployment, Service, PDB, NetworkPolicy,
+    Verify that all child resources (StatefulSet, Service, PDB, NetworkPolicy,
     ServiceMonitor) have correct ownerReferences pointing to the parent
     Memcached CR with controller=true and blockOwnerDeletion=true,
     ensuring the Kubernetes GC chain works correctly (REQ-OR-001 through

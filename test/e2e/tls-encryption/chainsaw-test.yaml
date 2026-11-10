@@ -6,7 +6,7 @@ metadata:
 spec:
   description: >
     Verify that enabling TLS encryption creates the correct cert-manager Certificate,
-    TLS volume, volumeMount, container args, and ports in the Deployment and Service
+    TLS volume, volumeMount, container args, and ports in the StatefulSet and Service
     (REQ-002, REQ-003, REQ-004, REQ-007, REQ-008, REQ-009).
   timeouts:
     apply: 30s

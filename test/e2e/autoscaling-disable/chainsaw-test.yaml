@@ -6,7 +6,7 @@ metadata:
 spec:
   description: >
     Verify that disabling autoscaling on a Memcached CR deletes the HPA
-    and that setting spec.replicas takes effect on the Deployment
+    and that setting spec.replicas takes effect on the StatefulSet
     (MO-0042 REQ-002, REQ-006, REQ-007).
   timeouts:
     apply: 30s

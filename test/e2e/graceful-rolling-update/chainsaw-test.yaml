@@ -6,8 +6,9 @@ metadata:
 spec:
   description: >
     Verify that enabling graceful shutdown configures preStop lifecycle hooks
-    and terminationGracePeriodSeconds on the Deployment, and that rolling
-    updates use maxSurge=1, maxUnavailable=0 (REQ-007).
+    and terminationGracePeriodSeconds on the StatefulSet, and that rolling
+    updates use podManagementPolicy=Parallel and updateStrategy=RollingUpdate
+    (REQ-007).
   timeouts:
     apply: 30s
     assert: 120s

@@ -5,7 +5,7 @@ metadata:
   name: scaling
 spec:
   description: >
-    Verify that updating spec.replicas on a Memcached CR scales the Deployment
+    Verify that updating spec.replicas on a Memcached CR scales the StatefulSet
     and updates status.readyReplicas accordingly (REQ-003).
   timeouts:
     apply: 30s

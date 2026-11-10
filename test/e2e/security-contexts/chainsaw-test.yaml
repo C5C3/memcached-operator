@@ -6,7 +6,7 @@ metadata:
 spec:
   description: >
     Verify that custom pod and container security contexts defined in
-    spec.security are propagated to the Deployment pod template, and that
+    spec.security are propagated to the StatefulSet pod template, and that
     updating them triggers a rolling update with the new settings (REQ-005,
     REQ-006).
   timeouts:

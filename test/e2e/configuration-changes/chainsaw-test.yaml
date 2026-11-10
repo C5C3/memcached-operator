@@ -6,7 +6,7 @@ metadata:
 spec:
   description: >
     Verify that updating Memcached configuration parameters (maxMemoryMB, threads,
-    maxItemSize) propagates to the Deployment container args (REQ-004).
+    maxItemSize) propagates to the StatefulSet container args (REQ-004).
   timeouts:
     apply: 30s
     assert: 120s

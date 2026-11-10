@@ -5,8 +5,8 @@ metadata:
   name: basic-deployment
 spec:
   description: >
-    Verify that creating a minimal Memcached CR produces the expected Deployment,
-    headless Service, and status conditions (REQ-002).
+    Verify that creating a minimal Memcached CR produces the expected StatefulSet,
+    the headless Service that governs it, and status conditions (REQ-002).
   timeouts:
     apply: 30s
     assert: 120s
