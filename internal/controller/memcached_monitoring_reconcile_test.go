@@ -17,7 +17,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 	Context("exporter sidecar injection (REQ-001, REQ-002, REQ-003, REQ-004)", func() {
 
-		It("should create Deployment with exporter sidecar and Service with metrics port", func() {
+		It("should create StatefulSet with exporter sidecar and Service with metrics port", func() {
 			mc := validMemcached(uniqueName("mon-create"))
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
@@ -28,14 +28,14 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 
-			// Deployment should have 2 containers.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			// StatefulSet should have 2 containers.
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 
 			// Exporter container defaults.
-			exporter := dep.Spec.Template.Spec.Containers[1]
+			exporter := sts.Spec.Template.Spec.Containers[1]
 			Expect(exporter.Image).To(Equal("prom/memcached-exporter:v0.15.4"))
 			Expect(exporter.Ports).To(HaveLen(1))
 			Expect(exporter.Ports[0].Name).To(Equal("metrics"))
@@ -63,9 +63,9 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[1].Image).To(Equal(customImage))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[1].Image).To(Equal(customImage))
 		})
 
 		It("should apply exporter resources when specified", func() {
@@ -88,9 +88,9 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			exporter := dep.Spec.Template.Spec.Containers[1]
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			exporter := sts.Spec.Template.Spec.Containers[1]
 			Expect(exporter.Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("50m")))
 			Expect(exporter.Resources.Requests[corev1.ResourceMemory]).To(Equal(resource.MustParse("64Mi")))
 			Expect(exporter.Resources.Limits[corev1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
@@ -107,8 +107,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			exporter := dep.Spec.Template.Spec.Containers[1]
+			sts := fetchStatefulSet(mc)
+			exporter := sts.Spec.Template.Spec.Containers[1]
 			Expect(exporter.Resources.Requests).To(BeEmpty())
 			Expect(exporter.Resources.Limits).To(BeEmpty())
 		})
@@ -124,8 +124,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Initially: 1 container, 1 service port.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
 			svc := fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(1))
 
@@ -140,9 +140,9 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// After: 2 containers, 2 service ports.
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 
 			svc = fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(2))
@@ -159,8 +159,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
 			svc := fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(2))
 
@@ -172,9 +172,9 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
-			Expect(dep.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
 
 			svc = fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(1))
@@ -191,8 +191,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
 
 			// Remove monitoring section entirely.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -202,9 +202,9 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
-			Expect(dep.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
 
 			svc := fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(1))
@@ -220,8 +220,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[1].Image).To(Equal("prom/memcached-exporter:v0.15.4"))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[1].Image).To(Equal("prom/memcached-exporter:v0.15.4"))
 
 			// Update exporter image.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -232,8 +232,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[1].Image).To(Equal(newImage))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[1].Image).To(Equal(newImage))
 		})
 
 		It("should update exporter resources when exporterResources changes", func() {
@@ -246,8 +246,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[1].Resources.Requests).To(BeEmpty())
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[1].Resources.Requests).To(BeEmpty())
 
 			// Add resources.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -261,8 +261,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[1].Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[1].Resources.Requests[corev1.ResourceCPU]).To(Equal(resource.MustParse("100m")))
 		})
 	})
 
@@ -278,8 +278,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep1 := fetchDeployment(mc)
-			depRV1 := dep1.ResourceVersion
+			sts1 := fetchStatefulSet(mc)
+			stsRV1 := sts1.ResourceVersion
 			svc1 := fetchService(mc)
 			svcRV1 := svc1.ResourceVersion
 
@@ -287,8 +287,8 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
-			Expect(dep2.ResourceVersion).To(Equal(depRV1))
+			sts2 := fetchStatefulSet(mc)
+			Expect(sts2.ResourceVersion).To(Equal(stsRV1))
 			svc2 := fetchService(mc)
 			Expect(svc2.ResourceVersion).To(Equal(svcRV1))
 		})
@@ -303,15 +303,15 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
 
 			// Simulate drift: manually remove the exporter container.
-			patch := client.MergeFrom(dep.DeepCopy())
-			dep.Spec.Template.Spec.Containers = dep.Spec.Template.Spec.Containers[:1]
-			Expect(k8sClient.Patch(ctx, dep, patch)).To(Succeed())
+			patch := client.MergeFrom(sts.DeepCopy())
+			sts.Spec.Template.Spec.Containers = sts.Spec.Template.Spec.Containers[:1]
+			Expect(k8sClient.Patch(ctx, sts, patch)).To(Succeed())
 
-			drifted := &appsv1.Deployment{}
+			drifted := &appsv1.StatefulSet{}
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), drifted)).To(Succeed())
 			Expect(drifted.Spec.Template.Spec.Containers).To(HaveLen(1))
 
@@ -319,7 +319,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			corrected := fetchDeployment(mc)
+			corrected := fetchStatefulSet(mc)
 			Expect(corrected.Spec.Template.Spec.Containers).To(HaveLen(2))
 			Expect(corrected.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 		})
@@ -349,26 +349,26 @@ var _ = Describe("Monitoring Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 
 			// Monitoring: 2 containers.
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 
 			// Graceful shutdown: preStop hook on memcached container.
-			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
-			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
 
 			// Anti-affinity.
-			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
 
 			// Topology spread.
-			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
-			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+			Expect(sts.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.TopologySpreadConstraints[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
 
 			// Service: 2 ports.
 			svc := fetchService(mc)

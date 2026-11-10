@@ -3,6 +3,7 @@ package controller
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -247,7 +248,7 @@ func TestConstructHPA(t *testing.T) {
 			// Verify ScaleTargetRef.
 			wantRef := autoscalingv2.CrossVersionObjectReference{
 				APIVersion: "apps/v1",
-				Kind:       "Deployment",
+				Kind:       "StatefulSet",
 				Name:       "my-cache",
 			}
 			if hpa.Spec.ScaleTargetRef != wantRef {
@@ -283,6 +284,34 @@ func TestConstructHPA(t *testing.T) {
 				t.Errorf("Behavior = %+v, want %+v", hpa.Spec.Behavior, tt.wantBehavior)
 			}
 		})
+	}
+}
+
+func TestConstructHPA_LongNameTargetsShortenedStatefulSet(t *testing.T) {
+	name := strings.Repeat("h", 60)
+	mc := &memcachedv1beta1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Autoscaling: &memcachedv1beta1.AutoscalingSpec{
+				Enabled:     true,
+				MaxReplicas: 5,
+			},
+		},
+	}
+	hpa := &autoscalingv2.HorizontalPodAutoscaler{}
+
+	constructHPA(mc, hpa)
+
+	wantRef := autoscalingv2.CrossVersionObjectReference{
+		APIVersion: "apps/v1",
+		Kind:       "StatefulSet",
+		Name:       statefulSetName(name),
+	}
+	if hpa.Spec.ScaleTargetRef != wantRef {
+		t.Errorf("ScaleTargetRef = %+v, want %+v", hpa.Spec.ScaleTargetRef, wantRef)
+	}
+	if len(hpa.Spec.ScaleTargetRef.Name) != 52 {
+		t.Errorf("ScaleTargetRef name has %d characters, want 52", len(hpa.Spec.ScaleTargetRef.Name))
 	}
 }
 

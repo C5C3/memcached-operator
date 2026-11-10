@@ -55,7 +55,7 @@ func tlsSpec(secretName string) *memcachedv1beta1.TLSSpec {
 var _ = Describe("Secret rotation rolling restart", func() {
 
 	Context("with SASL Secret", func() {
-		It("should create Deployment with secret-hash annotation when SASL Secret exists", func() {
+		It("should create StatefulSet with secret-hash annotation when SASL Secret exists", func() {
 			secretName := uniqueName("sasl-secret")
 			Expect(k8sClient.Create(ctx, newSASLSecret(secretName, "initial-password"))).To(Succeed())
 
@@ -66,13 +66,13 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			hash := dep.Spec.Template.Annotations[controller.AnnotationSecretHash]
+			sts := fetchStatefulSet(mc)
+			hash := sts.Spec.Template.Annotations[controller.AnnotationSecretHash]
 			Expect(hash).NotTo(BeEmpty())
 			Expect(hexHash64.MatchString(hash)).To(BeTrue())
 		})
 
-		It("should update secret-hash and change Deployment ResourceVersion when Secret data changes", func() {
+		It("should update secret-hash and change StatefulSet ResourceVersion when Secret data changes", func() {
 			secretName := uniqueName("sasl-rotate")
 			secret := newSASLSecret(secretName, "initial-password")
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
@@ -84,9 +84,9 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			initialHash := dep.Spec.Template.Annotations[controller.AnnotationSecretHash]
-			initialRV := dep.ResourceVersion
+			sts := fetchStatefulSet(mc)
+			initialHash := sts.Spec.Template.Annotations[controller.AnnotationSecretHash]
+			initialRV := sts.ResourceVersion
 			Expect(initialHash).NotTo(BeEmpty())
 
 			// Update Secret data.
@@ -97,15 +97,15 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			newHash := dep.Spec.Template.Annotations[controller.AnnotationSecretHash]
+			sts = fetchStatefulSet(mc)
+			newHash := sts.Spec.Template.Annotations[controller.AnnotationSecretHash]
 			Expect(newHash).NotTo(Equal(initialHash))
-			Expect(dep.ResourceVersion).NotTo(Equal(initialRV))
+			Expect(sts.ResourceVersion).NotTo(Equal(initialRV))
 		})
 	})
 
 	Context("with TLS Secret", func() {
-		It("should create Deployment with secret-hash annotation when TLS Secret exists", func() {
+		It("should create StatefulSet with secret-hash annotation when TLS Secret exists", func() {
 			secretName := uniqueName("tls-secret")
 			Expect(k8sClient.Create(ctx, newTLSSecret(secretName))).To(Succeed())
 
@@ -116,8 +116,8 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			hash := dep.Spec.Template.Annotations[controller.AnnotationSecretHash]
+			sts := fetchStatefulSet(mc)
+			hash := sts.Spec.Template.Annotations[controller.AnnotationSecretHash]
 			Expect(hash).NotTo(BeEmpty())
 			Expect(hexHash64.MatchString(hash)).To(BeTrue())
 		})
@@ -142,9 +142,9 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			initialHash := dep.Spec.Template.Annotations[controller.AnnotationSecretHash]
-			initialRV := dep.ResourceVersion
+			sts := fetchStatefulSet(mc)
+			initialHash := sts.Spec.Template.Annotations[controller.AnnotationSecretHash]
+			initialRV := sts.ResourceVersion
 			Expect(initialHash).NotTo(BeEmpty())
 			Expect(hexHash64.MatchString(initialHash)).To(BeTrue())
 
@@ -156,10 +156,10 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			newHash := dep.Spec.Template.Annotations[controller.AnnotationSecretHash]
+			sts = fetchStatefulSet(mc)
+			newHash := sts.Spec.Template.Annotations[controller.AnnotationSecretHash]
 			Expect(newHash).NotTo(Equal(initialHash))
-			Expect(dep.ResourceVersion).NotTo(Equal(initialRV))
+			Expect(sts.ResourceVersion).NotTo(Equal(initialRV))
 		})
 	})
 
@@ -171,13 +171,13 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Annotations).NotTo(HaveKey(controller.AnnotationSecretHash))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Annotations).NotTo(HaveKey(controller.AnnotationSecretHash))
 		})
 	})
 
 	Context("idempotency", func() {
-		It("should not change Deployment ResourceVersion when Secret data is unchanged", func() {
+		It("should not change StatefulSet ResourceVersion when Secret data is unchanged", func() {
 			secretName := uniqueName("sasl-idemp")
 			Expect(k8sClient.Create(ctx, newSASLSecret(secretName, "stable-password"))).To(Succeed())
 
@@ -188,15 +188,15 @@ var _ = Describe("Secret rotation rolling restart", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			rv := dep.ResourceVersion
+			sts := fetchStatefulSet(mc)
+			rv := sts.ResourceVersion
 
 			// Second reconcile without changes — should be a no-op.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.ResourceVersion).To(Equal(rv))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.ResourceVersion).To(Equal(rv))
 		})
 	})
 })
@@ -278,7 +278,7 @@ var _ = Describe("Missing Secret Degraded condition", func() {
 
 var _ = Describe("Manual restart trigger", func() {
 
-	It("should propagate restart-trigger annotation to Deployment pod template", func() {
+	It("should propagate restart-trigger annotation to StatefulSet pod template", func() {
 		secretName := uniqueName("sasl-restart")
 		Expect(k8sClient.Create(ctx, newSASLSecret(secretName, "pass"))).To(Succeed())
 
@@ -289,8 +289,8 @@ var _ = Describe("Manual restart trigger", func() {
 		_, err := reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		dep := fetchDeployment(mc)
-		initialRV := dep.ResourceVersion
+		sts := fetchStatefulSet(mc)
+		initialRV := sts.ResourceVersion
 
 		// Set restart-trigger annotation on the CR.
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -303,12 +303,12 @@ var _ = Describe("Manual restart trigger", func() {
 		_, err = reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		dep = fetchDeployment(mc)
-		Expect(dep.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
-		Expect(dep.ResourceVersion).NotTo(Equal(initialRV))
+		sts = fetchStatefulSet(mc)
+		Expect(sts.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
+		Expect(sts.ResourceVersion).NotTo(Equal(initialRV))
 	})
 
-	It("should update Deployment when restart-trigger annotation value changes", func() {
+	It("should update StatefulSet when restart-trigger annotation value changes", func() {
 		mc := validMemcached(uniqueName("restart-upd"))
 		mc.Annotations = map[string]string{
 			controller.AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
@@ -318,9 +318,9 @@ var _ = Describe("Manual restart trigger", func() {
 		_, err := reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		dep := fetchDeployment(mc)
-		Expect(dep.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
-		rv1 := dep.ResourceVersion
+		sts := fetchStatefulSet(mc)
+		Expect(sts.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
+		rv1 := sts.ResourceVersion
 
 		// Update the trigger value.
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -330,9 +330,9 @@ var _ = Describe("Manual restart trigger", func() {
 		_, err = reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		dep = fetchDeployment(mc)
-		Expect(dep.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T11:00:00Z"))
-		Expect(dep.ResourceVersion).NotTo(Equal(rv1))
+		sts = fetchStatefulSet(mc)
+		Expect(sts.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T11:00:00Z"))
+		Expect(sts.ResourceVersion).NotTo(Equal(rv1))
 	})
 
 	It("should coexist with secret-hash annotation", func() {
@@ -349,11 +349,11 @@ var _ = Describe("Manual restart trigger", func() {
 		_, err := reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		dep := fetchDeployment(mc)
-		Expect(dep.Spec.Template.Annotations).To(HaveKey(controller.AnnotationSecretHash))
-		Expect(dep.Spec.Template.Annotations).To(HaveKey(controller.AnnotationRestartTrigger))
-		Expect(dep.Spec.Template.Annotations[controller.AnnotationSecretHash]).NotTo(BeEmpty())
-		Expect(dep.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
+		sts := fetchStatefulSet(mc)
+		Expect(sts.Spec.Template.Annotations).To(HaveKey(controller.AnnotationSecretHash))
+		Expect(sts.Spec.Template.Annotations).To(HaveKey(controller.AnnotationRestartTrigger))
+		Expect(sts.Spec.Template.Annotations[controller.AnnotationSecretHash]).NotTo(BeEmpty())
+		Expect(sts.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
 	})
 
 	It("should propagate restart-trigger on CR without Secrets", func() {
@@ -366,9 +366,9 @@ var _ = Describe("Manual restart trigger", func() {
 		_, err := reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		dep := fetchDeployment(mc)
-		Expect(dep.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
-		Expect(dep.Spec.Template.Annotations).NotTo(HaveKey(controller.AnnotationSecretHash))
+		sts := fetchStatefulSet(mc)
+		Expect(sts.Spec.Template.Annotations[controller.AnnotationRestartTrigger]).To(Equal("2024-01-15T10:00:00Z"))
+		Expect(sts.Spec.Template.Annotations).NotTo(HaveKey(controller.AnnotationSecretHash))
 	})
 
 	It("should not set restart-trigger annotation when CR has no restart-trigger", func() {
@@ -378,8 +378,8 @@ var _ = Describe("Manual restart trigger", func() {
 		_, err := reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		dep := fetchDeployment(mc)
-		Expect(dep.Spec.Template.Annotations).NotTo(HaveKey(controller.AnnotationRestartTrigger))
+		sts := fetchStatefulSet(mc)
+		Expect(sts.Spec.Template.Annotations).NotTo(HaveKey(controller.AnnotationRestartTrigger))
 	})
 })
 
@@ -406,11 +406,11 @@ var _ = Describe("Secret watch filtering", func() {
 		_, err = reconcileOnce(mcB)
 		Expect(err).NotTo(HaveOccurred())
 
-		depA := fetchDeployment(mcA)
-		depB := fetchDeployment(mcB)
-		hashA := depA.Spec.Template.Annotations[controller.AnnotationSecretHash]
-		hashB := depB.Spec.Template.Annotations[controller.AnnotationSecretHash]
-		rvB := depB.ResourceVersion
+		stsA := fetchStatefulSet(mcA)
+		stsB := fetchStatefulSet(mcB)
+		hashA := stsA.Spec.Template.Annotations[controller.AnnotationSecretHash]
+		hashB := stsB.Spec.Template.Annotations[controller.AnnotationSecretHash]
+		rvB := stsB.ResourceVersion
 
 		// Update SecretA only.
 		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secretA), secretA)).To(Succeed())
@@ -421,17 +421,17 @@ var _ = Describe("Secret watch filtering", func() {
 		_, err = reconcileOnce(mcA)
 		Expect(err).NotTo(HaveOccurred())
 
-		depA = fetchDeployment(mcA)
-		Expect(depA.Spec.Template.Annotations[controller.AnnotationSecretHash]).NotTo(Equal(hashA))
+		stsA = fetchStatefulSet(mcA)
+		Expect(stsA.Spec.Template.Annotations[controller.AnnotationSecretHash]).NotTo(Equal(hashA))
 
 		// Reconcile CR-B — hash and ResourceVersion should remain the same
 		// because SecretB was not modified.
 		_, err = reconcileOnce(mcB)
 		Expect(err).NotTo(HaveOccurred())
 
-		depB = fetchDeployment(mcB)
-		Expect(depB.Spec.Template.Annotations[controller.AnnotationSecretHash]).To(Equal(hashB))
-		Expect(depB.ResourceVersion).To(Equal(rvB))
+		stsB = fetchStatefulSet(mcB)
+		Expect(stsB.Spec.Template.Annotations[controller.AnnotationSecretHash]).To(Equal(hashB))
+		Expect(stsB.ResourceVersion).To(Equal(rvB))
 	})
 
 	It("should reconcile both CRs when they reference the same Secret", func() {
@@ -452,10 +452,10 @@ var _ = Describe("Secret watch filtering", func() {
 		_, err = reconcileOnce(mcB)
 		Expect(err).NotTo(HaveOccurred())
 
-		depA := fetchDeployment(mcA)
-		depB := fetchDeployment(mcB)
-		hashA := depA.Spec.Template.Annotations[controller.AnnotationSecretHash]
-		hashB := depB.Spec.Template.Annotations[controller.AnnotationSecretHash]
+		stsA := fetchStatefulSet(mcA)
+		stsB := fetchStatefulSet(mcB)
+		hashA := stsA.Spec.Template.Annotations[controller.AnnotationSecretHash]
+		hashB := stsB.Spec.Template.Annotations[controller.AnnotationSecretHash]
 		// Both should have the same hash since they reference the same Secret.
 		Expect(hashA).To(Equal(hashB))
 
@@ -470,10 +470,10 @@ var _ = Describe("Secret watch filtering", func() {
 		_, err = reconcileOnce(mcB)
 		Expect(err).NotTo(HaveOccurred())
 
-		depA = fetchDeployment(mcA)
-		depB = fetchDeployment(mcB)
-		newHashA := depA.Spec.Template.Annotations[controller.AnnotationSecretHash]
-		newHashB := depB.Spec.Template.Annotations[controller.AnnotationSecretHash]
+		stsA = fetchStatefulSet(mcA)
+		stsB = fetchStatefulSet(mcB)
+		newHashA := stsA.Spec.Template.Annotations[controller.AnnotationSecretHash]
+		newHashB := stsB.Spec.Template.Annotations[controller.AnnotationSecretHash]
 
 		Expect(newHashA).NotTo(Equal(hashA))
 		Expect(newHashB).NotTo(Equal(hashB))

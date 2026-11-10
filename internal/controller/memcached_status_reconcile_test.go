@@ -95,8 +95,10 @@ var _ = Describe("Status Reconciliation", func() {
 			Expect(cond.Reason).To(Equal("MemcachedNotReady"))
 		})
 
-		It("should set serverList to nil when Ready=False (MO-0056, REQ-004)", func() {
-			Expect(mc.Status.ServerList).To(BeNil())
+		It("should publish one serverList entry per pod while Ready=False (MO-0056, REQ-004)", func() {
+			Expect(mc.Status.ServerList).To(Equal([]string{
+				fmt.Sprintf("%s-0.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+			}))
 		})
 
 		It("should set per-condition observedGeneration matching metadata.generation (REQ-006)", func() {
@@ -185,7 +187,7 @@ var _ = Describe("Status Reconciliation", func() {
 			Expect(ready).NotTo(BeNil())
 			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
 
-			Expect(mc.Status.ServerList).To(BeNil(), "serverList should be nil when Ready=False (MO-0056, REQ-004)")
+			Expect(mc.Status.ServerList).To(BeNil(), "serverList should be nil with zero replicas (MO-0056, REQ-004)")
 		})
 	})
 
@@ -213,7 +215,7 @@ var _ = Describe("Status Reconciliation", func() {
 	// --- Task 3.3: Status update error propagation ---
 
 	Context("status update error propagation (REQ-007)", func() {
-		It("should propagate status update errors while Deployment and Service are created", func() {
+		It("should propagate status update errors while StatefulSet and Service are created", func() {
 			statusErr := fmt.Errorf("simulated status update error")
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
 				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
@@ -241,20 +243,20 @@ var _ = Describe("Status Reconciliation", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("status"))
 
-			// Verify Deployment and Service were created despite status update failure.
-			depKey := client.ObjectKey{Name: mc.Name, Namespace: mc.Namespace}
-			dep := &appsv1.Deployment{}
-			Expect(fakeClient.Get(ctx, depKey, dep)).To(Succeed(), "Deployment should exist despite status update failure")
+			// Verify StatefulSet and Service were created despite status update failure.
+			key := client.ObjectKey{Name: mc.Name, Namespace: mc.Namespace}
+			sts := &appsv1.StatefulSet{}
+			Expect(fakeClient.Get(ctx, key, sts)).To(Succeed(), "StatefulSet should exist despite status update failure")
 
 			svc := &corev1.Service{}
-			Expect(fakeClient.Get(ctx, depKey, svc)).To(Succeed(), "Service should exist despite status update failure")
+			Expect(fakeClient.Get(ctx, key, svc)).To(Succeed(), "Service should exist despite status update failure")
 		})
 	})
 
-	// --- Task 2.2: ServerList populated based on Ready condition ---
+	// --- Task 2.2: ServerList populated from the StatefulSet replica count ---
 
-	Context("serverList populated when Ready=True (MO-0056, REQ-004)", func() {
-		It("should set serverList to [name.namespace:11211] when all replicas ready", func() {
+	Context("serverList holds one entry per pod (MO-0056, REQ-004)", func() {
+		It("should set one serverList entry per pod in index order when all replicas ready", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
 				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
 				Build()
@@ -263,20 +265,23 @@ var _ = Describe("Status Reconciliation", func() {
 			mc.Spec.Replicas = int32Ptr(3)
 			Expect(fakeClient.Create(ctx, mc)).To(Succeed())
 
-			// Create a Deployment with all 3 replicas ready.
-			dep := &appsv1.Deployment{
+			// Create a StatefulSet with all 3 replicas ready.
+			sts := &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mc.Name,
 					Namespace: mc.Namespace,
 				},
-				Status: appsv1.DeploymentStatus{
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: int32Ptr(3),
+				},
+				Status: appsv1.StatefulSetStatus{
 					ReadyReplicas:   3,
 					UpdatedReplicas: 3,
 					Replicas:        3,
 				},
 			}
-			Expect(fakeClient.Create(ctx, dep)).To(Succeed())
-			Expect(fakeClient.Status().Update(ctx, dep)).To(Succeed())
+			Expect(fakeClient.Create(ctx, sts)).To(Succeed())
+			Expect(fakeClient.Status().Update(ctx, sts)).To(Succeed())
 
 			r := &controller.MemcachedReconciler{
 				Client: fakeClient,
@@ -289,11 +294,16 @@ var _ = Describe("Status Reconciliation", func() {
 
 			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 			Expect(mc.Status.ServerList).To(Equal([]string{
-				fmt.Sprintf("%s.%s:11211", mc.Name, mc.Namespace),
+				fmt.Sprintf("%s-0.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+				fmt.Sprintf("%s-1.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+				fmt.Sprintf("%s-2.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
 			}))
+			ready := findCondition(mc.Status.Conditions, "Ready")
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 		})
 
-		It("should set serverList to nil when not all replicas ready", func() {
+		It("should keep every serverList entry when not all replicas ready", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
 				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
 				Build()
@@ -302,20 +312,23 @@ var _ = Describe("Status Reconciliation", func() {
 			mc.Spec.Replicas = int32Ptr(3)
 			Expect(fakeClient.Create(ctx, mc)).To(Succeed())
 
-			// Create a Deployment with only 1 of 3 replicas ready.
-			dep := &appsv1.Deployment{
+			// Create a StatefulSet with only 1 of 3 replicas ready.
+			sts := &appsv1.StatefulSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      mc.Name,
 					Namespace: mc.Namespace,
 				},
-				Status: appsv1.DeploymentStatus{
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: int32Ptr(3),
+				},
+				Status: appsv1.StatefulSetStatus{
 					ReadyReplicas:   1,
 					UpdatedReplicas: 3,
 					Replicas:        3,
 				},
 			}
-			Expect(fakeClient.Create(ctx, dep)).To(Succeed())
-			Expect(fakeClient.Status().Update(ctx, dep)).To(Succeed())
+			Expect(fakeClient.Create(ctx, sts)).To(Succeed())
+			Expect(fakeClient.Status().Update(ctx, sts)).To(Succeed())
 
 			r := &controller.MemcachedReconciler{
 				Client: fakeClient,
@@ -327,7 +340,37 @@ var _ = Describe("Status Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			Expect(mc.Status.ServerList).To(BeNil())
+			Expect(mc.Status.ServerList).To(Equal([]string{
+				fmt.Sprintf("%s-0.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+				fmt.Sprintf("%s-1.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+				fmt.Sprintf("%s-2.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+			}))
+			ready := findCondition(mc.Status.Conditions, "Ready")
+			Expect(ready).NotTo(BeNil())
+			Expect(ready.Status).To(Equal(metav1.ConditionFalse))
+		})
+	})
+
+	Context("serverList across repeated reconciles (MO-0056, REQ-004)", func() {
+		It("should keep serverList identical when an unchanged instance is reconciled twice", func() {
+			mc := validMemcached(uniqueName("status-srvlist-stable"))
+			mc.Spec.Replicas = int32Ptr(3)
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			first := mc.Status.ServerList
+			Expect(first).To(Equal([]string{
+				fmt.Sprintf("%s-0.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+				fmt.Sprintf("%s-1.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+				fmt.Sprintf("%s-2.%s.%s.svc:11211", mc.Name, mc.Name, mc.Namespace),
+			}))
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			Expect(mc.Status.ServerList).To(Equal(first))
 		})
 	})
 })

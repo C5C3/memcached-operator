@@ -15,7 +15,7 @@ var _ = Describe("Security Context Reconciliation", func() {
 
 	Context("pod and container security contexts (REQ-001, REQ-002, REQ-003, REQ-007)", func() {
 
-		It("should apply pod and container security contexts to Deployment", func() {
+		It("should apply pod and container security contexts to StatefulSet", func() {
 			mc := validMemcached(uniqueName("sec-apply"))
 			runAsNonRoot := true
 			fsGroup := int64(11211)
@@ -46,10 +46,10 @@ var _ = Describe("Security Context Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 
 			// Pod security context — full restricted profile.
-			podSC := dep.Spec.Template.Spec.SecurityContext
+			podSC := sts.Spec.Template.Spec.SecurityContext
 			Expect(podSC).NotTo(BeNil())
 			Expect(*podSC.RunAsNonRoot).To(BeTrue())
 			Expect(*podSC.FSGroup).To(Equal(int64(11211)))
@@ -57,7 +57,7 @@ var _ = Describe("Security Context Reconciliation", func() {
 			Expect(podSC.SeccompProfile.Type).To(Equal(corev1.SeccompProfileTypeRuntimeDefault))
 
 			// Container security context — full restricted profile.
-			containerSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
+			containerSC := sts.Spec.Template.Spec.Containers[0].SecurityContext
 			Expect(containerSC).NotTo(BeNil())
 			Expect(*containerSC.RunAsUser).To(Equal(int64(11211)))
 			Expect(*containerSC.RunAsNonRoot).To(BeTrue())
@@ -82,16 +82,16 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 
 			// Pod security context applied.
-			podSC := dep.Spec.Template.Spec.SecurityContext
+			podSC := sts.Spec.Template.Spec.SecurityContext
 			Expect(podSC).NotTo(BeNil())
 			Expect(*podSC.RunAsNonRoot).To(BeTrue())
 			Expect(*podSC.FSGroup).To(Equal(int64(11211)))
 
 			// Container security context not set.
-			Expect(dep.Spec.Template.Spec.Containers[0].SecurityContext).To(
+			Expect(sts.Spec.Template.Spec.Containers[0].SecurityContext).To(
 				Or(BeNil(), Equal(&corev1.SecurityContext{})))
 		})
 
@@ -110,14 +110,14 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 
 			// Pod security context not set.
-			Expect(dep.Spec.Template.Spec.SecurityContext).To(
+			Expect(sts.Spec.Template.Spec.SecurityContext).To(
 				Or(BeNil(), Equal(&corev1.PodSecurityContext{})))
 
 			// Container security context applied.
-			containerSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
+			containerSC := sts.Spec.Template.Spec.Containers[0].SecurityContext
 			Expect(containerSC).NotTo(BeNil())
 			Expect(*containerSC.RunAsUser).To(Equal(int64(1000)))
 			Expect(*containerSC.ReadOnlyRootFilesystem).To(BeTrue())
@@ -130,11 +130,11 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 			// The API server may return an empty struct instead of nil for PodSecurityContext.
-			Expect(dep.Spec.Template.Spec.SecurityContext).To(
+			Expect(sts.Spec.Template.Spec.SecurityContext).To(
 				Or(BeNil(), Equal(&corev1.PodSecurityContext{})))
-			Expect(dep.Spec.Template.Spec.Containers[0].SecurityContext).To(
+			Expect(sts.Spec.Template.Spec.Containers[0].SecurityContext).To(
 				Or(BeNil(), Equal(&corev1.SecurityContext{})))
 		})
 
@@ -156,31 +156,31 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
 
 			// Memcached container.
-			mcSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
+			mcSC := sts.Spec.Template.Spec.Containers[0].SecurityContext
 			Expect(mcSC).NotTo(BeNil())
 			Expect(*mcSC.RunAsUser).To(Equal(int64(1000)))
 
 			// Exporter container.
-			expSC := dep.Spec.Template.Spec.Containers[1].SecurityContext
+			expSC := sts.Spec.Template.Spec.Containers[1].SecurityContext
 			Expect(expSC).NotTo(BeNil())
 			Expect(*expSC.RunAsUser).To(Equal(int64(1000)))
 			Expect(*expSC.ReadOnlyRootFilesystem).To(BeTrue())
 		})
 
-		It("should update Deployment when security contexts change", func() {
+		It("should update StatefulSet when security contexts change", func() {
 			mc := validMemcached(uniqueName("sec-update"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 			// The API server may return an empty struct instead of nil for PodSecurityContext.
-			Expect(dep.Spec.Template.Spec.SecurityContext).To(
+			Expect(sts.Spec.Template.Spec.SecurityContext).To(
 				Or(BeNil(), Equal(&corev1.PodSecurityContext{})))
 
 			// Add security contexts.
@@ -200,11 +200,11 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.SecurityContext).NotTo(BeNil())
-			Expect(*dep.Spec.Template.Spec.SecurityContext.RunAsNonRoot).To(BeTrue())
-			Expect(dep.Spec.Template.Spec.Containers[0].SecurityContext).NotTo(BeNil())
-			Expect(*dep.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser).To(Equal(int64(1000)))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.SecurityContext).NotTo(BeNil())
+			Expect(*sts.Spec.Template.Spec.SecurityContext.RunAsNonRoot).To(BeTrue())
+			Expect(sts.Spec.Template.Spec.Containers[0].SecurityContext).NotTo(BeNil())
+			Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser).To(Equal(int64(1000)))
 
 			// Change runAsUser to verify update propagation.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -215,9 +215,9 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[0].SecurityContext).NotTo(BeNil())
-			Expect(*dep.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser).To(Equal(int64(11211)))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[0].SecurityContext).NotTo(BeNil())
+			Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser).To(Equal(int64(11211)))
 
 			// Remove security contexts.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -227,11 +227,11 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
+			sts = fetchStatefulSet(mc)
 			// The API server may return an empty struct instead of nil after clearing.
-			Expect(dep.Spec.Template.Spec.SecurityContext).To(
+			Expect(sts.Spec.Template.Spec.SecurityContext).To(
 				Or(BeNil(), Equal(&corev1.PodSecurityContext{})))
-			Expect(dep.Spec.Template.Spec.Containers[0].SecurityContext).To(
+			Expect(sts.Spec.Template.Spec.Containers[0].SecurityContext).To(
 				Or(BeNil(), Equal(&corev1.SecurityContext{})))
 		})
 
@@ -252,15 +252,15 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep1 := fetchDeployment(mc)
-			rv1 := dep1.ResourceVersion
+			sts1 := fetchStatefulSet(mc)
+			rv1 := sts1.ResourceVersion
 
 			// Reconcile again without changes.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
-			Expect(dep2.ResourceVersion).To(Equal(rv1))
+			sts2 := fetchStatefulSet(mc)
+			Expect(sts2.ResourceVersion).To(Equal(rv1))
 		})
 
 		It("should coexist with all features", func() {
@@ -293,33 +293,33 @@ var _ = Describe("Security Context Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 
 			// Security contexts.
-			Expect(dep.Spec.Template.Spec.SecurityContext).NotTo(BeNil())
-			Expect(*dep.Spec.Template.Spec.SecurityContext.RunAsNonRoot).To(BeTrue())
-			Expect(dep.Spec.Template.Spec.Containers[0].SecurityContext).NotTo(BeNil())
-			Expect(*dep.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser).To(Equal(int64(1000)))
+			Expect(sts.Spec.Template.Spec.SecurityContext).NotTo(BeNil())
+			Expect(*sts.Spec.Template.Spec.SecurityContext.RunAsNonRoot).To(BeTrue())
+			Expect(sts.Spec.Template.Spec.Containers[0].SecurityContext).NotTo(BeNil())
+			Expect(*sts.Spec.Template.Spec.Containers[0].SecurityContext.RunAsUser).To(Equal(int64(1000)))
 
 			// Monitoring: 2 containers, both with container security context.
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
-			Expect(dep.Spec.Template.Spec.Containers[1].SecurityContext).NotTo(BeNil())
-			Expect(*dep.Spec.Template.Spec.Containers[1].SecurityContext.RunAsUser).To(Equal(int64(1000)))
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			Expect(sts.Spec.Template.Spec.Containers[1].SecurityContext).NotTo(BeNil())
+			Expect(*sts.Spec.Template.Spec.Containers[1].SecurityContext.RunAsUser).To(Equal(int64(1000)))
 
 			// Anti-affinity.
-			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(HaveLen(1))
 
 			// Topology spread.
-			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
-			Expect(dep.Spec.Template.Spec.TopologySpreadConstraints[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
+			Expect(sts.Spec.Template.Spec.TopologySpreadConstraints).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.TopologySpreadConstraints[0].TopologyKey).To(Equal("topology.kubernetes.io/zone"))
 
 			// Graceful shutdown.
-			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
-			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
 		})
 	})
 })

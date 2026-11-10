@@ -2,6 +2,8 @@
 package controller
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -338,22 +340,58 @@ func buildContainerSecurityContext(mc *memcachedv1beta1.Memcached) *corev1.Secur
 	return mc.Spec.Security.ContainerSecurityContext
 }
 
-// constructDeployment sets the desired state of the Deployment based on the Memcached CR spec.
-// It mutates dep in-place and is designed to be called from within controllerutil.CreateOrUpdate.
-// secretHash and restartTrigger are propagated as Pod template annotations to trigger rolling updates.
-func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment, secretHash, restartTrigger string) {
-	labels := labelsForMemcached(mc.Name)
+// maxStatefulSetNameLength is the longest StatefulSet name whose pods can be created.
+// The StatefulSet controller labels every pod with controller-revision-hash=<name>-<hash>,
+// where the hash has up to 10 characters, and label values are limited to 63 characters.
+const maxStatefulSetNameLength = 52
 
-	// Determine replicas: nil when HPA is active (let HPA control scaling),
-	// otherwise use spec value or default.
-	var replicasPtr *int32
-	if !mc.IsAutoscalingEnabled() {
-		replicas := int32(1)
+// statefulSetNameHashLength is the number of hex characters appended to a shortened
+// StatefulSet name.
+const statefulSetNameHashLength = 8
+
+// statefulSetName returns the name of the StatefulSet for a Memcached named name.
+// Names of up to maxStatefulSetNameLength characters are used unchanged. Longer names are
+// cut to their first 43 characters and suffixed with "-" and the first 8 hex characters of
+// the SHA-256 of the full name, which yields exactly maxStatefulSetNameLength characters.
+func statefulSetName(name string) string {
+	if len(name) <= maxStatefulSetNameLength {
+		return name
+	}
+	sum := sha256.Sum256([]byte(name))
+	prefixLength := maxStatefulSetNameLength - 1 - statefulSetNameHashLength
+	return name[:prefixLength] + "-" + hex.EncodeToString(sum[:statefulSetNameHashLength/2])
+}
+
+// statefulSetReplicas returns the replica count for the Memcached StatefulSet. It never returns nil.
+// Without autoscaling it returns spec.replicas, or DefaultReplicas when unset, and ignores current.
+// With autoscaling it keeps current, the count the HPA last set on the existing StatefulSet,
+// and seeds a new StatefulSet with spec.autoscaling.minReplicas, or DefaultReplicas when unset.
+func statefulSetReplicas(mc *memcachedv1beta1.Memcached, current *int32) *int32 {
+	replicas := memcachedv1beta1.DefaultReplicas
+	switch {
+	case !mc.IsAutoscalingEnabled():
 		if mc.Spec.Replicas != nil {
 			replicas = *mc.Spec.Replicas
 		}
-		replicasPtr = &replicas
+	case current != nil:
+		replicas = *current
+	case mc.Spec.Autoscaling.MinReplicas != nil:
+		replicas = *mc.Spec.Autoscaling.MinReplicas
 	}
+	return &replicas
+}
+
+// constructStatefulSet sets the desired state of the StatefulSet based on the Memcached CR spec.
+// It mutates sts in-place and is designed to be called from within controllerutil.CreateOrUpdate.
+// secretHash and restartTrigger are propagated as Pod template annotations to trigger rolling updates.
+// The StatefulSet is governed by the headless Service named like the Memcached CR, which gives every
+// pod the stable DNS name <statefulset>-<i>.<service>.<namespace>.svc.
+func constructStatefulSet(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSet, secretHash, restartTrigger string) {
+	labels := labelsForMemcached(mc.Name)
+
+	// Read the stored replica count before the spec is replaced, so the count the HPA set survives.
+	replicas := statefulSetReplicas(mc, sts.Spec.Replicas)
+
 	image := memcachedv1beta1.DefaultImage
 	if mc.Spec.Image != nil {
 		image = *mc.Spec.Image
@@ -380,9 +418,6 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 	if mc.Spec.Resources != nil {
 		resources = *mc.Spec.Resources
 	}
-
-	maxSurge := intstr.FromInt32(1)
-	maxUnavailable := intstr.FromInt32(0)
 
 	affinity := buildAntiAffinity(mc)
 	topologySpreadConstraints := buildTopologySpreadConstraints(mc)
@@ -458,18 +493,16 @@ func constructDeployment(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment,
 
 	podAnnotations := buildPodAnnotations(secretHash, restartTrigger)
 
-	dep.Labels = versionedLabels
-	dep.Spec = appsv1.DeploymentSpec{
-		Replicas: replicasPtr,
+	sts.Labels = versionedLabels
+	sts.Spec = appsv1.StatefulSetSpec{
+		Replicas: replicas,
 		Selector: &metav1.LabelSelector{
 			MatchLabels: labels,
 		},
-		Strategy: appsv1.DeploymentStrategy{
-			Type: appsv1.RollingUpdateDeploymentStrategyType,
-			RollingUpdate: &appsv1.RollingUpdateDeployment{
-				MaxSurge:       &maxSurge,
-				MaxUnavailable: &maxUnavailable,
-			},
+		ServiceName:         mc.Name,
+		PodManagementPolicy: appsv1.ParallelPodManagement,
+		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
+			Type: appsv1.RollingUpdateStatefulSetStrategyType,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{

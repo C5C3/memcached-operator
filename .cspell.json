@@ -228,6 +228,7 @@
     "staticcheck",
     "storageversion",
     "statefulset",
+    "statefulsets",
     "stefanzweifel",
     "subjectaccessreviews",
     "subresource",

@@ -115,41 +115,41 @@ var _ = Describe("Memcached Reconcile", func() {
 var _ = Describe("Idempotent Create-or-Update Reconciliation", func() {
 
 	Context("multiple reconciliation cycles without changes (REQ-001)", func() {
-		It("should not update Deployment or Service resourceVersions after initial creation", func() {
+		It("should not update StatefulSet or Service resourceVersions after initial creation", func() {
 			mc := validMemcached(uniqueName("idem-noop"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			// First reconcile: creates Deployment and Service.
+			// First reconcile: creates StatefulSet and Service.
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep1 := fetchDeployment(mc)
+			sts1 := fetchStatefulSet(mc)
 			svc1 := fetchService(mc)
-			depRV1 := dep1.ResourceVersion
+			stsRV1 := sts1.ResourceVersion
 			svcRV1 := svc1.ResourceVersion
 
 			// Second reconcile: no changes — should be a no-op.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
+			sts2 := fetchStatefulSet(mc)
 			svc2 := fetchService(mc)
-			Expect(dep2.ResourceVersion).To(Equal(depRV1))
+			Expect(sts2.ResourceVersion).To(Equal(stsRV1))
 			Expect(svc2.ResourceVersion).To(Equal(svcRV1))
 
 			// Third reconcile: still no changes.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep3 := fetchDeployment(mc)
+			sts3 := fetchStatefulSet(mc)
 			svc3 := fetchService(mc)
-			Expect(dep3.ResourceVersion).To(Equal(depRV1))
+			Expect(sts3.ResourceVersion).To(Equal(stsRV1))
 			Expect(svc3.ResourceVersion).To(Equal(svcRV1))
 		})
 	})
 
-	Context("drift correction on manually patched Deployment (REQ-001)", func() {
-		It("should restore Deployment replicas to CR spec after manual patch", func() {
+	Context("drift correction on manually patched StatefulSet (REQ-001)", func() {
+		It("should restore StatefulSet replicas to CR spec after manual patch", func() {
 			mc := validMemcached(uniqueName("idem-drift"))
 			mc.Spec.Replicas = int32Ptr(2)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -157,30 +157,36 @@ var _ = Describe("Idempotent Create-or-Update Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(2)))
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(2)))
 
-			// Manually patch Deployment replicas to a different value.
-			patch := client.MergeFrom(dep.DeepCopy())
+			// Manually patch StatefulSet replicas to a different value.
+			patch := client.MergeFrom(sts.DeepCopy())
 			wrongReplicas := int32(10)
-			dep.Spec.Replicas = &wrongReplicas
-			Expect(k8sClient.Patch(ctx, dep, patch)).To(Succeed())
+			sts.Spec.Replicas = &wrongReplicas
+			Expect(k8sClient.Patch(ctx, sts, patch)).To(Succeed())
 
 			// Verify the drift happened.
-			drifted := fetchDeployment(mc)
+			drifted := fetchStatefulSet(mc)
 			Expect(*drifted.Spec.Replicas).To(Equal(int32(10)))
 
 			// Reconcile should correct the drift.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			corrected := fetchDeployment(mc)
+			corrected := fetchStatefulSet(mc)
 			Expect(*corrected.Spec.Replicas).To(Equal(int32(2)))
+
+			// A further reconcile of the unchanged instance leaves the StatefulSet untouched.
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(corrected.ResourceVersion))
 		})
 	})
 
 	Context("spec update followed by idempotent reconciliation (REQ-001)", func() {
-		It("should update Deployment then no-op on subsequent reconcile", func() {
+		It("should update StatefulSet then no-op on subsequent reconcile", func() {
 			mc := validMemcached(uniqueName("idem-update"))
 			mc.Spec.Replicas = int32Ptr(1)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -197,16 +203,16 @@ var _ = Describe("Idempotent Create-or-Update Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(3)))
-			depRV := dep.ResourceVersion
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(3)))
+			stsRV := sts.ResourceVersion
 
 			// Reconcile again without changes: no-op.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
-			Expect(dep2.ResourceVersion).To(Equal(depRV))
+			sts2 := fetchStatefulSet(mc)
+			Expect(sts2.ResourceVersion).To(Equal(stsRV))
 		})
 	})
 
@@ -249,8 +255,8 @@ var _ = Describe("Level-triggered reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(1)))
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
 
 			// Multiple spec updates without intermediate reconciliation.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -265,28 +271,28 @@ var _ = Describe("Level-triggered reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(5)))
+			sts = fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(5)))
 		})
 	})
 
-	Context("deleted owned Deployment is recreated (REQ-006)", func() {
-		It("should recreate the Deployment when it is deleted externally", func() {
+	Context("deleted owned StatefulSet is recreated (REQ-006)", func() {
+		It("should recreate the StatefulSet when it is deleted externally", func() {
 			mc := validMemcached(uniqueName("level-recreate"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Verify Deployment exists.
-			dep := fetchDeployment(mc)
-			Expect(dep).NotTo(BeNil())
+			// Verify StatefulSet exists.
+			sts := fetchStatefulSet(mc)
+			Expect(sts).NotTo(BeNil())
 
-			// Delete the Deployment directly.
-			Expect(k8sClient.Delete(ctx, dep)).To(Succeed())
+			// Delete the StatefulSet directly.
+			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
 
 			// Verify it is gone.
-			gone := &appsv1.Deployment{}
+			gone := &appsv1.StatefulSet{}
 			err = k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), gone)
 			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
@@ -294,7 +300,7 @@ var _ = Describe("Level-triggered reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			recreated := fetchDeployment(mc)
+			recreated := fetchStatefulSet(mc)
 			Expect(recreated).NotTo(BeNil())
 			Expect(recreated.OwnerReferences).To(HaveLen(1))
 			Expect(recreated.OwnerReferences[0].Name).To(Equal(mc.Name))
@@ -332,29 +338,29 @@ var _ = Describe("Level-triggered reconciliation", func() {
 	})
 
 	Context("builder functions are deterministic (REQ-006)", func() {
-		It("should produce identical Deployment specs on repeated calls with the same input", func() {
+		It("should produce identical StatefulSet specs on repeated calls with the same input", func() {
 			mc := validMemcached(uniqueName("level-determ-dep"))
 			mc.Spec.Replicas = int32Ptr(2)
 			mc.Spec.Image = strPtr("memcached:1.6.29")
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 
-			// First reconcile creates the Deployment.
+			// First reconcile creates the StatefulSet.
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep1 := fetchDeployment(mc)
-			spec1 := dep1.Spec
+			sts1 := fetchStatefulSet(mc)
+			spec1 := sts1.Spec
 
-			// Second reconcile — Deployment should be unchanged.
+			// Second reconcile: the StatefulSet should be unchanged.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
-			Expect(dep2.ResourceVersion).To(Equal(dep1.ResourceVersion),
-				"Deployment should not be updated when builder output is deterministic")
-			Expect(dep2.Spec.Template.Spec.Containers[0].Image).To(Equal(spec1.Template.Spec.Containers[0].Image))
-			Expect(*dep2.Spec.Replicas).To(Equal(*spec1.Replicas))
+			sts2 := fetchStatefulSet(mc)
+			Expect(sts2.ResourceVersion).To(Equal(sts1.ResourceVersion),
+				"StatefulSet should not be updated when builder output is deterministic")
+			Expect(sts2.Spec.Template.Spec.Containers[0].Image).To(Equal(spec1.Template.Spec.Containers[0].Image))
+			Expect(*sts2.Spec.Replicas).To(Equal(*spec1.Replicas))
 		})
 
 		It("should produce identical Service specs on repeated calls with the same input", func() {
@@ -383,7 +389,7 @@ var _ = Describe("Level-triggered reconciliation", func() {
 
 var _ = Describe("Conflict retry", func() {
 
-	Context("transient conflict on Deployment update (REQ-002)", func() {
+	Context("transient conflict on StatefulSet update (REQ-002)", func() {
 		It("should succeed despite a transient 409 Conflict error", func() {
 			// Use a fake client to control conflict injection precisely.
 			mc := validMemcached(uniqueName("conflict-transient"))
@@ -409,16 +415,16 @@ var _ = Describe("Conflict retry", func() {
 			mc.Spec.Replicas = int32Ptr(4)
 			Expect(fakeClient.Update(ctx, mc)).To(Succeed())
 
-			// Wrap the fake client to inject a single conflict error on Update for Deployments.
+			// Wrap the fake client to inject a single conflict error on Update for StatefulSets.
 			var updateCalls atomic.Int32
 			conflictErr := apierrors.NewConflict(
-				schema.GroupResource{Group: "apps", Resource: "deployments"},
+				schema.GroupResource{Group: "apps", Resource: "statefulsets"},
 				mc.Name,
 				fmt.Errorf("the object has been modified"),
 			)
 			wrappedClient := interceptor.NewClient(fakeClient, interceptor.Funcs{
 				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
-					if _, ok := obj.(*appsv1.Deployment); ok {
+					if _, ok := obj.(*appsv1.StatefulSet); ok {
 						call := updateCalls.Add(1)
 						if call == 1 {
 							return conflictErr
@@ -439,10 +445,10 @@ var _ = Describe("Conflict retry", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 
-			// Verify the Deployment ended up with the correct state.
-			dep := &appsv1.Deployment{}
-			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(mc), dep)).To(Succeed())
-			Expect(*dep.Spec.Replicas).To(Equal(int32(4)))
+			// Verify the StatefulSet ended up with the correct state.
+			sts := &appsv1.StatefulSet{}
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(mc), sts)).To(Succeed())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(4)))
 
 			// Verify retry happened: at least 2 update calls.
 			Expect(updateCalls.Load()).To(BeNumerically(">=", int32(2)))
@@ -475,15 +481,15 @@ var _ = Describe("Conflict retry", func() {
 			mc.Spec.Replicas = int32Ptr(3)
 			Expect(fakeClient.Update(ctx, mc)).To(Succeed())
 
-			// Wrap the fake client to always return conflict on Deployment updates.
+			// Wrap the fake client to always return conflict on StatefulSet updates.
 			conflictErr := apierrors.NewConflict(
-				schema.GroupResource{Group: "apps", Resource: "deployments"},
+				schema.GroupResource{Group: "apps", Resource: "statefulsets"},
 				mc.Name,
 				fmt.Errorf("the object has been modified"),
 			)
 			wrappedClient := interceptor.NewClient(fakeClient, interceptor.Funcs{
 				Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
-					if _, ok := obj.(*appsv1.Deployment); ok {
+					if _, ok := obj.(*appsv1.StatefulSet); ok {
 						return conflictErr
 					}
 					return c.Update(ctx, obj, opts...)

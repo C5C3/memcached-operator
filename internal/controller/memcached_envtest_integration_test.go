@@ -49,16 +49,16 @@ var _ = Describe("Full reconciliation loop: minimal CR", func() {
 			Expect(result).To(Equal(ctrl.Result{}))
 		})
 
-		It("should create a Deployment with default settings", func() {
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(1)))
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
-			Expect(dep.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
-			Expect(dep.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6"))
-			Expect(dep.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(1))
-			Expect(dep.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort).To(Equal(int32(11211)))
+		It("should create a StatefulSet with default settings", func() {
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort).To(Equal(int32(11211)))
 
-			expectOwnerRef(dep, mc)
+			expectOwnerRef(sts, mc)
 		})
 
 		It("should create a headless Service on port 11211", func() {
@@ -90,15 +90,15 @@ var _ = Describe("Full reconciliation loop: minimal CR", func() {
 		})
 
 		It("should be a no-op on second reconcile", func() {
-			dep1 := fetchDeployment(mc)
+			sts1 := fetchStatefulSet(mc)
 			svc1 := fetchService(mc)
 
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
+			sts2 := fetchStatefulSet(mc)
 			svc2 := fetchService(mc)
-			Expect(dep2.ResourceVersion).To(Equal(dep1.ResourceVersion))
+			Expect(sts2.ResourceVersion).To(Equal(sts1.ResourceVersion))
 			Expect(svc2.ResourceVersion).To(Equal(svc1.ResourceVersion))
 		})
 	})
@@ -140,14 +140,14 @@ var _ = Describe("Full reconciliation loop: full-featured CR", func() {
 			Expect(result).To(Equal(ctrl.Result{}))
 		})
 
-		It("should create a Deployment with 3 replicas and exporter sidecar", func() {
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(3)))
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
-			Expect(dep.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
-			expectOwnerRef(dep, mc)
+		It("should create a StatefulSet with 3 replicas and exporter sidecar", func() {
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(3)))
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			expectOwnerRef(sts, mc)
 		})
 
 		It("should create a headless Service with memcached and metrics ports", func() {
@@ -186,13 +186,13 @@ var _ = Describe("Full reconciliation loop: full-featured CR", func() {
 		})
 
 		It("should set all five resources with standard labels", func() {
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 			svc := fetchService(mc)
 			pdb := fetchPDB(mc)
 			sm := fetchServiceMonitor(mc)
 			np := fetchNetworkPolicy(mc)
 
-			for _, obj := range []client.Object{dep, svc, pdb, sm, np} {
+			for _, obj := range []client.Object{sts, svc, pdb, sm, np} {
 				labels := obj.GetLabels()
 				Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/name", "memcached"))
 				Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/instance", mc.Name))
@@ -206,8 +206,8 @@ var _ = Describe("Full reconciliation loop: full-featured CR", func() {
 
 var _ = Describe("Spec update propagation", func() {
 
-	Context("replicas change propagates to Deployment", func() {
-		It("should update Deployment replicas from 1 to 3", func() {
+	Context("replicas change propagates to StatefulSet", func() {
+		It("should update StatefulSet replicas from 1 to 3", func() {
 			mc := validMemcached(uniqueName("integ-rep-prop"))
 			mc.Spec.Replicas = int32Ptr(1)
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -215,8 +215,8 @@ var _ = Describe("Spec update propagation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(1)))
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
 
 			// Update replicas.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -226,21 +226,21 @@ var _ = Describe("Spec update propagation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(3)))
+			sts = fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(3)))
 		})
 	})
 
-	Context("image change propagates to Deployment", func() {
-		It("should update Deployment container image", func() {
+	Context("image change propagates to StatefulSet", func() {
+		It("should update StatefulSet container image", func() {
 			mc := validMemcached(uniqueName("integ-img-prop"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6"))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6"))
 
 			// Update image.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -250,8 +250,8 @@ var _ = Describe("Spec update propagation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
 		})
 	})
 
@@ -264,8 +264,8 @@ var _ = Describe("Spec update propagation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Initially: 1 container, 1 service port.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
 			svc := fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(1))
 
@@ -278,9 +278,9 @@ var _ = Describe("Spec update propagation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// After: 2 containers, 2 service ports.
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 
 			svc = fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(2))
@@ -335,9 +335,9 @@ var _ = Describe("Spec update propagation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(5)))
-			Expect(dep.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(5)))
+			Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
 		})
 	})
 })
@@ -375,9 +375,9 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Reconciler skips PDB when disabled. Deployment and Service still exist.
-			dep := fetchDeployment(mc)
-			Expect(dep).NotTo(BeNil())
+			// Reconciler skips PDB when disabled. StatefulSet and Service still exist.
+			sts := fetchStatefulSet(mc)
+			Expect(sts).NotTo(BeNil())
 			svc := fetchService(mc)
 			Expect(svc).NotTo(BeNil())
 		})
@@ -447,8 +447,8 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Core resources still exist.
-			dep := fetchDeployment(mc)
-			Expect(dep).NotTo(BeNil())
+			sts := fetchStatefulSet(mc)
+			Expect(sts).NotTo(BeNil())
 		})
 	})
 
@@ -477,7 +477,7 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// All five resources exist.
-			fetchDeployment(mc)
+			fetchStatefulSet(mc)
 			fetchService(mc)
 			fetchPDB(mc)
 			fetchServiceMonitor(mc)
@@ -494,8 +494,8 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Core resources still exist.
-			dep := fetchDeployment(mc)
-			Expect(dep).NotTo(BeNil())
+			sts := fetchStatefulSet(mc)
+			Expect(sts).NotTo(BeNil())
 			svc := fetchService(mc)
 			Expect(svc).NotTo(BeNil())
 		})
@@ -531,13 +531,13 @@ var _ = Describe("Full idempotency: three consecutive reconciles on full-feature
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep1 := fetchDeployment(mc)
+			sts1 := fetchStatefulSet(mc)
 			svc1 := fetchService(mc)
 			pdb1 := fetchPDB(mc)
 			sm1 := fetchServiceMonitor(mc)
 			np1 := fetchNetworkPolicy(mc)
 
-			depRV := dep1.ResourceVersion
+			stsRV := sts1.ResourceVersion
 			svcRV := svc1.ResourceVersion
 			pdbRV := pdb1.ResourceVersion
 			smRV := sm1.ResourceVersion
@@ -547,7 +547,7 @@ var _ = Describe("Full idempotency: three consecutive reconciles on full-feature
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 			Expect(fetchService(mc).ResourceVersion).To(Equal(svcRV))
 			Expect(fetchPDB(mc).ResourceVersion).To(Equal(pdbRV))
 			Expect(fetchServiceMonitor(mc).ResourceVersion).To(Equal(smRV))
@@ -557,7 +557,7 @@ var _ = Describe("Full idempotency: three consecutive reconciles on full-feature
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 			Expect(fetchService(mc).ResourceVersion).To(Equal(svcRV))
 			Expect(fetchPDB(mc).ResourceVersion).To(Equal(pdbRV))
 			Expect(fetchServiceMonitor(mc).ResourceVersion).To(Equal(smRV))
@@ -566,24 +566,24 @@ var _ = Describe("Full idempotency: three consecutive reconciles on full-feature
 	})
 
 	Context("three consecutive reconciles on minimal CR", func() {
-		It("should not change Deployment or Service resource versions", func() {
+		It("should not change StatefulSet or Service resource versions", func() {
 			mc := validMemcached(uniqueName("integ-idemp-min"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			depRV := fetchDeployment(mc).ResourceVersion
+			stsRV := fetchStatefulSet(mc).ResourceVersion
 			svcRV := fetchService(mc).ResourceVersion
 
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 			Expect(fetchService(mc).ResourceVersion).To(Equal(svcRV))
 
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 			Expect(fetchService(mc).ResourceVersion).To(Equal(svcRV))
 		})
 	})
@@ -602,23 +602,23 @@ var _ = Describe("Full idempotency: three consecutive reconciles on full-feature
 			mc.Spec.Replicas = int32Ptr(4)
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
-			// First reconcile after change: updates Deployment.
+			// First reconcile after change: updates StatefulSet.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(*dep.Spec.Replicas).To(Equal(int32(4)))
-			depRV := dep.ResourceVersion
+			sts := fetchStatefulSet(mc)
+			Expect(*sts.Spec.Replicas).To(Equal(int32(4)))
+			stsRV := sts.ResourceVersion
 
 			// Second reconcile: no-op.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 
 			// Third reconcile: still no-op.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 		})
 	})
 })
@@ -785,7 +785,7 @@ var _ = Describe("Status conditions lifecycle", func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 
 			// All 5 resources exist.
-			fetchDeployment(mc)
+			fetchStatefulSet(mc)
 			fetchService(mc)
 			fetchPDB(mc)
 			fetchServiceMonitor(mc)
@@ -837,13 +837,13 @@ var _ = Describe("CR deletion and garbage collection", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify all five resources have correct owner references for GC.
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 			svc := fetchService(mc)
 			pdb := fetchPDB(mc)
 			sm := fetchServiceMonitor(mc)
 			np := fetchNetworkPolicy(mc)
 
-			for _, obj := range []client.Object{dep, svc, pdb, sm, np} {
+			for _, obj := range []client.Object{sts, svc, pdb, sm, np} {
 				expectOwnerRef(obj, mc)
 			}
 		})
@@ -872,10 +872,10 @@ var _ = Describe("CR deletion and garbage collection", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 			svc := fetchService(mc)
 
-			for _, obj := range []client.Object{dep, svc} {
+			for _, obj := range []client.Object{sts, svc} {
 				expectOwnerRef(obj, mc)
 			}
 		})
@@ -886,31 +886,31 @@ var _ = Describe("CR deletion and garbage collection", func() {
 
 var _ = Describe("Owned resource recreation after external deletion", func() {
 
-	Context("when a Deployment is externally deleted", func() {
-		It("should recreate the Deployment on next reconcile", func() {
+	Context("when a StatefulSet is externally deleted", func() {
+		It("should recreate the StatefulSet on next reconcile", func() {
 			mc := validMemcached(uniqueName("integ-recreate-dep"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			originalUID := dep.UID
+			sts := fetchStatefulSet(mc)
+			originalUID := sts.UID
 
-			// Externally delete the Deployment.
-			Expect(k8sClient.Delete(ctx, dep)).To(Succeed())
+			// Externally delete the StatefulSet.
+			Expect(k8sClient.Delete(ctx, sts)).To(Succeed())
 
 			// Verify it's gone.
-			err = k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), &appsv1.Deployment{})
+			err = k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), &appsv1.StatefulSet{})
 			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
 			// Reconcile should recreate it.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			newDep := fetchDeployment(mc)
-			Expect(newDep.UID).NotTo(Equal(originalUID))
-			expectOwnerRef(newDep, mc)
+			newSts := fetchStatefulSet(mc)
+			Expect(newSts.UID).NotTo(Equal(originalUID))
+			expectOwnerRef(newSts, mc)
 		})
 	})
 
@@ -1055,20 +1055,20 @@ var _ = Describe("Owned resource recreation after external deletion", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Record original UIDs.
-			depUID := fetchDeployment(mc).UID
+			stsUID := fetchStatefulSet(mc).UID
 			svcUID := fetchService(mc).UID
 
-			// Delete Deployment and Service.
-			Expect(k8sClient.Delete(ctx, fetchDeployment(mc))).To(Succeed())
+			// Delete StatefulSet and Service.
+			Expect(k8sClient.Delete(ctx, fetchStatefulSet(mc))).To(Succeed())
 			Expect(k8sClient.Delete(ctx, fetchService(mc))).To(Succeed())
 
 			// Single reconcile should recreate both.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			newDep := fetchDeployment(mc)
+			newSts := fetchStatefulSet(mc)
 			newSvc := fetchService(mc)
-			Expect(newDep.UID).NotTo(Equal(depUID))
+			Expect(newSts.UID).NotTo(Equal(stsUID))
 			Expect(newSvc.UID).NotTo(Equal(svcUID))
 
 			// Other resources should still exist.
@@ -1101,14 +1101,14 @@ var _ = Describe("Multi-instance isolation: two CRs in same namespace", func() {
 			Expect(err).NotTo(HaveOccurred())
 		})
 
-		It("should create independent Deployments for each CR", func() {
-			depA := fetchDeployment(mcA)
-			depB := fetchDeployment(mcB)
+		It("should create independent StatefulSets for each CR", func() {
+			stsA := fetchStatefulSet(mcA)
+			stsB := fetchStatefulSet(mcB)
 
-			Expect(depA.Name).NotTo(Equal(depB.Name))
-			Expect(depA.UID).NotTo(Equal(depB.UID))
-			Expect(depA.OwnerReferences[0].UID).To(Equal(mcA.UID))
-			Expect(depB.OwnerReferences[0].UID).To(Equal(mcB.UID))
+			Expect(stsA.Name).NotTo(Equal(stsB.Name))
+			Expect(stsA.UID).NotTo(Equal(stsB.UID))
+			Expect(stsA.OwnerReferences[0].UID).To(Equal(mcA.UID))
+			Expect(stsB.OwnerReferences[0].UID).To(Equal(mcB.UID))
 		})
 
 		It("should create independent Services for each CR", func() {
@@ -1130,20 +1130,20 @@ var _ = Describe("Multi-instance isolation: two CRs in same namespace", func() {
 			_, err := reconcileOnce(mcA)
 			Expect(err).NotTo(HaveOccurred())
 
-			depA := fetchDeployment(mcA)
-			depB := fetchDeployment(mcB)
+			stsA := fetchStatefulSet(mcA)
+			stsB := fetchStatefulSet(mcB)
 
-			Expect(*depA.Spec.Replicas).To(Equal(int32(5)))
-			Expect(*depB.Spec.Replicas).To(Equal(int32(1)))
+			Expect(*stsA.Spec.Replicas).To(Equal(int32(5)))
+			Expect(*stsB.Spec.Replicas).To(Equal(int32(1)))
 		})
 
 		It("should set distinct instance labels on each CR's resources", func() {
-			depA := fetchDeployment(mcA)
-			depB := fetchDeployment(mcB)
+			stsA := fetchStatefulSet(mcA)
+			stsB := fetchStatefulSet(mcB)
 
-			Expect(depA.Labels["app.kubernetes.io/instance"]).To(Equal(mcA.Name))
-			Expect(depB.Labels["app.kubernetes.io/instance"]).To(Equal(mcB.Name))
-			Expect(depA.Labels["app.kubernetes.io/instance"]).NotTo(Equal(depB.Labels["app.kubernetes.io/instance"]))
+			Expect(stsA.Labels["app.kubernetes.io/instance"]).To(Equal(mcA.Name))
+			Expect(stsB.Labels["app.kubernetes.io/instance"]).To(Equal(mcB.Name))
+			Expect(stsA.Labels["app.kubernetes.io/instance"]).NotTo(Equal(stsB.Labels["app.kubernetes.io/instance"]))
 		})
 	})
 
@@ -1200,33 +1200,33 @@ var _ = Describe("Multi-instance isolation: two CRs in same namespace", func() {
 
 		It("should create all five resources independently for each CR", func() {
 			// CR A resources.
-			depA := fetchDeployment(mcA)
+			stsA := fetchStatefulSet(mcA)
 			svcA := fetchService(mcA)
 			pdbA := fetchPDB(mcA)
 			smA := fetchServiceMonitor(mcA)
 			npA := fetchNetworkPolicy(mcA)
 
 			// CR B resources.
-			depB := fetchDeployment(mcB)
+			stsB := fetchStatefulSet(mcB)
 			svcB := fetchService(mcB)
 			pdbB := fetchPDB(mcB)
 			smB := fetchServiceMonitor(mcB)
 			npB := fetchNetworkPolicy(mcB)
 
 			// UIDs must differ.
-			Expect(depA.UID).NotTo(Equal(depB.UID))
+			Expect(stsA.UID).NotTo(Equal(stsB.UID))
 			Expect(svcA.UID).NotTo(Equal(svcB.UID))
 			Expect(pdbA.UID).NotTo(Equal(pdbB.UID))
 			Expect(smA.UID).NotTo(Equal(smB.UID))
 			Expect(npA.UID).NotTo(Equal(npB.UID))
 
 			// Owner references point to correct CRs.
-			Expect(depA.OwnerReferences[0].UID).To(Equal(mcA.UID))
-			Expect(depB.OwnerReferences[0].UID).To(Equal(mcB.UID))
+			Expect(stsA.OwnerReferences[0].UID).To(Equal(mcA.UID))
+			Expect(stsB.OwnerReferences[0].UID).To(Equal(mcB.UID))
 
 			// Spec values differ.
-			Expect(*depA.Spec.Replicas).To(Equal(int32(2)))
-			Expect(*depB.Spec.Replicas).To(Equal(int32(4)))
+			Expect(*stsA.Spec.Replicas).To(Equal(int32(2)))
+			Expect(*stsB.Spec.Replicas).To(Equal(int32(4)))
 			Expect(pdbA.Spec.MinAvailable.IntValue()).To(Equal(1))
 			Expect(pdbB.Spec.MinAvailable.IntValue()).To(Equal(2))
 		})
@@ -1241,8 +1241,8 @@ var _ = Describe("Multi-instance isolation: two CRs in same namespace", func() {
 			Expect(result).To(Equal(ctrl.Result{}))
 
 			// CR B resources should still exist and be unaffected.
-			depB := fetchDeployment(mcB)
-			Expect(*depB.Spec.Replicas).To(Equal(int32(4)))
+			stsB := fetchStatefulSet(mcB)
+			Expect(*stsB.Spec.Replicas).To(Equal(int32(4)))
 			fetchService(mcB)
 			fetchPDB(mcB)
 			fetchServiceMonitor(mcB)
@@ -1256,7 +1256,7 @@ var _ = Describe("Multi-instance isolation: two CRs in same namespace", func() {
 var _ = Describe("Cross-resource consistency: enabling monitoring updates multiple resources", func() {
 
 	Context("when monitoring is enabled on a CR with NetworkPolicy", func() {
-		It("should update Deployment (sidecar), Service (metrics port), and NetworkPolicy (metrics port) in one reconcile", func() {
+		It("should update StatefulSet (sidecar), Service (metrics port), and NetworkPolicy (metrics port) in one reconcile", func() {
 			mc := validMemcached(uniqueName("integ-cross-mon"))
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
@@ -1267,8 +1267,8 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 			Expect(err).NotTo(HaveOccurred())
 
 			// Before monitoring: 1 container, 1 service port, 1 NP port.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
 			svc := fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(1))
 			np := fetchNetworkPolicy(mc)
@@ -1286,10 +1286,10 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Deployment: exporter sidecar added.
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			// StatefulSet: exporter sidecar added.
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 
 			// Service: metrics port added.
 			svc = fetchService(mc)
@@ -1310,7 +1310,7 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 	})
 
 	Context("when monitoring is disabled on a full-featured CR", func() {
-		It("should remove sidecar from Deployment, metrics port from Service and NetworkPolicy in one reconcile", func() {
+		It("should remove sidecar from StatefulSet, metrics port from Service and NetworkPolicy in one reconcile", func() {
 			mc := validMemcached(uniqueName("integ-cross-mon-off"))
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled:        true,
@@ -1325,8 +1325,8 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 			Expect(err).NotTo(HaveOccurred())
 
 			// Before: 2 containers, 2 service ports, 2 NP ports, ServiceMonitor exists.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
 			svc := fetchService(mc)
 			Expect(svc.Spec.Ports).To(HaveLen(2))
 			np := fetchNetworkPolicy(mc)
@@ -1341,10 +1341,10 @@ var _ = Describe("Cross-resource consistency: enabling monitoring updates multip
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Deployment: exporter sidecar removed.
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
-			Expect(dep.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
+			// StatefulSet: exporter sidecar removed.
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
+			Expect(sts.Spec.Template.Spec.Containers[0].Name).To(Equal("memcached"))
 
 			// Service: metrics port removed.
 			svc = fetchService(mc)
@@ -1373,10 +1373,10 @@ var _ = Describe("Full create-update-delete lifecycle", func() {
 		_, err := reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Verify initial state: Deployment + Service only.
-		dep := fetchDeployment(mc)
-		Expect(*dep.Spec.Replicas).To(Equal(int32(1)))
-		Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(1))
+		// Verify initial state: StatefulSet + Service only.
+		sts := fetchStatefulSet(mc)
+		Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
+		Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(1))
 		svc := fetchService(mc)
 		Expect(svc.Spec.Ports).To(HaveLen(1))
 
@@ -1408,12 +1408,12 @@ var _ = Describe("Full create-update-delete lifecycle", func() {
 		_, err = reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Verify updated Deployment.
-		dep = fetchDeployment(mc)
-		Expect(*dep.Spec.Replicas).To(Equal(int32(3)))
-		Expect(dep.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
-		Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-		Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+		// Verify updated StatefulSet.
+		sts = fetchStatefulSet(mc)
+		Expect(*sts.Spec.Replicas).To(Equal(int32(3)))
+		Expect(sts.Spec.Template.Spec.Containers[0].Image).To(Equal("memcached:1.6.29"))
+		Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+		Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 
 		// Verify updated Service.
 		svc = fetchService(mc)
@@ -1435,18 +1435,18 @@ var _ = Describe("Full create-update-delete lifecycle", func() {
 		Expect(mc.Status.ObservedGeneration).To(Equal(gen2))
 
 		// All resources have correct owner references.
-		for _, obj := range []client.Object{dep, svc, pdb, sm, np} {
+		for _, obj := range []client.Object{sts, svc, pdb, sm, np} {
 			expectOwnerRef(obj, mc)
 		}
 
 		// Phase 3: Idempotency — second reconcile is a no-op.
-		depRV := fetchDeployment(mc).ResourceVersion
+		stsRV := fetchStatefulSet(mc).ResourceVersion
 		svcRV := fetchService(mc).ResourceVersion
 
 		_, err = reconcileOnce(mc)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+		Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 		Expect(fetchService(mc).ResourceVersion).To(Equal(svcRV))
 
 		// Phase 4: Delete the CR.

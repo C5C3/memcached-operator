@@ -324,10 +324,10 @@ type MemcachedStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// ServerList contains the Memcached service DNS entries in host:port format
-	// (e.g. "my-cache.default:11211"). The controller populates this list from
-	// the headless service DNS when the cluster is Ready, so clients can consume
-	// it directly for cache-ring construction. (REQ-005, MO-0056)
+	// ServerList holds one "host:port" entry per pod,
+	// "<statefulset>-<i>.<service>.<namespace>.svc:11211", ordered by pod index i.
+	// It follows the StatefulSet's replica count, not pod readiness, and is empty
+	// when the instance has zero replicas.
 	// +optional
 	// +listType=atomic
 	ServerList []string `json:"serverList,omitempty"`

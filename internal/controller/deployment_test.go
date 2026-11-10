@@ -2,7 +2,10 @@
 package controller
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -209,7 +212,7 @@ func int32Ptr(i int32) *int32 { return &i }
 // stringPtr returns a pointer to a string value.
 func stringPtr(s string) *string { return &s }
 
-func TestConstructDeployment_MinimalSpec(t *testing.T) {
+func TestConstructStatefulSet_MinimalSpec(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-cache",
@@ -217,17 +220,17 @@ func TestConstructDeployment_MinimalSpec(t *testing.T) {
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
 	// Replicas defaults to 1.
-	if dep.Spec.Replicas == nil || *dep.Spec.Replicas != 1 {
-		t.Errorf("expected 1 replica, got %v", dep.Spec.Replicas)
+	if sts.Spec.Replicas == nil || *sts.Spec.Replicas != 1 {
+		t.Errorf("expected 1 replica, got %v", sts.Spec.Replicas)
 	}
 
 	// Image defaults to memcached:1.6.
-	containers := dep.Spec.Template.Spec.Containers
+	containers := sts.Spec.Template.Spec.Containers
 	if len(containers) != 1 {
 		t.Fatalf("expected 1 container, got %d", len(containers))
 	}
@@ -266,31 +269,31 @@ func TestConstructDeployment_MinimalSpec(t *testing.T) {
 		t.Error("expected readiness probe")
 	}
 
-	// Strategy is RollingUpdate.
-	if dep.Spec.Strategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
-		t.Errorf("expected RollingUpdate strategy, got %q", dep.Spec.Strategy.Type)
+	// Update strategy is RollingUpdate.
+	if sts.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
+		t.Errorf("expected RollingUpdate update strategy, got %q", sts.Spec.UpdateStrategy.Type)
 	}
 
 	// Labels on selector and pod template.
 	expectedLabels := labelsForMemcached("my-cache")
 	for k, v := range expectedLabels {
-		if dep.Spec.Selector.MatchLabels[k] != v {
-			t.Errorf("selector label %q = %q, want %q", k, dep.Spec.Selector.MatchLabels[k], v)
+		if sts.Spec.Selector.MatchLabels[k] != v {
+			t.Errorf("selector label %q = %q, want %q", k, sts.Spec.Selector.MatchLabels[k], v)
 		}
-		if dep.Spec.Template.Labels[k] != v {
-			t.Errorf("template label %q = %q, want %q", k, dep.Spec.Template.Labels[k], v)
+		if sts.Spec.Template.Labels[k] != v {
+			t.Errorf("template label %q = %q, want %q", k, sts.Spec.Template.Labels[k], v)
 		}
 	}
 
-	// Deployment labels.
+	// StatefulSet labels.
 	for k, v := range expectedLabels {
-		if dep.Labels[k] != v {
-			t.Errorf("deployment label %q = %q, want %q", k, dep.Labels[k], v)
+		if sts.Labels[k] != v {
+			t.Errorf("StatefulSet label %q = %q, want %q", k, sts.Labels[k], v)
 		}
 	}
 }
 
-func TestConstructDeployment_CustomSpec(t *testing.T) {
+func TestConstructStatefulSet_CustomSpec(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "custom-cache",
@@ -317,15 +320,15 @@ func TestConstructDeployment_CustomSpec(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	if *dep.Spec.Replicas != 5 {
-		t.Errorf("expected 5 replicas, got %d", *dep.Spec.Replicas)
+	if *sts.Spec.Replicas != 5 {
+		t.Errorf("expected 5 replicas, got %d", *sts.Spec.Replicas)
 	}
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 	if container.Image != "memcached:1.6.29" {
 		t.Errorf("expected image memcached:1.6.29, got %q", container.Image)
 	}
@@ -352,16 +355,16 @@ func TestConstructDeployment_CustomSpec(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_ContainerPort(t *testing.T) {
+func TestConstructStatefulSet_ContainerPort(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "port-test", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	containers := dep.Spec.Template.Spec.Containers
+	containers := sts.Spec.Template.Spec.Containers
 	if len(containers) != 1 {
 		t.Fatalf("expected 1 container, got %d", len(containers))
 	}
@@ -382,16 +385,16 @@ func TestConstructDeployment_ContainerPort(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_Probes(t *testing.T) {
+func TestConstructStatefulSet_Probes(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "probe-test", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	// Liveness probe.
 	lp := container.LivenessProbe
@@ -432,7 +435,7 @@ func TestConstructDeployment_Probes(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_Resources(t *testing.T) {
+func TestConstructStatefulSet_Resources(t *testing.T) {
 	tests := []struct {
 		name      string
 		resources *corev1.ResourceRequirements
@@ -467,11 +470,11 @@ func TestConstructDeployment_Resources(t *testing.T) {
 					Resources: tt.resources,
 				},
 			}
-			dep := &appsv1.Deployment{}
+			sts := &appsv1.StatefulSet{}
 
-			constructDeployment(mc, dep, "", "")
+			constructStatefulSet(mc, sts, "", "")
 
-			container := dep.Spec.Template.Spec.Containers[0]
+			container := sts.Spec.Template.Spec.Containers[0]
 			if tt.wantEmpty {
 				if len(container.Resources.Requests) != 0 || len(container.Resources.Limits) != 0 {
 					t.Errorf("expected empty resources, got requests=%v limits=%v",
@@ -654,7 +657,7 @@ func TestBuildAntiAffinity_InstanceScopedLabels(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_AntiAffinity(t *testing.T) {
+func TestConstructStatefulSet_AntiAffinity(t *testing.T) {
 	tests := []struct {
 		name  string
 		ha    *memcachedv1beta1.HighAvailabilitySpec
@@ -710,11 +713,11 @@ func TestConstructDeployment_AntiAffinity(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "aa-test", Namespace: "default"},
 				Spec:       memcachedv1beta1.MemcachedSpec{HighAvailability: tt.ha},
 			}
-			dep := &appsv1.Deployment{}
+			sts := &appsv1.StatefulSet{}
 
-			constructDeployment(mc, dep, "", "")
+			constructStatefulSet(mc, sts, "", "")
 
-			tt.check(t, dep.Spec.Template.Spec.Affinity)
+			tt.check(t, sts.Spec.Template.Spec.Affinity)
 		})
 	}
 }
@@ -828,7 +831,7 @@ func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
+func TestConstructStatefulSet_TopologySpreadConstraints(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tsc-test", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -837,11 +840,11 @@ func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+	tsc := sts.Spec.Template.Spec.TopologySpreadConstraints
 	if len(tsc) != 1 {
 		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
 	}
@@ -853,21 +856,21 @@ func TestConstructDeployment_TopologySpreadConstraints(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_TopologySpreadConstraints_NilHA(t *testing.T) {
+func TestConstructStatefulSet_TopologySpreadConstraints_NilHA(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tsc-nil-test", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	if dep.Spec.Template.Spec.TopologySpreadConstraints != nil {
-		t.Errorf("expected nil TopologySpreadConstraints, got %v", dep.Spec.Template.Spec.TopologySpreadConstraints)
+	if sts.Spec.Template.Spec.TopologySpreadConstraints != nil {
+		t.Errorf("expected nil TopologySpreadConstraints, got %v", sts.Spec.Template.Spec.TopologySpreadConstraints)
 	}
 }
 
-func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
+func TestConstructStatefulSet_TopologySpreadAndAntiAffinity(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "both-test", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -877,20 +880,20 @@ func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
 	// Verify anti-affinity is set.
-	if dep.Spec.Template.Spec.Affinity == nil || dep.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
+	if sts.Spec.Template.Spec.Affinity == nil || sts.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
 		t.Fatal("expected Affinity with PodAntiAffinity to be set")
 	}
-	if len(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
+	if len(sts.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
 		t.Error("expected 1 preferred anti-affinity term")
 	}
 
 	// Verify topology spread constraints are set.
-	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+	tsc := sts.Spec.Template.Spec.TopologySpreadConstraints
 	if len(tsc) != 1 {
 		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
 	}
@@ -899,32 +902,35 @@ func TestConstructDeployment_TopologySpreadAndAntiAffinity(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_RollingUpdateStrategy(t *testing.T) {
+func TestConstructStatefulSet_RollingUpdateStrategy(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "strategy-test", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	strategy := dep.Spec.Strategy
-	if strategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
-		t.Errorf("strategy type = %q, want RollingUpdate", strategy.Type)
+	strategy := sts.Spec.UpdateStrategy
+	if strategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
+		t.Errorf("updateStrategy type = %q, want RollingUpdate", strategy.Type)
 	}
 
-	if strategy.RollingUpdate == nil {
-		t.Fatal("expected rollingUpdate config")
+	// A StatefulSet replaces one pod at a time; the operator sets no partition or maxUnavailable.
+	if strategy.RollingUpdate != nil {
+		t.Errorf("expected no rollingUpdate parameters, got %+v", *strategy.RollingUpdate)
 	}
 
-	wantMaxSurge := intstr.FromInt32(1)
-	if *strategy.RollingUpdate.MaxSurge != wantMaxSurge {
-		t.Errorf("maxSurge = %v, want %v", *strategy.RollingUpdate.MaxSurge, wantMaxSurge)
+	if sts.Spec.PodManagementPolicy != appsv1.ParallelPodManagement {
+		t.Errorf("podManagementPolicy = %q, want %q", sts.Spec.PodManagementPolicy, appsv1.ParallelPodManagement)
 	}
 
-	wantMaxUnavailable := intstr.FromInt32(0)
-	if *strategy.RollingUpdate.MaxUnavailable != wantMaxUnavailable {
-		t.Errorf("maxUnavailable = %v, want %v", *strategy.RollingUpdate.MaxUnavailable, wantMaxUnavailable)
+	if sts.Spec.ServiceName != mc.Name {
+		t.Errorf("serviceName = %q, want %q", sts.Spec.ServiceName, mc.Name)
+	}
+
+	if len(sts.Spec.VolumeClaimTemplates) != 0 {
+		t.Errorf("expected no volumeClaimTemplates, got %d", len(sts.Spec.VolumeClaimTemplates))
 	}
 }
 
@@ -1086,7 +1092,7 @@ func TestBuildGracefulShutdown_NilHA(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
+func TestConstructStatefulSet_GracefulShutdownEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-on", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -1099,11 +1105,11 @@ func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 	if container.Lifecycle == nil {
 		t.Fatal("expected Lifecycle on container")
 	}
@@ -1120,7 +1126,7 @@ func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
 		}
 	}
 
-	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	tgps := sts.Spec.Template.Spec.TerminationGracePeriodSeconds
 	if tgps == nil {
 		t.Fatal("expected TerminationGracePeriodSeconds on pod spec")
 		return
@@ -1130,25 +1136,25 @@ func TestConstructDeployment_GracefulShutdownEnabled(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_GracefulShutdownDisabled(t *testing.T) {
+func TestConstructStatefulSet_GracefulShutdownDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-off", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 	if container.Lifecycle != nil {
 		t.Errorf("expected nil Lifecycle, got %+v", container.Lifecycle)
 	}
-	if dep.Spec.Template.Spec.TerminationGracePeriodSeconds != nil {
-		t.Errorf("expected nil TerminationGracePeriodSeconds, got %v", dep.Spec.Template.Spec.TerminationGracePeriodSeconds)
+	if sts.Spec.Template.Spec.TerminationGracePeriodSeconds != nil {
+		t.Errorf("expected nil TerminationGracePeriodSeconds, got %v", sts.Spec.Template.Spec.TerminationGracePeriodSeconds)
 	}
 }
 
-func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
+func TestConstructStatefulSet_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-all", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -1163,25 +1169,25 @@ func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
 	// Verify anti-affinity.
-	if dep.Spec.Template.Spec.Affinity == nil || dep.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
+	if sts.Spec.Template.Spec.Affinity == nil || sts.Spec.Template.Spec.Affinity.PodAntiAffinity == nil {
 		t.Fatal("expected Affinity with PodAntiAffinity")
 	}
-	if len(dep.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
+	if len(sts.Spec.Template.Spec.Affinity.PodAntiAffinity.PreferredDuringSchedulingIgnoredDuringExecution) != 1 {
 		t.Error("expected 1 preferred anti-affinity term")
 	}
 
 	// Verify topology spread constraints.
-	if len(dep.Spec.Template.Spec.TopologySpreadConstraints) != 1 {
-		t.Fatalf("expected 1 topology spread constraint, got %d", len(dep.Spec.Template.Spec.TopologySpreadConstraints))
+	if len(sts.Spec.Template.Spec.TopologySpreadConstraints) != 1 {
+		t.Fatalf("expected 1 topology spread constraint, got %d", len(sts.Spec.Template.Spec.TopologySpreadConstraints))
 	}
 
 	// Verify graceful shutdown.
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 	if container.Lifecycle == nil || container.Lifecycle.PreStop == nil {
 		t.Fatal("expected Lifecycle with PreStop")
 	}
@@ -1191,8 +1197,8 @@ func TestConstructDeployment_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
 			t.Errorf("command[%d] = %q, want %q", i, container.Lifecycle.PreStop.Exec.Command[i], cmd)
 		}
 	}
-	if dep.Spec.Template.Spec.TerminationGracePeriodSeconds == nil || *dep.Spec.Template.Spec.TerminationGracePeriodSeconds != 30 {
-		t.Errorf("expected TerminationGracePeriodSeconds=30, got %v", dep.Spec.Template.Spec.TerminationGracePeriodSeconds)
+	if sts.Spec.Template.Spec.TerminationGracePeriodSeconds == nil || *sts.Spec.Template.Spec.TerminationGracePeriodSeconds != 30 {
+		t.Errorf("expected TerminationGracePeriodSeconds=30, got %v", sts.Spec.Template.Spec.TerminationGracePeriodSeconds)
 	}
 }
 
@@ -1339,7 +1345,7 @@ func TestBuildExporterContainer_NilResources(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
+func TestConstructStatefulSet_MonitoringEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mon-on", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -1348,11 +1354,11 @@ func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	containers := dep.Spec.Template.Spec.Containers
+	containers := sts.Spec.Template.Spec.Containers
 	if len(containers) != 2 {
 		t.Fatalf("expected 2 containers, got %d", len(containers))
 	}
@@ -1364,16 +1370,16 @@ func TestConstructDeployment_MonitoringEnabled(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_MonitoringDisabled(t *testing.T) {
+func TestConstructStatefulSet_MonitoringDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	containers := dep.Spec.Template.Spec.Containers
+	containers := sts.Spec.Template.Spec.Containers
 	if len(containers) != 1 {
 		t.Fatalf("expected 1 container, got %d", len(containers))
 	}
@@ -1484,7 +1490,7 @@ func TestBuildContainerSecurityContext_ReturnsNil(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_SecurityContexts(t *testing.T) {
+func TestConstructStatefulSet_SecurityContexts(t *testing.T) {
 	runAsNonRoot := true
 	fsGroup := int64(1000)
 	runAsUser := int64(1000)
@@ -1504,12 +1510,12 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
 	// Pod security context.
-	podSC := dep.Spec.Template.Spec.SecurityContext
+	podSC := sts.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
 		return
@@ -1522,7 +1528,7 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 	}
 
 	// Container security context on memcached container.
-	containerSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
+	containerSC := sts.Spec.Template.Spec.Containers[0].SecurityContext
 	if containerSC == nil {
 		t.Fatal("expected non-nil container SecurityContext")
 		return
@@ -1535,24 +1541,24 @@ func TestConstructDeployment_SecurityContexts(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_SecurityContextsNil(t *testing.T) {
+func TestConstructStatefulSet_SecurityContextsNil(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sec-nil", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	if dep.Spec.Template.Spec.SecurityContext != nil {
-		t.Errorf("expected nil pod SecurityContext, got %+v", dep.Spec.Template.Spec.SecurityContext)
+	if sts.Spec.Template.Spec.SecurityContext != nil {
+		t.Errorf("expected nil pod SecurityContext, got %+v", sts.Spec.Template.Spec.SecurityContext)
 	}
-	if dep.Spec.Template.Spec.Containers[0].SecurityContext != nil {
-		t.Errorf("expected nil container SecurityContext, got %+v", dep.Spec.Template.Spec.Containers[0].SecurityContext)
+	if sts.Spec.Template.Spec.Containers[0].SecurityContext != nil {
+		t.Errorf("expected nil container SecurityContext, got %+v", sts.Spec.Template.Spec.Containers[0].SecurityContext)
 	}
 }
 
-func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
+func TestConstructStatefulSet_SecurityContextsOnExporterSidecar(t *testing.T) {
 	runAsUser := int64(1000)
 	readOnly := true
 	mc := &memcachedv1beta1.Memcached{
@@ -1569,16 +1575,16 @@ func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	if len(dep.Spec.Template.Spec.Containers) != 2 {
-		t.Fatalf("expected 2 containers, got %d", len(dep.Spec.Template.Spec.Containers))
+	if len(sts.Spec.Template.Spec.Containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(sts.Spec.Template.Spec.Containers))
 	}
 
 	// Memcached container has security context.
-	mcSC := dep.Spec.Template.Spec.Containers[0].SecurityContext
+	mcSC := sts.Spec.Template.Spec.Containers[0].SecurityContext
 	if mcSC == nil {
 		t.Fatal("expected non-nil SecurityContext on memcached container")
 		return
@@ -1588,7 +1594,7 @@ func TestConstructDeployment_SecurityContextsOnExporterSidecar(t *testing.T) {
 	}
 
 	// Exporter container has the same security context.
-	expSC := dep.Spec.Template.Spec.Containers[1].SecurityContext
+	expSC := sts.Spec.Template.Spec.Containers[1].SecurityContext
 	if expSC == nil {
 		t.Fatal("expected non-nil SecurityContext on exporter container")
 		return
@@ -1822,7 +1828,7 @@ func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_SASLEnabled(t *testing.T) {
+func TestConstructStatefulSet_SASLEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-dep", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -1836,12 +1842,12 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
 	// Verify -Y flag in args.
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 	foundY := false
 	for i, arg := range container.Args {
 		if arg == "-Y" {
@@ -1875,7 +1881,7 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 	}
 
 	// Verify volume on pod spec.
-	volumes := dep.Spec.Template.Spec.Volumes
+	volumes := sts.Spec.Template.Spec.Volumes
 	if len(volumes) != 1 {
 		t.Fatalf("expected 1 volume, got %d", len(volumes))
 	}
@@ -1897,16 +1903,16 @@ func TestConstructDeployment_SASLEnabled(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_SASLDisabled(t *testing.T) {
+func TestConstructStatefulSet_SASLDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-off", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	// No -Y flag.
 	for _, arg := range container.Args {
@@ -1921,12 +1927,12 @@ func TestConstructDeployment_SASLDisabled(t *testing.T) {
 	}
 
 	// No volumes.
-	if len(dep.Spec.Template.Spec.Volumes) != 0 {
-		t.Errorf("expected 0 volumes, got %d: %v", len(dep.Spec.Template.Spec.Volumes), dep.Spec.Template.Spec.Volumes)
+	if len(sts.Spec.Template.Spec.Volumes) != 0 {
+		t.Errorf("expected 0 volumes, got %d: %v", len(sts.Spec.Template.Spec.Volumes), sts.Spec.Template.Spec.Volumes)
 	}
 }
 
-func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
+func TestConstructStatefulSet_SASLWithMonitoring(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mon", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -1943,17 +1949,17 @@ func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
 	// 2 containers: memcached + exporter.
-	if len(dep.Spec.Template.Spec.Containers) != 2 {
-		t.Fatalf("expected 2 containers, got %d", len(dep.Spec.Template.Spec.Containers))
+	if len(sts.Spec.Template.Spec.Containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(sts.Spec.Template.Spec.Containers))
 	}
 
 	// Memcached container has SASL volume mount.
-	mcContainer := dep.Spec.Template.Spec.Containers[0]
+	mcContainer := sts.Spec.Template.Spec.Containers[0]
 	if len(mcContainer.VolumeMounts) != 1 {
 		t.Fatalf("expected 1 volumeMount on memcached, got %d", len(mcContainer.VolumeMounts))
 	}
@@ -1962,15 +1968,15 @@ func TestConstructDeployment_SASLWithMonitoring(t *testing.T) {
 	}
 
 	// Pod has SASL volume.
-	if len(dep.Spec.Template.Spec.Volumes) != 1 {
-		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	if len(sts.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(sts.Spec.Template.Spec.Volumes))
 	}
-	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-creds" {
-		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-creds")
+	if sts.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-creds" {
+		t.Errorf("volume secretName = %q, want %q", sts.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-creds")
 	}
 }
 
-func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
+func TestConstructStatefulSet_SASLWithGracefulShutdown(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "sasl-gs", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -1991,11 +1997,11 @@ func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	// SASL: container has volume mount.
 	if len(container.VolumeMounts) != 1 {
@@ -2035,7 +2041,7 @@ func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
 	}
 
 	// Graceful shutdown: pod has TerminationGracePeriodSeconds.
-	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	tgps := sts.Spec.Template.Spec.TerminationGracePeriodSeconds
 	if tgps == nil {
 		t.Fatal("expected TerminationGracePeriodSeconds on pod spec")
 		return
@@ -2045,15 +2051,15 @@ func TestConstructDeployment_SASLWithGracefulShutdown(t *testing.T) {
 	}
 
 	// SASL: pod has volume.
-	if len(dep.Spec.Template.Spec.Volumes) != 1 {
-		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	if len(sts.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(sts.Spec.Template.Spec.Volumes))
 	}
-	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != testSASLSecretName {
-		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, testSASLSecretName)
+	if sts.Spec.Template.Spec.Volumes[0].Secret.SecretName != testSASLSecretName {
+		t.Errorf("volume secretName = %q, want %q", sts.Spec.Template.Spec.Volumes[0].Secret.SecretName, testSASLSecretName)
 	}
 }
 
-func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
+func TestConstructStatefulSet_SASLWithSecurityContexts(t *testing.T) {
 	runAsNonRoot := true
 	runAsUser := int64(1000)
 	readOnly := true
@@ -2077,11 +2083,11 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	// SASL: container has volume mount.
 	if len(container.VolumeMounts) != 1 {
@@ -2104,7 +2110,7 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	}
 
 	// Pod security context.
-	podSC := dep.Spec.Template.Spec.SecurityContext
+	podSC := sts.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
 		return
@@ -2127,11 +2133,11 @@ func TestConstructDeployment_SASLWithSecurityContexts(t *testing.T) {
 	}
 
 	// SASL: pod has volume.
-	if len(dep.Spec.Template.Spec.Volumes) != 1 {
-		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	if len(sts.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(sts.Spec.Template.Spec.Volumes))
 	}
-	if dep.Spec.Template.Spec.Volumes[0].Secret.SecretName != testSASLSecretName {
-		t.Errorf("volume secretName = %q, want %q", dep.Spec.Template.Spec.Volumes[0].Secret.SecretName, testSASLSecretName)
+	if sts.Spec.Template.Spec.Volumes[0].Secret.SecretName != testSASLSecretName {
+		t.Errorf("volume secretName = %q, want %q", sts.Spec.Template.Spec.Volumes[0].Secret.SecretName, testSASLSecretName)
 	}
 }
 
@@ -2461,7 +2467,7 @@ func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_TLSEnabled(t *testing.T) {
+func TestConstructStatefulSet_TLSEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-dep", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -2475,11 +2481,11 @@ func TestConstructDeployment_TLSEnabled(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	// Verify -Z flag in args.
 	foundZ := false
@@ -2533,7 +2539,7 @@ func TestConstructDeployment_TLSEnabled(t *testing.T) {
 	}
 
 	// Verify volume on pod spec.
-	volumes := dep.Spec.Template.Spec.Volumes
+	volumes := sts.Spec.Template.Spec.Volumes
 	if len(volumes) != 1 {
 		t.Fatalf("expected 1 volume, got %d", len(volumes))
 	}
@@ -2552,16 +2558,16 @@ func TestConstructDeployment_TLSEnabled(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_TLSDisabled(t *testing.T) {
+func TestConstructStatefulSet_TLSDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: "default"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	// No -Z flag.
 	for _, arg := range container.Args {
@@ -2576,8 +2582,8 @@ func TestConstructDeployment_TLSDisabled(t *testing.T) {
 	}
 
 	// No volumes.
-	if len(dep.Spec.Template.Spec.Volumes) != 0 {
-		t.Errorf("expected 0 volumes, got %d: %v", len(dep.Spec.Template.Spec.Volumes), dep.Spec.Template.Spec.Volumes)
+	if len(sts.Spec.Template.Spec.Volumes) != 0 {
+		t.Errorf("expected 0 volumes, got %d: %v", len(sts.Spec.Template.Spec.Volumes), sts.Spec.Template.Spec.Volumes)
 	}
 
 	// Only one port (11211).
@@ -2589,7 +2595,7 @@ func TestConstructDeployment_TLSDisabled(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_TLSWithSASL(t *testing.T) {
+func TestConstructStatefulSet_TLSWithSASL(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-sasl", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -2609,11 +2615,11 @@ func TestConstructDeployment_TLSWithSASL(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	// Both -Y and -Z flags in args.
 	foundY := false
@@ -2652,7 +2658,7 @@ func TestConstructDeployment_TLSWithSASL(t *testing.T) {
 	}
 
 	// Both volumes.
-	volumes := dep.Spec.Template.Spec.Volumes
+	volumes := sts.Spec.Template.Spec.Volumes
 	if len(volumes) != 2 {
 		t.Fatalf("expected 2 volumes, got %d", len(volumes))
 	}
@@ -2675,7 +2681,7 @@ func TestConstructDeployment_TLSWithSASL(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_TLSPort(t *testing.T) {
+func TestConstructStatefulSet_TLSPort(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{Name: "tls-port", Namespace: "default"},
 		Spec: memcachedv1beta1.MemcachedSpec{
@@ -2689,11 +2695,11 @@ func TestConstructDeployment_TLSPort(t *testing.T) {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	container := dep.Spec.Template.Spec.Containers[0]
+	container := sts.Spec.Template.Spec.Containers[0]
 
 	if len(container.Ports) != 2 {
 		t.Fatalf("expected 2 ports, got %d", len(container.Ports))
@@ -2722,7 +2728,7 @@ func TestConstructDeployment_TLSPort(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) {
+func TestConstructStatefulSet_TLSWithMonitoringAndSecurityContexts(t *testing.T) {
 	runAsNonRoot := true
 	readOnly := true
 	mc := &memcachedv1beta1.Memcached{
@@ -2747,16 +2753,16 @@ func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) 
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
 	// 2 containers: memcached + exporter.
-	if len(dep.Spec.Template.Spec.Containers) != 2 {
-		t.Fatalf("expected 2 containers, got %d", len(dep.Spec.Template.Spec.Containers))
+	if len(sts.Spec.Template.Spec.Containers) != 2 {
+		t.Fatalf("expected 2 containers, got %d", len(sts.Spec.Template.Spec.Containers))
 	}
 
-	mcContainer := dep.Spec.Template.Spec.Containers[0]
+	mcContainer := sts.Spec.Template.Spec.Containers[0]
 
 	// TLS: container has volume mount.
 	if len(mcContainer.VolumeMounts) != 1 {
@@ -2772,12 +2778,12 @@ func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) 
 	}
 
 	// Pod has TLS volume.
-	if len(dep.Spec.Template.Spec.Volumes) != 1 {
-		t.Fatalf("expected 1 volume, got %d", len(dep.Spec.Template.Spec.Volumes))
+	if len(sts.Spec.Template.Spec.Volumes) != 1 {
+		t.Fatalf("expected 1 volume, got %d", len(sts.Spec.Template.Spec.Volumes))
 	}
 
 	// Pod security context applied.
-	podSC := dep.Spec.Template.Spec.SecurityContext
+	podSC := sts.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
 		return
@@ -2793,15 +2799,15 @@ func TestConstructDeployment_TLSWithMonitoringAndSecurityContexts(t *testing.T) 
 	if mcContainer.SecurityContext.ReadOnlyRootFilesystem == nil || !*mcContainer.SecurityContext.ReadOnlyRootFilesystem {
 		t.Error("expected ReadOnlyRootFilesystem=true on memcached")
 	}
-	exporterContainer := dep.Spec.Template.Spec.Containers[1]
+	exporterContainer := sts.Spec.Template.Spec.Containers[1]
 	if exporterContainer.SecurityContext == nil {
 		t.Fatal("expected non-nil container SecurityContext on exporter")
 	}
 }
 
-// kitchenSinkDeployment constructs a Deployment from a Memcached CR with ALL features enabled.
-// Used by TestConstructDeployment_KitchenSink_* subtests.
-func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
+// kitchenSinkStatefulSet constructs a StatefulSet from a Memcached CR with ALL features enabled.
+// Used by TestConstructStatefulSet_KitchenSink_* subtests.
+func kitchenSinkStatefulSet(t *testing.T) *appsv1.StatefulSet {
 	t.Helper()
 	runAsNonRoot := true
 	runAsUser := int64(1000)
@@ -2888,19 +2894,19 @@ func kitchenSinkDeployment(t *testing.T) *appsv1.Deployment {
 			},
 		},
 	}
-	dep := &appsv1.Deployment{}
-	constructDeployment(mc, dep, "", "")
-	return dep
+	sts := &appsv1.StatefulSet{}
+	constructStatefulSet(mc, sts, "", "")
+	return sts
 }
 
-func TestConstructDeployment_KitchenSink_Containers(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
+func TestConstructStatefulSet_KitchenSink_Containers(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
 
-	if dep.Spec.Replicas == nil || *dep.Spec.Replicas != 3 {
-		t.Errorf("expected 3 replicas, got %v", dep.Spec.Replicas)
+	if sts.Spec.Replicas == nil || *sts.Spec.Replicas != 3 {
+		t.Errorf("expected 3 replicas, got %v", sts.Spec.Replicas)
 	}
 
-	containers := dep.Spec.Template.Spec.Containers
+	containers := sts.Spec.Template.Spec.Containers
 	if len(containers) != 2 {
 		t.Fatalf("expected 2 containers (memcached + exporter), got %d", len(containers))
 	}
@@ -2928,9 +2934,9 @@ func TestConstructDeployment_KitchenSink_Containers(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_KitchenSink_Args(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
-	mc := dep.Spec.Template.Spec.Containers[0]
+func TestConstructStatefulSet_KitchenSink_Args(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
+	mc := sts.Spec.Template.Spec.Containers[0]
 
 	expectedArgs := []string{
 		"-m", "256", "-c", "2048", "-t", "8", "-I", "2m",
@@ -2953,10 +2959,10 @@ func TestConstructDeployment_KitchenSink_Args(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_KitchenSink_Resources(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
-	mc := dep.Spec.Template.Spec.Containers[0]
-	exp := dep.Spec.Template.Spec.Containers[1]
+func TestConstructStatefulSet_KitchenSink_Resources(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
+	mc := sts.Spec.Template.Spec.Containers[0]
+	exp := sts.Spec.Template.Spec.Containers[1]
 
 	// Memcached container resources.
 	if cpuReq := mc.Resources.Requests[corev1.ResourceCPU]; cpuReq.String() != "250m" {
@@ -2987,10 +2993,10 @@ func TestConstructDeployment_KitchenSink_Resources(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_KitchenSink_Ports(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
-	mc := dep.Spec.Template.Spec.Containers[0]
-	exp := dep.Spec.Template.Spec.Containers[1]
+func TestConstructStatefulSet_KitchenSink_Ports(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
+	mc := sts.Spec.Template.Spec.Containers[0]
+	exp := sts.Spec.Template.Spec.Containers[1]
 
 	if len(mc.Ports) != 2 {
 		t.Fatalf("expected 2 memcached ports, got %d", len(mc.Ports))
@@ -3010,13 +3016,13 @@ func TestConstructDeployment_KitchenSink_Ports(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_KitchenSink_SecurityContexts(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
-	mc := dep.Spec.Template.Spec.Containers[0]
-	exp := dep.Spec.Template.Spec.Containers[1]
+func TestConstructStatefulSet_KitchenSink_SecurityContexts(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
+	mc := sts.Spec.Template.Spec.Containers[0]
+	exp := sts.Spec.Template.Spec.Containers[1]
 
 	// Pod-level security context.
-	podSC := dep.Spec.Template.Spec.SecurityContext
+	podSC := sts.Spec.Template.Spec.SecurityContext
 	if podSC == nil {
 		t.Fatal("expected non-nil pod SecurityContext")
 		return
@@ -3055,9 +3061,9 @@ func TestConstructDeployment_KitchenSink_SecurityContexts(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_KitchenSink_HA(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
-	mc := dep.Spec.Template.Spec.Containers[0]
+func TestConstructStatefulSet_KitchenSink_HA(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
+	mc := sts.Spec.Template.Spec.Containers[0]
 
 	// Graceful shutdown.
 	if mc.Lifecycle == nil || mc.Lifecycle.PreStop == nil || mc.Lifecycle.PreStop.Exec == nil {
@@ -3069,13 +3075,13 @@ func TestConstructDeployment_KitchenSink_HA(t *testing.T) {
 			t.Errorf("preStop command[%d] = %q, want %q", i, mc.Lifecycle.PreStop.Exec.Command[i], cmd)
 		}
 	}
-	tgps := dep.Spec.Template.Spec.TerminationGracePeriodSeconds
+	tgps := sts.Spec.Template.Spec.TerminationGracePeriodSeconds
 	if tgps == nil || *tgps != 45 {
 		t.Errorf("TerminationGracePeriodSeconds = %v, want 45", tgps)
 	}
 
 	// Anti-affinity.
-	affinity := dep.Spec.Template.Spec.Affinity
+	affinity := sts.Spec.Template.Spec.Affinity
 	if affinity == nil || affinity.PodAntiAffinity == nil {
 		t.Fatal("expected non-nil Affinity with PodAntiAffinity")
 	}
@@ -3091,7 +3097,7 @@ func TestConstructDeployment_KitchenSink_HA(t *testing.T) {
 	}
 
 	// Topology spread.
-	tsc := dep.Spec.Template.Spec.TopologySpreadConstraints
+	tsc := sts.Spec.Template.Spec.TopologySpreadConstraints
 	if len(tsc) != 1 {
 		t.Fatalf("expected 1 topology spread constraint, got %d", len(tsc))
 	}
@@ -3103,9 +3109,9 @@ func TestConstructDeployment_KitchenSink_HA(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_KitchenSink_Volumes(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
-	mc := dep.Spec.Template.Spec.Containers[0]
+func TestConstructStatefulSet_KitchenSink_Volumes(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
+	mc := sts.Spec.Template.Spec.Containers[0]
 
 	// Volume mounts.
 	if len(mc.VolumeMounts) != 2 {
@@ -3126,7 +3132,7 @@ func TestConstructDeployment_KitchenSink_Volumes(t *testing.T) {
 	}
 
 	// Volumes.
-	volumes := dep.Spec.Template.Spec.Volumes
+	volumes := sts.Spec.Template.Spec.Volumes
 	if len(volumes) != 2 {
 		t.Fatalf("expected 2 volumes (SASL + TLS), got %d", len(volumes))
 	}
@@ -3147,41 +3153,42 @@ func TestConstructDeployment_KitchenSink_Volumes(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_KitchenSink_StrategyAndLabels(t *testing.T) {
-	dep := kitchenSinkDeployment(t)
+func TestConstructStatefulSet_KitchenSink_StrategyAndLabels(t *testing.T) {
+	sts := kitchenSinkStatefulSet(t)
 
-	// Rolling update strategy.
-	if dep.Spec.Strategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
-		t.Errorf("strategy type = %q, want RollingUpdate", dep.Spec.Strategy.Type)
+	// Rolling update strategy, parallel pod management, governing Service, no volume claims.
+	if sts.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
+		t.Errorf("updateStrategy type = %q, want RollingUpdate", sts.Spec.UpdateStrategy.Type)
 	}
-	if dep.Spec.Strategy.RollingUpdate == nil {
-		t.Fatal("expected non-nil RollingUpdate config")
+	if sts.Spec.UpdateStrategy.RollingUpdate != nil {
+		t.Errorf("expected no rollingUpdate parameters, got %+v", *sts.Spec.UpdateStrategy.RollingUpdate)
 	}
-	wantMaxSurge := intstr.FromInt32(1)
-	if *dep.Spec.Strategy.RollingUpdate.MaxSurge != wantMaxSurge {
-		t.Errorf("maxSurge = %v, want %v", *dep.Spec.Strategy.RollingUpdate.MaxSurge, wantMaxSurge)
+	if sts.Spec.PodManagementPolicy != appsv1.ParallelPodManagement {
+		t.Errorf("podManagementPolicy = %q, want %q", sts.Spec.PodManagementPolicy, appsv1.ParallelPodManagement)
 	}
-	wantMaxUnavailable := intstr.FromInt32(0)
-	if *dep.Spec.Strategy.RollingUpdate.MaxUnavailable != wantMaxUnavailable {
-		t.Errorf("maxUnavailable = %v, want %v", *dep.Spec.Strategy.RollingUpdate.MaxUnavailable, wantMaxUnavailable)
+	if sts.Spec.ServiceName != "kitchen-sink" {
+		t.Errorf("serviceName = %q, want %q", sts.Spec.ServiceName, "kitchen-sink")
+	}
+	if len(sts.Spec.VolumeClaimTemplates) != 0 {
+		t.Errorf("expected no volumeClaimTemplates, got %d", len(sts.Spec.VolumeClaimTemplates))
 	}
 
 	// Labels.
 	expectedLabels := labelsForMemcached("kitchen-sink")
 	for k, v := range expectedLabels {
-		if dep.Labels[k] != v {
-			t.Errorf("deployment label %q = %q, want %q", k, dep.Labels[k], v)
+		if sts.Labels[k] != v {
+			t.Errorf("StatefulSet label %q = %q, want %q", k, sts.Labels[k], v)
 		}
-		if dep.Spec.Selector.MatchLabels[k] != v {
-			t.Errorf("selector label %q = %q, want %q", k, dep.Spec.Selector.MatchLabels[k], v)
+		if sts.Spec.Selector.MatchLabels[k] != v {
+			t.Errorf("selector label %q = %q, want %q", k, sts.Spec.Selector.MatchLabels[k], v)
 		}
-		if dep.Spec.Template.Labels[k] != v {
-			t.Errorf("template label %q = %q, want %q", k, dep.Spec.Template.Labels[k], v)
+		if sts.Spec.Template.Labels[k] != v {
+			t.Errorf("template label %q = %q, want %q", k, sts.Spec.Template.Labels[k], v)
 		}
 	}
 }
 
-func TestConstructDeployment_ZeroReplicas(t *testing.T) {
+func TestConstructStatefulSet_ZeroReplicas(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "zero-replicas",
@@ -3191,30 +3198,30 @@ func TestConstructDeployment_ZeroReplicas(t *testing.T) {
 			Replicas: int32Ptr(0),
 		},
 	}
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
-	constructDeployment(mc, dep, "", "")
+	constructStatefulSet(mc, sts, "", "")
 
-	if dep.Spec.Replicas == nil {
+	if sts.Spec.Replicas == nil {
 		t.Fatal("expected non-nil Replicas")
 	}
-	if *dep.Spec.Replicas != 0 {
-		t.Errorf("expected 0 replicas, got %d", *dep.Spec.Replicas)
+	if *sts.Spec.Replicas != 0 {
+		t.Errorf("expected 0 replicas, got %d", *sts.Spec.Replicas)
 	}
 
-	// Verify the rest of the deployment is still well-formed.
-	if len(dep.Spec.Template.Spec.Containers) != 1 {
-		t.Fatalf("expected 1 container, got %d", len(dep.Spec.Template.Spec.Containers))
+	// Verify the rest of the StatefulSet is still well-formed.
+	if len(sts.Spec.Template.Spec.Containers) != 1 {
+		t.Fatalf("expected 1 container, got %d", len(sts.Spec.Template.Spec.Containers))
 	}
-	if dep.Spec.Template.Spec.Containers[0].Image != testDefaultImage {
-		t.Errorf("expected default image memcached:1.6, got %q", dep.Spec.Template.Spec.Containers[0].Image)
+	if sts.Spec.Template.Spec.Containers[0].Image != testDefaultImage {
+		t.Errorf("expected default image memcached:1.6, got %q", sts.Spec.Template.Spec.Containers[0].Image)
 	}
-	if dep.Spec.Strategy.Type != appsv1.RollingUpdateDeploymentStrategyType {
-		t.Errorf("expected RollingUpdate strategy, got %q", dep.Spec.Strategy.Type)
+	if sts.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
+		t.Errorf("expected RollingUpdate update strategy, got %q", sts.Spec.UpdateStrategy.Type)
 	}
 }
 
-func TestConstructDeployment_Idempotent(t *testing.T) {
+func TestConstructStatefulSet_Idempotent(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "idempotent-test",
@@ -3266,22 +3273,22 @@ func TestConstructDeployment_Idempotent(t *testing.T) {
 		},
 	}
 
-	dep := &appsv1.Deployment{}
+	sts := &appsv1.StatefulSet{}
 
 	// First call.
-	constructDeployment(mc, dep, "", "")
-	firstSpec := *dep.Spec.DeepCopy()
+	constructStatefulSet(mc, sts, "", "")
+	firstSpec := *sts.Spec.DeepCopy()
 
-	// Second call on the same Deployment object.
-	constructDeployment(mc, dep, "", "")
+	// Second call on the same StatefulSet object.
+	constructStatefulSet(mc, sts, "", "")
 
 	// Verify full spec is identical after the second call.
-	if !reflect.DeepEqual(firstSpec, dep.Spec) {
-		t.Errorf("Deployment spec changed between calls:\nfirst:  %+v\nsecond: %+v", firstSpec, dep.Spec)
+	if !reflect.DeepEqual(firstSpec, sts.Spec) {
+		t.Errorf("StatefulSet spec changed between calls:\nfirst:  %+v\nsecond: %+v", firstSpec, sts.Spec)
 	}
 }
 
-func TestConstructDeployment_Annotations(t *testing.T) {
+func TestConstructStatefulSet_Annotations(t *testing.T) {
 	tests := []struct {
 		name               string
 		secretHash         string
@@ -3339,11 +3346,11 @@ func TestConstructDeployment_Annotations(t *testing.T) {
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{},
 			}
-			dep := &appsv1.Deployment{}
+			sts := &appsv1.StatefulSet{}
 
-			constructDeployment(mc, dep, tt.secretHash, tt.restartTrigger)
+			constructStatefulSet(mc, sts, tt.secretHash, tt.restartTrigger)
 
-			annotations := dep.Spec.Template.Annotations
+			annotations := sts.Spec.Template.Annotations
 
 			if tt.wantAnnotationsNil {
 				if annotations != nil {
@@ -3391,11 +3398,12 @@ func TestAnnotationKeyConstants(t *testing.T) {
 	}
 }
 
-func TestConstructDeployment_HPAReplicas(t *testing.T) {
+func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 	tests := []struct {
 		name         string
 		mc           *memcachedv1beta1.Memcached
-		wantReplicas *int32
+		current      *int32
+		wantReplicas int32
 	}{
 		{
 			name: "HPA disabled with replicas set",
@@ -3408,7 +3416,7 @@ func TestConstructDeployment_HPAReplicas(t *testing.T) {
 					Replicas: int32Ptr(5),
 				},
 			},
-			wantReplicas: int32Ptr(5),
+			wantReplicas: 5,
 		},
 		{
 			name: "HPA disabled with replicas nil uses default",
@@ -3419,10 +3427,10 @@ func TestConstructDeployment_HPAReplicas(t *testing.T) {
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{},
 			},
-			wantReplicas: int32Ptr(1),
+			wantReplicas: 1,
 		},
 		{
-			name: "HPA enabled with replicas set returns nil",
+			name: "HPA enabled with replicas set ignores spec.replicas and seeds 1",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
@@ -3436,10 +3444,10 @@ func TestConstructDeployment_HPAReplicas(t *testing.T) {
 					},
 				},
 			},
-			wantReplicas: nil,
+			wantReplicas: 1,
 		},
 		{
-			name: "HPA enabled with replicas nil returns nil",
+			name: "HPA enabled with replicas nil seeds 1",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "my-cache",
@@ -3452,31 +3460,256 @@ func TestConstructDeployment_HPAReplicas(t *testing.T) {
 					},
 				},
 			},
-			wantReplicas: nil,
+			wantReplicas: 1,
+		},
+		{
+			name: "HPA enabled seeds a new StatefulSet with minReplicas",
+			mc: &memcachedv1beta1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Replicas: int32Ptr(5),
+					Autoscaling: &memcachedv1beta1.AutoscalingSpec{
+						Enabled:     true,
+						MinReplicas: int32Ptr(2),
+						MaxReplicas: 10,
+					},
+				},
+			},
+			wantReplicas: 2,
+		},
+		{
+			name: "HPA enabled keeps the replica count of the existing StatefulSet",
+			mc: &memcachedv1beta1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Autoscaling: &memcachedv1beta1.AutoscalingSpec{
+						Enabled:     true,
+						MinReplicas: int32Ptr(2),
+						MaxReplicas: 10,
+					},
+				},
+			},
+			current:      int32Ptr(5),
+			wantReplicas: 5,
+		},
+		{
+			name: "HPA disabled restores spec.replicas on the existing StatefulSet",
+			mc: &memcachedv1beta1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-cache",
+					Namespace: "default",
+				},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Replicas: int32Ptr(3),
+				},
+			},
+			current:      int32Ptr(5),
+			wantReplicas: 3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dep := &appsv1.Deployment{}
-			constructDeployment(tt.mc, dep, "", "")
+			sts := &appsv1.StatefulSet{}
+			sts.Spec.Replicas = tt.current
+			constructStatefulSet(tt.mc, sts, "", "")
 
-			gotReplicas := dep.Spec.Replicas
+			gotReplicas := sts.Spec.Replicas
+			if gotReplicas == nil {
+				t.Fatalf("expected Replicas to be %d, got nil", tt.wantReplicas)
+			}
+			if *gotReplicas != tt.wantReplicas {
+				t.Errorf("Replicas = %d, want %d", *gotReplicas, tt.wantReplicas)
+			}
+		})
+	}
+}
 
-			if tt.wantReplicas == nil {
-				if gotReplicas != nil {
-					t.Errorf("expected Replicas to be nil, got %d", *gotReplicas)
+func TestStatefulSetName(t *testing.T) {
+	name52 := strings.Repeat("a", 52)
+	name53 := strings.Repeat("b", 53)
+	name63 := strings.Repeat("c", 63)
+	hexSuffix := regexp.MustCompile(`^[0-9a-f]{8}$`)
+
+	tests := []struct {
+		name      string
+		input     string
+		unchanged bool
+	}{
+		{name: "empty name is unchanged", input: "", unchanged: true},
+		{name: "1-character name is unchanged", input: "a", unchanged: true},
+		{name: "52-character name is unchanged", input: name52, unchanged: true},
+		{name: "53-character name is shortened", input: name53},
+		{name: "63-character name is shortened", input: name63},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := statefulSetName(tt.input)
+
+			if tt.unchanged {
+				if got != tt.input {
+					t.Errorf("statefulSetName(%q) = %q, want the input unchanged", tt.input, got)
 				}
 				return
 			}
 
-			if gotReplicas == nil {
-				t.Fatalf("expected Replicas to be %d, got nil", *tt.wantReplicas)
-				return
+			if len(got) != 52 {
+				t.Errorf("len(statefulSetName(%d chars)) = %d, want 52", len(tt.input), len(got))
+			}
+			if !strings.HasPrefix(got, tt.input[:43]+"-") {
+				t.Errorf("statefulSetName(%q) = %q, want prefix %q", tt.input, got, tt.input[:43]+"-")
+			}
+			suffix := strings.TrimPrefix(got, tt.input[:43]+"-")
+			if !hexSuffix.MatchString(suffix) {
+				t.Errorf("suffix %q does not match %s", suffix, hexSuffix)
+			}
+			sum := sha256.Sum256([]byte(tt.input))
+			if want := tt.input[:43] + "-" + hex.EncodeToString(sum[:])[:8]; got != want {
+				t.Errorf("statefulSetName(%q) = %q, want %q", tt.input, got, want)
+			}
+		})
+	}
+}
+
+func TestStatefulSetName_DistinctForSharedPrefix(t *testing.T) {
+	prefix := strings.Repeat("p", 43)
+	first := prefix + strings.Repeat("x", 20)
+	second := prefix + strings.Repeat("y", 20)
+	if len(first) != 63 || len(second) != 63 {
+		t.Fatalf("test names must have 63 characters, got %d and %d", len(first), len(second))
+	}
+
+	gotFirst := statefulSetName(first)
+	gotSecond := statefulSetName(second)
+	if gotFirst == gotSecond {
+		t.Errorf("statefulSetName returned %q for two different names sharing their first 43 characters", gotFirst)
+	}
+}
+
+func TestStatefulSetReplicas(t *testing.T) {
+	autoscaling := func(minReplicas *int32) *memcachedv1beta1.AutoscalingSpec {
+		return &memcachedv1beta1.AutoscalingSpec{
+			Enabled:     true,
+			MinReplicas: minReplicas,
+			MaxReplicas: 10,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		spec    memcachedv1beta1.MemcachedSpec
+		current *int32
+		want    int32
+	}{
+		{
+			name: "autoscaling off, spec.replicas nil returns 1",
+			spec: memcachedv1beta1.MemcachedSpec{},
+			want: 1,
+		},
+		{
+			name: "autoscaling off, spec.replicas 0 returns 0",
+			spec: memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(0)},
+			want: 0,
+		},
+		{
+			name:    "autoscaling off, spec.replicas 3 with current 5 returns 3",
+			spec:    memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
+			current: int32Ptr(5),
+			want:    3,
+		},
+		{
+			name: "autoscaling on, current nil and minReplicas nil returns 1",
+			spec: memcachedv1beta1.MemcachedSpec{Autoscaling: autoscaling(nil)},
+			want: 1,
+		},
+		{
+			name: "autoscaling on, current nil and minReplicas 2 returns 2",
+			spec: memcachedv1beta1.MemcachedSpec{Autoscaling: autoscaling(int32Ptr(2))},
+			want: 2,
+		},
+		{
+			name:    "autoscaling on, current 5 and minReplicas 2 returns 5",
+			spec:    memcachedv1beta1.MemcachedSpec{Autoscaling: autoscaling(int32Ptr(2))},
+			current: int32Ptr(5),
+			want:    5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1beta1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				Spec:       tt.spec,
 			}
 
-			if *gotReplicas != *tt.wantReplicas {
-				t.Errorf("Replicas = %d, want %d", *gotReplicas, *tt.wantReplicas)
+			got := statefulSetReplicas(mc, tt.current)
+			if got == nil {
+				t.Fatalf("statefulSetReplicas returned nil, want %d", tt.want)
+			}
+			if *got != tt.want {
+				t.Errorf("statefulSetReplicas = %d, want %d", *got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConstructStatefulSet_StatefulSetSpec(t *testing.T) {
+	tests := []struct {
+		name string
+		mc   string
+	}{
+		{name: "short name", mc: "my-cache"},
+		{name: "60-character name", mc: strings.Repeat("l", 60)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1beta1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: tt.mc, Namespace: "default"},
+				Spec: memcachedv1beta1.MemcachedSpec{
+					Replicas: int32Ptr(3),
+				},
+			}
+			sts := &appsv1.StatefulSet{}
+
+			constructStatefulSet(mc, sts, "", "")
+
+			// The headless Service keeps the full Memcached name and governs the StatefulSet.
+			if sts.Spec.ServiceName != tt.mc {
+				t.Errorf("serviceName = %q, want %q", sts.Spec.ServiceName, tt.mc)
+			}
+			if sts.Spec.PodManagementPolicy != appsv1.ParallelPodManagement {
+				t.Errorf("podManagementPolicy = %q, want %q", sts.Spec.PodManagementPolicy, appsv1.ParallelPodManagement)
+			}
+			if sts.Spec.UpdateStrategy.Type != appsv1.RollingUpdateStatefulSetStrategyType {
+				t.Errorf("updateStrategy.type = %q, want %q", sts.Spec.UpdateStrategy.Type, appsv1.RollingUpdateStatefulSetStrategyType)
+			}
+			if sts.Spec.UpdateStrategy.RollingUpdate != nil {
+				t.Errorf("expected no rollingUpdate parameters, got %+v", *sts.Spec.UpdateStrategy.RollingUpdate)
+			}
+			if sts.Spec.VolumeClaimTemplates != nil {
+				t.Errorf("expected no volumeClaimTemplates, got %v", sts.Spec.VolumeClaimTemplates)
+			}
+			if sts.Spec.Selector == nil {
+				t.Fatal("expected a selector")
+			}
+			if !reflect.DeepEqual(sts.Spec.Selector.MatchLabels, labelsForMemcached(tt.mc)) {
+				t.Errorf("selector = %v, want %v", sts.Spec.Selector.MatchLabels, labelsForMemcached(tt.mc))
+			}
+			if sts.Spec.Replicas == nil || *sts.Spec.Replicas != 3 {
+				t.Errorf("replicas = %v, want 3", sts.Spec.Replicas)
+			}
+			for k, v := range labelsForMemcached(tt.mc) {
+				if sts.Spec.Template.Labels[k] != v {
+					t.Errorf("template label %q = %q, want %q", k, sts.Spec.Template.Labels[k], v)
+				}
 			}
 		})
 	}
