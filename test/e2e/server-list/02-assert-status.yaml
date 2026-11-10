@@ -1,0 +1,9 @@
+---
+apiVersion: memcached.c5c3.io/v1beta1
+kind: Memcached
+metadata:
+  name: test-server-list
+(length(status.serverList)): 3
+(status.serverList[0] == join('', ['test-server-list-0.test-server-list.', $namespace, '.svc:11211'])): true
+(status.serverList[1] == join('', ['test-server-list-1.test-server-list.', $namespace, '.svc:11211'])): true
+(status.serverList[2] == join('', ['test-server-list-2.test-server-list.', $namespace, '.svc:11211'])): true

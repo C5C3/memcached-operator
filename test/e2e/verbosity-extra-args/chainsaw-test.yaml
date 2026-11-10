@@ -6,7 +6,7 @@ metadata:
 spec:
   description: >
     Verify that setting memcached verbosity level and extraArgs propagates
-    to the Deployment container args, and that updating them triggers
+    to the StatefulSet container args, and that updating them triggers
     a rolling update with the correct args (REQ-002, REQ-003).
   timeouts:
     apply: 30s

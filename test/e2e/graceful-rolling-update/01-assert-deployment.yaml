@@ -1,14 +1,12 @@
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: test-graceful
 spec:
-  strategy:
+  podManagementPolicy: Parallel
+  updateStrategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     spec:
       terminationGracePeriodSeconds: 30

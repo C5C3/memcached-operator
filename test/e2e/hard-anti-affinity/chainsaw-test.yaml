@@ -7,7 +7,7 @@ spec:
   description: >
     Verify that setting antiAffinityPreset to "hard" configures
     requiredDuringSchedulingIgnoredDuringExecution pod anti-affinity
-    on the Deployment, with the correct topology key and label selector
+    on the StatefulSet, with the correct topology key and label selector
     (REQ-007).
   timeouts:
     apply: 30s

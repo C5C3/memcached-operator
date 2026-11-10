@@ -11,7 +11,7 @@ spec:
   description: >
     Verify that enabling TLS with enableClientCert creates the correct cert-manager
     Certificate, TLS volume with ca.crt, volumeMount, container args including
-    ssl_ca_cert, and ports in the Deployment and Service (REQ-004, REQ-005, REQ-008, REQ-009).
+    ssl_ca_cert, and ports in the StatefulSet and Service (REQ-004, REQ-005, REQ-008, REQ-009).
   timeouts:
     apply: 30s
     assert: 120s

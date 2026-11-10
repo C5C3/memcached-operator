@@ -1,6 +1,6 @@
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: test-basic
   labels:
@@ -14,11 +14,10 @@ spec:
       app.kubernetes.io/name: memcached
       app.kubernetes.io/instance: test-basic
       app.kubernetes.io/managed-by: memcached-operator
-  strategy:
+  serviceName: test-basic
+  podManagementPolicy: Parallel
+  updateStrategy:
     type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
   template:
     metadata:
       labels:

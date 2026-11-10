@@ -6,7 +6,7 @@ metadata:
 spec:
   description: >
     Verify that enabling SASL authentication creates the correct Secret volume,
-    volumeMount, and container args in the Deployment (REQ-001, REQ-006, REQ-008).
+    volumeMount, and container args in the StatefulSet (REQ-001, REQ-006, REQ-008).
   timeouts:
     apply: 30s
     assert: 120s

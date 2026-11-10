@@ -6,7 +6,7 @@ metadata:
 spec:
   description: >
     Verify that deleting a Memcached CR triggers garbage collection of all
-    owned resources: Deployment, Service, PDB, and ServiceMonitor (REQ-009).
+    owned resources: StatefulSet, Service, PDB, and ServiceMonitor (REQ-009).
   timeouts:
     apply: 30s
     assert: 120s

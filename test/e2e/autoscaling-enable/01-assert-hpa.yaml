@@ -10,7 +10,7 @@ metadata:
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
-    kind: Deployment
+    kind: StatefulSet
     name: test-autoscaling-enable
   minReplicas: 2
   maxReplicas: 10
