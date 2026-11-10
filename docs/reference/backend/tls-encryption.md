@@ -15,7 +15,7 @@ Memcached clients and the server.
 
 The feature configures three resources:
 
-1. **Deployment** — the TLS certificate Secret is mounted as a volume, Memcached
+1. **StatefulSet** — the TLS certificate Secret is mounted as a volume, Memcached
    args include `-Z` (enable TLS) and `-o ssl_chain_cert`/`ssl_key` options, and
    an additional container port 11212 (`memcached-tls`) is exposed.
 2. **Service** — a `memcached-tls` port (11212/TCP) is added to the headless
@@ -25,7 +25,8 @@ The feature configures three resources:
 
 When TLS is enabled, both plaintext (11211) and TLS (11212) ports are exposed,
 allowing gradual client migration. Probes continue to use port 11211 for
-simplicity.
+simplicity. The per-pod entries in `status.serverList` also name port 11211
+when TLS is enabled.
 
 Optionally, mutual TLS (mTLS) can be enabled via `enableClientCert: true`, which
 adds the `-o ssl_ca_cert` flag so Memcached verifies client certificates using
@@ -126,11 +127,11 @@ both features coexist.
 
 ---
 
-## Deployment Mapping
+## StatefulSet Mapping
 
-In `constructDeployment`, TLS configuration is applied as follows:
+In `constructStatefulSet`, TLS configuration is applied as follows:
 
-| CR Field                                 | Deployment Field                                                        |
+| CR Field                                 | StatefulSet Field                                                       |
 |------------------------------------------|-------------------------------------------------------------------------|
 | `spec.security.tls.enabled`              | Container args include `-Z`, `-o ssl_chain_cert`, `-o ssl_key`          |
 | `spec.security.tls.certificateSecretRef` | `spec.template.spec.volumes[]` — Secret volume named `tls-certificates` |
@@ -184,7 +185,7 @@ spec:
         name: memcached-tls-certs
 ```
 
-Produces a Deployment with:
+Produces a StatefulSet with:
 
 ```yaml
 spec:
@@ -310,22 +311,25 @@ spec:
 ```
 
 No TLS flags, volumes, volume mounts, or TLS port are configured on the
-Deployment. The Service has only the `memcached` port (11211/TCP).
+StatefulSet. The Service has only the `memcached` port (11211/TCP).
 
 ---
 
 ## Runtime Behavior
 
-| Action                          | Result                                                                                              |
-|---------------------------------|-----------------------------------------------------------------------------------------------------|
-| Enable TLS (`enabled: true`)    | `-Z` and `ssl_*` args added; TLS volume and mount added; port 11212 added to Deployment and Service |
-| Set `enableClientCert: true`    | `-o ssl_ca_cert` arg added; `ca.crt` included in volume items                                       |
-| Change `certificateSecretRef`   | Deployment updated with new Secret reference                                                        |
-| Disable TLS (`enabled: false`)  | All TLS args, volume, mount, and port 11212 removed from Deployment and Service                     |
-| Remove `spec.security.tls`      | Same as disabled — all TLS artifacts removed                                                        |
-| Enable TLS + SASL               | Both feature sets coexist: separate volumes, mounts, and args                                       |
-| Reconcile twice with same spec  | No Deployment or Service update (idempotent)                                                        |
-| External drift (manual removal) | Corrected on next reconciliation cycle                                                              |
+| Action                          | Result                                                                                               |
+|---------------------------------|------------------------------------------------------------------------------------------------------|
+| Enable TLS (`enabled: true`)    | `-Z` and `ssl_*` args added; TLS volume and mount added; port 11212 added to StatefulSet and Service |
+| Set `enableClientCert: true`    | `-o ssl_ca_cert` arg added; `ca.crt` included in volume items                                        |
+| Change `certificateSecretRef`   | StatefulSet updated with new Secret reference                                                        |
+| Disable TLS (`enabled: false`)  | All TLS args, volume, mount, and port 11212 removed from StatefulSet and Service                     |
+| Remove `spec.security.tls`      | Same as disabled — all TLS artifacts removed                                                         |
+| Enable TLS + SASL               | Both feature sets coexist: separate volumes, mounts, and args                                        |
+| Reconcile twice with same spec  | No StatefulSet or Service update (idempotent)                                                        |
+| External drift (manual removal) | Corrected on next reconciliation cycle                                                               |
+
+Each change to the pod template makes the StatefulSet replace its pods one at a
+time with a rolling update.
 
 ---
 
@@ -339,7 +343,7 @@ The implementation adds TLS-specific helpers to
 3. `buildMemcachedArgs` — extended with a `tls *TLSSpec` parameter to append TLS
    flags when enabled
 
-In `constructDeployment`:
+In `constructStatefulSet`:
 - `buildTLSVolume` result is appended to the volumes slice when non-nil
 - `buildTLSVolumeMount` result is appended to the memcached container's volume
   mounts when non-nil
@@ -351,10 +355,10 @@ In `constructService`:
   `spec.security.tls.enabled` is `true`
 
 No changes to the controller (`memcached_controller.go`) are needed — the
-existing `reconcileDeployment` and `reconcileService` call the builder functions
+existing `reconcileStatefulSet` and `reconcileService` call the builder functions
 which now include TLS logic.
 
 The TLS implementation follows the same pattern as SASL authentication
 (MO-0017): pure builder functions for volume/mount, extended args function, and
-integration into the existing `constructDeployment` and `constructService`
+integration into the existing `constructStatefulSet` and `constructService`
 functions.

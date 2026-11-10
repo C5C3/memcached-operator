@@ -8,7 +8,7 @@ how Memcached pods are spread across nodes.
 ## Overview
 
 The `spec.highAvailability.antiAffinityPreset` field configures pod anti-affinity
-rules on the Deployment's pod template. This encourages or enforces scheduling
+rules on the StatefulSet's pod template. This encourages or enforces scheduling
 Memcached pods from the same CR instance onto different nodes, improving fault
 isolation.
 
@@ -20,7 +20,7 @@ Two presets are available:
 | `hard` | `requiredDuringSchedulingIgnoredDuringExecution`  | Strict spreading; scheduling fails if nodes are insufficient |
 
 When `spec.highAvailability` is nil or `antiAffinityPreset` is nil, no affinity
-rules are set on the Deployment (the `spec.template.spec.affinity` field is nil).
+rules are set on the StatefulSet (the `spec.template.spec.affinity` field is nil).
 
 ---
 
@@ -124,7 +124,7 @@ spec:
 ## No Anti-Affinity (Default)
 
 When `spec.highAvailability` is omitted or `antiAffinityPreset` is nil, the
-Deployment has no affinity rules. Pods are scheduled freely by the default
+StatefulSet has no affinity rules. Pods are scheduled freely by the default
 scheduler.
 
 ```yaml
@@ -136,20 +136,26 @@ spec:
   replicas: 3
 ```
 
-The Deployment's `spec.template.spec.affinity` will be nil.
+The StatefulSet's `spec.template.spec.affinity` will be nil.
 
 ---
 
 ## Runtime Behavior
 
-| Action                            | Result                                          |
-|-----------------------------------|-------------------------------------------------|
-| Set `antiAffinityPreset: soft`    | Deployment updated with preferred anti-affinity |
-| Set `antiAffinityPreset: hard`    | Deployment updated with required anti-affinity  |
-| Change `soft` to `hard`           | Deployment affinity updated on next reconcile   |
-| Change `hard` to `soft`           | Deployment affinity updated on next reconcile   |
-| Remove `highAvailability` section | Deployment affinity cleared to nil              |
-| Reconcile twice with same spec    | No Deployment update (idempotent)               |
+| Action                            | Result                                           |
+|-----------------------------------|--------------------------------------------------|
+| Set `antiAffinityPreset: soft`    | StatefulSet updated with preferred anti-affinity |
+| Set `antiAffinityPreset: hard`    | StatefulSet updated with required anti-affinity  |
+| Change `soft` to `hard`           | StatefulSet affinity updated on next reconcile   |
+| Change `hard` to `soft`           | StatefulSet affinity updated on next reconcile   |
+| Remove `highAvailability` section | StatefulSet affinity cleared to nil              |
+| Reconcile twice with same spec    | No StatefulSet update (idempotent)               |
+
+A change to the affinity rules updates the pod template, so the StatefulSet
+replaces its pods one at a time: it deletes a pod and then creates the
+replacement under the same name. While the `hard` preset is in effect, a
+rolling update needs no spare node, because each replacement can use the node
+its predecessor freed.
 
 ---
 
@@ -164,7 +170,7 @@ func buildAntiAffinity(mc *Memcached) *corev1.Affinity
 
 - Returns `nil` when `spec.highAvailability` is nil or `antiAffinityPreset` is nil
 - Returns an `Affinity` with `PodAntiAffinity` for `soft` or `hard` presets
-- Called from `constructDeployment`, which sets the result on the pod template spec
+- Called from `constructStatefulSet`, which sets the result on the pod template spec
 
 The function follows the same pattern as `buildMemcachedArgs` and
 `labelsForMemcached`: a pure builder function with no side effects, tested

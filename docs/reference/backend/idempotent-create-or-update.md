@@ -8,8 +8,9 @@ for all managed Kubernetes resources.
 
 ## Overview
 
-Every managed resource (Deployment, Service, and future resource types) is
-reconciled through a single `reconcileResource` method on `MemcachedReconciler`.
+Every managed resource (the StatefulSet, the Service, the HPA, and the optional
+resources) is reconciled through a single `reconcileResource` method on
+`MemcachedReconciler`.
 This method wraps `controllerutil.CreateOrUpdate` with:
 
 - **Controller owner reference** set automatically on every resource
@@ -27,20 +28,20 @@ eliminates duplicated create-or-update boilerplate.
 ```go
 func (r *MemcachedReconciler) reconcileResource(
     ctx          context.Context,
-    mc           *memcachedv1alpha1.Memcached,
+    mc           *memcachedv1beta1.Memcached,
     obj          client.Object,
     mutate       func() error,
     resourceKind string,
 ) (controllerutil.OperationResult, error)
 ```
 
-| Parameter      | Type              | Description                                                                |
-|----------------|-------------------|----------------------------------------------------------------------------|
-| `ctx`          | `context.Context` | Request context with logger                                                |
-| `mc`           | `*Memcached`      | The owning Memcached CR (used for owner reference and event recording)     |
-| `obj`          | `client.Object`   | Target resource with Name and Namespace set; populated in-place on success |
-| `mutate`       | `func() error`    | Sets the desired spec on `obj`; called before every create/update attempt  |
-| `resourceKind` | `string`          | Human-readable kind for logs and errors (e.g. `"Deployment"`, `"Service"`) |
+| Parameter      | Type              | Description                                                                 |
+|----------------|-------------------|-----------------------------------------------------------------------------|
+| `ctx`          | `context.Context` | Request context with logger                                                 |
+| `mc`           | `*Memcached`      | The owning Memcached CR (used for owner reference and event recording)      |
+| `obj`          | `client.Object`   | Target resource with Name and Namespace set; populated in-place on success  |
+| `mutate`       | `func() error`    | Sets the desired spec on `obj`; called before every create/update attempt   |
+| `resourceKind` | `string`          | Human-readable kind for logs and errors (e.g. `"StatefulSet"`, `"Service"`) |
 
 ### Return Values
 
@@ -90,7 +91,8 @@ Reconciler              CreateOrUpdate         API Server
     │                        │◄── 409 Conflict ─────┤  (rv changed to 101 by
     │◄── conflict error ─────┤                      │   another controller)
     │                        │                      │
-    │  log: "Conflict retrying, attempt=1"          │
+    │  log: "Conflict retrying reconciliation",     │
+    │       kind=StatefulSet, attempt=1             │
     │                        │                      │
     ├──── attempt 2 ────────►│                      │
     │                        ├─── Get obj ─────────►│
@@ -102,8 +104,8 @@ Reconciler              CreateOrUpdate         API Server
     │                        │◄── 200 OK ───────────┤
     │◄── OperationResultUpdated                     │
     │                        │                      │
-    │  log: "Deployment reconciled, operation=updated"
-    │  event: "Normal Updated Updated Deployment my-cache"
+    │  log: "Resource reconciled", kind=StatefulSet, operation=updated
+    │  event: "Normal Updated Updated StatefulSet my-cache"
 ```
 
 ---
@@ -146,12 +148,14 @@ trail of operator actions.
 
 ## Logging
 
-| Operation | Log Level | Message                                   | Fields                          |
-|-----------|-----------|-------------------------------------------|---------------------------------|
-| Created   | Info      | `<Kind> reconciled`                       | `name`, `operation=created`     |
-| Updated   | Info      | `<Kind> reconciled`                       | `name`, `operation=updated`     |
-| Unchanged | Info      | `<Kind> reconciled`                       | `name`, `operation=unchanged`   |
-| Conflict  | Info      | `Conflict retrying <Kind> reconciliation` | `name`, `attempt`, `maxRetries` |
+| Operation | Log Level | Message                            | Fields                                  |
+|-----------|-----------|------------------------------------|-----------------------------------------|
+| Created   | Info      | `Resource reconciled`              | `kind`, `name`, `operation=created`     |
+| Updated   | Info      | `Resource reconciled`              | `kind`, `name`, `operation=updated`     |
+| Unchanged | Info      | `Resource reconciled`              | `kind`, `name`, `operation=unchanged`   |
+| Conflict  | Info      | `Conflict retrying reconciliation` | `kind`, `name`, `attempt`, `maxRetries` |
+
+`kind` is the `resourceKind` argument, for example `StatefulSet`.
 
 ---
 
@@ -162,14 +166,14 @@ managed resource via `controllerutil.SetControllerReference`. This is called
 inside the mutate wrapper, after the caller's mutate function, ensuring it
 applies to both creates and updates.
 
-| Field                | Value                        |
-|----------------------|------------------------------|
-| `apiVersion`         | `memcached.c5c3.io/v1alpha1` |
-| `kind`               | `Memcached`                  |
-| `name`               | `<cr-name>`                  |
-| `uid`                | `<cr-uid>`                   |
-| `controller`         | `true`                       |
-| `blockOwnerDeletion` | `true`                       |
+| Field                | Value                       |
+|----------------------|-----------------------------|
+| `apiVersion`         | `memcached.c5c3.io/v1beta1` |
+| `kind`               | `Memcached`                 |
+| `name`               | `<cr-name>`                 |
+| `uid`                | `<cr-uid>`                  |
+| `controller`         | `true`                      |
+| `blockOwnerDeletion` | `true`                      |
 
 This enables automatic garbage collection when the Memcached CR is deleted.
 
@@ -177,31 +181,45 @@ This enables automatic garbage collection when the Memcached CR is deleted.
 
 ## Current Usage
 
-Both `reconcileDeployment` and `reconcileService` delegate to
-`reconcileResource`, keeping them as thin wrappers that construct the initial
-`ObjectMeta` and pass a mutate function:
+`reconcileStatefulSet`, `reconcileHPA`, `reconcileService`, and the reconcile
+methods for the optional resources delegate to `reconcileResource`, keeping them
+as thin wrappers that construct the initial `ObjectMeta` and pass a mutate
+function:
 
 ```go
-func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1alpha1.Memcached) error {
-    dep := &appsv1.Deployment{
+func (r *MemcachedReconciler) reconcileStatefulSet(ctx context.Context, mc *memcachedv1beta1.Memcached) ([]string, error) {
+    found, missing := fetchReferencedSecrets(ctx, r.Client, mc)
+    secretHash := computeSecretHash(found...)
+    restartTrigger := mc.Annotations[AnnotationRestartTrigger]
+
+    sts := &appsv1.StatefulSet{
         ObjectMeta: metav1.ObjectMeta{
-            Name:      mc.Name,
+            Name:      statefulSetName(mc.Name),
             Namespace: mc.Namespace,
         },
     }
 
-    _, err := r.reconcileResource(ctx, mc, dep, func() error {
-        constructDeployment(mc, dep)
+    if _, err := r.reconcileResource(ctx, mc, sts, func() error {
+        constructStatefulSet(mc, sts, secretHash, restartTrigger)
         return nil
-    }, "Deployment")
-    return err
+    }, "StatefulSet"); err != nil {
+        return missing, err
+    }
+    return missing, r.deleteLegacyDeployment(ctx, mc)
 }
 ```
 
-The builder functions (`constructDeployment`, `constructService`) are pure
-functions of the CR spec — they take the Memcached CR and the target object,
-and set all desired fields in-place. They have no side effects and no hidden
-state.
+`deleteLegacyDeployment` does not go through `reconcileResource`: it deletes the
+Deployment that earlier releases created and emits its own `Deleted` event (see
+[Legacy Deployment Migration](deployment-reconciliation.md#legacy-deployment-migration)).
+
+The builder functions (`constructStatefulSet`, `constructService`) are pure
+functions of the CR spec and the object they fill. They take the Memcached CR
+and the target object, and set all desired fields in-place. They have no side
+effects and no hidden state. `constructStatefulSet` reads one field of the
+target before it writes: the stored `spec.replicas`, which it keeps while
+autoscaling is enabled, so the mutate function does not undo the HPA's scaling
+(see [Replica Count](deployment-reconciliation.md#replica-count)).
 
 ---
 

@@ -2,11 +2,17 @@
 
 Reference documentation for the Kyverno Chainsaw end-to-end test suite that
 validates the Memcached operator against a real kind cluster, covering
-deployment, scaling, configuration changes, monitoring, PDB management,
+basic resource creation, scaling, configuration changes, monitoring, PDB management,
 graceful rolling updates, webhook validation, garbage collection, SASL
 authentication, TLS encryption, mutual TLS (mTLS), NetworkPolicy lifecycle,
 Service annotation propagation, status degraded detection, scale-to-zero
-behavior, owner reference GC chain validation, and HPA autoscaling lifecycle.
+behavior, owner reference GC chain validation, HPA autoscaling lifecycle, and
+the per-pod server list.
+
+The memcached pods run in a StatefulSet. Assertion files keep their earlier
+names, such as `01-assert-deployment.yaml`, and step names such as
+`assert-deployment-created` stay as well; their content asserts
+`kind: StatefulSet`.
 
 **Source**: `test/e2e/`
 
@@ -95,12 +101,12 @@ Before running `make test-e2e`, the following must be in place:
 
 Reusable YAML templates referenced by multiple test scenarios:
 
-| File                           | Purpose                                                                     |
-|--------------------------------|-----------------------------------------------------------------------------|
-| `memcached-minimal.yaml`       | Minimal valid Memcached CR (1 replica, memcached:1.6, 64Mi maxMemoryMB)     |
-| `assert-deployment.yaml`       | Partial Deployment assertion (labels, replicas, container args, port)       |
-| `assert-service.yaml`          | Partial headless Service assertion (clusterIP: None, port 11211, selectors) |
-| `assert-status-available.yaml` | Status assertion (readyReplicas: 1, Available=True)                         |
+| File                           | Purpose                                                                                                                  |
+|--------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| `memcached-minimal.yaml`       | Minimal valid Memcached CR (1 replica, memcached:1.6, 64Mi maxMemoryMB)                                                  |
+| `assert-deployment.yaml`       | Partial StatefulSet assertion (labels, replicas, serviceName, podManagementPolicy, updateStrategy, container args, port) |
+| `assert-service.yaml`          | Partial headless Service assertion (clusterIP: None, port 11211, selectors)                                              |
+| `assert-status-available.yaml` | Status assertion (readyReplicas: 1, Available=True)                                                                      |
 
 ---
 
@@ -114,23 +120,23 @@ test/e2e/
 │   ├── 01-assert-hpa.yaml          # HPA exists before disabling
 │   ├── 02-patch-disable.yaml       # Patch autoscaling.enabled=false, replicas=3
 │   ├── 03-error-hpa-gone.yaml      # HPA deleted assertion
-│   └── 03-assert-deployment.yaml   # Deployment with replicas=3
+│   └── 03-assert-deployment.yaml   # StatefulSet with replicas=3
 ├── autoscaling-enable/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with autoscaling enabled (test-autoscaling-enable)
 │   ├── 01-assert-hpa.yaml          # HPA with scaleTargetRef, metrics, behavior
-│   ├── 01-assert-deployment.yaml   # Deployment without hardcoded replicas
+│   ├── 01-assert-deployment.yaml   # StatefulSet with replicas=2 (minReplicas)
 │   └── 02-assert-status.yaml       # Status condition assertions
 ├── autoscaling-update/
 │   ├── chainsaw-test.yaml          # Test definition
-│   ├── 00-memcached.yaml           # CR with autoscaling min=2, max=10 (test-autoscaling-update)
-│   ├── 01-assert-hpa.yaml          # HPA with initial minReplicas=2, maxReplicas=10
+│   ├── 00-memcached.yaml           # CR with autoscaling min=2, max=5 (test-autoscaling-update)
+│   ├── 01-assert-hpa.yaml          # HPA with initial minReplicas=2, maxReplicas=5
 │   ├── 02-patch-update.yaml        # Patch minReplicas=3, maxReplicas=15
 │   └── 03-assert-hpa-updated.yaml  # HPA with updated bounds
 ├── basic-deployment/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # Minimal CR (test-basic)
-│   ├── 01-assert-deployment.yaml   # Deployment assertions
+│   ├── 01-assert-deployment.yaml   # StatefulSet assertions
 │   ├── 01-assert-service.yaml      # Service assertions
 │   └── 02-assert-status.yaml       # Status condition assertions
 ├── scaling/
@@ -169,7 +175,7 @@ test/e2e/
 ├── graceful-rolling-update/
 │   ├── chainsaw-test.yaml
 │   ├── 00-memcached.yaml           # CR with gracefulShutdown enabled
-│   ├── 01-assert-deployment.yaml   # Strategy + preStop + terminationGracePeriod
+│   ├── 01-assert-deployment.yaml   # updateStrategy + podManagementPolicy + preStop + terminationGracePeriod
 │   ├── 02-patch-update-image.yaml  # Image change to trigger rollout
 │   └── 03-assert-rolling-update.yaml
 ├── webhook-rejection/
@@ -221,7 +227,7 @@ test/e2e/
 ├── network-policy/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with networkPolicy.enabled: true
-│   ├── 01-assert-deployment.yaml   # Deployment ready assertion
+│   ├── 01-assert-deployment.yaml   # StatefulSet ready assertion
 │   ├── 01-assert-networkpolicy.yaml # NetworkPolicy with podSelector, port 11211
 │   ├── 02-patch-allowed-sources.yaml # Patch allowedSources with podSelector
 │   ├── 03-assert-networkpolicy-allowed-sources.yaml # NetworkPolicy with from peer
@@ -242,7 +248,7 @@ test/e2e/
 ├── pdb-max-unavailable/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with PDB maxUnavailable=1 (replicas=3)
-│   ├── 01-assert-deployment.yaml   # Deployment ready assertion
+│   ├── 01-assert-deployment.yaml   # StatefulSet ready assertion
 │   ├── 01-assert-pdb.yaml          # PDB with maxUnavailable=1
 │   ├── 02-patch-max-unavailable.yaml # Patch maxUnavailable to 2
 │   └── 03-assert-pdb-updated.yaml  # PDB with maxUnavailable=2
@@ -271,23 +277,30 @@ test/e2e/
 ├── status-degraded/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with non-existent image (test-degraded)
-│   ├── 01-assert-deployment.yaml   # Deployment created with invalid image
+│   ├── 01-assert-deployment.yaml   # StatefulSet created with invalid image
 │   └── 01-assert-status.yaml       # Degraded=True, Available=False, Progressing=False (ProgressingComplete)
 ├── scale-to-zero/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with replicas=1 (test-scale-zero)
 │   ├── 01-assert-status-available.yaml # Initial Available=True, readyReplicas=1
 │   ├── 02-patch-scale-zero.yaml    # Patch replicas to 0
-│   ├── 03-assert-deployment.yaml   # Deployment.spec.replicas=0
+│   ├── 03-assert-deployment.yaml   # StatefulSet.spec.replicas=0
 │   └── 03-assert-status.yaml       # Available=False, Progressing=False, Degraded=False
 ├── owner-references/
 │   ├── chainsaw-test.yaml          # Test definition
 │   ├── 00-memcached.yaml           # CR with all features enabled (test-owner-refs)
-│   ├── 01-assert-deployment.yaml   # Deployment ownerReferences assertion
+│   ├── 01-assert-deployment.yaml   # StatefulSet ownerReferences assertion
 │   ├── 01-assert-service.yaml      # Service ownerReferences assertion
 │   ├── 01-assert-pdb.yaml          # PDB ownerReferences assertion
 │   ├── 01-assert-networkpolicy.yaml # NetworkPolicy ownerReferences assertion
 │   └── 01-assert-servicemonitor.yaml # ServiceMonitor ownerReferences assertion
+├── server-list/
+│   ├── chainsaw-test.yaml          # Test definition
+│   ├── 00-memcached.yaml           # CR with replicas=3 (test-server-list)
+│   ├── 01-assert-statefulset.yaml  # StatefulSet with serviceName, Parallel, 3 ready replicas
+│   ├── 02-assert-status.yaml       # serverList with 3 entries in pod index order
+│   ├── 03-patch-scale-down.yaml    # Patch replicas to 2
+│   └── 04-assert-status.yaml       # serverList with 2 entries
 └── resources/
     ├── memcached-minimal.yaml
     ├── assert-deployment.yaml
@@ -303,36 +316,36 @@ test/e2e/
 
 **Directory**: `test/e2e/basic-deployment/`
 
-Verifies that creating a minimal Memcached CR produces the expected Deployment,
-headless Service, and status conditions.
+Verifies that creating a minimal Memcached CR produces the expected StatefulSet,
+the headless Service that governs it, and status conditions.
 
-| Step                      | Operation                          | Assertion                                                                     |
-|---------------------------|------------------------------------|-------------------------------------------------------------------------------|
-| create-memcached-cr       | `apply` 00-memcached.yaml          | CR created                                                                    |
-| assert-deployment-created | `assert` 01-assert-deployment.yaml | Deployment with correct labels, args (`-m 64 -c 1024 -t 4 -I 1m`), port 11211 |
-| assert-service-created    | `assert` 01-assert-service.yaml    | Headless Service (clusterIP: None), port 11211, correct selectors             |
-| assert-status-available   | `assert` 02-assert-status.yaml     | readyReplicas: 1, Available=True                                              |
+| Step                      | Operation                          | Assertion                                                                                                                                                                        |
+|---------------------------|------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| create-memcached-cr       | `apply` 00-memcached.yaml          | CR created                                                                                                                                                                       |
+| assert-deployment-created | `assert` 01-assert-deployment.yaml | StatefulSet with correct labels, `serviceName: test-basic`, `podManagementPolicy: Parallel`, `updateStrategy.type: RollingUpdate`, args (`-m 64 -c 1024 -t 4 -I 1m`), port 11211 |
+| assert-service-created    | `assert` 01-assert-service.yaml    | Headless Service (clusterIP: None), port 11211, correct selectors                                                                                                                |
+| assert-status-available   | `assert` 02-assert-status.yaml     | readyReplicas: 1, Available=True                                                                                                                                                 |
 
-Owner references on Deployment and Service are verified as part of the
-Deployment and Service assertion files (Chainsaw partial matching includes
+Owner references on StatefulSet and Service are verified as part of the
+StatefulSet and Service assertion files (Chainsaw partial matching includes
 `metadata.ownerReferences`).
 
 ### 2. Scaling (REQ-003)
 
 **Directory**: `test/e2e/scaling/`
 
-Verifies that updating `spec.replicas` scales the Deployment and updates
+Verifies that updating `spec.replicas` scales the StatefulSet and updates
 `status.readyReplicas`.
 
-| Step                      | Operation          | Assertion                  |
-|---------------------------|--------------------|----------------------------|
-| create-memcached-cr       | `apply`            | CR with replicas=1         |
-| assert-initial-deployment | `assert`           | Deployment.spec.replicas=1 |
-| scale-up-to-3             | `patch` replicas=3 | —                          |
-| assert-scaled-deployment  | `assert`           | Deployment.spec.replicas=3 |
-| assert-scaled-status      | `assert`           | status.readyReplicas=3     |
-| scale-down-to-1           | `patch` replicas=1 | —                          |
-| assert-scaled-down        | `assert`           | Deployment.spec.replicas=1 |
+| Step                      | Operation          | Assertion                   |
+|---------------------------|--------------------|-----------------------------|
+| create-memcached-cr       | `apply`            | CR with replicas=1          |
+| assert-initial-deployment | `assert`           | StatefulSet.spec.replicas=1 |
+| scale-up-to-3             | `patch` replicas=3 | —                           |
+| assert-scaled-deployment  | `assert`           | StatefulSet.spec.replicas=3 |
+| assert-scaled-status      | `assert`           | status.readyReplicas=3      |
+| scale-down-to-1           | `patch` replicas=1 | —                           |
+| assert-scaled-down        | `assert`           | StatefulSet.spec.replicas=1 |
 
 ### 3. Configuration Changes (REQ-004)
 
@@ -358,13 +371,13 @@ metrics port to the Service.
 | Step                                | Operation                        | Assertion                                                   |
 |-------------------------------------|----------------------------------|-------------------------------------------------------------|
 | create-memcached-without-monitoring | `apply`                          | CR without monitoring                                       |
-| assert-no-exporter-sidecar          | `assert`                         | Deployment has 1 container (memcached only)                 |
+| assert-no-exporter-sidecar          | `assert`                         | StatefulSet has 1 container (memcached only)                |
 | enable-monitoring                   | `patch` monitoring.enabled=true  | —                                                           |
 | assert-exporter-sidecar-injected    | `assert`                         | 2 containers: memcached (port 11211) + exporter (port 9150) |
 | assert-service-metrics-port         | `assert`                         | Service has metrics port                                    |
 | assert-servicemonitor-created       | `assert`                         | ServiceMonitor with correct labels, endpoints, and selector |
 | disable-monitoring                  | `patch` monitoring.enabled=false | —                                                           |
-| assert-exporter-sidecar-removed     | `assert`                         | Deployment has 1 container (memcached only)                 |
+| assert-exporter-sidecar-removed     | `assert`                         | StatefulSet has 1 container (memcached only)                |
 | assert-servicemonitor-deleted       | `error`                          | ServiceMonitor is removed                                   |
 
 **Prerequisite**: ServiceMonitor CRD must be installed in the cluster.
@@ -378,7 +391,7 @@ Verifies that enabling PDB creates a PodDisruptionBudget with correct settings.
 | Step                      | Operation                 | Assertion                                                  |
 |---------------------------|---------------------------|------------------------------------------------------------|
 | create-memcached-with-pdb | `apply`                   | CR with replicas=3, PDB enabled, minAvailable=1            |
-| assert-deployment-ready   | `assert`                  | Deployment with 3 replicas                                 |
+| assert-deployment-ready   | `assert`                  | StatefulSet with 3 replicas                                |
 | assert-pdb-created        | `assert`                  | PDB with minAvailable=1, correct selector, owner reference |
 | disable-pdb               | `patch` PDB enabled=false | —                                                          |
 | assert-pdb-deleted        | `error`                   | PDB is removed                                             |
@@ -387,15 +400,21 @@ Verifies that enabling PDB creates a PodDisruptionBudget with correct settings.
 
 **Directory**: `test/e2e/graceful-rolling-update/`
 
-Verifies that graceful shutdown configures preStop hooks and the RollingUpdate
-strategy, and that image changes trigger a correct rolling update.
+Verifies that graceful shutdown configures preStop hooks and the StatefulSet's
+RollingUpdate update strategy, and that an image change reaches the
+StatefulSet's pod template.
 
-| Step                                    | Operation     | Assertion                                                                                 |
-|-----------------------------------------|---------------|-------------------------------------------------------------------------------------------|
-| create-memcached-with-graceful-shutdown | `apply`       | CR with gracefulShutdown enabled                                                          |
-| assert-graceful-shutdown-config         | `assert`      | RollingUpdate (maxSurge=1, maxUnavailable=0), preStop hook, terminationGracePeriodSeconds |
-| trigger-rolling-update                  | `patch` image | —                                                                                         |
-| assert-rolling-update-strategy          | `assert`      | All pods running new image, strategy preserved                                            |
+| Step                                    | Operation     | Assertion                                                                                                          |
+|-----------------------------------------|---------------|--------------------------------------------------------------------------------------------------------------------|
+| create-memcached-with-graceful-shutdown | `apply`       | CR with gracefulShutdown enabled, replicas=2                                                                       |
+| assert-graceful-shutdown-config         | `assert`      | `updateStrategy.type: RollingUpdate`, `podManagementPolicy: Parallel`, preStop hook, terminationGracePeriodSeconds |
+| trigger-rolling-update                  | `patch` image | Patch `spec.image` to `memcached:1.6-alpine`                                                                       |
+| assert-rolling-update-strategy          | `assert`      | Pod template image `memcached:1.6-alpine`; update strategy, pod management policy, and preStop hook preserved      |
+
+A StatefulSet has no `maxSurge`. The operator leaves
+`updateStrategy.rollingUpdate.maxUnavailable` unset, so it defaults to 1 and the
+pods are replaced one at a time, each deleted before its replacement is created
+under the same name (see [Graceful Shutdown](graceful-shutdown.md#rolling-updates)).
 
 ### 7. Webhook Rejection (REQ-008)
 
@@ -424,12 +443,12 @@ operation fails.
 
 Verifies that deleting a Memcached CR garbage-collects all owned resources.
 
-| Step                                   | Operation                        | Assertion                                                     |
-|----------------------------------------|----------------------------------|---------------------------------------------------------------|
-| create-memcached-with-all-resources    | `apply`                          | CR with monitoring and PDB enabled                            |
-| assert-all-resources-exist             | `assert`                         | Deployment, Service, PDB, ServiceMonitor all present          |
-| delete-memcached-cr                    | `delete` Memcached/test-deletion | —                                                             |
-| assert-all-resources-garbage-collected | `error`                          | Deployment, Service, PDB, ServiceMonitor, and CR are all gone |
+| Step                                   | Operation                        | Assertion                                                      |
+|----------------------------------------|----------------------------------|----------------------------------------------------------------|
+| create-memcached-with-all-resources    | `apply`                          | CR with monitoring and PDB enabled                             |
+| assert-all-resources-exist             | `assert`                         | StatefulSet, Service, PDB, ServiceMonitor all present          |
+| delete-memcached-cr                    | `delete` Memcached/test-deletion | —                                                              |
+| assert-all-resources-garbage-collected | `error`                          | StatefulSet, Service, PDB, ServiceMonitor, and CR are all gone |
 
 The `error` operation asserts that the specified resource does **not** exist —
 the assertion succeeds when the GET returns `NotFound`.
@@ -439,7 +458,7 @@ the assertion succeeds when the GET returns `NotFound`.
 **Directory**: `test/e2e/sasl-authentication/`
 
 Verifies that enabling SASL authentication creates the correct Secret volume,
-volumeMount, and container args (`-Y <authfile>`) in the Deployment.
+volumeMount, and container args (`-Y <authfile>`) in the StatefulSet pod template.
 
 | Step                    | Operation                     | Assertion                                                                                                                                                                       |
 |-------------------------|-------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -462,7 +481,7 @@ Secret.
 
 Verifies that enabling TLS encryption creates a cert-manager Certificate, adds
 the TLS volume, volumeMount, `-Z` and `ssl_chain_cert`/`ssl_key` container args,
-and configures port 11212 on the Deployment and Service.
+and configures port 11212 on the StatefulSet and Service.
 
 | Step                          | Operation                            | Assertion                                                                                                                                                                                  |
 |-------------------------------|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -528,7 +547,7 @@ disabled.
 | Step                                 | Operation                                             | Assertion                                                                                       |
 |--------------------------------------|-------------------------------------------------------|-------------------------------------------------------------------------------------------------|
 | create-memcached-with-networkpolicy  | `apply` 00-memcached.yaml                             | CR with `security.networkPolicy.enabled: true` (`test-netpol`)                                  |
-| assert-deployment-ready              | `assert` 01-assert-deployment.yaml                    | Deployment with correct labels                                                                  |
+| assert-deployment-ready              | `assert` 01-assert-deployment.yaml                    | StatefulSet with correct labels                                                                 |
 | assert-networkpolicy-created         | `assert` 01-assert-networkpolicy.yaml                 | NetworkPolicy with podSelector matching operator labels, policyTypes: [Ingress], port 11211/TCP |
 | patch-allowed-sources                | `patch` 02-patch-allowed-sources.yaml                 | Add `allowedSources` with podSelector `app: allowed-client`                                     |
 | assert-networkpolicy-allowed-sources | `assert` 03-assert-networkpolicy-allowed-sources.yaml | NetworkPolicy ingress `from` field contains podSelector with `app: allowed-client`              |
@@ -579,7 +598,7 @@ updating it propagates to the PDB.
 | Step                                      | Operation                      | Assertion                                           |
 |-------------------------------------------|--------------------------------|-----------------------------------------------------|
 | create-memcached-with-pdb-max-unavailable | `apply` 00-memcached.yaml      | CR with replicas=3, PDB enabled, maxUnavailable=1   |
-| assert-deployment-ready                   | `assert` 01-assert-deployment  | Deployment with 3 replicas                          |
+| assert-deployment-ready                   | `assert` 01-assert-deployment  | StatefulSet with 3 replicas                         |
 | assert-pdb-max-unavailable                | `assert` 01-assert-pdb         | PDB with maxUnavailable=1, correct selector, labels |
 | update-max-unavailable                    | `patch` maxUnavailable=2       | —                                                   |
 | assert-pdb-updated                        | `assert` 03-assert-pdb-updated | PDB with maxUnavailable=2                           |
@@ -593,7 +612,7 @@ updating it propagates to the PDB.
 **Directory**: `test/e2e/verbosity-extra-args/`
 
 Verifies that setting `memcached.verbosity` and `memcached.extraArgs` propagates
-to the Deployment container args, and that updating them triggers a rolling update
+to the StatefulSet container args, and that updating them triggers a rolling update
 with the correct args.
 
 | Step                                           | Operation                                                     | Assertion                                        |
@@ -630,7 +649,7 @@ that image for the exporter sidecar instead of the default.
 **Directory**: `test/e2e/security-contexts/`
 
 Verifies that custom pod and container security contexts defined in
-`spec.security` are propagated to the Deployment pod template, and that
+`spec.security` are propagated to the StatefulSet pod template, and that
 updating them triggers a rolling update with the new settings.
 
 | Step                                    | Operation                            | Assertion                                              |
@@ -650,7 +669,7 @@ updating them triggers a rolling update with the new settings.
 
 Verifies that setting `antiAffinityPreset` to `"hard"` configures
 `requiredDuringSchedulingIgnoredDuringExecution` pod anti-affinity on the
-Deployment, with the correct topology key and label selector.
+StatefulSet, with the correct topology key and label selector.
 
 | Step                                     | Operation                     | Assertion                                                                           |
 |------------------------------------------|-------------------------------|-------------------------------------------------------------------------------------|
@@ -666,13 +685,13 @@ Deployment, with the correct topology key and label selector.
 
 Verifies that a Memcached CR with a non-existent container image reports
 `Degraded=True` and `Available=False` status conditions. The operator creates
-the Deployment, but pods fail to pull the image (ImagePullBackOff), causing
+the StatefulSet, but pods fail to pull the image (ImagePullBackOff), causing
 zero ready replicas and triggering the degraded status path.
 
 | Step                      | Operation                     | Assertion                                                                                                                |
 |---------------------------|-------------------------------|--------------------------------------------------------------------------------------------------------------------------|
 | create-memcached-cr       | `apply` 00-memcached.yaml     | CR with image `memcached:nonexistent-tag-does-not-exist` (`test-degraded`)                                               |
-| assert-deployment-created | `assert` 01-assert-deployment | Deployment exists with invalid image, correct labels, owner reference                                                    |
+| assert-deployment-created | `assert` 01-assert-deployment | StatefulSet exists with invalid image, correct labels, owner reference                                                   |
 | assert-status-degraded    | `assert` 01-assert-status     | Degraded=True (reason: Degraded), Available=False (reason: Unavailable), Progressing=False (reason: ProgressingComplete) |
 
 **CRD fields tested**:
@@ -693,7 +712,7 @@ state before scaling down.
 | create-memcached-cr       | `apply` 00-memcached.yaml           | CR with replicas=1 (`test-scale-zero`)                                                               |
 | assert-initial-status     | `assert` 01-assert-status-available | Available=True, readyReplicas=1                                                                      |
 | scale-to-zero             | `patch` 02-patch-scale-zero.yaml    | Patch `spec.replicas` to 0                                                                           |
-| assert-deployment-scaled  | `assert` 03-assert-deployment       | Deployment.spec.replicas=0                                                                           |
+| assert-deployment-scaled  | `assert` 03-assert-deployment       | StatefulSet.spec.replicas=0                                                                          |
 | assert-status-unavailable | `assert` 03-assert-status           | Available=False (Unavailable), Progressing=False (ProgressingComplete), Degraded=False (NotDegraded) |
 
 **CRD fields tested**:
@@ -716,7 +735,7 @@ creation) separately from the cr-deletion test that validates the outcome
 | Step                                  | Operation                              | Assertion                                                                                                                   |
 |---------------------------------------|----------------------------------------|-----------------------------------------------------------------------------------------------------------------------------|
 | create-memcached-with-all-features    | `apply` 00-memcached.yaml              | CR with monitoring, PDB, and NetworkPolicy enabled (`test-owner-refs`)                                                      |
-| assert-deployment-owner-reference     | `assert` 01-assert-deployment.yaml     | Deployment ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true |
+| assert-deployment-owner-reference     | `assert` 01-assert-deployment.yaml     | StatefulSet ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1beta1, controller=true, blockOwnerDeletion=true |
 | assert-service-owner-reference        | `assert` 01-assert-service.yaml        | Service ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                           |
 | assert-pdb-owner-reference            | `assert` 01-assert-pdb.yaml            | PDB ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                               |
 | assert-networkpolicy-owner-reference  | `assert` 01-assert-networkpolicy.yaml  | NetworkPolicy ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                     |
@@ -738,18 +757,19 @@ failure is due to missing ownerReferences or a different Kubernetes issue.
 Verifies that creating a Memcached CR with `autoscaling.enabled=true` produces
 an HPA with the correct `scaleTargetRef`, `minReplicas`, `maxReplicas`, defaulted
 CPU utilization metric at 80%, and defaulted `scaleDown` stabilization window of
-300 seconds. The Deployment must exist but must NOT have a hardcoded replica count
-(HPA controls replicas).
+300 seconds. The StatefulSet must exist and start with `minReplicas` (2)
+replicas; after that the HPA controls the replica count, and the operator keeps
+the count the HPA sets.
 
 | Step                      | Operation                     | Assertion                                                                                                                     |
 |---------------------------|-------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | create-memcached-cr       | `apply` 00-memcached.yaml     | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10, `resources.requests.cpu: 50m` (`test-autoscaling-enable`) |
-| assert-hpa-created        | `assert` 01-assert-hpa        | HPA with scaleTargetRef=Deployment/test-autoscaling-enable, minReplicas=2, maxReplicas=10, CPU metric at 80%, scaleDown 300s  |
-| assert-deployment-created | `assert` 01-assert-deployment | Deployment exists with standard labels; no `spec.replicas` field (HPA controls scaling)                                       |
+| assert-hpa-created        | `assert` 01-assert-hpa        | HPA with scaleTargetRef=StatefulSet/test-autoscaling-enable, minReplicas=2, maxReplicas=10, CPU metric at 80%, scaleDown 300s |
+| assert-deployment-created | `assert` 01-assert-deployment | StatefulSet exists with standard labels and `spec.replicas: 2`, seeded from `minReplicas`                                     |
 | assert-status-available   | `assert` 02-assert-status     | Status conditions indicate availability                                                                                       |
 
 **HPA assertion details**:
-- `scaleTargetRef`: apiVersion=apps/v1, kind=Deployment, name=test-autoscaling-enable
+- `scaleTargetRef`: apiVersion=apps/v1, kind=StatefulSet, name=test-autoscaling-enable
 - `metrics[0]`: type=Resource, resource.name=cpu, target.type=Utilization, averageUtilization=80
 - `behavior.scaleDown.stabilizationWindowSeconds`: 300
 - Labels: `app.kubernetes.io/name=memcached`, `app.kubernetes.io/instance=test-autoscaling-enable`, `app.kubernetes.io/managed-by=memcached-operator`
@@ -765,17 +785,17 @@ CPU utilization metric at 80%, and defaulted `scaleDown` stabilization window of
 **Directory**: `test/e2e/autoscaling-disable/`
 
 Verifies that disabling autoscaling on a running Memcached CR deletes the HPA
-and that setting `spec.replicas` takes effect on the Deployment. This is a
+and that setting `spec.replicas` takes effect on the StatefulSet. This is a
 two-phase test: first create with autoscaling enabled (assert HPA exists),
 then patch to disable autoscaling with explicit replicas.
 
 | Step                              | Operation                     | Assertion                                                                                       |
 |-----------------------------------|-------------------------------|-------------------------------------------------------------------------------------------------|
 | create-memcached-with-autoscaling | `apply` 00-memcached.yaml     | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10 (`test-autoscaling-disable`) |
-| assert-hpa-created                | `assert` 01-assert-hpa        | HPA exists with scaleTargetRef=Deployment/test-autoscaling-disable                              |
+| assert-hpa-created                | `assert` 01-assert-hpa        | HPA exists with scaleTargetRef=StatefulSet/test-autoscaling-disable                             |
 | disable-autoscaling               | `patch` 02-patch-disable.yaml | Set `autoscaling.enabled: false` and `spec.replicas: 3`                                         |
 | assert-hpa-deleted                | `error` 03-error-hpa-gone     | HPA no longer exists (autoscaling/v2 HPA for test-autoscaling-disable)                          |
-| assert-deployment-replicas        | `assert` 03-assert-deployment | Deployment.spec.replicas=3, status.readyReplicas=3                                              |
+| assert-deployment-replicas        | `assert` 03-assert-deployment | StatefulSet.spec.replicas=3, status.readyReplicas=3                                             |
 
 **CRD fields tested**:
 - `spec.autoscaling.enabled` — Set to `false` to trigger HPA deletion
@@ -788,16 +808,68 @@ then patch to disable autoscaling with explicit replicas.
 Verifies that updating `minReplicas` and `maxReplicas` on a running autoscaled
 Memcached CR propagates the changes to the HPA without deleting and recreating it.
 
-| Step                              | Operation                      | Assertion                                                                                      |
-|-----------------------------------|--------------------------------|------------------------------------------------------------------------------------------------|
-| create-memcached-with-autoscaling | `apply` 00-memcached.yaml      | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=10 (`test-autoscaling-update`) |
-| assert-initial-hpa                | `assert` 01-assert-hpa         | HPA with minReplicas=2, maxReplicas=10, scaleTargetRef=Deployment/test-autoscaling-update      |
-| update-autoscaling-bounds         | `patch` 02-patch-update.yaml   | Patch `autoscaling.minReplicas: 3`, `autoscaling.maxReplicas: 15`                              |
-| assert-hpa-updated                | `assert` 03-assert-hpa-updated | HPA with minReplicas=3, maxReplicas=15; scaleTargetRef unchanged; labels preserved             |
+| Step                              | Operation                      | Assertion                                                                                     |
+|-----------------------------------|--------------------------------|-----------------------------------------------------------------------------------------------|
+| create-memcached-with-autoscaling | `apply` 00-memcached.yaml      | CR with `autoscaling.enabled: true`, minReplicas=2, maxReplicas=5 (`test-autoscaling-update`) |
+| assert-initial-hpa                | `assert` 01-assert-hpa         | HPA with minReplicas=2, maxReplicas=5, scaleTargetRef=StatefulSet/test-autoscaling-update     |
+| update-autoscaling-bounds         | `patch` 02-patch-update.yaml   | Patch `autoscaling.minReplicas: 3`, `autoscaling.maxReplicas: 15`                             |
+| assert-hpa-updated                | `assert` 03-assert-hpa-updated | HPA with minReplicas=3, maxReplicas=15; scaleTargetRef unchanged; labels preserved            |
 
 **CRD fields tested**:
 - `spec.autoscaling.minReplicas` — Updated from 2 to 3
-- `spec.autoscaling.maxReplicas` — Updated from 10 to 15
+- `spec.autoscaling.maxReplicas` — Updated from 5 to 15
+
+### 25. Server List
+
+**Directory**: `test/e2e/server-list/`
+
+Verifies that a Memcached CR with three replicas runs its pods in a StatefulSet
+governed by the headless Service, that `status.serverList` holds one
+`<statefulset>-<i>.<name>.<namespace>.svc:11211` entry per pod in pod index
+order, that one pod resolves another pod's DNS name, and that scaling down to
+two replicas shrinks the list to the entries for pods 0 and 1.
+
+| Step                           | Operation                           | Assertion                                                                                                                                           |
+|--------------------------------|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
+| create-memcached-cr            | `apply` 00-memcached.yaml           | CR `test-server-list` with replicas=3, image `memcached:1.6`                                                                                        |
+| assert-statefulset-ready       | `assert` 01-assert-statefulset.yaml | StatefulSet `test-server-list` with `spec.replicas: 3`, `serviceName: test-server-list`, `podManagementPolicy: Parallel`, `status.readyReplicas: 3` |
+| assert-server-list             | `assert` 02-assert-status.yaml      | `status.serverList` has 3 entries, `test-server-list-<i>.test-server-list.<namespace>.svc:11211` for `i` = 0, 1, 2 in this order                    |
+| resolve-pod-dns-name           | `script`                            | `getent hosts test-server-list-2.test-server-list.$NAMESPACE.svc`, run in pod `test-server-list-0`, exits 0                                         |
+| scale-down-to-2                | `patch` 03-patch-scale-down.yaml    | Patch `spec.replicas` to 2                                                                                                                          |
+| assert-server-list-scaled-down | `assert` 04-assert-status.yaml      | `status.serverList` has 2 entries, for pods 0 and 1 in this order                                                                                   |
+
+The test namespace is generated by Chainsaw, so the expected entries are built
+at assertion time with JMESPath and the `$namespace` binding, which Chainsaw
+sets to the test namespace:
+
+```yaml
+(length(status.serverList)): 3
+(status.serverList[0] == join('', ['test-server-list-0.test-server-list.', $namespace, '.svc:11211'])): true
+(status.serverList[1] == join('', ['test-server-list-1.test-server-list.', $namespace, '.svc:11211'])): true
+(status.serverList[2] == join('', ['test-server-list-2.test-server-list.', $namespace, '.svc:11211'])): true
+```
+
+Each entry is compared at a fixed index, so the assertion also checks the
+order. The length check makes sure no extra entry follows.
+
+The `script` step runs a command in the `memcached` container of pod 0:
+
+```bash
+kubectl -n "$NAMESPACE" exec test-server-list-0 -c memcached -- getent hosts "test-server-list-2.test-server-list.$NAMESPACE.svc"
+```
+
+Chainsaw passes the test namespace to scripts as `$NAMESPACE`. `getent` comes
+with the C library of the Debian-based `memcached:1.6` image and exits non-zero
+when the name does not resolve, so the step checks that the cluster DNS
+publishes the per-pod record through the headless Service. The step uses the
+`exec` timeout of 30s from the test's `timeouts`.
+
+The scale-down step shows that the list follows the StatefulSet's
+`spec.replicas`: after the patch, the list holds only the entries for pods 0
+and 1.
+
+**CRD fields tested**:
+- `spec.replicas`, which sets the number of pods and of `status.serverList` entries (3, then 2)
 
 ---
 
@@ -812,7 +884,7 @@ controller-managed fields.
 ```yaml
 # Only checks these specific fields, ignores everything else
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: test-basic
   labels:
@@ -870,7 +942,7 @@ Where the error file contains a resource reference that should no longer exist:
 
 ```yaml
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: test-deletion
 ```
@@ -902,7 +974,7 @@ Security tests assert exclusively on Kubernetes resource specs — they do not
 verify runtime protocol behavior. This means:
 
 - No test step connects to memcached via TLS or SASL
-- All assertions target Deployment spec (volumes, mounts, args, ports), Service
+- All assertions target StatefulSet spec (volumes, mounts, args, ports), Service
   spec (ports), or CR status (conditions)
 - Tests pass in a kind cluster without any memcached client tools
 - Tests complete deterministically within the 120s assert timeout
@@ -914,14 +986,14 @@ verify runtime protocol behavior. This means:
 | REQ-ID  | Requirement                                              | Test Scenario           | Key Assertions                                                                                                                |
 |---------|----------------------------------------------------------|-------------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | REQ-001 | Chainsaw configuration and Makefile target               | All (infrastructure)    | `.chainsaw.yaml` config, `make test-e2e` target                                                                               |
-| REQ-002 | Basic deployment: Deployment, Service, status            | basic-deployment        | Labels, container args, headless Service, Available=True                                                                      |
-| REQ-003 | Scaling: replicas up and down                            | scaling                 | Deployment.spec.replicas, status.readyReplicas                                                                                |
+| REQ-002 | Basic deployment: StatefulSet, Service, status           | basic-deployment        | Labels, serviceName, container args, headless Service, Available=True                                                         |
+| REQ-003 | Scaling: replicas up and down                            | scaling                 | StatefulSet.spec.replicas, status.readyReplicas                                                                               |
 | REQ-004 | Configuration changes: container args updated            | configuration-changes   | Args reflect maxMemoryMB, threads, maxItemSize                                                                                |
 | REQ-005 | Monitoring toggle: exporter sidecar, ServiceMonitor      | monitoring-toggle       | Container count, port 9150, Service metrics port, ServiceMonitor labels/endpoints, disable removes sidecar and ServiceMonitor |
 | REQ-006 | PDB creation and deletion: minAvailable, selector        | pdb-creation            | PDB spec, selector labels, owner reference, disable removes PDB                                                               |
-| REQ-007 | Graceful rolling update: strategy, preStop, image update | graceful-rolling-update | maxSurge=1, maxUnavailable=0, preStop hook, new image                                                                         |
+| REQ-007 | Graceful rolling update: strategy, preStop, image update | graceful-rolling-update | updateStrategy.type=RollingUpdate, podManagementPolicy=Parallel, preStop hook, new image in pod template                      |
 | REQ-008 | Webhook rejection: invalid CRs rejected                  | webhook-rejection       | Ten invalid CR variants all rejected (memory, PDB, graceful shutdown, SASL, TLS, autoscaling)                                 |
-| REQ-009 | CR deletion: garbage collection                          | cr-deletion             | Deployment, Service, PDB, ServiceMonitor, CR all removed                                                                      |
+| REQ-009 | CR deletion: garbage collection                          | cr-deletion             | StatefulSet, Service, PDB, ServiceMonitor, CR all removed                                                                     |
 | REQ-010 | Makefile integration                                     | All (infrastructure)    | `make test-e2e` runs `chainsaw test`                                                                                          |
 
 ### Security E2E Tests (MO-0032)
@@ -929,14 +1001,14 @@ verify runtime protocol behavior. This means:
 | REQ-ID      | Requirement                                                    | Test Scenario       | Key Assertions                                                                                               |
 |-------------|----------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------|
 | MO-0032-001 | SASL Secret and CR configuration propagation                   | sasl-authentication | Secret with `password-file` key, CR with `sasl.enabled: true` and `credentialsSecretRef`                     |
-| MO-0032-002 | SASL Deployment volume, mount, and args                        | sasl-authentication | Volume `sasl-credentials`, mount at `/etc/memcached/sasl`, args `-Y /etc/memcached/sasl/password-file`       |
+| MO-0032-002 | SASL StatefulSet volume, mount, and args                       | sasl-authentication | Volume `sasl-credentials`, mount at `/etc/memcached/sasl`, args `-Y /etc/memcached/sasl/password-file`       |
 | MO-0032-003 | TLS cert-manager Certificate creation                          | tls-encryption      | Self-signed Issuer, Certificate with `Ready=True`, Secret with `tls.crt`/`tls.key`                           |
-| MO-0032-004 | TLS Deployment volume, mount, args, and port                   | tls-encryption      | Volume `tls-certificates`, mount at `/etc/memcached/tls`, args `-Z -o ssl_chain_cert -o ssl_key`, port 11212 |
+| MO-0032-004 | TLS StatefulSet volume, mount, args, and port                  | tls-encryption      | Volume `tls-certificates`, mount at `/etc/memcached/tls`, args `-Z -o ssl_chain_cert -o ssl_key`, port 11212 |
 | MO-0032-005 | TLS Service port configuration                                 | tls-encryption      | Service port `memcached-tls` on 11212 targeting `memcached-tls`                                              |
 | MO-0032-006 | mTLS ca.crt volume projection and ssl_ca_cert arg              | tls-mtls            | Volume items include `ca.crt`, args include `-o ssl_ca_cert=/etc/memcached/tls/ca.crt`                       |
 | MO-0032-007 | mTLS preserves standard TLS configuration                      | tls-mtls            | All TLS assertions (volume, mount, args, ports) plus `ca.crt` additions                                      |
 | MO-0032-008 | Security tests follow Chainsaw conventions                     | All security tests  | Numbered YAML files, apply/assert flow, partial object matching, standard timeouts, `test-{name}` CR naming  |
-| MO-0032-009 | Tests are spec-level assertions only (no runtime verification) | All security tests  | Assertions on Deployment spec, Service spec, CR status — no pod logs or protocol connections                 |
+| MO-0032-009 | Tests are spec-level assertions only (no runtime verification) | All security tests  | Assertions on StatefulSet spec, Service spec, CR status; no pod logs or protocol connections                 |
 
 ### Network & Service E2E Tests (MO-0033)
 
@@ -951,7 +1023,7 @@ verify runtime protocol behavior. This means:
 | REQ-E2E-SA-002  | Service annotations cleared when removed from CR spec               | service-annotations | Service metadata.annotations empty after patching `spec.service: null`, Service spec unchanged |
 | REQ-E2E-DOC-001 | Documentation updated with new test entries                         | (this document)     | network-policy and service-annotations sections, file structure, requirement coverage matrix   |
 
-### Deployment Config E2E Tests (MO-0034)
+### Pod Template Config E2E Tests (MO-0034)
 
 | REQ-ID      | Requirement                                                      | Test Scenario         | Key Assertions                                                                              |
 |-------------|------------------------------------------------------------------|-----------------------|---------------------------------------------------------------------------------------------|
@@ -959,8 +1031,8 @@ verify runtime protocol behavior. This means:
 | MO-0034-002 | Verbosity level propagates to container args (-v, -vv)           | verbosity-extra-args  | Args include `-v` for verbosity=1, `-vv` for verbosity=2, placed after standard flags       |
 | MO-0034-003 | extraArgs appended to container args after standard flags        | verbosity-extra-args  | Args include `-o modern` after standard flags; update to new extraArgs propagates           |
 | MO-0034-004 | Custom exporter image used for monitoring sidecar                | custom-exporter-image | Exporter sidecar uses custom image v0.14.0; update to v0.15.4 propagates                    |
-| MO-0034-005 | Pod security context propagated to Deployment                    | security-contexts     | Pod securityContext with runAsNonRoot, fsGroup; update to runAsUser=1000 propagates         |
-| MO-0034-006 | Container security context propagated to Deployment              | security-contexts     | Container securityContext with readOnlyRootFilesystem, drop ALL; update propagates          |
+| MO-0034-005 | Pod security context propagated to StatefulSet                   | security-contexts     | Pod securityContext with runAsNonRoot, fsGroup; update to runAsUser=1000 propagates         |
+| MO-0034-006 | Container security context propagated to StatefulSet             | security-contexts     | Container securityContext with readOnlyRootFilesystem, drop ALL; update propagates          |
 | MO-0034-007 | Hard anti-affinity creates requiredDuringScheduling affinity     | hard-anti-affinity    | requiredDuringSchedulingIgnoredDuringExecution with topologyKey and instance label selector |
 
 ### Status & Scale E2E Tests (MO-0035)
@@ -968,55 +1040,64 @@ verify runtime protocol behavior. This means:
 | REQ-ID         | Requirement                                                      | Test Scenario   | Key Assertions                                                                                                                  |
 |----------------|------------------------------------------------------------------|-----------------|---------------------------------------------------------------------------------------------------------------------------------|
 | REQ-E2E-SD-001 | Degraded status when non-existent image specified                | status-degraded | Degraded=True (Degraded), Available=False (Unavailable), Progressing=False (ProgressingComplete)                                |
-| REQ-E2E-SD-002 | Deployment created despite invalid image                         | status-degraded | Deployment exists with correct labels and owner reference, pods in ImagePullBackOff                                             |
+| REQ-E2E-SD-002 | StatefulSet created despite invalid image                        | status-degraded | StatefulSet exists with correct labels and owner reference, pods in ImagePullBackOff                                            |
 | REQ-E2E-SZ-001 | Scale-to-zero transitions Available to False                     | scale-to-zero   | After patching replicas=0: Available=False (Unavailable), Progressing=False (ProgressingComplete), Degraded=False (NotDegraded) |
-| REQ-E2E-SZ-002 | Scale-to-zero sets Deployment replicas to 0                      | scale-to-zero   | Deployment.spec.replicas=0 after patching CR                                                                                    |
+| REQ-E2E-SZ-002 | Scale-to-zero sets StatefulSet replicas to 0                     | scale-to-zero   | StatefulSet.spec.replicas=0 after patching CR                                                                                   |
 | REQ-CTL-SZ-001 | computeConditions returns Available=False when desiredReplicas=0 | (unit test)     | Unit test in status_test.go verifies Available=False for 0 desired, 0 ready replicas                                            |
 | REQ-DOC-001    | Documentation updated with new test entries                      | (this document) | status-degraded and scale-to-zero sections, file structure, requirement coverage matrix                                         |
 
 ### Owner References GC Chain E2E Tests (MO-0036)
 
-| REQ-ID     | Requirement                                        | Test Scenario    | Key Assertions                                                                                                                         |
-|------------|----------------------------------------------------|------------------|----------------------------------------------------------------------------------------------------------------------------------------|
-| REQ-OR-001 | Memcached CR with all features enabled             | owner-references | CR with monitoring, PDB, and NetworkPolicy enabled; Deployment reaches readyReplicas=2                                                 |
-| REQ-OR-002 | Deployment ownerReferences set correctly           | owner-references | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, name=test-owner-refs, controller=true, blockOwnerDeletion=true |
-| REQ-OR-003 | Service ownerReferences set correctly              | owner-references | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1alpha1, controller=true, blockOwnerDeletion=true                       |
-| REQ-OR-004 | PDB ownerReferences set correctly                  | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                              |
-| REQ-OR-005 | NetworkPolicy ownerReferences set correctly        | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                              |
-| REQ-OR-006 | ServiceMonitor ownerReferences set correctly       | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                              |
-| REQ-OR-007 | Single test with CR creation and 5 assertion steps | owner-references | One chainsaw-test.yaml with create + 5 individual assertion steps; does NOT delete CR                                                  |
-| REQ-OR-008 | Documentation updated with owner-references test   | (this document)  | File structure, test scenario section, requirement coverage matrix all include owner-references                                        |
+| REQ-ID     | Requirement                                        | Test Scenario    | Key Assertions                                                                                                                        |
+|------------|----------------------------------------------------|------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| REQ-OR-001 | Memcached CR with all features enabled             | owner-references | CR with monitoring, PDB, and NetworkPolicy enabled; StatefulSet reaches readyReplicas=2                                               |
+| REQ-OR-002 | StatefulSet ownerReferences set correctly          | owner-references | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1beta1, name=test-owner-refs, controller=true, blockOwnerDeletion=true |
+| REQ-OR-003 | Service ownerReferences set correctly              | owner-references | ownerReferences: kind=Memcached, apiVersion=memcached.c5c3.io/v1beta1, controller=true, blockOwnerDeletion=true                       |
+| REQ-OR-004 | PDB ownerReferences set correctly                  | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                             |
+| REQ-OR-005 | NetworkPolicy ownerReferences set correctly        | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                             |
+| REQ-OR-006 | ServiceMonitor ownerReferences set correctly       | owner-references | ownerReferences: kind=Memcached, controller=true, blockOwnerDeletion=true                                                             |
+| REQ-OR-007 | Single test with CR creation and 5 assertion steps | owner-references | One chainsaw-test.yaml with create + 5 individual assertion steps; does NOT delete CR                                                 |
+| REQ-OR-008 | Documentation updated with owner-references test   | (this document)  | File structure, test scenario section, requirement coverage matrix all include owner-references                                       |
 
 ### Autoscaling E2E Tests (MO-0042)
 
-| REQ-ID      | Requirement                                                               | Test Scenario       | Key Assertions                                                                                                                 |
-|-------------|---------------------------------------------------------------------------|---------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| MO-0042-001 | HPA created with correct scaleTargetRef, metrics, and behavior            | autoscaling-enable  | HPA scaleTargetRef=Deployment, CPU metric at 80%, scaleDown stabilization 300s, minReplicas=2, maxReplicas=10, standard labels |
-| MO-0042-002 | Deployment has no hardcoded replicas when autoscaling enabled             | autoscaling-enable  | Deployment exists without `spec.replicas` field; HPA controls scaling                                                          |
-| MO-0042-003 | HPA deleted and Deployment replicas set when autoscaling disabled         | autoscaling-disable | HPA no longer exists (error assertion); Deployment.spec.replicas=3, readyReplicas=3                                            |
-| MO-0042-004 | HPA updated when minReplicas and maxReplicas patched                      | autoscaling-update  | HPA minReplicas=3 and maxReplicas=15 after patching; scaleTargetRef unchanged                                                  |
-| MO-0042-005 | Webhook rejects CR with spec.replicas and autoscaling.enabled=true        | webhook-rejection   | Apply returns `$error != null` for CR with replicas=3 and autoscaling.enabled=true                                             |
-| MO-0042-006 | Webhook rejects CR with autoscaling.minReplicas > maxReplicas             | webhook-rejection   | Apply returns `$error != null` for CR with minReplicas=10 and maxReplicas=5                                                    |
-| MO-0042-007 | Webhook rejects CR with CPU metric but no resources.requests.cpu          | webhook-rejection   | Apply returns `$error != null` for CR with CPU utilization metric and no cpu request                                           |
-| MO-0042-008 | Documentation updated with autoscaling test scenarios and coverage matrix | (this document)     | File structure, three test scenario sections, webhook rejection table, requirement coverage matrix all include autoscaling     |
+| REQ-ID      | Requirement                                                               | Test Scenario       | Key Assertions                                                                                                                  |
+|-------------|---------------------------------------------------------------------------|---------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| MO-0042-001 | HPA created with correct scaleTargetRef, metrics, and behavior            | autoscaling-enable  | HPA scaleTargetRef=StatefulSet, CPU metric at 80%, scaleDown stabilization 300s, minReplicas=2, maxReplicas=10, standard labels |
+| MO-0042-002 | StatefulSet starts at minReplicas when autoscaling enabled                | autoscaling-enable  | StatefulSet exists with `spec.replicas: 2`; the HPA controls scaling after that                                                 |
+| MO-0042-003 | HPA deleted and StatefulSet replicas set when autoscaling disabled        | autoscaling-disable | HPA no longer exists (error assertion); StatefulSet.spec.replicas=3, readyReplicas=3                                            |
+| MO-0042-004 | HPA updated when minReplicas and maxReplicas patched                      | autoscaling-update  | HPA minReplicas=3 and maxReplicas=15 after patching; scaleTargetRef unchanged                                                   |
+| MO-0042-005 | Webhook rejects CR with spec.replicas and autoscaling.enabled=true        | webhook-rejection   | Apply returns `$error != null` for CR with replicas=3 and autoscaling.enabled=true                                              |
+| MO-0042-006 | Webhook rejects CR with autoscaling.minReplicas > maxReplicas             | webhook-rejection   | Apply returns `$error != null` for CR with minReplicas=10 and maxReplicas=5                                                     |
+| MO-0042-007 | Webhook rejects CR with CPU metric but no resources.requests.cpu          | webhook-rejection   | Apply returns `$error != null` for CR with CPU utilization metric and no cpu request                                            |
+| MO-0042-008 | Documentation updated with autoscaling test scenarios and coverage matrix | (this document)     | File structure, three test scenario sections, webhook rejection table, requirement coverage matrix all include autoscaling      |
+
+### Server List E2E Tests
+
+| Requirement                                                    | Test Scenario | Key Assertions                                                                                     |
+|----------------------------------------------------------------|---------------|----------------------------------------------------------------------------------------------------|
+| Pods run in a StatefulSet governed by the headless Service     | server-list   | StatefulSet with `serviceName` equal to the CR name, `podManagementPolicy: Parallel`, 3 ready pods |
+| `status.serverList` holds one entry per pod in pod index order | server-list   | 3 entries, `test-server-list-<i>.test-server-list.<namespace>.svc:11211`, compared by index        |
+| Per-pod DNS names resolve inside the cluster                   | server-list   | `getent hosts` for pod 2's name exits 0 from pod 0                                                 |
+| `status.serverList` follows the replica count                  | server-list   | 2 entries, for pods 0 and 1, after patching `spec.replicas` to 2                                   |
 
 ---
 
 ## Known Limitations
 
-| Limitation                                         | Impact                                                                                                                             | Mitigation                                                                                                                 |
-|----------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
-| Pod scheduling time varies                         | Assert timeouts may need adjustment in slow CI                                                                                     | Global assert timeout set to 120s                                                                                          |
-| cert-manager required                              | Webhook and TLS/mTLS tests fail without cert-manager                                                                               | Documented as prerequisite; tests fail clearly with connection refused                                                     |
-| ServiceMonitor CRD required                        | monitoring-toggle and cr-deletion tests fail without CRD                                                                           | Documented as prerequisite; Chainsaw reports clear assertion error                                                         |
-| Sequential execution                               | Full suite takes longer than parallel execution                                                                                    | `parallel: 1` avoids resource contention on small clusters                                                                 |
-| No runtime protocol testing                        | SASL/TLS/mTLS tests verify Deployment spec, not actual memcached protocol                                                          | By design: tests are fast, deterministic, and need no memcached client                                                     |
-| Certificate issuance delay                         | cert-manager may take time to issue certificates in CI                                                                             | Explicit `assert-certificate-ready` step waits for Ready=True within 120s                                                  |
-| No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw asserts presence but not absence; TLS test cannot verify `ssl_ca_cert` absent when `enableClientCert` is false            | mTLS test asserts `ssl_ca_cert` present only when `enableClientCert: true`; combined, both tests confirm correct behavior  |
-| Annotation removal uses JMESPath absence check     | service-annotations test uses JMESPath to assert annotations are absent or empty after removal                                     | Assertion actively fails if annotations remain on the Service; upgrades confidence over simple field omission              |
-| Hard anti-affinity with single-node kind           | hard-anti-affinity test uses replicas=1 to avoid scheduling failures on single-node kind; verifies Deployment spec, not scheduling | Spec assertion confirms operator translates `antiAffinityPreset: hard` to `requiredDuringSchedulingIgnoredDuringExecution` |
-| Degraded test depends on image pull timing         | status-degraded test relies on kubelet reporting ImagePullBackOff within 120s for operator to set Degraded=True                    | The 120s timeout is generous; image pull failures are typically reported within seconds by the kubelet                     |
-| Scale-to-zero Available=False behavior change      | `computeConditions` changed to return Available=False when desiredReplicas=0; previously returned Available=True                   | Intentional: zero replicas cannot serve traffic, so Available=False is correct; existing tests updated accordingly         |
+| Limitation                                         | Impact                                                                                                                              | Mitigation                                                                                                                 |
+|----------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| Pod scheduling time varies                         | Assert timeouts may need adjustment in slow CI                                                                                      | Global assert timeout set to 120s                                                                                          |
+| cert-manager required                              | Webhook and TLS/mTLS tests fail without cert-manager                                                                                | Documented as prerequisite; tests fail clearly with connection refused                                                     |
+| ServiceMonitor CRD required                        | monitoring-toggle and cr-deletion tests fail without CRD                                                                            | Documented as prerequisite; Chainsaw reports clear assertion error                                                         |
+| Sequential execution                               | Full suite takes longer than parallel execution                                                                                     | `parallel: 1` avoids resource contention on small clusters                                                                 |
+| No runtime protocol testing                        | SASL/TLS/mTLS tests verify StatefulSet spec, not actual memcached protocol                                                          | By design: tests are fast, deterministic, and need no memcached client                                                     |
+| Certificate issuance delay                         | cert-manager may take time to issue certificates in CI                                                                              | Explicit `assert-certificate-ready` step waits for Ready=True within 120s                                                  |
+| No absence assertion for `ssl_ca_cert` in TLS test | Chainsaw asserts presence but not absence; TLS test cannot verify `ssl_ca_cert` absent when `enableClientCert` is false             | mTLS test asserts `ssl_ca_cert` present only when `enableClientCert: true`; combined, both tests confirm correct behavior  |
+| Annotation removal uses JMESPath absence check     | service-annotations test uses JMESPath to assert annotations are absent or empty after removal                                      | Assertion actively fails if annotations remain on the Service; upgrades confidence over simple field omission              |
+| Hard anti-affinity with single-node kind           | hard-anti-affinity test uses replicas=1 to avoid scheduling failures on single-node kind; verifies StatefulSet spec, not scheduling | Spec assertion confirms operator translates `antiAffinityPreset: hard` to `requiredDuringSchedulingIgnoredDuringExecution` |
+| Degraded test depends on image pull timing         | status-degraded test relies on kubelet reporting ImagePullBackOff within 120s for operator to set Degraded=True                     | The 120s timeout is generous; image pull failures are typically reported within seconds by the kubelet                     |
+| Scale-to-zero Available=False behavior change      | `computeConditions` changed to return Available=False when desiredReplicas=0; previously returned Available=True                    | Intentional: zero replicas cannot serve traffic, so Available=False is correct; existing tests updated accordingly         |
 
 ---
 

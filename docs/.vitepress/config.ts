@@ -45,7 +45,7 @@ export default defineConfig({
               { text: 'Memcached CRD Types', link: '/reference/backend/memcached-crd-types' },
               { text: 'CRD Generation & Registration', link: '/reference/backend/crd-generation-registration' },
               { text: 'Reconciler Scaffold & Watches', link: '/reference/backend/reconciler-scaffold-watches' },
-              { text: 'Deployment Reconciliation', link: '/reference/backend/deployment-reconciliation' },
+              { text: 'StatefulSet Reconciliation', link: '/reference/backend/deployment-reconciliation' },
               { text: 'Headless Service Reconciliation', link: '/reference/backend/headless-service-reconciliation' },
               { text: 'PDB Reconciliation', link: '/reference/backend/pdb-reconciliation' },
               { text: 'HPA Reconciliation', link: '/reference/backend/hpa-reconciliation' },

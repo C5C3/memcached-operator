@@ -2,14 +2,14 @@
 
 Reference documentation for the Memcached operator's pod and container security
 context implementation that applies user-provided security settings to the
-Deployment pod template and all containers.
+StatefulSet pod template and all containers.
 
 **Source**: `internal/controller/deployment.go`, `api/v1alpha1/memcached_types.go`
 
 ## Overview
 
 The operator passes through user-provided security contexts from the Memcached
-CR to the Deployment pod template. This enables cluster operators to configure
+CR to the StatefulSet pod template. This enables cluster operators to configure
 Kubernetes Pod Security Standards (e.g., the restricted profile) without the
 operator imposing defaults.
 
@@ -83,11 +83,11 @@ Both functions follow the same nil-guard pattern as `buildAntiAffinity`,
 
 ---
 
-## Deployment Mapping
+## StatefulSet Mapping
 
-In `constructDeployment`, the security contexts are applied as follows:
+In `constructStatefulSet`, the security contexts are applied as follows:
 
-| CR Field                                 | Deployment Field                                   |
+| CR Field                                 | StatefulSet Field                                  |
 |------------------------------------------|----------------------------------------------------|
 | `spec.security.podSecurityContext`       | `spec.template.spec.securityContext`               |
 | `spec.security.containerSecurityContext` | `spec.template.spec.containers[*].securityContext` |
@@ -130,7 +130,7 @@ spec:
           - ALL
 ```
 
-Produces a Deployment with:
+Produces a StatefulSet with:
 
 ```yaml
 spec:
@@ -208,7 +208,7 @@ spec:
   replicas: 3
 ```
 
-No security contexts are set on the Deployment. The pod runs with Kubernetes
+No security contexts are set on the StatefulSet. The pod runs with Kubernetes
 defaults.
 
 ---
@@ -219,11 +219,11 @@ defaults.
 |----------------------------------------------|---------------------------------------------------------------------|
 | Set `spec.security.podSecurityContext`       | Pod template `securityContext` is set                               |
 | Set `spec.security.containerSecurityContext` | All containers get `securityContext`                                |
-| Change security context values               | Deployment updated with new values                                  |
+| Change security context values               | StatefulSet updated; pods replaced one at a time                    |
 | Remove `spec.security`                       | Both pod and container security contexts cleared                    |
 | Set `podSecurityContext` to nil              | Pod security context cleared, container security context preserved  |
 | Set `containerSecurityContext` to nil        | Container security contexts cleared, pod security context preserved |
-| Reconcile twice with same spec               | No Deployment update (idempotent)                                   |
+| Reconcile twice with same spec               | No StatefulSet update (idempotent)                                  |
 | External drift (manual removal)              | Corrected on next reconciliation cycle                              |
 
 ---
@@ -232,12 +232,12 @@ defaults.
 
 The implementation adds two pure helper functions to
 `internal/controller/deployment.go` and integrates them into
-`constructDeployment`:
+`constructStatefulSet`:
 
 1. `buildPodSecurityContext` — returns `*corev1.PodSecurityContext` or nil
 2. `buildContainerSecurityContext` — returns `*corev1.SecurityContext` or nil
 
-In `constructDeployment`:
+In `constructStatefulSet`:
 - `buildPodSecurityContext` result is assigned to `PodSpec.SecurityContext`
 - `buildContainerSecurityContext` result is assigned to the memcached container's
   `SecurityContext` field
@@ -245,7 +245,7 @@ In `constructDeployment`:
   it is built by `buildExporterContainer`
 
 No changes to the controller (`memcached_controller.go`) are needed — the
-existing `reconcileDeployment` calls `constructDeployment` which now includes
+existing `reconcileStatefulSet` calls `constructStatefulSet` which now includes
 security context logic.
 
 No changes to the CRD types are needed — `SecuritySpec` already defines

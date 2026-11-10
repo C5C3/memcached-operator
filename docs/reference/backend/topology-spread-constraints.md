@@ -8,13 +8,13 @@ how Memcached pods are distributed across topology domains (e.g. availability zo
 ## Overview
 
 The `spec.highAvailability.topologySpreadConstraints` field configures topology
-spread constraints on the Deployment's pod template. This allows operators to
+spread constraints on the StatefulSet's pod template. This allows operators to
 control how Memcached pods are distributed across failure domains such as zones,
 regions, or nodes.
 
 Unlike `antiAffinityPreset` which provides opinionated presets, topology spread
 constraints are a direct passthrough: the constraints defined in the CR are
-applied verbatim to the Deployment pod template without transformation.
+applied verbatim to the StatefulSet pod template without transformation.
 
 Each constraint supports all standard Kubernetes `TopologySpreadConstraint`
 fields:
@@ -31,7 +31,7 @@ fields:
 | `nodeTaintsPolicy`   | string        | How node taints are treated (`Honor` or `Ignore`)                                   |
 
 When `spec.highAvailability` is nil or `topologySpreadConstraints` is nil or
-empty, no topology spread constraints are set on the Deployment.
+empty, no topology spread constraints are set on the StatefulSet.
 
 ---
 
@@ -75,7 +75,7 @@ spec:
             app.kubernetes.io/instance: my-cache
 ```
 
-### Generated Deployment Structure
+### Generated StatefulSet Structure
 
 ```yaml
 spec:
@@ -166,7 +166,7 @@ Changing or removing one does not affect the other.
 ## No Constraints (Default)
 
 When `spec.highAvailability` is omitted, or `topologySpreadConstraints` is nil
-or an empty list, the Deployment has no topology spread constraints. Pods are
+or an empty list, the StatefulSet has no topology spread constraints. Pods are
 scheduled freely by the default scheduler.
 
 ```yaml
@@ -178,20 +178,24 @@ spec:
   replicas: 3
 ```
 
-The Deployment's `spec.template.spec.topologySpreadConstraints` will be nil.
+The StatefulSet's `spec.template.spec.topologySpreadConstraints` will be nil.
 
 ---
 
 ## Runtime Behavior
 
-| Action                                      | Result                                                |
-|---------------------------------------------|-------------------------------------------------------|
-| Add `topologySpreadConstraints`             | Deployment updated with constraints on next reconcile |
-| Modify a constraint (e.g. change `maxSkew`) | Deployment updated on next reconcile                  |
-| Remove `topologySpreadConstraints`          | Deployment constraints cleared to nil                 |
-| Remove `highAvailability` section           | Deployment constraints cleared to nil                 |
-| Reconcile twice with same spec              | No Deployment update (idempotent)                     |
-| Add/remove `antiAffinityPreset`             | No effect on topology spread constraints              |
+| Action                                      | Result                                                 |
+|---------------------------------------------|--------------------------------------------------------|
+| Add `topologySpreadConstraints`             | StatefulSet updated with constraints on next reconcile |
+| Modify a constraint (e.g. change `maxSkew`) | StatefulSet updated on next reconcile                  |
+| Remove `topologySpreadConstraints`          | StatefulSet constraints cleared to nil                 |
+| Remove `highAvailability` section           | StatefulSet constraints cleared to nil                 |
+| Reconcile twice with same spec              | No StatefulSet update (idempotent)                     |
+| Add/remove `antiAffinityPreset`             | No effect on topology spread constraints               |
+
+A change to the constraints updates the pod template, so the StatefulSet
+replaces its pods one at a time with a rolling update. The scheduler applies
+the new constraints to each replacement pod.
 
 ---
 
@@ -208,7 +212,7 @@ func buildTopologySpreadConstraints(mc *Memcached) []corev1.TopologySpreadConstr
 - Returns `nil` when `spec.highAvailability` is nil
 - Returns `nil` when `topologySpreadConstraints` is nil or empty
 - Returns the constraints slice as-is when populated (direct passthrough)
-- Called from `constructDeployment`, which sets the result on the pod template spec
+- Called from `constructStatefulSet`, which sets the result on the pod template spec
 
 The function follows the same pattern as `buildAntiAffinity`: a pure builder
 function with no side effects, tested independently via unit tests.

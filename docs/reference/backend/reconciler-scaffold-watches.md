@@ -85,8 +85,9 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 | CR fetched successfully       | `ctrl.Result{}, nil` | Log reconciliation, no requeue   |
 
 The scaffold returns an empty result after a successful fetch. Subsequent
-features (MO-0005 through MO-0014) add reconciliation logic for Deployments,
-Services, PDBs, NetworkPolicies, status updates, and ServiceMonitors.
+features (MO-0005 through MO-0014) add reconciliation logic for the memcached
+workload (now a StatefulSet), Services, PDBs, NetworkPolicies, status updates,
+and ServiceMonitors.
 
 ---
 
@@ -99,7 +100,7 @@ which Kubernetes resources trigger reconciliation:
 func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&memcachedv1alpha1.Memcached{}).
-        Owns(&appsv1.Deployment{}).
+        Owns(&appsv1.StatefulSet{}).
         Owns(&corev1.Service{}).
         Owns(&policyv1.PodDisruptionBudget{}).
         Owns(&networkingv1.NetworkPolicy{}).
@@ -113,7 +114,7 @@ func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 | Method | Resource Type         | API Group           | Trigger Condition                                                             |
 |--------|-----------------------|---------------------|-------------------------------------------------------------------------------|
 | `For`  | `Memcached`           | `memcached.c5c3.io` | Any create, update, or delete of a Memcached CR                               |
-| `Owns` | `Deployment`          | `apps`              | Changes to Deployments with an owner reference pointing to a Memcached CR     |
+| `Owns` | `StatefulSet`         | `apps`              | Changes to StatefulSets with an owner reference pointing to a Memcached CR    |
 | `Owns` | `Service`             | (core)              | Changes to Services with an owner reference pointing to a Memcached CR        |
 | `Owns` | `PodDisruptionBudget` | `policy`            | Changes to PDBs with an owner reference pointing to a Memcached CR            |
 | `Owns` | `NetworkPolicy`       | `networking.k8s.io` | Changes to NetworkPolicies with an owner reference pointing to a Memcached CR |
@@ -134,9 +135,17 @@ enqueues a `ctrl.Request` with the CR's `NamespacedName` for reconciliation.
    `Reconcile` receives the owner's name — not the owned resource's name.
 
 This means:
-- A Deployment created by the reconciler with `controllerutil.SetControllerReference`
+- A StatefulSet created by the reconciler with `controllerutil.SetControllerReference`
   will trigger reconciliation of the owning Memcached CR if modified externally.
-- A Deployment without a Memcached owner reference is ignored entirely.
+  This includes a change of `spec.replicas` by the HPA, which updates
+  `status.serverList` on the next reconcile.
+- A StatefulSet without a Memcached owner reference is ignored entirely.
+
+Deployments are not watched with `Owns`. The reconciler only reads and deletes
+the Deployment that earlier releases ran the pods in (see
+[Legacy Deployment Migration](deployment-reconciliation.md#legacy-deployment-migration)).
+That `Get` goes through the cached client, which starts a Deployment informer on
+first use, but a Deployment event does not enqueue a reconcile.
 
 ### ServiceMonitor Watch
 
@@ -159,7 +168,8 @@ Kubebuilder RBAC markers on the reconciler generate the `ClusterRole` rules in
 // +kubebuilder:rbac:groups=memcached.c5c3.io,resources=memcacheds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=memcached.c5c3.io,resources=memcacheds/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=memcached.c5c3.io,resources=memcacheds/finalizers,verbs=update
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -176,7 +186,8 @@ The markers produce the following rules in `config/rbac/role.yaml`:
 | `memcached.c5c3.io`     | `memcacheds`            | get, list, watch, create, update, patch, delete | Full CRUD on Memcached CRs        |
 | `memcached.c5c3.io`     | `memcacheds/status`     | get, update, patch                              | Status subresource updates        |
 | `memcached.c5c3.io`     | `memcacheds/finalizers` | update                                          | Finalizer management              |
-| `apps`                  | `deployments`           | get, list, watch, create, update, patch, delete | Manage Memcached Deployments      |
+| `apps`                  | `statefulsets`          | get, list, watch, create, update, patch, delete | Manage Memcached StatefulSets     |
+| `apps`                  | `deployments`           | get, list, watch, delete                        | Delete the legacy Deployment      |
 | (core)                  | `services`              | get, list, watch, create, update, patch, delete | Manage headless Services          |
 | `policy`                | `poddisruptionbudgets`  | get, list, watch, create, update, patch, delete | Manage PodDisruptionBudgets       |
 | `networking.k8s.io`     | `networkpolicies`       | get, list, watch, create, update, patch, delete | Manage NetworkPolicies            |
@@ -238,10 +249,11 @@ reconciled in MO-0014) are declared in this scaffold because:
 | Event Source        | Event Type           | Reconciled Object       |
 |---------------------|----------------------|-------------------------|
 | Memcached CR        | Create/Update/Delete | The Memcached CR itself |
-| Owned Deployment    | Create/Update/Delete | The owning Memcached CR |
+| Owned StatefulSet   | Create/Update/Delete | The owning Memcached CR |
 | Owned Service       | Create/Update/Delete | The owning Memcached CR |
 | Owned PDB           | Create/Update/Delete | The owning Memcached CR |
 | Owned NetworkPolicy | Create/Update/Delete | The owning Memcached CR |
-| Unowned Deployment  | Any                  | (not reconciled)        |
+| Unowned StatefulSet | Any                  | (not reconciled)        |
+| Any Deployment      | Any                  | (not reconciled)        |
 
 [owner-ref]: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/

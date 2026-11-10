@@ -9,7 +9,7 @@ content changes and trigger re-reconciliation.
 ## Overview
 
 The operator needs to detect when referenced Secrets (SASL credentials or TLS
-certificates) change so it can update the Memcached Deployment accordingly. Three
+certificates) change so it can update the Memcached StatefulSet accordingly. Three
 helper functions in `internal/controller/secret.go` support this:
 
 1. **`computeSecretHash`** — produces a deterministic SHA-256 hex digest over
@@ -196,13 +196,13 @@ These three functions are integrated into the reconciliation loop as follows:
 - **`mapSecretToMemcached`** is registered as a `Watches` handler in
   `SetupWithManager`, so Secret changes trigger reconciliation of referencing
   Memcached CRs.
-- **`fetchReferencedSecrets`** is called at the start of `reconcileDeployment`
+- **`fetchReferencedSecrets`** is called at the start of `reconcileStatefulSet`
   to resolve Secret refs and identify missing Secrets.
 - **`computeSecretHash`** computes a SHA-256 hash over the fetched Secrets,
-  which is passed to `constructDeployment` along with the restart-trigger
+  which is passed to `constructStatefulSet` along with the restart-trigger
   annotation value from the CR.
 
-The flow within `reconcileDeployment`:
+The flow within `reconcileStatefulSet`:
 
 ```text
 Secret updated
@@ -211,22 +211,23 @@ Secret updated
 mapSecretToMemcached          ← watch handler triggers reconcile
       │
       ▼
-reconcileDeployment
+reconcileStatefulSet
   ├─ fetchReferencedSecrets   ← resolves Secret refs → found + missing
   ├─ computeSecretHash        ← hash over found Secrets
   ├─ read restart-trigger     ← from CR annotations
-  └─ constructDeployment      ← writes hash + trigger as pod annotations
+  └─ constructStatefulSet     ← writes hash + trigger as pod annotations
       │
       ▼
-Pod template annotations changed → Kubernetes rolls pods
+Pod template annotations changed → StatefulSet replaces pods one at a time
       │
       ▼
 missing Secrets returned → reconcileStatus sets SecretNotFound condition
 ```
 
 The hash is stored as the `memcached.c5c3.io/secret-hash` pod template
-annotation on the Deployment, and the restart trigger as
-`memcached.c5c3.io/restart-trigger`. Changes to either value cause Kubernetes
-to roll pods. Missing Secret names are returned by `reconcileDeployment` and
+annotation on the StatefulSet, and the restart trigger as
+`memcached.c5c3.io/restart-trigger`. Changes to either value start a rolling
+update of the StatefulSet, which replaces the pods one at a time. Missing
+Secret names are returned by `reconcileStatefulSet` and
 forwarded to `reconcileStatus`, which sets a `Degraded` condition with reason
 `SecretNotFound`.

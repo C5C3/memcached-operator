@@ -67,6 +67,137 @@ kubectl logs -n memcached-operator-system deployment/memcached-operator-controll
 All Memcached CRs should show `Available: True` in their status conditions
 before upgrading.
 
+## Upgrading to per-pod server lists
+
+Operator releases up to v0.4.0 run the pods of each Memcached instance in a
+Deployment. v0.4.0 publishes a single `status.serverList` entry, the name of the
+headless Service, and earlier releases publish no `serverList`. Later releases
+run the pods in a StatefulSet that the headless Service governs, and publish one
+entry per pod. Read this section before you upgrade across that change.
+
+### The workload is replaced automatically
+
+On its first reconcile of each Memcached instance, the new operator creates the
+StatefulSet and then deletes the Deployment that the previous release created
+for the same instance. No manual step is needed. The operator deletes the
+Deployment only when the Memcached CR controls it, so a Deployment with the
+same name that you created yourself is left alone. Each deletion is recorded as
+a `Normal` event with reason `Deleted` and the message
+`Deleted legacy Deployment <name>` on the Memcached CR:
+
+```bash
+kubectl describe memcached <name> -n <namespace>
+```
+
+The new pods start with an empty cache, so every instance loses its cached
+entries during the move. For a few seconds the Service name has no ready pod,
+until the new pods pass their readiness probe. Plan the upgrade for a time when
+cache misses and a short gap in service are acceptable.
+
+### The serverList format changes
+
+`status.serverList` now holds one entry per pod instead of the Service name.
+Each entry has the format:
+
+```text
+<statefulset>-<i>.<name>.<namespace>.svc:11211
+```
+
+For a Memcached named `my-cache` in the namespace `production` with 3
+replicas, the list changes from `my-cache.production:11211` to:
+
+```text
+my-cache-0.my-cache.production.svc:11211
+my-cache-1.my-cache.production.svc:11211
+my-cache-2.my-cache.production.svc:11211
+```
+
+The entries are ordered by pod index, starting at `0`. The list follows the
+replica count of the StatefulSet, including changes the HPA makes, and no
+longer waits for the `Ready` condition. It is empty when the instance has zero
+replicas. `<statefulset>` equals the Memcached name unless the name is
+longer than 52 characters. A longer name is shortened to its first 43
+characters, followed by `-` and the first 8 hex characters of the SHA-256 of
+the name. Clients that read `serverList` must accept more than one entry. See
+[serverList](../reference/crd-reference.md#serverlist) for the full rules.
+
+Check the list after the upgrade:
+
+```bash
+kubectl get memcached <name> -n <namespace> -o jsonpath='{.status.serverList}'
+```
+
+### Rolling updates replace one pod at a time
+
+The Deployment started a new pod before it stopped an old one (`maxSurge: 1`,
+`maxUnavailable: 0`). A StatefulSet has no surge: it replaces one pod at a time,
+deleting each pod before it recreates it under the same name. A pod's address
+is unreachable until the new pod is ready, and a single-replica instance has no
+ready pod while its pod is replaced. Run at least two replicas if the
+Service must keep a ready pod during updates.
+
+### Helm installs need the new CRD
+
+The CRD in the chart now carries `status.serverList`. `helm upgrade` never
+updates the files in the chart's `crds/` directory, so with the default
+`crds.managedByHelm=false` the old CRD stays in place and the API server drops
+`serverList` from every status update. Apply the CRD by hand before you upgrade
+the chart:
+
+```bash
+kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/<new-version>/memcached.c5c3.io_memcacheds.yaml
+```
+
+Or let Helm manage the CRD:
+
+```bash
+helm upgrade memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
+  --version <new-version> \
+  --set crds.managedByHelm=true
+```
+
+Switching to `crds.managedByHelm=true` on an existing install requires adopting
+the existing CRD into Helm first. The chart README describes both strategies.
+
+### The operator needs StatefulSet permissions
+
+The operator now needs `create`, `delete`, `get`, `list`, `patch`, `update`,
+and `watch` on `statefulsets` in the `apps` API group. It keeps `delete`,
+`get`, `list`, and `watch` on `deployments` to remove the old workload.
+`config/rbac/role.yaml` and the chart ClusterRole ship these rules, and
+`make deploy`, the single-file `install.yaml`, and `helm upgrade` apply them. If
+you only change the operator image, the operator cannot create the StatefulSet
+and logs `Forbidden` errors (see
+[RBAC permission changes](#rbac-permission-changes)).
+
+### Metrics and events name the StatefulSet
+
+The `resource_kind` label of `memcached_operator_reconcile_resource_total` and
+the `Created` and `Updated` events on the Memcached CR now name `StatefulSet`
+instead of `Deployment`. Update dashboards, alerts, and event filters that
+match on `Deployment`.
+
+### Rolling back
+
+Roll back with the previous release's manifests, not only its image. This
+release grants the operator only `delete`, `get`, `list`, and `watch` on
+Deployments, and the previous operator needs `create`, `update`, and `patch` to
+recreate them. `helm rollback`, the previous release's `install.yaml`, or
+`make deploy` from a checkout of the previous version restore those permissions
+(see [Redeploy the previous version](#redeploy-the-previous-version)).
+
+The previous operator then recreates the Deployment but leaves the StatefulSet
+running behind the same Service. Once the Deployment is ready, delete the
+StatefulSet:
+
+```bash
+kubectl rollout status deployment/<name> -n <namespace>
+kubectl delete statefulset <statefulset-name> -n <namespace>
+```
+
+See [Delete the StatefulSet after a downgrade](#delete-the-statefulset-after-a-downgrade)
+for how to list the StatefulSets.
+
 ## CRD Update
 
 Update the CRD before upgrading the operator. The new operator version may
@@ -216,8 +347,8 @@ Confirm:
 Check that all managed resources are present and healthy:
 
 ```bash
-# Deployments
-kubectl get deployments -l app.kubernetes.io/managed-by=memcached-operator -A
+# StatefulSets
+kubectl get statefulsets -l app.kubernetes.io/managed-by=memcached-operator -A
 
 # Services
 kubectl get services -l app.kubernetes.io/managed-by=memcached-operator -A
@@ -244,12 +375,23 @@ If the upgrade causes issues, roll back to the previous operator version.
 
 ### Redeploy the previous version
 
+Run `make deploy` from a checkout of the previous version, so that its RBAC and
+other manifests are applied along with its image:
+
 ```bash
+git checkout <previous-version>
 make deploy IMG=ghcr.io/c5c3/memcached-operator:<previous-version>
 ```
 
+Or apply the previous release's single-file manifest:
+
+```bash
+kubectl apply -f https://github.com/c5c3/memcached-operator/releases/download/<previous-version>/install.yaml
+```
+
 Replace `<previous-version>` with the version you were running before the
-upgrade.
+upgrade. Running `make deploy` from a newer checkout applies the newer RBAC,
+which may lack permissions the previous operator needs.
 
 ### Restore CRDs if needed
 
@@ -274,6 +416,31 @@ If CRs were modified or deleted during the upgrade, restore them from backup:
 ```bash
 kubectl apply -f memcached-backup.yaml
 ```
+
+### Delete the StatefulSet after a downgrade
+
+When you roll back from a release that runs the Memcached pods in a StatefulSet
+to one that runs them in a Deployment, the previous operator recreates the
+Deployment for each instance but does not manage the StatefulSet. It can
+recreate the Deployment only with its own RBAC, which allows `create` on
+Deployments (see [Redeploy the previous version](#redeploy-the-previous-version)).
+The StatefulSet keeps running behind the same headless Service, so clients reach
+pods of both workloads. List the StatefulSets the newer operator created:
+
+```bash
+kubectl get statefulsets -A -l app.kubernetes.io/managed-by=memcached-operator
+```
+
+Wait until the recreated Deployment of an instance is ready, then delete its
+StatefulSet:
+
+```bash
+kubectl rollout status deployment/<name> -n <namespace>
+kubectl delete statefulset <statefulset-name> -n <namespace>
+```
+
+`<statefulset-name>` equals the Memcached name, or the shortened name for a
+Memcached name longer than 52 characters.
 
 ### Verify the rollback
 

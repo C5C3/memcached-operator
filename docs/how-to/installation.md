@@ -237,10 +237,10 @@ Check the Memcached custom resource:
 kubectl get memcached my-cache
 ```
 
-Check the managed Deployment and pods:
+Check the managed StatefulSet and pods:
 
 ```bash
-kubectl get deployment my-cache
+kubectl get statefulset my-cache
 kubectl get pods -l app.kubernetes.io/instance=my-cache
 ```
 
@@ -289,7 +289,7 @@ END
 
 ### Delete the instance
 
-To remove the Memcached instance and all its managed resources (Deployment,
+To remove the Memcached instance and all its managed resources (StatefulSet,
 Service, PDB, etc.):
 
 ```bash
@@ -343,7 +343,7 @@ Watch the operator logs in the first terminal and verify that managed resources
 are created:
 
 ```bash
-kubectl get deployment,service,pdb -l app.kubernetes.io/managed-by=memcached-operator
+kubectl get statefulset,service,pdb -l app.kubernetes.io/managed-by=memcached-operator
 ```
 
 ## Uninstallation
@@ -372,7 +372,7 @@ All commands remove operator resources including the
 `memcached-operator-system` namespace.
 
 **Warning:** Removing the CRDs also deletes all `Memcached` custom resources and
-their managed workloads (Deployments, Services, PDBs, etc.) across all
+their managed workloads (StatefulSets, Services, PDBs, etc.) across all
 namespaces. Back up your Memcached CRs before proceeding if you need to preserve
 their definitions.
 

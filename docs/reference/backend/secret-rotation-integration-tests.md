@@ -12,16 +12,16 @@ The Secret rotation integration tests exercise the reconciler's Secret-aware
 behavior by running `reconcileOnce()` against a real API server (provided by
 controller-runtime's envtest framework). These tests validate that:
 
-1. **Secret hash annotation** — the Deployment pod template carries a
+1. **Secret hash annotation** — the StatefulSet pod template carries a
    `memcached.c5c3.io/secret-hash` annotation whose value changes when
    referenced Secret data changes, triggering a rolling restart.
 2. **Missing Secret degraded condition** — the Memcached CR reports
    `Degraded=True` with reason `SecretNotFound` when a referenced Secret does
    not exist, and clears the condition when the Secret is created.
 3. **Manual restart trigger** — the `memcached.c5c3.io/restart-trigger`
-   annotation on the CR is propagated to the Deployment pod template, enabling
+   annotation on the CR is propagated to the StatefulSet pod template, enabling
    operator-initiated rolling restarts.
-4. **Secret watch filtering** — reconciling a CR only produces Deployment
+4. **Secret watch filtering** — reconciling a CR only produces StatefulSet
    changes when the Secrets it references are modified, not when unrelated
    Secrets change.
 
@@ -40,7 +40,7 @@ These tests reuse the shared envtest infrastructure and helpers described in
 - **`uniqueName(prefix)`** for test isolation
 - **`validMemcached(name)`** for webhook-valid minimal CRs
 - **`reconcileOnce(mc)`** for explicit reconciliation control
-- **`fetchDeployment(mc)`** for Deployment retrieval
+- **`fetchStatefulSet(mc)`** for StatefulSet retrieval
 - **`findCondition(conditions, type)`** for status condition lookup
 
 ### Additional Test-Local Setup
@@ -74,14 +74,14 @@ The tests are organized into four Ginkgo `Describe` blocks:
 
 ### Secret Rotation Rolling Restart
 
-| Scenario                                                         | What It Validates                                                                                     |
-|------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
-| SASL Secret exists → Deployment has secret-hash annotation       | Non-empty 64-char hex hash in `memcached.c5c3.io/secret-hash` pod template annotation                 |
-| Secret data changes → hash and ResourceVersion change            | Hash value differs after Secret rotation; Deployment ResourceVersion changes (rolling update trigger) |
-| TLS Secret exists → Deployment has secret-hash annotation        | Same hash behavior for TLS Secret references                                                          |
-| Both SASL and TLS Secrets → combined hash, either change updates | Single hash covers both Secrets; updating either Secret changes the hash                              |
-| No Secret references → no secret-hash annotation                 | Annotation is absent when no Secrets are configured                                                   |
-| Secret unchanged → Deployment ResourceVersion stable             | Idempotent reconciliation: no Deployment update when Secret data is unchanged                         |
+| Scenario                                                         | What It Validates                                                                                      |
+|------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------|
+| SASL Secret exists → StatefulSet has secret-hash annotation      | Non-empty 64-char hex hash in `memcached.c5c3.io/secret-hash` pod template annotation                  |
+| Secret data changes → hash and ResourceVersion change            | Hash value differs after Secret rotation; StatefulSet ResourceVersion changes (rolling update trigger) |
+| TLS Secret exists → StatefulSet has secret-hash annotation       | Same hash behavior for TLS Secret references                                                           |
+| Both SASL and TLS Secrets → combined hash, either change updates | Single hash covers both Secrets; updating either Secret changes the hash                               |
+| No Secret references → no secret-hash annotation                 | Annotation is absent when no Secrets are configured                                                    |
+| Secret unchanged → StatefulSet ResourceVersion stable            | Idempotent reconciliation: no StatefulSet update when Secret data is unchanged                         |
 
 ### Missing Secret Degraded Condition
 
@@ -93,13 +93,13 @@ The tests are organized into four Ginkgo `Describe` blocks:
 
 ### Manual Restart Trigger
 
-| Scenario                                         | What It Validates                                                                       |
-|--------------------------------------------------|-----------------------------------------------------------------------------------------|
-| Set restart-trigger annotation → propagated      | Pod template annotation matches CR annotation value; Deployment ResourceVersion changes |
-| Update restart-trigger value → Deployment update | New annotation value propagated; Deployment ResourceVersion changes                     |
-| Coexist with secret-hash annotation              | Both `secret-hash` and `restart-trigger` annotations present simultaneously             |
-| Restart-trigger without Secrets                  | Annotation propagated even when no Secret references are configured                     |
-| No restart-trigger annotation → not set          | Annotation absent from pod template when CR has no restart-trigger                      |
+| Scenario                                          | What It Validates                                                                        |
+|---------------------------------------------------|------------------------------------------------------------------------------------------|
+| Set restart-trigger annotation → propagated       | Pod template annotation matches CR annotation value; StatefulSet ResourceVersion changes |
+| Update restart-trigger value → StatefulSet update | New annotation value propagated; StatefulSet ResourceVersion changes                     |
+| Coexist with secret-hash annotation               | Both `secret-hash` and `restart-trigger` annotations present simultaneously              |
+| Restart-trigger without Secrets                   | Annotation propagated even when no Secret references are configured                      |
+| No restart-trigger annotation → not set           | Annotation absent from pod template when CR has no restart-trigger                       |
 
 ### Secret Watch Filtering
 
@@ -141,9 +141,9 @@ the CR.
 
 ```go
 // Initial reconcile — capture hash and ResourceVersion.
-dep := fetchDeployment(mc)
-initialHash := dep.Spec.Template.Annotations[controller.AnnotationSecretHash]
-initialRV := dep.ResourceVersion
+sts := fetchStatefulSet(mc)
+initialHash := sts.Spec.Template.Annotations[controller.AnnotationSecretHash]
+initialRV := sts.ResourceVersion
 
 // Update Secret data.
 Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(secret), secret)).To(Succeed())
@@ -154,9 +154,9 @@ Expect(k8sClient.Update(ctx, secret)).To(Succeed())
 _, err = reconcileOnce(mc)
 Expect(err).NotTo(HaveOccurred())
 
-dep = fetchDeployment(mc)
-Expect(dep.Spec.Template.Annotations[controller.AnnotationSecretHash]).NotTo(Equal(initialHash))
-Expect(dep.ResourceVersion).NotTo(Equal(initialRV))
+sts = fetchStatefulSet(mc)
+Expect(sts.Spec.Template.Annotations[controller.AnnotationSecretHash]).NotTo(Equal(initialHash))
+Expect(sts.ResourceVersion).NotTo(Equal(initialRV))
 ```
 
 ### Degraded Condition Verification Pattern
@@ -200,12 +200,12 @@ Tests use exported constants from the `controller` package for annotation keys:
 
 | REQ-ID  | Requirement                                                                      | Test Scenarios                                                                                                               |
 |---------|----------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------|
-| REQ-001 | Deployment has secret-hash annotation when Secret exists                         | SASL Secret hash, TLS Secret hash, both Secrets combined hash                                                                |
+| REQ-001 | StatefulSet has secret-hash annotation when Secret exists                        | SASL Secret hash, TLS Secret hash, both Secrets combined hash                                                                |
 | REQ-002 | Degraded=True with SecretNotFound when Secret missing                            | Single missing Secret, both SASL and TLS missing, clearance after creation                                                   |
-| REQ-003 | Restart-trigger annotation propagated to Deployment                              | Initial propagation, value update, coexistence with secret-hash, without Secrets, absent when not set                        |
+| REQ-003 | Restart-trigger annotation propagated to StatefulSet                             | Initial propagation, value update, coexistence with secret-hash, without Secrets, absent when not set                        |
 | REQ-004 | Only referenced CRs reconciled on Secret change                                  | Isolated Secret update affects only referencing CR; shared Secret update affects both CRs                                    |
-| REQ-005 | Tests use envtest with reconcileOnce() and verify actual Kubernetes object state | All tests use reconcileOnce() + k8sClient.Get() to verify Deployment annotations and CR status conditions                    |
-| REQ-006 | Hash changes trigger Deployment ResourceVersion change (rolling update)          | Secret rotation changes ResourceVersion; restart-trigger changes ResourceVersion; unchanged Secret preserves ResourceVersion |
+| REQ-005 | Tests use envtest with reconcileOnce() and verify actual Kubernetes object state | All tests use reconcileOnce() + k8sClient.Get() to verify StatefulSet annotations and CR status conditions                   |
+| REQ-006 | Hash changes trigger StatefulSet ResourceVersion change (rolling update)         | Secret rotation changes ResourceVersion; restart-trigger changes ResourceVersion; unchanged Secret preserves ResourceVersion |
 | REQ-007 | Degraded condition lifecycle: set on missing, clear on creation                  | SecretNotFound set, then cleared after Secret creation; hash absent → present after Secret creation                          |
 | REQ-008 | All four test scenarios pass in envtest with Ginkgo/Gomega patterns              | This documentation covers the complete test suite                                                                            |
 

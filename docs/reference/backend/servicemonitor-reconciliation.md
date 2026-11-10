@@ -79,7 +79,7 @@ wins.
 
 ### Selector
 
-The ServiceMonitor selector uses the same label set as the Deployment's
+The ServiceMonitor selector uses the same label set as the StatefulSet's
 `spec.selector.matchLabels`, ensuring Prometheus discovers the correct Service
 endpoints:
 
@@ -297,7 +297,7 @@ spec:
       type: preferred
 ```
 
-Produces all expected resources: Deployment with exporter sidecar, Service with
+Produces all expected resources: StatefulSet with exporter sidecar, Service with
 metrics port, PDB, and ServiceMonitor.
 
 ### Monitoring Disabled (Default)

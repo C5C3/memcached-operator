@@ -20,7 +20,8 @@ Phase 4: Core              --> Glance, Placement
 Phase 5: Compute           --> Nova, Neutron, Cinder
 ```
 
-The primary consumer of Memcached is **Keystone**, which uses it for token caching via the `dogpile.cache.pymemcache` backend. Every Keystone instance connects to the individual Memcached pods by address (e.g., `memcached-0.memcached:11211, memcached-1.memcached:11211, ...`), which is why the operator provisions a **headless Service** (`clusterIP: None`) for direct pod discovery.
+The primary consumer of Memcached is **Keystone**, which uses it for token caching via the `dogpile.cache.pymemcache` backend. Every Keystone instance connects to the individual Memcached pods by address (e.g., `memcached-0.memcached.openstack.svc:11211`), so the operator runs the pods in a StatefulSet behind a **headless Service** (`clusterIP: None`).
+The operator lists one address per pod in `status.serverList`.
 
 ---
 
@@ -38,7 +39,7 @@ The primary consumer of Memcached is **Keystone**, which uses it for token cachi
 |  |  |                     |    |  - Defaulting               |  |   |
 |  |  |  Watches:           |    |  - Validation               |  |   |
 |  |  |  - Memcached CR     |    +-----------------------------+  |   |
-|  |  |  - Deployments      |                                     |   |
+|  |  |  - StatefulSets     |                                     |   |
 |  |  |  - Services         |    +-----------------------------+  |   |
 |  |  |  - PDBs             |    |  Metrics Server             |  |   |
 |  |  |  - ServiceMonitors  |    |  :8443 /metrics             |  |   |
@@ -51,7 +52,7 @@ The primary consumer of Memcached is **Keystone**, which uses it for token cachi
 |  |                    Managed Resources                         |   |
 |  |                                                              |   |
 |  |  +--------------+  +----------+  +------+  +---------------+  |   |
-|  |  | Deployment   |  | Service  |  | PDB  |  | ServiceMonitor|  |   |
+|  |  | StatefulSet  |  | Service  |  | PDB  |  | ServiceMonitor|  |   |
 |  |  |              |  | (headless|  |      |  |               |  |   |
 |  |  | +----------+ |  | clusterIP|  |min:1 |  | prometheus    |  |   |
 |  |  | |memcached | |  | :11211   |  |      |  | scrape config |  |   |
@@ -106,13 +107,13 @@ The controller sets up watches for the following resources. All child resource w
 | Resource         | API Group               | Watch Reason                                         |
 |------------------|-------------------------|------------------------------------------------------|
 | `Memcached`      | `memcached.c5c3.io`     | Primary resource; triggers reconciliation on changes |
-| `Deployment`     | `apps`                  | Detect drift, observe rollout status                 |
+| `StatefulSet`    | `apps`                  | Detect drift, observe rollout status                 |
 | `Service`        | core (`""`)             | Detect drift                                         |
 | `PDB`            | `policy`                | Detect drift                                         |
 | `ServiceMonitor` | `monitoring.coreos.com` | Detect drift (if monitoring enabled)                 |
 | `NetworkPolicy`  | `networking.k8s.io`     | Detect drift (if network policy enabled)             |
 
-When any watched resource changes, the controller enqueues the owning `Memcached` CR for reconciliation. This ensures that if someone manually edits a managed Deployment or Service, the operator will detect the drift and restore the desired state.
+When any watched resource changes, the controller enqueues the owning `Memcached` CR for reconciliation. This ensures that if someone manually edits a managed StatefulSet or Service, the operator will detect the drift and restore the desired state.
 
 ---
 
@@ -129,12 +130,13 @@ Reconcile(ctx, req)
 |
 +-- 2. Set status condition: Progressing=True
 |
-+-- 3. Reconcile Deployment
-|   +-- Build desired Deployment spec
++-- 3. Reconcile StatefulSet
+|   +-- Build desired StatefulSet spec
 |   +-- CreateOrUpdate (controllerutil)
 |   |   +-- Create if not exists
 |   |   +-- Update if spec differs
-|   +-- Set owner reference on Deployment
+|   +-- Set owner reference on StatefulSet
+|   +-- Delete the legacy Deployment named like the CR (only if the CR controls it)
 |
 +-- 4. Reconcile Service (headless, clusterIP: None)
 |   +-- Build desired Service spec
@@ -158,13 +160,14 @@ Reconcile(ctx, req)
 |   +-- Set owner reference
 |
 +-- 8. Update Status
-|   +-- Read Deployment status (readyReplicas)
-|   +-- Set conditions: Available, Progressing, Degraded
+|   +-- Read StatefulSet status (readyReplicas)
+|   +-- Set conditions: Available, Progressing, Degraded, Ready
+|   +-- Set serverList, one entry per pod from the StatefulSet replica count
 |   +-- Set observedGeneration
 |   +-- Patch status sub-resource
 |
 +-- 9. Return result
-    +-- Requeue after 10s if Deployment not yet ready
+    +-- No timed requeue; a change to the owned StatefulSet's status triggers the next reconcile through the watch
 ```
 
 ### Create-or-Update Pattern
@@ -172,18 +175,18 @@ Reconcile(ctx, req)
 All managed resources follow the **create-or-update** pattern using `controllerutil.CreateOrUpdate`:
 
 ```go
-dep := &appsv1.Deployment{
+sts := &appsv1.StatefulSet{
     ObjectMeta: metav1.ObjectMeta{
-        Name:      mc.Name,
+        Name:      statefulSetName(mc.Name),
         Namespace: mc.Namespace,
     },
 }
 
-op, err := controllerutil.CreateOrUpdate(ctx, r.Client, dep, func() error {
+op, err := controllerutil.CreateOrUpdate(ctx, r.Client, sts, func() error {
     // Set the desired state on the resource
-    r.constructDeployment(mc, dep)
+    constructStatefulSet(mc, sts, secretHash, restartTrigger)
     // Set owner reference for garbage collection
-    return controllerutil.SetControllerReference(mc, dep, r.Scheme)
+    return controllerutil.SetControllerReference(mc, sts, r.Scheme)
 })
 ```
 
@@ -193,18 +196,23 @@ This pattern is idempotent: if the resource already exists and matches the desir
 
 ## Managed Resources Detail
 
-### Deployment
+### StatefulSet
 
-The operator creates a Deployment for each `Memcached` CR with the following characteristics:
+The operator creates a StatefulSet for each `Memcached` CR with the following characteristics:
 
-- **Replicas**: Configured via `spec.replicas` (default: 1, range: 0-64)
-- **Strategy**: `RollingUpdate` with `maxSurge=1` and `maxUnavailable=0` for zero-downtime updates
+- **Name**: The CR name. A name longer than 52 characters is shortened to its first 43 characters, `-`, and the first 8 hex characters of the SHA-256 of the name, because Kubernetes adds the StatefulSet name to a pod label that is limited to 63 characters
+- **Service name**: `serviceName` is the CR name, so the headless Service governs the StatefulSet and every pod gets the stable DNS name `<statefulset>-<i>.<name>.<namespace>.svc`
+- **Replicas**: Configured via `spec.replicas` (default: 1, range: 0-64). With autoscaling enabled, the operator keeps the replica count the HPA set on the StatefulSet, and a new StatefulSet starts with `spec.autoscaling.minReplicas`, or 1 when that is unset
+- **Pod management**: `Parallel`, so pods are created and deleted together instead of one after another
+- **Update strategy**: `RollingUpdate`, which replaces one pod at a time without a surge pod: each pod is deleted and then recreated under the same name. A single-replica instance has no ready pod while its pod is replaced
 - **Memcached container**: Runs the Memcached server with command-line arguments derived from `spec.memcached` fields
 - **Exporter sidecar** (optional): When `spec.monitoring.enabled` is `true`, a `prom/memcached-exporter` sidecar is injected, exposing metrics on port 9150
 - **Health probes**:
   - Liveness: TCP socket on port 11211, `initialDelaySeconds=10`, `periodSeconds=10`
   - Readiness: TCP socket on port 11211, `initialDelaySeconds=5`, `periodSeconds=5`
 - **Labels**: `app.kubernetes.io/name=memcached`, `app.kubernetes.io/instance=<name>`, `app.kubernetes.io/managed-by=memcached-operator`
+
+Operator releases before the StatefulSet ran the pods in a Deployment named like the CR. After the StatefulSet is reconciled, the reconciler deletes that Deployment with background propagation and emits a `Normal` event with reason `Deleted`. It deletes the Deployment only when the `Memcached` CR controls it, so a Deployment with the same name that the CR does not own is left alone.
 
 ### Headless Service
 
@@ -213,7 +221,7 @@ A headless Service (`clusterIP: None`) is created for each `Memcached` CR, expos
 - Port 11211 (memcached) for client connections
 - Port 9150 (metrics) for Prometheus scraping (when monitoring is enabled)
 
-The headless Service enables direct pod discovery by DNS, which is critical for clients like Keystone's `pymemcache` that connect to individual pod addresses.
+The headless Service enables direct pod discovery by DNS, which is critical for clients like Keystone's `pymemcache` that connect to individual pod addresses. The StatefulSet names this Service in `serviceName`, so each pod gets its own DNS record, and the operator publishes those names in `status.serverList`.
 
 ### PodDisruptionBudget
 
@@ -235,7 +243,7 @@ The operator uses standard Kubernetes conditions to communicate the state of a `
 
 | Condition     | Meaning                                                 |
 |---------------|---------------------------------------------------------|
-| `Available`   | `True` when the Deployment has minimum availability     |
+| `Available`   | `True` when the StatefulSet has at least one ready pod  |
 | `Progressing` | `True` when a rollout or scale operation is in progress |
 | `Degraded`    | `True` when fewer replicas than desired are ready       |
 
@@ -247,7 +255,7 @@ The `status.observedGeneration` field is set to the CR's `metadata.generation` a
 
 ## Owner References and Garbage Collection
 
-Every managed resource (Deployment, Service, PDB, ServiceMonitor, NetworkPolicy) gets a controller owner reference pointing back to the `Memcached` CR:
+Every managed resource (StatefulSet, HPA, Service, PDB, ServiceMonitor, NetworkPolicy) gets a controller owner reference pointing back to the `Memcached` CR:
 
 ```yaml
 ownerReferences:
@@ -264,11 +272,7 @@ This enables Kubernetes garbage collection: when the `Memcached` CR is deleted, 
 
 ## Requeue Strategy
 
-The reconciler requeues to track rollout progress:
-
-| Condition                | Requeue Interval | Reason                    |
-|--------------------------|------------------|---------------------------|
-| Deployment not yet ready | 10 seconds       | Poll for rollout progress |
+The reconciler does not requeue on a timer. The watch on the owned StatefulSet enqueues the Memcached CR whenever the StatefulSet or its status changes, so rollout progress is tracked through events. A reconcile that returns an error is requeued with exponential backoff.
 
 ---
 
@@ -283,7 +287,7 @@ All managed resources are labeled with standard Kubernetes recommended labels:
 | `app.kubernetes.io/managed-by` | `memcached-operator`  |
 
 These labels are used for:
-- Deployment selector matching
+- StatefulSet selector matching
 - Service selector matching
 - PDB selector matching
 - Pod anti-affinity label selectors

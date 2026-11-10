@@ -222,7 +222,7 @@ across multiple releases:
 **Template**: `templates/rbac/clusterrole.yaml`
 **Source**: `config/rbac/role.yaml`
 
-Contains 11 rule blocks granting the operator least-privilege access to manage
+Contains 12 rule blocks granting the operator least-privilege access to manage
 Memcached CRs and their dependent resources:
 
 | API Group               | Resource                   | Verbs                                           |
@@ -230,7 +230,8 @@ Memcached CRs and their dependent resources:
 | `""` (core)             | `secrets`                  | get, list, watch                                |
 | `""` (core)             | `services`                 | create, delete, get, list, patch, update, watch |
 | `""`, `events.k8s.io`   | `events`                   | create, patch                                   |
-| `apps`                  | `deployments`              | create, delete, get, list, patch, update, watch |
+| `apps`                  | `deployments`              | delete, get, list, watch                        |
+| `apps`                  | `statefulsets`             | create, delete, get, list, patch, update, watch |
 | `autoscaling`           | `horizontalpodautoscalers` | create, delete, get, list, patch, update, watch |
 | `memcached.c5c3.io`     | `memcacheds`               | create, delete, get, list, patch, update, watch |
 | `memcached.c5c3.io`     | `memcacheds/finalizers`    | update                                          |
@@ -238,6 +239,10 @@ Memcached CRs and their dependent resources:
 | `monitoring.coreos.com` | `servicemonitors`          | create, delete, get, list, patch, update, watch |
 | `networking.k8s.io`     | `networkpolicies`          | create, delete, get, list, patch, update, watch |
 | `policy`                | `poddisruptionbudgets`     | create, delete, get, list, patch, update, watch |
+
+The operator runs the memcached pods in a StatefulSet and needs full access to
+StatefulSets. The `deployments` rule only lets it find and delete the
+Deployment that earlier operator releases created for each Memcached.
 
 The ClusterRoleBinding binds this role to the operator's ServiceAccount in the
 release namespace.

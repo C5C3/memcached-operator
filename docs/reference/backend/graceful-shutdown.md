@@ -9,7 +9,7 @@ to allow in-flight connections to drain before pod termination.
 ## Overview
 
 When `spec.highAvailability.gracefulShutdown.enabled` is `true`, the reconciler
-configures the Deployment pod template with:
+configures the StatefulSet pod template with:
 
 1. A **preStop lifecycle hook** on the memcached container that executes
    `sleep <preStopDelaySeconds>` to allow in-flight connections to drain
@@ -19,7 +19,9 @@ configures the Deployment pod template with:
    hook before sending SIGKILL.
 
 This prevents cache stampedes during rolling updates by ensuring clients
-experience no abrupt connection resets.
+experience no abrupt connection resets. The StatefulSet replaces pods one at a
+time, so the hook runs on one pod at a time (see
+[Rolling Updates](#rolling-updates)).
 
 The feature is opt-in — no preStop hook or custom terminationGracePeriodSeconds
 is set unless explicitly enabled.
@@ -50,11 +52,11 @@ type GracefulShutdownSpec struct {
 
 ---
 
-## Deployment Construction
+## StatefulSet Construction
 
 `buildGracefulShutdown(mc *Memcached)` returns the lifecycle hook and
 terminationGracePeriodSeconds, or `(nil, nil)` if graceful shutdown is not
-enabled. These values are applied in `constructDeployment`:
+enabled. These values are applied in `constructStatefulSet`:
 
 - `lifecycle` is set on `containers[0].Lifecycle`
 - `terminationGracePeriodSeconds` is set on `spec.template.spec.terminationGracePeriodSeconds`
@@ -68,7 +70,7 @@ enabled. These values are applied in `constructDeployment`:
 - `spec.highAvailability.gracefulShutdown.enabled` is `false`
 
 When graceful shutdown is disabled, the controller sets both `lifecycle` and
-`terminationGracePeriodSeconds` to nil on the Deployment spec. The Kubernetes
+`terminationGracePeriodSeconds` to nil on the StatefulSet pod template. The Kubernetes
 API server applies its own default of 30s for `terminationGracePeriodSeconds`.
 
 ### PreStop Hook
@@ -91,6 +93,28 @@ sleep period:
 4. The process has `terminationGracePeriodSeconds - preStopDelaySeconds`
    remaining to shut down before SIGKILL
 
+### Rolling Updates
+
+The StatefulSet uses `updateStrategy.type: RollingUpdate` with no surge. On a
+pod template change it replaces the pods one at a time, from the highest
+ordinal down:
+
+1. The StatefulSet controller deletes one pod. The pod leaves the Service
+   endpoints, and its per-pod DNS name
+   (`<statefulset>-<i>.<cr-name>.<namespace>.svc`) stops resolving.
+2. The preStop hook sleeps for `preStopDelaySeconds` while existing
+   connections are still served, then memcached receives SIGTERM.
+3. Once the pod has terminated, the controller creates its replacement under
+   the same name.
+4. The controller waits until the replacement is Ready before it deletes the
+   next pod.
+
+Each pod is unreachable from the moment it is deleted until its replacement is
+Ready, and an instance with one replica has no ready pod during that window.
+The replacement keeps the pod's name, so `status.serverList` does not change
+during a rolling update. A rollout takes roughly one termination plus one
+startup per replica, so a longer `preStopDelaySeconds` makes it slower.
+
 ---
 
 ## CR Examples
@@ -110,7 +134,7 @@ spec:
       enabled: true
 ```
 
-Produces a Deployment with:
+Produces a StatefulSet with:
 
 ```yaml
 spec:
@@ -182,13 +206,13 @@ All HA features are applied independently and coexist without conflicts.
 | Action                                       | Result                                                                           |
 |----------------------------------------------|----------------------------------------------------------------------------------|
 | Enable graceful shutdown (`enabled: true`)   | PreStop hook and terminationGracePeriodSeconds set on next reconcile             |
-| Change `preStopDelaySeconds`                 | Deployment updated with new sleep duration                                       |
-| Change `terminationGracePeriodSeconds`       | Deployment updated with new grace period                                         |
+| Change `preStopDelaySeconds`                 | StatefulSet updated with new sleep duration; pods replaced one at a time         |
+| Change `terminationGracePeriodSeconds`       | StatefulSet updated with new grace period; pods replaced one at a time           |
 | Disable graceful shutdown (`enabled: false`) | PreStop hook removed; terminationGracePeriodSeconds reverts to K8s default (30s) |
 | Remove `gracefulShutdown` section            | Same as disabled — hook removed                                                  |
 | Remove `highAvailability` section            | Hook removed; other HA features also cleared                                     |
-| Reconcile twice with same spec               | No Deployment update (idempotent)                                                |
-| External drift (manual Deployment edit)      | Corrected on next reconciliation cycle                                           |
+| Reconcile twice with same spec               | No StatefulSet update (idempotent)                                               |
+| External drift (manual StatefulSet edit)     | Corrected on next reconciliation cycle                                           |
 
 ---
 
@@ -205,5 +229,5 @@ func buildGracefulShutdown(mc *Memcached) (*corev1.Lifecycle, *int64)
 - Returns a Lifecycle with PreStop exec `["sleep", "<seconds>"]` when enabled
 - Returns a pointer to the terminationGracePeriodSeconds value
 
-The returned values are applied directly in `constructDeployment` on the
+The returned values are applied directly in `constructStatefulSet` on the
 container and pod spec respectively.
