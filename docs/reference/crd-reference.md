@@ -181,7 +181,7 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 
 ## AutoscalingSpec
 
-`AutoscalingSpec` defines horizontal pod autoscaling configuration. When `enabled` is `true`, the operator creates an HPA targeting the Memcached Deployment and `spec.replicas` must not be set (they are mutually exclusive).
+`AutoscalingSpec` defines horizontal pod autoscaling configuration. When `enabled` is `true`, the operator creates an HPA targeting the Memcached StatefulSet and `spec.replicas` must not be set (they are mutually exclusive).
 
 | Field         | Type                                                                                                                                       | Default | Validation | Description                                                                                                                         |
 |---------------|--------------------------------------------------------------------------------------------------------------------------------------------|---------|------------|-------------------------------------------------------------------------------------------------------------------------------------|
@@ -214,13 +214,13 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 | `conditions`         | `[]metav1.Condition` | Standard Kubernetes conditions representing the latest available observations of the Memcached instance's state. Uses merge-patch with `type` as the merge key. See [Status Conditions](#status-conditions) below. |
 | `readyReplicas`      | `int32`              | Number of Memcached pods that are ready                                                                                                                                                                            |
 | `observedGeneration` | `int64`              | Most recent generation observed by the controller. Clients can compare this to `metadata.generation` to determine if the status is up-to-date with the latest spec changes.                                        |
-| `serverList`         | `[]string`           | Memcached endpoint addresses in `host:port` format (e.g., `"my-cache.production:11211"`). Populated with the headless Service DNS entry when the instance is `Ready`; `nil` otherwise. See [serverList](#serverlist) below. |
+| `serverList`         | `[]string`           | One `host:port` entry per pod, `<statefulset>-<i>.<name>.<namespace>.svc:11211`, ordered by pod index. Follows the StatefulSet replica count, not pod readiness; `nil` when the instance has zero replicas. See [serverList](#serverlist) below. |
 
 ### Status Conditions
 
 | Condition Type | Status Values    | Description                                                                  |
 |----------------|------------------|------------------------------------------------------------------------------|
-| `Available`    | `True` / `False` | `True` when the Deployment has minimum availability                          |
+| `Available`    | `True` / `False` | `True` when the StatefulSet has at least one ready pod                       |
 | `Progressing`  | `True` / `False` | `True` when a rollout or scale operation is in progress                      |
 | `Degraded`     | `True` / `False` | `True` when fewer replicas than desired are ready                            |
 | `Ready`        | `True` / `False` | `True` when all desired replicas are ready and `desiredReplicas > 0`. See [Ready Condition](#ready-condition) below |
@@ -229,23 +229,51 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 
 The `Ready` condition indicates whether the Memcached instance is fully operational. It is computed independently of the `Available`, `Progressing`, and `Degraded` conditions.
 
-| Status  | Reason               | When                                                                                    |
-|---------|----------------------|-----------------------------------------------------------------------------------------|
-| `True`  | `MemcachedReady`     | `readyReplicas == desiredReplicas` **and** `desiredReplicas > 0`                        |
-| `False` | `MemcachedNotReady`  | `readyReplicas < desiredReplicas`, or `desiredReplicas == 0`, or Deployment not created |
+| Status  | Reason               | When                                                                                     |
+|---------|----------------------|------------------------------------------------------------------------------------------|
+| `True`  | `MemcachedReady`     | `readyReplicas == desiredReplicas` **and** `desiredReplicas > 0`                         |
+| `False` | `MemcachedNotReady`  | `readyReplicas < desiredReplicas`, or `desiredReplicas == 0`, or StatefulSet not created |
 
 The condition message provides a human-readable description of the current state (e.g., `"All 3 replicas are ready"`, `"2/3 replicas are ready"`, `"Instance has zero desired replicas"`).
 
 #### serverList
 
-The `serverList` field contains the Memcached service endpoint that clients can use for cache-ring construction. The controller computes `serverList` on every reconciliation cycle based on the `Ready` condition:
+The `serverList` field holds one address per Memcached pod, so a client library can hash keys over the pods directly. The controller computes it on every reconciliation cycle from the StatefulSet that runs the pods. Each entry has the format:
 
-| Ready Condition | serverList Value                              | Example                              |
-|-----------------|-----------------------------------------------|--------------------------------------|
-| `True`          | `["<cr-name>.<namespace>:11211"]`             | `["prod-cache.production:11211"]`    |
-| `False`         | `nil`                                         | --                                   |
+```text
+<statefulset>-<i>.<name>.<namespace>.svc:11211
+```
 
-The address uses the headless Service DNS name (which matches the CR name) and the standard Memcached port `11211`.
+| Part            | Meaning                                                                        |
+|-----------------|--------------------------------------------------------------------------------|
+| `<statefulset>` | Name of the StatefulSet that runs the pods (see the naming rule below)         |
+| `<i>`           | Pod index, from `0` to `replicas - 1`                                          |
+| `<name>`        | Name of the Memcached resource, which is also the name of its headless Service |
+| `<namespace>`   | Namespace of the Memcached resource                                            |
+| `11211`         | Memcached port. The entry uses `11211` also when TLS is enabled                |
+
+The headless Service governs the StatefulSet, so every pod gets a DNS name that stays the same when the pod restarts. A pod's name resolves once the pod is ready.
+
+The list follows these rules:
+
+- The entries are ordered by pod index, starting at `0`.
+- The number of entries equals the replica count of the StatefulSet (its `spec.replicas`, or `1` when that is unset). When autoscaling is enabled, the list grows and shrinks with the replica count the HPA sets.
+- Pod readiness does not change the list. A pod that is starting or restarting keeps its entry, and the `Ready` condition can be `False` while the list is complete.
+- The list is empty (`nil`) when the instance has zero replicas or when the StatefulSet does not exist yet.
+
+The StatefulSet name equals the Memcached name when the name has at most 52 characters. A longer name is shortened to its first 43 characters, followed by `-` and the first 8 hex characters of the SHA-256 of the full name, which gives 52 characters in total. The `<name>` part of each entry is always the full Memcached name.
+
+The limit exists because Kubernetes labels every StatefulSet pod with `controller-revision-hash: <statefulset>-<hash>`, where the hash has up to 10 characters, and label values are limited to 63 characters. A longer StatefulSet name could not create pods.
+
+For a Memcached named `prod-cache` in the namespace `production` with 3 replicas, the status contains:
+
+```yaml
+status:
+  serverList:
+    - prod-cache-0.prod-cache.production.svc:11211
+    - prod-cache-1.prod-cache.production.svc:11211
+    - prod-cache-2.prod-cache.production.svc:11211
+```
 
 ---
 

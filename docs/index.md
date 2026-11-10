@@ -5,12 +5,13 @@ The **Memcached Operator** is a Kubernetes operator for managing Memcached clust
 It is part of the [CobaltCore (C5C3)](https://github.com/c5c3/c5c3) ecosystem --
 a Kubernetes-native OpenStack distribution for operating Hosted Control Planes on bare-metal infrastructure.
 
-The operator automates the deployment, configuration, and lifecycle management of Memcached instances on Kubernetes. Users declare their desired Memcached topology via a Custom Resource, and the operator reconciles the underlying Deployments, Services, PodDisruptionBudgets, ServiceMonitors, and NetworkPolicies.
+The operator automates the deployment, configuration, and lifecycle management of Memcached instances on Kubernetes. Users declare their desired Memcached topology via a Custom Resource, and the operator reconciles the underlying StatefulSets, Services, PodDisruptionBudgets, ServiceMonitors, and NetworkPolicies.
 
 ## Capabilities
 
 - Declarative management of Memcached clusters via a Custom Resource
-- Automated creation and reconciliation of Deployments, Services, PodDisruptionBudgets, ServiceMonitors, and NetworkPolicies
+- Automated creation and reconciliation of StatefulSets, Services, PodDisruptionBudgets, ServiceMonitors, and NetworkPolicies
+- Stable DNS names for every pod, published as a per-pod server list in `status.serverList`
 - Memcached configuration through CRD fields (memory, connections, threads, item size, verbosity)
 - Built-in Prometheus monitoring via a `memcached-exporter` sidecar
 - High-availability primitives: pod anti-affinity, topology spread constraints, PodDisruptionBudgets, graceful shutdown
@@ -65,7 +66,7 @@ Detailed technical reference material.
 
 The `reference/backend/` directory contains in-depth implementation references for individual features, including:
 
-- [Deployment Reconciliation](reference/backend/deployment-reconciliation.md)
+- [StatefulSet Reconciliation](reference/backend/deployment-reconciliation.md)
 - [Headless Service Reconciliation](reference/backend/headless-service-reconciliation.md)
 - [PDB Reconciliation](reference/backend/pdb-reconciliation.md)
 - [ServiceMonitor Reconciliation](reference/backend/servicemonitor-reconciliation.md)

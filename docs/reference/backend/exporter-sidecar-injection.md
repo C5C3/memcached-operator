@@ -1,7 +1,7 @@
 # Exporter Sidecar Injection
 
 Reference documentation for the Memcached exporter sidecar injection feature
-that automatically adds a `prom/memcached-exporter` container to the Deployment
+that automatically adds a `prom/memcached-exporter` container to the StatefulSet
 and a metrics port to the headless Service when monitoring is enabled.
 
 **Source**: `internal/controller/deployment.go`, `internal/controller/service.go`, `api/v1alpha1/memcached_types.go`
@@ -10,13 +10,13 @@ and a metrics port to the headless Service when monitoring is enabled.
 
 When `spec.monitoring.enabled` is `true`, the reconciler injects a
 [memcached-exporter](https://github.com/prometheus/memcached_exporter) sidecar
-container into the Deployment pod template. The exporter connects to the
+container into the StatefulSet pod template. The exporter connects to the
 co-located memcached process on `localhost:11211` and exposes Prometheus metrics
 on port 9150.
 
 The feature configures two resources:
 
-1. **Deployment** — a second container named `exporter` is appended to the pod
+1. **StatefulSet** — a second container named `exporter` is appended to the pod
    template alongside the `memcached` container.
 2. **Service** — a `metrics` port (9150/TCP) is added to the headless Service,
    enabling Prometheus ServiceMonitor discovery.
@@ -124,7 +124,7 @@ spec:
     enabled: true
 ```
 
-Produces a Deployment with two containers:
+Produces a StatefulSet with two containers:
 
 ```yaml
 spec:
@@ -201,7 +201,7 @@ spec:
   replicas: 3
 ```
 
-No exporter sidecar is injected. The Deployment has a single `memcached`
+No exporter sidecar is injected. The StatefulSet has a single `memcached`
 container. The Service has only the `memcached` port (11211/TCP).
 
 ### Combined with Other Features
@@ -234,17 +234,21 @@ receives the preStop hook from graceful shutdown.
 
 ## Runtime Behavior
 
-| Action                                    | Result                                                                        |
-|-------------------------------------------|-------------------------------------------------------------------------------|
-| Enable monitoring (`enabled: true`)       | Exporter sidecar added to Deployment; metrics port added to Service           |
-| Set `exporterImage`                       | Exporter container uses the specified image                                   |
-| Change `exporterImage`                    | Deployment updated with new exporter image                                    |
-| Set `exporterResources`                   | Exporter container uses the specified resource requests/limits                |
-| Change `exporterResources`                | Deployment updated with new resource configuration                            |
-| Disable monitoring (`enabled: false`)     | Exporter container removed from Deployment; metrics port removed from Service |
-| Remove `monitoring` section               | Same as disabled — sidecar and metrics port removed                           |
-| Reconcile twice with same spec            | No Deployment or Service update (idempotent)                                  |
-| External drift (manual container removal) | Corrected on next reconciliation cycle                                        |
+| Action                                    | Result                                                                         |
+|-------------------------------------------|--------------------------------------------------------------------------------|
+| Enable monitoring (`enabled: true`)       | Exporter sidecar added to StatefulSet; metrics port added to Service           |
+| Set `exporterImage`                       | Exporter container uses the specified image                                    |
+| Change `exporterImage`                    | StatefulSet updated with new exporter image                                    |
+| Set `exporterResources`                   | Exporter container uses the specified resource requests/limits                 |
+| Change `exporterResources`                | StatefulSet updated with new resource configuration                            |
+| Disable monitoring (`enabled: false`)     | Exporter container removed from StatefulSet; metrics port removed from Service |
+| Remove `monitoring` section               | Same as disabled — sidecar and metrics port removed                            |
+| Reconcile twice with same spec            | No StatefulSet or Service update (idempotent)                                  |
+| External drift (manual container removal) | Corrected on next reconciliation cycle                                         |
+
+Adding, changing, or removing the sidecar updates the pod template, so the
+StatefulSet replaces its pods one at a time with a rolling update. Each
+replaced pod starts with an empty cache.
 
 ---
 
@@ -260,7 +264,7 @@ func buildExporterContainer(mc *Memcached) *corev1.Container
 - Returns `nil` when monitoring is not enabled or `spec.monitoring` is nil
 - Returns a `*corev1.Container` with name `exporter`, the resolved image, port
   9150/TCP, and optional resource requirements
-- Called from `constructDeployment`, which appends the container to the
+- Called from `constructStatefulSet`, which appends the container to the
   containers slice when non-nil
 
 The function follows the same pattern as `buildAntiAffinity` and

@@ -25,12 +25,14 @@ kubectl get memcached <name> -n <namespace> -o jsonpath='{.status.conditions}' |
 
 Look for the `Progressing` condition message, which reports the rollout state (e.g., `Rollout in progress: 0/3 replicas updated`).
 
-**Check the owned Deployment:**
+**Check the owned StatefulSet:**
 
 ```bash
-kubectl get deployment <name> -n <namespace>
-kubectl describe deployment <name> -n <namespace>
+kubectl get statefulset <name> -n <namespace>
+kubectl describe statefulset <name> -n <namespace>
 ```
+
+The StatefulSet has the same name as the Memcached CR. For a CR name longer than 52 characters, the StatefulSet name is shortened (see [serverList](../reference/crd-reference.md#serverlist)); find it by label with `kubectl get statefulset -n <namespace> -l app.kubernetes.io/instance=<name>`.
 
 **Check Pod status:**
 
@@ -38,7 +40,7 @@ kubectl describe deployment <name> -n <namespace>
 kubectl get pods -n <namespace> -l app.kubernetes.io/name=memcached,app.kubernetes.io/instance=<name>
 ```
 
-**Check events on the CR and Deployment:**
+**Check events on the CR and StatefulSet:**
 
 ```bash
 kubectl describe memcached <name> -n <namespace>
@@ -362,7 +364,7 @@ Fix: Set `replicas` to a value within the allowed range.
 
 ### Symptom
 
-Changes to a Memcached CR (e.g., scaling replicas) are not reflected in the managed Deployment, Service, or other resources.
+Changes to a Memcached CR (e.g., scaling replicas) are not reflected in the managed StatefulSet, Service, or other resources.
 
 ### Diagnosis
 
@@ -389,7 +391,7 @@ curl http://localhost:8081/readyz
 **Check RBAC permissions:**
 
 ```bash
-kubectl auth can-i get deployments --as=system:serviceaccount:memcached-operator-system:memcached-operator-controller-manager -n <namespace>
+kubectl auth can-i get statefulsets --as=system:serviceaccount:memcached-operator-system:memcached-operator-controller-manager -n <namespace>
 ```
 
 ### Common Causes and Fixes
@@ -407,7 +409,7 @@ Fix: Investigate why the operator pod is not running (image pull issues, resourc
 
 **RBAC permissions missing**
 
-The operator's ServiceAccount lacks the required ClusterRole/Role bindings to manage the target resources (Deployments, Services, PodDisruptionBudgets, NetworkPolicies, ServiceMonitors, Secrets).
+The operator's ServiceAccount lacks the required ClusterRole/Role bindings to manage the target resources (StatefulSets, Services, PodDisruptionBudgets, NetworkPolicies, ServiceMonitors, Secrets).
 
 ```bash
 kubectl logs -n memcached-operator-system deployment/memcached-operator-controller-manager -c manager | grep -i forbidden
@@ -755,7 +757,7 @@ kubectl get all,pdb,networkpolicy,servicemonitor -n <namespace> \
 Every managed resource has an `ownerReference` pointing to the parent Memcached CR. This ensures garbage collection when the CR is deleted:
 
 ```bash
-kubectl get deployment <name> -n <namespace> -o jsonpath='{.metadata.ownerReferences}' | jq .
+kubectl get statefulset <name> -n <namespace> -o jsonpath='{.metadata.ownerReferences}' | jq .
 ```
 
 ### Verifying Webhook Configuration

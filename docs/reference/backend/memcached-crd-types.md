@@ -154,7 +154,7 @@ Defines TLS encryption configuration for Memcached.
 
 ## AutoscalingSpec
 
-Defines horizontal pod autoscaling configuration for Memcached. When `enabled` is `true`, the operator creates an HPA resource targeting the Memcached Deployment.
+Defines horizontal pod autoscaling configuration for Memcached. When `enabled` is `true`, the operator creates an HPA resource targeting the Memcached StatefulSet. The StatefulSet keeps the replica count the HPA sets, and a new StatefulSet starts at `minReplicas`, or 1 when `minReplicas` is nil.
 
 | Field         | Type                                                             | Required | Default | Validation | Description                                                                                                                                                          |
 |---------------|------------------------------------------------------------------|----------|---------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -170,11 +170,12 @@ Defines horizontal pod autoscaling configuration for Memcached. When `enabled` i
 
 Defines the observed state of a Memcached cluster, updated by the reconciler via the status subresource.
 
-| Field                | Type                 | Required | Description                                                   |
-|----------------------|----------------------|----------|---------------------------------------------------------------|
-| `conditions`         | `[]metav1.Condition` | No       | Standard conditions with merge patch strategy (key: `type`)   |
-| `readyReplicas`      | `int32`              | No       | Number of Memcached pods in Ready state                       |
-| `observedGeneration` | `int64`              | No       | Most recent `.metadata.generation` observed by the controller |
+| Field                | Type                 | Required | Description                                                                                                                                                                                                                   |
+|----------------------|----------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `conditions`         | `[]metav1.Condition` | No       | Standard conditions with merge patch strategy (key: `type`)                                                                                                                                                                   |
+| `readyReplicas`      | `int32`              | No       | Number of Memcached pods in Ready state                                                                                                                                                                                       |
+| `observedGeneration` | `int64`              | No       | Most recent `.metadata.generation` observed by the controller                                                                                                                                                                 |
+| `serverList`         | `[]string`           | No       | One `host:port` entry per pod, `<statefulset>-<i>.<service>.<namespace>.svc:11211`, ordered by pod index `i`. It follows the StatefulSet's replica count, not pod readiness, and is empty when the instance has zero replicas |
 
 ---
 

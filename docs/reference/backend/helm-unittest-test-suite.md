@@ -295,12 +295,12 @@ The most comprehensive test file, organized into 6 sections:
 
 2-document template (ClusterRole + ClusterRoleBinding):
 
-| Test                         | Assertion                                                                                                                                                    |
-|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `rbac.create=true` (default) | 2 documents                                                                                                                                                  |
-| `rbac.create=false`          | 0 documents                                                                                                                                                  |
-| ClusterRole (doc 0)          | 11 rules covering memcacheds, memcacheds/status, memcacheds/finalizers, deployments, services, PDBs, networkpolicies, servicemonitors, HPAs, secrets, events |
-| ClusterRoleBinding (doc 1)   | roleRef to ClusterRole, subjects binding to SA in release namespace                                                                                          |
+| Test                         | Assertion                                                                                                                                                                                             |
+|------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `rbac.create=true` (default) | 2 documents                                                                                                                                                                                           |
+| `rbac.create=false`          | 0 documents                                                                                                                                                                                           |
+| ClusterRole (doc 0)          | 12 rules covering memcacheds, memcacheds/status, memcacheds/finalizers, statefulsets, deployments (delete, get, list, watch), services, PDBs, networkpolicies, servicemonitors, HPAs, secrets, events |
+| ClusterRoleBinding (doc 1)   | roleRef to ClusterRole, subjects binding to SA in release namespace                                                                                                                                   |
 
 ### 4. Leader Election RBAC (`rbac_leader_election_test.yaml`)
 
@@ -392,6 +392,7 @@ labels.
 | `crds.managedByHelm=true`            | 1 CustomResourceDefinition                                                     |
 | CRD spec                             | group=`memcached.c5c3.io`, kind=Memcached, plural=memcacheds, scope=Namespaced |
 | CRD name                             | `memcacheds.memcached.c5c3.io`                                                 |
+| `status.serverList`                  | Present in the status schema of both versions (`spec.versions[0]` and `[1]`)   |
 
 ### 14. Helper Functions (`helpers_test.yaml`)
 
@@ -562,6 +563,6 @@ All tests must pass with 0 failures before merging.
 | REQ-007 | Deployment parameterization (image, replicas, resources, args, security, scheduling) | `deployment_test`                                                                                   | Custom image, replicaCount, resources, watchNamespaces, security contexts, scheduling                     |
 | REQ-008 | `_helpers.tpl` functions: labels, names, selectors                                   | `helpers_test`                                                                                      | fullname variants, label sets, truncation at 63 chars                                                     |
 | REQ-009 | Cross-template consistency with fullnameOverride and serviceAccount.name             | `integration_test`                                                                                  | Name propagation to all resources, binding subjects, webhook service references, cert-manager annotations |
-| REQ-010 | RBAC rules: exact verb sets and resource targets                                     | `rbac_clusterrole_test`, `rbac_leader_election_test`, `rbac_metrics_test`                           | 11 ClusterRole rules, 3 leader-election rules, 3-document metrics structure                               |
+| REQ-010 | RBAC rules: exact verb sets and resource targets                                     | `rbac_clusterrole_test`, `rbac_leader_election_test`, `rbac_metrics_test`                           | 12 ClusterRole rules, 3 leader-election rules, 3-document metrics structure                               |
 | REQ-011 | NOTES.txt reflects toggle states and shows warnings                                  | `chart_metadata_test`                                                                               | Regex matching for CRD mode, RBAC status, webhook status, cert-manager warnings                           |
 | REQ-012 | `serviceAccount.create` toggle and annotation propagation                            | `serviceaccount_test`, `integration_test`                                                           | 0 documents when disabled, custom name propagation, annotations                                           |

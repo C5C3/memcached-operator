@@ -29,7 +29,7 @@ spec:
 
 **Resources created:**
 
-- **Deployment** `memcached-dev` -- 1 replica running `memcached:1.6` with args `-m 64 -c 1024 -t 4 -I 1m`
+- **StatefulSet** `memcached-dev` -- 1 replica running `memcached:1.6` with args `-m 64 -c 1024 -t 4 -I 1m`
 - **Service** `memcached-dev` -- headless Service (`clusterIP: None`) with port 11211
 
 No PDB, ServiceMonitor, or NetworkPolicy is created because those features are disabled by default.
@@ -85,7 +85,7 @@ spec:
 
 **Resources created:**
 
-- **Deployment** `memcached-ha` -- 3 replicas with soft anti-affinity, topology spread, rolling update strategy (maxSurge=1, maxUnavailable=0), preStop lifecycle hook (`sleep 10`), and `terminationGracePeriodSeconds: 30`
+- **StatefulSet** `memcached-ha` -- 3 replicas with soft anti-affinity, topology spread, rolling updates that replace one pod at a time without a surge pod, preStop lifecycle hook (`sleep 10`), and `terminationGracePeriodSeconds: 30`
 - **Service** `memcached-ha` -- headless Service with port 11211
 - **PodDisruptionBudget** `memcached-ha` -- `minAvailable: 2`
 
@@ -126,7 +126,7 @@ spec:
 
 **Resources created:**
 
-- **Deployment** `memcached-monitored` -- 2 replicas, each with two containers: `memcached` and `exporter`
+- **StatefulSet** `memcached-monitored` -- 2 replicas, each with two containers: `memcached` and `exporter`
 - **Service** `memcached-monitored` -- headless Service with ports 11211 (memcached) and 9150 (metrics)
 - **ServiceMonitor** `memcached-monitored` -- targets the `metrics` port with 15s scrape interval
 
@@ -235,7 +235,7 @@ To also require client certificates (mTLS), add `enableClientCert: true`:
 
 **Resources created:**
 
-- **Deployment** `memcached-tls` -- 3 replicas with memcached args including `-Z -o ssl_chain_cert=/etc/memcached/tls/tls.crt -o ssl_key=/etc/memcached/tls/tls.key`, a volume mount for the TLS Secret, and container ports 11211 + 11212
+- **StatefulSet** `memcached-tls` -- 3 replicas with memcached args including `-Z -o ssl_chain_cert=/etc/memcached/tls/tls.crt -o ssl_key=/etc/memcached/tls/tls.key`, a volume mount for the TLS Secret, and container ports 11211 + 11212
 - **Service** `memcached-tls` -- headless Service with ports 11211 (memcached) and 11212 (memcached-tls)
 
 ---
@@ -283,7 +283,7 @@ spec:
 
 **Resources created:**
 
-- **Deployment** `memcached-sasl` -- 2 replicas with memcached args including `-Y /etc/memcached/sasl/password-file` and a read-only volume mount for the SASL Secret
+- **StatefulSet** `memcached-sasl` -- 2 replicas with memcached args including `-Y /etc/memcached/sasl/password-file` and a read-only volume mount for the SASL Secret
 - **Service** `memcached-sasl` -- headless Service with port 11211
 
 ---
@@ -408,7 +408,7 @@ kubectl create secret tls memcached-prod-tls -n cache \
 
 **Resources created:**
 
-- **Deployment** `memcached-production` -- 5 replicas, 2 containers per pod (memcached + exporter), SASL + TLS volume mounts, soft anti-affinity, topology spread, graceful shutdown, full security contexts
+- **StatefulSet** `memcached-production` -- 5 replicas, 2 containers per pod (memcached + exporter), SASL + TLS volume mounts, soft anti-affinity, topology spread, graceful shutdown, full security contexts
 - **Service** `memcached-production` -- headless Service with ports 11211, 11212, and 9150
 - **PodDisruptionBudget** `memcached-production` -- `maxUnavailable: 1`
 - **ServiceMonitor** `memcached-production` -- scrapes port 9150 every 15s
@@ -511,7 +511,7 @@ pymemcache resolves the headless Service name to individual pod IPs automaticall
 
 **Resources created:**
 
-- **Deployment** `keystone-cache` -- 3 replicas with SASL volume mount, soft anti-affinity, graceful shutdown
+- **StatefulSet** `keystone-cache` -- 3 replicas with SASL volume mount, soft anti-affinity, graceful shutdown
 - **Service** `keystone-cache` -- headless Service with ports 11211 and 9150, custom annotations
 - **PodDisruptionBudget** `keystone-cache` -- `maxUnavailable: 1`
 - **ServiceMonitor** `keystone-cache` -- scrapes metrics port every 30s

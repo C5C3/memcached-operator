@@ -103,10 +103,15 @@ Per-resource-kind reconciliation outcome counter.
 
 **Labels:**
 
-| Label           | Values                                                           | Description                                   |
-|-----------------|------------------------------------------------------------------|-----------------------------------------------|
-| `resource_kind` | `Deployment`, `Service`, `PodDisruptionBudget`, `ServiceMonitor` | The Kubernetes resource kind being reconciled |
-| `result`        | `created`, `updated`, `unchanged`                                | The outcome of the `CreateOrUpdate` call      |
+| Label           | Values                                                                                                        | Description                                   |
+|-----------------|---------------------------------------------------------------------------------------------------------------|-----------------------------------------------|
+| `resource_kind` | `StatefulSet`, `HorizontalPodAutoscaler`, `Service`, `PodDisruptionBudget`, `ServiceMonitor`, `NetworkPolicy` | The Kubernetes resource kind being reconciled |
+| `result`        | `created`, `updated`, `unchanged`                                                                             | The outcome of the `CreateOrUpdate` call      |
+
+Releases before the StatefulSet reported the memcached workload as
+`resource_kind="Deployment"`. Dashboards and alerts that filter on that value
+need `StatefulSet` instead. The deletion of the legacy Deployment does not go
+through `reconcileResource` and is not counted.
 
 **Instrumentation point**: Incremented in `reconcileResource()` after a
 successful `controllerutil.CreateOrUpdate` call. Not incremented on error.
@@ -319,7 +324,7 @@ Adding a new custom metric requires:
 
 | Metric                                          | Cardinality Bound           | Notes                                     |
 |-------------------------------------------------|-----------------------------|-------------------------------------------|
-| `memcached_operator_reconcile_resource_total`   | O(resource_kinds × results) | Fixed at ~12 series (4 kinds × 3 results) |
+| `memcached_operator_reconcile_resource_total`   | O(resource_kinds × results) | Fixed at ~18 series (6 kinds × 3 results) |
 | `memcached_operator_reconcile_total`            | O(CRs × results)            | Scales with number of Memcached CRs       |
 | `memcached_operator_reconcile_duration_seconds` | O(CRs)                      | Scales with number of Memcached CRs       |
 | `memcached_operator_instance_info`              | O(CRs)                      | One series per active CR                  |

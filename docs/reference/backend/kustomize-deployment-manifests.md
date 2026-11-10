@@ -86,16 +86,16 @@ for local development without deploying the operator.
 
 RBAC manifests generated from `+kubebuilder:rbac` markers on the reconciler.
 
-| File                                | Kind                         | Description                                                                               |
-|-------------------------------------|------------------------------|-------------------------------------------------------------------------------------------|
-| `service_account.yaml`              | ServiceAccount               | Identity for the controller manager pod                                                   |
-| `role.yaml`                         | ClusterRole (`manager-role`) | Permissions for memcacheds, deployments, services, PDBs, ServiceMonitors, NetworkPolicies |
-| `role_binding.yaml`                 | ClusterRoleBinding           | Binds `manager-role` to the ServiceAccount                                                |
-| `leader_election_role.yaml`         | Role                         | Leader election lease permissions                                                         |
-| `leader_election_role_binding.yaml` | RoleBinding                  | Binds leader election role                                                                |
-| `metrics_auth_role.yaml`            | ClusterRole                  | Authentication delegator for metrics endpoint                                             |
-| `metrics_auth_role_binding.yaml`    | ClusterRoleBinding           | Binds metrics auth role                                                                   |
-| `metrics_reader_role.yaml`          | ClusterRole                  | Read-only access to `/metrics`                                                            |
+| File                                | Kind                         | Description                                                                                                                        |
+|-------------------------------------|------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| `service_account.yaml`              | ServiceAccount               | Identity for the controller manager pod                                                                                            |
+| `role.yaml`                         | ClusterRole (`manager-role`) | Permissions for memcacheds, statefulsets, deployments (delete, get, list, watch), services, PDBs, ServiceMonitors, NetworkPolicies |
+| `role_binding.yaml`                 | ClusterRoleBinding           | Binds `manager-role` to the ServiceAccount                                                                                         |
+| `leader_election_role.yaml`         | Role                         | Leader election lease permissions                                                                                                  |
+| `leader_election_role_binding.yaml` | RoleBinding                  | Binds leader election role                                                                                                         |
+| `metrics_auth_role.yaml`            | ClusterRole                  | Authentication delegator for metrics endpoint                                                                                      |
+| `metrics_auth_role_binding.yaml`    | ClusterRoleBinding           | Binds metrics auth role                                                                                                            |
+| `metrics_reader_role.yaml`          | ClusterRole                  | Read-only access to `/metrics`                                                                                                     |
 
 ### `config/namespace-scoped/`
 
