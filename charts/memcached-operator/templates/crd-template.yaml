@@ -1870,6 +1870,16 @@ spec:
                   ready.
                 format: int32
                 type: integer
+              serverList:
+                description: |-
+                  ServerList holds one "host:port" entry per pod,
+                  "<statefulset>-<i>.<service>.<namespace>.svc:11211", ordered by pod index i.
+                  It follows the StatefulSet's replica count, not pod readiness, and is empty
+                  when the instance has zero replicas.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         type: object
     served: true
@@ -3725,6 +3735,16 @@ spec:
                   ready.
                 format: int32
                 type: integer
+              serverList:
+                description: |-
+                  ServerList holds one "host:port" entry per pod,
+                  "<statefulset>-<i>.<service>.<namespace>.svc:11211", ordered by pod index i.
+                  It follows the StatefulSet's replica count, not pod readiness, and is empty
+                  when the instance has zero replicas.
+                items:
+                  type: string
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         type: object
     served: true

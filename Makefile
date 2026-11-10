@@ -90,6 +90,8 @@ helm-sync-crds: ## Sync CRD from config/crd/bases/ to Helm chart (crds/ and temp
 verify-manifests: manifests generate ## Verify generated manifests and code are up-to-date.
 	@git diff --exit-code -- config/crd/ api/v1alpha1/zz_generated.deepcopy.go api/v1beta1/zz_generated.deepcopy.go || \
 		(echo "ERROR: Generated files are out of date. Run 'make manifests generate' and commit the result." && exit 1)
+	@diff -q $(CRD_SOURCE) $(HELM_CHART_DIR)/crds/memcached.c5c3.io_memcacheds.yaml || \
+		(echo "ERROR: Helm chart CRD is out of date. Run 'make helm-sync-crds' and commit the result." && exit 1)
 
 ##@ Build
 
