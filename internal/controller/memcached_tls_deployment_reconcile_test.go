@@ -13,7 +13,7 @@ import (
 
 const testTLSVolumeName = "tls-certificates"
 
-var _ = Describe("TLS Deployment Reconciliation", func() {
+var _ = Describe("TLS StatefulSet Reconciliation", func() {
 
 	Context("TLS enabled (REQ-001, REQ-003, REQ-004, REQ-006, REQ-007)", func() {
 
@@ -31,8 +31,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(ctrl.Result{}))
 
-			dep := fetchDeployment(mc)
-			container := dep.Spec.Template.Spec.Containers[0]
+			sts := fetchStatefulSet(mc)
+			container := sts.Spec.Template.Spec.Containers[0]
 
 			// TLS args: -Z, -o ssl_chain_cert=..., -o ssl_key=...
 			Expect(container.Args).To(ContainElement("-Z"))
@@ -65,9 +65,9 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 			// TLS volume.
 			var tlsVol *corev1.Volume
-			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
-					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
+			for i := range sts.Spec.Template.Spec.Volumes {
+				if sts.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
+					tlsVol = &sts.Spec.Template.Spec.Volumes[i]
 					break
 				}
 			}
@@ -93,17 +93,17 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			container := dep.Spec.Template.Spec.Containers[0]
+			sts := fetchStatefulSet(mc)
+			container := sts.Spec.Template.Spec.Containers[0]
 
 			// ssl_ca_cert arg present.
 			Expect(container.Args).To(ContainElement("ssl_ca_cert=/etc/memcached/tls/ca.crt"))
 
 			// Volume should include ca.crt item.
 			var tlsVol *corev1.Volume
-			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
-					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
+			for i := range sts.Spec.Template.Spec.Volumes {
+				if sts.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
+					tlsVol = &sts.Spec.Template.Spec.Volumes[i]
 					break
 				}
 			}
@@ -122,8 +122,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			container := dep.Spec.Template.Spec.Containers[0]
+			sts := fetchStatefulSet(mc)
+			container := sts.Spec.Template.Spec.Containers[0]
 
 			// No TLS args.
 			Expect(container.Args).NotTo(ContainElement("-Z"))
@@ -138,7 +138,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			}
 
 			// No TLS volume.
-			for _, v := range dep.Spec.Template.Spec.Volumes {
+			for _, v := range sts.Spec.Template.Spec.Volumes {
 				Expect(v.Name).NotTo(Equal(testTLSVolumeName))
 			}
 		})
@@ -154,9 +154,9 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("-Z"))
-			Expect(dep.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(1))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("-Z"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(1))
 
 			// Enable TLS.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -171,13 +171,13 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[0].Args).To(ContainElement("-Z"))
-			Expect(dep.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(2))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[0].Args).To(ContainElement("-Z"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(2))
 
 			// Verify TLS volume exists.
 			var hasTLSVol bool
-			for _, v := range dep.Spec.Template.Spec.Volumes {
+			for _, v := range sts.Spec.Template.Spec.Volumes {
 				if v.Name == testTLSVolumeName {
 					hasTLSVol = true
 					break
@@ -193,12 +193,12 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("-Z"))
-			Expect(dep.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(1))
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers[0].Args).NotTo(ContainElement("-Z"))
+			Expect(sts.Spec.Template.Spec.Containers[0].Ports).To(HaveLen(1))
 
 			// Verify TLS volume removed.
-			for _, v := range dep.Spec.Template.Spec.Volumes {
+			for _, v := range sts.Spec.Template.Spec.Volumes {
 				Expect(v.Name).NotTo(Equal(testTLSVolumeName))
 			}
 		})
@@ -219,15 +219,15 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep1 := fetchDeployment(mc)
-			rv1 := dep1.ResourceVersion
+			sts1 := fetchStatefulSet(mc)
+			rv1 := sts1.ResourceVersion
 
 			// Reconcile again without changes.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
-			Expect(dep2.ResourceVersion).To(Equal(rv1))
+			sts2 := fetchStatefulSet(mc)
+			Expect(sts2.ResourceVersion).To(Equal(rv1))
 		})
 
 		It("should be idempotent when reconciling with mTLS enabled", func() {
@@ -244,15 +244,15 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep1 := fetchDeployment(mc)
-			rv1 := dep1.ResourceVersion
+			sts1 := fetchStatefulSet(mc)
+			rv1 := sts1.ResourceVersion
 
 			// Reconcile again without changes.
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep2 := fetchDeployment(mc)
-			Expect(dep2.ResourceVersion).To(Equal(rv1))
+			sts2 := fetchStatefulSet(mc)
+			Expect(sts2.ResourceVersion).To(Equal(rv1))
 		})
 	})
 
@@ -275,8 +275,8 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
-			container := dep.Spec.Template.Spec.Containers[0]
+			sts := fetchStatefulSet(mc)
+			container := sts.Spec.Template.Spec.Containers[0]
 
 			// Both SASL and TLS args present.
 			Expect(container.Args).To(ContainElement("-Y"))
@@ -297,7 +297,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 			// Both volumes.
 			var hasSASLVol, hasTLSVol bool
-			for _, v := range dep.Spec.Template.Spec.Volumes {
+			for _, v := range sts.Spec.Template.Spec.Volumes {
 				if v.Name == "sasl-credentials" {
 					hasSASLVol = true
 				}
@@ -315,7 +315,7 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 
 	Context("TLS secret reference update (REQ-007)", func() {
 
-		It("should update Deployment when TLS secret reference changes", func() {
+		It("should update StatefulSet when TLS secret reference changes", func() {
 			mc := validMemcached(uniqueName("tls-dep-secupd"))
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -328,11 +328,11 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 			var tlsVol *corev1.Volume
-			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
-					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
+			for i := range sts.Spec.Template.Spec.Volumes {
+				if sts.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
+					tlsVol = &sts.Spec.Template.Spec.Volumes[i]
 					break
 				}
 			}
@@ -347,10 +347,10 @@ var _ = Describe("TLS Deployment Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			for i := range dep.Spec.Template.Spec.Volumes {
-				if dep.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
-					tlsVol = &dep.Spec.Template.Spec.Volumes[i]
+			sts = fetchStatefulSet(mc)
+			for i := range sts.Spec.Template.Spec.Volumes {
+				if sts.Spec.Template.Spec.Volumes[i].Name == testTLSVolumeName {
+					tlsVol = &sts.Spec.Template.Spec.Volumes[i]
 					break
 				}
 			}

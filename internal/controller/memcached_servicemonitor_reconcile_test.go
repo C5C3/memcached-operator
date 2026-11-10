@@ -456,10 +456,10 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			Expect(pdb.Spec.MinAvailable).NotTo(BeNil())
 			Expect(pdb.Spec.MinAvailable.IntValue()).To(Equal(1))
 
-			// Deployment has exporter sidecar.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
+			// StatefulSet has exporter sidecar.
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[1].Name).To(Equal("exporter"))
 
 			// Service has metrics port.
 			svc := fetchService(mc)
@@ -501,14 +501,14 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			Expect(sm.Spec.Endpoints[0].Interval).To(Equal(monitoringv1.Duration("15s")))
 			Expect(sm.Labels).To(HaveKeyWithValue("release", "prometheus"))
 
-			// Deployment: 2 containers, graceful shutdown, anti-affinity.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
-			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
-			Expect(*dep.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
-			Expect(dep.Spec.Template.Spec.Affinity).NotTo(BeNil())
-			Expect(dep.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
+			// StatefulSet: 2 containers, graceful shutdown, anti-affinity.
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
+			Expect(sts.Spec.Template.Spec.Affinity).NotTo(BeNil())
+			Expect(sts.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())
 
 			// PDB exists.
 			pdb := fetchPDB(mc)
@@ -621,8 +621,8 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
 			// Exporter sidecar should still be injected.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Template.Spec.Containers).To(HaveLen(2))
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
 		})
 	})
 })

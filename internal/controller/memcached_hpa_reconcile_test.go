@@ -1,6 +1,8 @@
 package controller_test
 
 import (
+	"fmt"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -71,10 +73,10 @@ var _ = Describe("HPA Reconciliation", func() {
 			Expect(result).To(Equal(ctrl.Result{}))
 		})
 
-		It("should create HPA targeting the Deployment", func() {
+		It("should create HPA targeting the StatefulSet", func() {
 			hpa := fetchHPA(mc)
 			Expect(hpa.Spec.ScaleTargetRef.APIVersion).To(Equal("apps/v1"))
-			Expect(hpa.Spec.ScaleTargetRef.Kind).To(Equal("Deployment"))
+			Expect(hpa.Spec.ScaleTargetRef.Kind).To(Equal("StatefulSet"))
 			Expect(hpa.Spec.ScaleTargetRef.Name).To(Equal(mc.Name))
 		})
 
@@ -427,10 +429,10 @@ var _ = Describe("HPA Reconciliation", func() {
 		})
 	})
 
-	// --- Task 3.4: Deployment replicas interaction with autoscaling (REQ-004) ---
+	// --- Task 3.4: StatefulSet replicas interaction with autoscaling (REQ-004) ---
 
-	Context("Deployment replicas interaction with autoscaling", func() {
-		It("should not hardcode Deployment replicas from CR spec when autoscaling is enabled", func() {
+	Context("StatefulSet replicas interaction with autoscaling", func() {
+		It("should seed a new StatefulSet with 1 replica when autoscaling is enabled without minReplicas", func() {
 			mc := validMemcached(uniqueName("hpa-dep-nil"))
 			mc.Spec.Resources = cpuResourceRequirements()
 			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
@@ -442,15 +444,14 @@ var _ = Describe("HPA Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// The operator passes nil replicas to the Deployment when HPA is active.
-			// The Kubernetes Deployment API defaults nil replicas to 1 on storage.
-			// This is expected — the HPA will adjust replicas as needed.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Replicas).NotTo(BeNil())
-			Expect(*dep.Spec.Replicas).To(Equal(int32(1)))
+			// Without minReplicas the operator seeds the new StatefulSet with 1 replica.
+			// The HPA adjusts the count from there.
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
 		})
 
-		It("should restore Deployment spec.replicas when autoscaling is disabled", func() {
+		It("should restore StatefulSet spec.replicas when autoscaling is disabled", func() {
 			mc := validMemcached(uniqueName("hpa-dep-restore"))
 			mc.Spec.Resources = cpuResourceRequirements()
 			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
@@ -462,9 +463,10 @@ var _ = Describe("HPA Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// With HPA active, Kubernetes defaults Deployment replicas to 1.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Replicas).NotTo(BeNil())
+			// With HPA active and no minReplicas, the operator seeds the StatefulSet with 1 replica.
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(1)))
 
 			// Disable autoscaling and set replicas.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -475,12 +477,16 @@ var _ = Describe("HPA Reconciliation", func() {
 			_, err = reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			dep = fetchDeployment(mc)
-			Expect(dep.Spec.Replicas).NotTo(BeNil())
-			Expect(*dep.Spec.Replicas).To(Equal(int32(3)))
+			// The HPA is gone and the StatefulSet follows spec.replicas again.
+			err = k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), &autoscalingv2.HorizontalPodAutoscaler{})
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(3)))
 		})
 
-		It("should not override Deployment replicas from CR spec when autoscaling is active", func() {
+		It("should seed a new StatefulSet with minReplicas when autoscaling is active", func() {
 			mc := validMemcached(uniqueName("hpa-dep-noset"))
 			mc.Spec.Resources = cpuResourceRequirements()
 			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
@@ -498,15 +504,68 @@ var _ = Describe("HPA Reconciliation", func() {
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			// The Kubernetes Deployment API defaults nil replicas to 1.
-			dep := fetchDeployment(mc)
-			Expect(dep.Spec.Replicas).NotTo(BeNil())
+			// The operator seeds the new StatefulSet with minReplicas.
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(2)))
 
-			// HPA exists alongside the Deployment.
+			// HPA exists alongside the StatefulSet.
 			hpa := fetchHPA(mc)
 			Expect(hpa.Spec.MinReplicas).NotTo(BeNil())
 			Expect(*hpa.Spec.MinReplicas).To(Equal(int32(2)))
 			Expect(hpa.Spec.MaxReplicas).To(Equal(int32(10)))
+		})
+	})
+
+	Context("StatefulSet replica count set by the HPA", func() {
+		It("should keep the replica count the HPA set and publish one serverList entry per pod", func() {
+			mc := validMemcached(uniqueName("hpa-carry"))
+			mc.Spec.Resources = cpuResourceRequirements()
+			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
+				Enabled:     true,
+				MinReplicas: int32Ptr(2),
+				MaxReplicas: 10,
+			}
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			_, err := reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			sts := fetchStatefulSet(mc)
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(2)))
+
+			// Scale the StatefulSet the way the HPA does, then reconcile again.
+			sts.Spec.Replicas = int32Ptr(5)
+			Expect(k8sClient.Update(ctx, sts)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(5)), "reconcile must not reset the replica count the HPA set")
+
+			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+			Expect(mc.Status.ServerList).To(HaveLen(5))
+			for i, entry := range mc.Status.ServerList {
+				Expect(entry).To(Equal(fmt.Sprintf("%s-%d.%s.%s.svc:11211", sts.Name, i, mc.Name, mc.Namespace)))
+			}
+
+			// Disable autoscaling with spec.replicas 3: the HPA goes away and the StatefulSet follows the CR.
+			mc.Spec.Autoscaling.Enabled = false
+			mc.Spec.Replicas = int32Ptr(3)
+			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+			_, err = reconcileOnce(mc)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), &autoscalingv2.HorizontalPodAutoscaler{})
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+			sts = fetchStatefulSet(mc)
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(3)))
 		})
 	})
 
@@ -580,7 +639,7 @@ var _ = Describe("HPA Reconciliation", func() {
 			Expect(mc.Status.ObservedGeneration).To(Equal(mc.Generation))
 		})
 
-		It("should use Deployment status replicas as desired count when HPA active", func() {
+		It("should use StatefulSet status replicas as desired count when HPA active", func() {
 			mc := validMemcached(uniqueName("hpa-status-dep"))
 			mc.Spec.Resources = cpuResourceRequirements()
 			mc.Spec.Autoscaling = &memcachedv1beta1.AutoscalingSpec{
@@ -595,13 +654,13 @@ var _ = Describe("HPA Reconciliation", func() {
 
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 
-			// In envtest, Deployment status replicas is 0 (no real pods).
-			// With HPA active, desired = dep.Status.Replicas = 0.
+			// In envtest, StatefulSet status replicas is 0 (no real pods).
+			// With HPA active, desired = sts.Status.Replicas = 0.
 			// So: Available=True (0 ready, 0 desired → readyReplicas > 0 is false, but
 			// actually: readyReplicas(0) > 0 is false → Available=False).
 			available := findCondition(mc.Status.Conditions, "Available")
 			Expect(available).NotTo(BeNil())
-			// 0/0 replicas ready (HPA-managed) — desiredReplicas is 0 from dep.Status.Replicas.
+			// 0/0 replicas ready (HPA-managed): desiredReplicas is 0 from sts.Status.Replicas.
 			Expect(available.Message).To(ContainSubstring("0/0"))
 			Expect(available.Message).To(ContainSubstring("(HPA-managed)"))
 		})
@@ -710,18 +769,18 @@ var _ = Describe("Full-featured CR with HPA", func() {
 		})
 
 		It("should create HPA alongside other resources", func() {
-			fetchDeployment(mc)
+			fetchStatefulSet(mc)
 			fetchService(mc)
 			fetchHPA(mc)
 			fetchServiceMonitor(mc)
 			fetchNetworkPolicy(mc)
 		})
 
-		It("should not hardcode Deployment replicas from CR spec with HPA active", func() {
-			dep := fetchDeployment(mc)
-			// Operator passes nil replicas; Kubernetes defaults to 1 on storage.
-			Expect(dep.Spec.Replicas).NotTo(BeNil())
-			Expect(*dep.Spec.Replicas).To(Equal(int32(1)))
+		It("should seed the StatefulSet with minReplicas with HPA active", func() {
+			sts := fetchStatefulSet(mc)
+			// The operator seeds a new StatefulSet with spec.autoscaling.minReplicas (2).
+			Expect(sts.Spec.Replicas).NotTo(BeNil())
+			Expect(*sts.Spec.Replicas).To(Equal(int32(2)))
 		})
 
 		It("should set HPA-managed status condition", func() {
@@ -733,10 +792,10 @@ var _ = Describe("Full-featured CR with HPA", func() {
 
 		It("should set standard labels on HPA matching other resources", func() {
 			hpa := fetchHPA(mc)
-			dep := fetchDeployment(mc)
+			sts := fetchStatefulSet(mc)
 			svc := fetchService(mc)
 
-			for _, obj := range []client.Object{hpa, dep, svc} {
+			for _, obj := range []client.Object{hpa, sts, svc} {
 				labels := obj.GetLabels()
 				Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/name", "memcached"))
 				Expect(labels).To(HaveKeyWithValue("app.kubernetes.io/instance", mc.Name))
@@ -745,14 +804,14 @@ var _ = Describe("Full-featured CR with HPA", func() {
 		})
 
 		It("should be idempotent with all features including HPA", func() {
-			depRV := fetchDeployment(mc).ResourceVersion
+			stsRV := fetchStatefulSet(mc).ResourceVersion
 			svcRV := fetchService(mc).ResourceVersion
 			hpaRV := fetchHPA(mc).ResourceVersion
 
 			_, err := reconcileOnce(mc)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(fetchDeployment(mc).ResourceVersion).To(Equal(depRV))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(stsRV))
 			Expect(fetchService(mc).ResourceVersion).To(Equal(svcRV))
 			Expect(fetchHPA(mc).ResourceVersion).To(Equal(hpaRV))
 		})

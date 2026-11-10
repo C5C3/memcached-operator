@@ -27,7 +27,7 @@ const maxConflictRetries = 5
 // The mutate function is called to set the desired state on obj before each
 // create/update attempt. It must not modify the object's namespace or name.
 //
-// resourceKind is used for log messages and error wrapping (e.g. "Deployment",
+// resourceKind is used for log messages and error wrapping (e.g. "StatefulSet",
 // "Service").
 func (r *MemcachedReconciler) reconcileResource(
 	ctx context.Context,

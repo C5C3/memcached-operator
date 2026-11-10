@@ -18,7 +18,7 @@ var _ = Describe("Memcached Controller SetupWithManager", func() {
 
 	Context("When configuring watches (REQ-001, REQ-002, REQ-003, REQ-004, REQ-005)", func() {
 
-		It("should set up the controller and start the manager with watches for owned Deployments and Services", func() {
+		It("should set up the controller and start the manager with watches for owned StatefulSets and Services", func() {
 			mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 				Scheme:                 scheme.Scheme,
 				Metrics:                metricsserver.Options{BindAddress: "0"},
@@ -35,7 +35,7 @@ var _ = Describe("Memcached Controller SetupWithManager", func() {
 
 			// Starting the manager validates that all watches are properly
 			// registered and the informers can be created for the watched types
-			// (Memcached CR, Deployments, Services).
+			// (Memcached CR, StatefulSets, Services).
 			mgrCtx, mgrCancel := context.WithCancel(context.Background())
 			go func() {
 				defer GinkgoRecover()

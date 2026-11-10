@@ -16,8 +16,8 @@ func constructHPA(mc *memcachedv1beta1.Memcached, hpa *autoscalingv2.HorizontalP
 
 	hpa.Spec.ScaleTargetRef = autoscalingv2.CrossVersionObjectReference{
 		APIVersion: "apps/v1",
-		Kind:       "Deployment",
-		Name:       mc.Name,
+		Kind:       "StatefulSet",
+		Name:       statefulSetName(mc.Name),
 	}
 
 	hpa.Spec.MinReplicas = mc.Spec.Autoscaling.MinReplicas

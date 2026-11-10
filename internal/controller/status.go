@@ -44,31 +44,31 @@ const (
 	ConditionReasonNotReady            = "MemcachedNotReady"
 )
 
-const msgWaitingForDeployment = "Waiting for deployment to be created"
+const msgWaitingForStatefulSet = "Waiting for StatefulSet to be created"
 
 // replicaState holds the computed replica counts used across condition builders.
 type replicaState struct {
-	desired int32
-	ready   int32
-	updated int32
-	total   int32
-	hasDep  bool
-	hpaMode bool
-	gen     int64
-	now     metav1.Time
+	desired     int32
+	ready       int32
+	updated     int32
+	total       int32
+	hasWorkload bool
+	hpaMode     bool
+	gen         int64
+	now         metav1.Time
 }
 
-// newReplicaState computes the replica state from the Memcached spec and Deployment status.
-func newReplicaState(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment, hpaActive bool) replicaState {
+// newReplicaState computes the replica state from the Memcached spec and StatefulSet status.
+func newReplicaState(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSet, hpaActive bool) replicaState {
 	rs := replicaState{
-		hasDep:  dep != nil,
-		hpaMode: hpaActive,
-		gen:     mc.Generation,
-		now:     metav1.Now(),
+		hasWorkload: sts != nil,
+		hpaMode:     hpaActive,
+		gen:         mc.Generation,
+		now:         metav1.Now(),
 	}
 
-	if hpaActive && dep != nil {
-		rs.desired = dep.Status.Replicas
+	if hpaActive && sts != nil {
+		rs.desired = sts.Status.Replicas
 	} else {
 		rs.desired = int32(1)
 		if mc.Spec.Replicas != nil {
@@ -76,10 +76,10 @@ func newReplicaState(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment, hpa
 		}
 	}
 
-	if dep != nil {
-		rs.ready = dep.Status.ReadyReplicas
-		rs.updated = dep.Status.UpdatedReplicas
-		rs.total = dep.Status.Replicas
+	if sts != nil {
+		rs.ready = sts.Status.ReadyReplicas
+		rs.updated = sts.Status.UpdatedReplicas
+		rs.total = sts.Status.Replicas
 	}
 
 	return rs
@@ -102,13 +102,13 @@ func (rs replicaState) availableCondition() metav1.Condition {
 }
 
 func (rs replicaState) progressingCondition() metav1.Condition {
-	progressing := !rs.hasDep || rs.updated < rs.desired || rs.total != rs.desired
+	progressing := !rs.hasWorkload || rs.updated < rs.desired || rs.total != rs.desired
 	status, reason := metav1.ConditionFalse, ConditionReasonProgressingComplete
 	msg := fmt.Sprintf("All %d replicas are updated", rs.desired)
 	if progressing {
 		status, reason = metav1.ConditionTrue, ConditionReasonProgressing
-		msg = msgWaitingForDeployment
-		if rs.hasDep {
+		msg = msgWaitingForStatefulSet
+		if rs.hasWorkload {
 			msg = fmt.Sprintf("Rollout in progress: %d/%d replicas updated", rs.updated, rs.desired)
 		}
 	}
@@ -131,8 +131,8 @@ func (rs replicaState) degradedCondition(missingSecrets []string) metav1.Conditi
 		msg = fmt.Sprintf("All %d desired replicas are ready", rs.desired)
 		if degraded {
 			status, reason = metav1.ConditionTrue, ConditionReasonDegraded
-			msg = msgWaitingForDeployment
-			if rs.hasDep {
+			msg = msgWaitingForStatefulSet
+			if rs.hasWorkload {
 				msg = fmt.Sprintf("Only %d/%d replicas are ready", rs.ready, rs.desired)
 			}
 		}
@@ -152,8 +152,8 @@ func (rs replicaState) readyCondition() metav1.Condition {
 		msg = fmt.Sprintf("All %d replicas are ready", rs.desired)
 	} else if rs.desired == 0 {
 		msg = "Instance has zero desired replicas"
-	} else if !rs.hasDep {
-		msg = msgWaitingForDeployment
+	} else if !rs.hasWorkload {
+		msg = msgWaitingForStatefulSet
 	} else {
 		msg = fmt.Sprintf("%d/%d replicas are ready", rs.ready, rs.desired)
 	}
@@ -163,13 +163,13 @@ func (rs replicaState) readyCondition() metav1.Condition {
 	}
 }
 
-// computeConditions derives status conditions from the Memcached spec and the current Deployment status.
-// If dep is nil (Deployment not yet created), it reports unavailable/progressing/degraded.
+// computeConditions derives status conditions from the Memcached spec and the current StatefulSet status.
+// If sts is nil (StatefulSet not yet created), it reports unavailable/progressing/degraded.
 // When missingSecrets is non-empty, the Degraded condition is set to SecretNotFound regardless of replica counts.
-// When hpaActive is true, the desired replica count is sourced from the Deployment status (HPA-managed)
+// When hpaActive is true, the desired replica count is sourced from the StatefulSet status (HPA-managed)
 // rather than from mc.Spec.Replicas.
-func computeConditions(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment, missingSecrets []string, hpaActive bool) []metav1.Condition {
-	rs := newReplicaState(mc, dep, hpaActive)
+func computeConditions(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSet, missingSecrets []string, hpaActive bool) []metav1.Condition {
+	rs := newReplicaState(mc, sts, hpaActive)
 	return []metav1.Condition{
 		rs.availableCondition(),
 		rs.progressingCondition(),
@@ -178,39 +178,57 @@ func computeConditions(mc *memcachedv1beta1.Memcached, dep *appsv1.Deployment, m
 	}
 }
 
-// reconcileStatus fetches the owned Deployment, computes conditions, and updates the Memcached status.
-// missingSecrets is the list of Secret names that could not be found during deployment reconciliation.
+// buildServerList returns one "host:port" entry per pod of the StatefulSet named workloadName,
+// ordered by pod index: "<workloadName>-<i>.<serviceName>.<namespace>.svc:11211" for i from 0 to
+// replicas-1. It returns nil when replicas is zero or negative.
+func buildServerList(workloadName, serviceName, namespace string, replicas int32) []string {
+	if replicas <= 0 {
+		return nil
+	}
+	servers := make([]string, 0, replicas)
+	for i := range replicas {
+		servers = append(servers, fmt.Sprintf("%s-%d.%s.%s.svc:%d", workloadName, i, serviceName, namespace, PortMemcached))
+	}
+	return servers
+}
+
+// reconcileStatus fetches the owned StatefulSet, computes conditions, and updates the Memcached status.
+// missingSecrets is the list of Secret names that could not be found during StatefulSet reconciliation.
 func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1beta1.Memcached, missingSecrets []string) error {
 	logger := log.FromContext(ctx)
 
-	// Fetch the current Deployment.
-	dep := &appsv1.Deployment{}
-	err := r.Get(ctx, types.NamespacedName{Name: mc.Name, Namespace: mc.Namespace}, dep)
+	// Fetch the current StatefulSet.
+	sts := &appsv1.StatefulSet{}
+	err := r.Get(ctx, types.NamespacedName{Name: statefulSetName(mc.Name), Namespace: mc.Namespace}, sts)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			dep = nil
+			sts = nil
 		} else {
-			return fmt.Errorf("fetching Deployment for status: %w", err)
+			return fmt.Errorf("fetching StatefulSet for status: %w", err)
 		}
 	}
 
 	// Compute new conditions.
-	newConditions := computeConditions(mc, dep, missingSecrets, mc.IsAutoscalingEnabled())
+	newConditions := computeConditions(mc, sts, missingSecrets, mc.IsAutoscalingEnabled())
 	for _, c := range newConditions {
 		meta.SetStatusCondition(&mc.Status.Conditions, c)
 	}
 
-	// Populate serverList when Ready=True (REQ-004, MO-0056).
-	readyCond := meta.FindStatusCondition(mc.Status.Conditions, ConditionTypeReady)
-	if readyCond != nil && readyCond.Status == metav1.ConditionTrue {
-		mc.Status.ServerList = []string{fmt.Sprintf("%s.%s:%d", mc.Name, mc.Namespace, PortMemcached)}
+	// Publish one entry per pod. The list follows the StatefulSet's replica count, which the HPA
+	// may change, and does not depend on pod readiness.
+	if sts != nil {
+		replicas := memcachedv1beta1.DefaultReplicas
+		if sts.Spec.Replicas != nil {
+			replicas = *sts.Spec.Replicas
+		}
+		mc.Status.ServerList = buildServerList(sts.Name, mc.Name, mc.Namespace, replicas)
 	} else {
 		mc.Status.ServerList = nil
 	}
 
 	// Set readyReplicas.
-	if dep != nil {
-		mc.Status.ReadyReplicas = dep.Status.ReadyReplicas
+	if sts != nil {
+		mc.Status.ReadyReplicas = sts.Status.ReadyReplicas
 	} else {
 		mc.Status.ReadyReplicas = 0
 	}

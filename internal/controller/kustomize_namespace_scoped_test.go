@@ -154,6 +154,7 @@ func TestKustomizeBuildNamespaceScoped_RolePreservesRBACRules(t *testing.T) {
 		{"secrets read access", "- secrets"},
 		{"services CRUD", "- services"},
 		{"deployments CRUD", "- deployments"},
+		{"statefulsets CRUD", "- statefulsets"},
 		{"memcacheds CRD access", "- memcacheds"},
 		{"memcacheds finalizers", "- memcacheds/finalizers"},
 		{"memcacheds status", "- memcacheds/status"},

@@ -124,12 +124,12 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 	})
 
 	Context("when reconcileResource creates resources (REQ-002)", func() {
-		It("should increment reconcile_resource_total for Deployment and Service", func() {
+		It("should increment reconcile_resource_total for StatefulSet and Service", func() {
 			mc := validMemcached(uniqueName("metrics-res"))
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
-			depCreatedBefore := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
-				"resource_kind": "Deployment",
+			stsCreatedBefore := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
+				"resource_kind": "StatefulSet",
 				"result":        "created",
 			})
 			svcCreatedBefore := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
@@ -143,8 +143,8 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			depCreatedAfter := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
-				"resource_kind": "Deployment",
+			stsCreatedAfter := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
+				"resource_kind": "StatefulSet",
 				"result":        "created",
 			})
 			svcCreatedAfter := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
@@ -152,7 +152,7 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 				"result":        "created",
 			})
 
-			Expect(depCreatedAfter).To(BeNumerically(">", depCreatedBefore))
+			Expect(stsCreatedAfter).To(BeNumerically(">", stsCreatedBefore))
 			Expect(svcCreatedAfter).To(BeNumerically(">", svcCreatedBefore))
 		})
 	})

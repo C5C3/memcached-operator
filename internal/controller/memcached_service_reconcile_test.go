@@ -156,7 +156,7 @@ var _ = Describe("Service Reconciliation", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).Build()
 			failingClient := interceptor.NewClient(fakeClient, interceptor.Funcs{
 				Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-					// Allow Get for Memcached CR and Deployment but fail for Service.
+					// Allow Get for the Memcached CR and the other owned resources but fail for Service.
 					if _, ok := obj.(*corev1.Service); ok {
 						return apiErr
 					}

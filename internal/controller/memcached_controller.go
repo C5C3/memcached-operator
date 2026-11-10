@@ -3,6 +3,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -13,6 +14,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,7 +36,8 @@ type MemcachedReconciler struct {
 
 // +kubebuilder:rbac:groups=memcached.c5c3.io,resources=memcacheds,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=memcached.c5c3.io,resources=memcacheds/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=statefulsets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;delete
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=policy,resources=poddisruptionbudgets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=networkpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -83,7 +86,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	metrics.RecordInstanceInfo(memcached.Name, memcached.Namespace, image, desiredReplicas)
 
 	var missingSecrets []string
-	missingSecrets, reconcileErr = r.reconcileDeployment(ctx, memcached)
+	missingSecrets, reconcileErr = r.reconcileStatefulSet(ctx, memcached)
 	if reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
@@ -117,27 +120,65 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, nil
 }
 
-// reconcileDeployment ensures the Deployment for the Memcached CR matches the desired state.
+// reconcileStatefulSet ensures the StatefulSet for the Memcached CR matches the desired state.
 // It fetches referenced Secrets, computes a hash for rolling-update annotations, reads the
-// restart-trigger annotation from the CR, and passes everything to constructDeployment.
-// It returns the names of any missing Secrets for use by status reconciliation.
-func (r *MemcachedReconciler) reconcileDeployment(ctx context.Context, mc *memcachedv1beta1.Memcached) ([]string, error) {
+// restart-trigger annotation from the CR, and passes everything to constructStatefulSet.
+// Once the StatefulSet is reconciled, it deletes the Deployment that earlier operator
+// releases ran the pods in. It returns the names of any missing Secrets for use by status
+// reconciliation.
+func (r *MemcachedReconciler) reconcileStatefulSet(ctx context.Context, mc *memcachedv1beta1.Memcached) ([]string, error) {
 	found, missing := fetchReferencedSecrets(ctx, r.Client, mc)
 	secretHash := computeSecretHash(found...)
 	restartTrigger := mc.Annotations[AnnotationRestartTrigger]
 
-	dep := &appsv1.Deployment{
+	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      mc.Name,
+			Name:      statefulSetName(mc.Name),
 			Namespace: mc.Namespace,
 		},
 	}
 
-	_, err := r.reconcileResource(ctx, mc, dep, func() error {
-		constructDeployment(mc, dep, secretHash, restartTrigger)
+	if _, err := r.reconcileResource(ctx, mc, sts, func() error {
+		constructStatefulSet(mc, sts, secretHash, restartTrigger)
 		return nil
-	}, "Deployment")
-	return missing, err
+	}, "StatefulSet"); err != nil {
+		return missing, err
+	}
+	return missing, r.deleteLegacyDeployment(ctx, mc)
+}
+
+// deleteLegacyDeployment deletes the Deployment named like the Memcached CR when the CR
+// controls it. Operator releases before the StatefulSet ran the Memcached pods in that
+// Deployment; it is removed once the StatefulSet has been reconciled. A Deployment with
+// the same name that the CR does not control is left alone.
+func (r *MemcachedReconciler) deleteLegacyDeployment(ctx context.Context, mc *memcachedv1beta1.Memcached) error {
+	logger := log.FromContext(ctx)
+
+	dep := &appsv1.Deployment{}
+	if err := r.Get(ctx, types.NamespacedName{Name: mc.Name, Namespace: mc.Namespace}, dep); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("fetching legacy Deployment: %w", err)
+	}
+
+	if !metav1.IsControlledBy(dep, mc) {
+		logger.V(1).Info("Skipping Deployment not controlled by this Memcached", "name", dep.Name)
+		return nil
+	}
+
+	if err := r.Delete(ctx, dep, client.PropagationPolicy(metav1.DeletePropagationBackground)); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("deleting legacy Deployment: %w", err)
+	}
+
+	logger.Info("Deleted legacy Deployment after migrating to StatefulSet", "name", dep.Name)
+	if r.Recorder != nil {
+		r.Recorder.Eventf(mc, nil, corev1.EventTypeNormal, "Deleted", "Reconcile", "Deleted legacy Deployment %s", dep.Name)
+	}
+	return nil
 }
 
 // reconcileHPA ensures the HorizontalPodAutoscaler for the Memcached CR matches the desired state.
@@ -253,7 +294,7 @@ func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *me
 func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&memcachedv1beta1.Memcached{}).
-		Owns(&appsv1.Deployment{}).
+		Owns(&appsv1.StatefulSet{}).
 		Owns(&autoscalingv2.HorizontalPodAutoscaler{}).
 		Owns(&corev1.Service{}).
 		Owns(&policyv1.PodDisruptionBudget{}).
