@@ -209,30 +209,30 @@ Complete field reference for the `Memcached` Custom Resource Definition.
 
 `MemcachedStatus` defines the observed state of a Memcached instance. The status is updated by the controller during each reconciliation cycle.
 
-| Field                | Type                 | Description                                                                                                                                                                                                        |
-|----------------------|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `conditions`         | `[]metav1.Condition` | Standard Kubernetes conditions representing the latest available observations of the Memcached instance's state. Uses merge-patch with `type` as the merge key. See [Status Conditions](#status-conditions) below. |
-| `readyReplicas`      | `int32`              | Number of Memcached pods that are ready                                                                                                                                                                            |
-| `observedGeneration` | `int64`              | Most recent generation observed by the controller. Clients can compare this to `metadata.generation` to determine if the status is up-to-date with the latest spec changes.                                        |
+| Field                | Type                 | Description                                                                                                                                                                                                                                      |
+|----------------------|----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `conditions`         | `[]metav1.Condition` | Standard Kubernetes conditions representing the latest available observations of the Memcached instance's state. Uses merge-patch with `type` as the merge key. See [Status Conditions](#status-conditions) below.                               |
+| `readyReplicas`      | `int32`              | Number of Memcached pods that are ready                                                                                                                                                                                                          |
+| `observedGeneration` | `int64`              | Most recent generation observed by the controller. Clients can compare this to `metadata.generation` to determine if the status is up-to-date with the latest spec changes.                                                                      |
 | `serverList`         | `[]string`           | One `host:port` entry per pod, `<statefulset>-<i>.<name>.<namespace>.svc:11211`, ordered by pod index. Follows the StatefulSet replica count, not pod readiness; `nil` when the instance has zero replicas. See [serverList](#serverlist) below. |
 
 ### Status Conditions
 
-| Condition Type | Status Values    | Description                                                                  |
-|----------------|------------------|------------------------------------------------------------------------------|
-| `Available`    | `True` / `False` | `True` when the StatefulSet has at least one ready pod                       |
-| `Progressing`  | `True` / `False` | `True` when a rollout or scale operation is in progress                      |
-| `Degraded`     | `True` / `False` | `True` when fewer replicas than desired are ready                            |
+| Condition Type | Status Values    | Description                                                                                                         |
+|----------------|------------------|---------------------------------------------------------------------------------------------------------------------|
+| `Available`    | `True` / `False` | `True` when the StatefulSet has at least one ready pod                                                              |
+| `Progressing`  | `True` / `False` | `True` when a rollout or scale operation is in progress                                                             |
+| `Degraded`     | `True` / `False` | `True` when fewer replicas than desired are ready                                                                   |
 | `Ready`        | `True` / `False` | `True` when all desired replicas are ready and `desiredReplicas > 0`. See [Ready Condition](#ready-condition) below |
 
 #### Ready Condition
 
 The `Ready` condition indicates whether the Memcached instance is fully operational. It is computed independently of the `Available`, `Progressing`, and `Degraded` conditions.
 
-| Status  | Reason               | When                                                                                     |
-|---------|----------------------|------------------------------------------------------------------------------------------|
-| `True`  | `MemcachedReady`     | `readyReplicas == desiredReplicas` **and** `desiredReplicas > 0`                         |
-| `False` | `MemcachedNotReady`  | `readyReplicas < desiredReplicas`, or `desiredReplicas == 0`, or StatefulSet not created |
+| Status  | Reason              | When                                                                                     |
+|---------|---------------------|------------------------------------------------------------------------------------------|
+| `True`  | `MemcachedReady`    | `readyReplicas == desiredReplicas` **and** `desiredReplicas > 0`                         |
+| `False` | `MemcachedNotReady` | `readyReplicas < desiredReplicas`, or `desiredReplicas == 0`, or StatefulSet not created |
 
 The condition message provides a human-readable description of the current state (e.g., `"All 3 replicas are ready"`, `"2/3 replicas are ready"`, `"Instance has zero desired replicas"`).
 
