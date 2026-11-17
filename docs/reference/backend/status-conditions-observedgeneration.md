@@ -278,24 +278,24 @@ is the list of Secret names that could not be fetched during StatefulSet
 reconciliation (returned by `reconcileStatefulSet`).
 
 ```go
-func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1beta1.Memcached, missingSecrets []string) error {
+func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1beta1.Memcached, missingSecrets []string) (ctrl.Result, error) {
     // 1. Fetch the StatefulSet named statefulSetName(mc.Name) (nil if not found)
     // 2. Compute conditions from StatefulSet status and missingSecrets
     // 3. Apply conditions via meta.SetStatusCondition
     // 4. Set serverList via buildServerList from the StatefulSet's spec.replicas (nil if not found)
     // 5. Set readyReplicas from StatefulSet (0 if nil)
     // 6. Set observedGeneration from mc.Generation
-    // 7. Update via r.Status().Update(ctx, mc)
+    // 7. Update via r.Status().Update(ctx, mc); a 409 Conflict requeues after 1s without an error
 }
 ```
 
 ### Error Handling
 
-| Error Scenario                         | Behavior                                                          |
-|----------------------------------------|-------------------------------------------------------------------|
-| StatefulSet fetch fails (not NotFound) | `fetching StatefulSet for status: %w`, returned without an update |
-| Status update conflict                 | Error returned, controller-runtime requeues with backoff          |
-| Status update transient failure        | Error returned, controller-runtime requeues with backoff          |
+| Error Scenario                         | Behavior                                                                                                                 |
+|----------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| StatefulSet fetch fails (not NotFound) | `fetching StatefulSet for status: %w`, returned without an update                                                        |
+| Status update conflict                 | Computed status dropped, Info line `Status update conflict, requeueing`, `ctrl.Result{RequeueAfter: 1s}` and a nil error |
+| Status update fails (not 409)          | `updating Memcached status: %w` returned, controller-runtime requeues with backoff                                       |
 
 Status update errors do not affect resource reconciliation. The StatefulSet and
 Service are reconciled before status, so they converge independently.
@@ -323,7 +323,7 @@ condition.
 This ordering ensures:
 - Resources converge even if status update fails on a subsequent requeue.
 - Status reflects the state after the latest resource reconciliation.
-- A failed status update returns an error, triggering a requeue to retry.
+- A status update that fails with a 409 Conflict requeues the pass after 1 s without an error, and the next pass recomputes the status from a fresh read. Any other failed status update returns an error, and controller-runtime requeues with backoff.
 
 ---
 
@@ -367,6 +367,9 @@ This ordering ensures:
   │  5. Set readyReplicas       │
   │  6. Set observedGeneration  │
   │  7. r.Status().Update()     │
+  │     ├─ 409 → requeue        │
+  │     │  after 1s             │
+  │     └─ other error → return │
   └─────────────────────────────┘
 ```
 

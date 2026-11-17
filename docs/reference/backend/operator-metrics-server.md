@@ -143,7 +143,8 @@ Per-instance reconciliation counter.
 
 **Instrumentation point**: Incremented in `Reconcile()` at the end of a
 successful reconciliation (`"success"`) or on any sub-reconciler error
-(`"error"`).
+(`"error"`). A pass whose status write hit a 409 Conflict returns no error and
+counts as `success`.
 
 ### memcached_operator_reconcile_duration_seconds
 
@@ -241,8 +242,9 @@ Ready replica count per Memcached instance.
 | `name`      | Memcached CR name      |
 | `namespace` | Memcached CR namespace |
 
-**Instrumentation point**: Set in `Reconcile()` after `reconcileStatus` succeeds,
-using the CR's `status.readyReplicas` field.
+**Instrumentation point**: Set in `Reconcile()` after `reconcileStatus` returns
+without an error, from the `readyReplicas` value that pass computed. A pass whose
+status write hit a 409 Conflict sets it too.
 
 **Recording function**:
 
@@ -280,16 +282,16 @@ because it tracks per-resource-kind totals, not per-CR state.
 The controller-runtime framework automatically registers and serves the following
 metrics (non-exhaustive):
 
-| Metric                                      | Type      | Description                                                                                 |
-|---------------------------------------------|-----------|---------------------------------------------------------------------------------------------|
-| `controller_runtime_reconcile_total`        | Counter   | Total number of reconciliations per controller, with `result` label (success/error/requeue) |
-| `controller_runtime_reconcile_errors_total` | Counter   | Total number of reconciliation errors per controller                                        |
-| `controller_runtime_reconcile_time_seconds` | Histogram | Duration of reconciliation per controller                                                   |
-| `workqueue_depth`                           | Gauge     | Current depth of the work queue                                                             |
-| `workqueue_adds_total`                      | Counter   | Total number of adds to the work queue                                                      |
-| `workqueue_queue_duration_seconds`          | Histogram | Time an item stays in the work queue                                                        |
-| `workqueue_work_duration_seconds`           | Histogram | Time spent processing an item from the work queue                                           |
-| `workqueue_retries_total`                   | Counter   | Total number of retries handled by the work queue                                           |
+| Metric                                      | Type      | Description                                                                                                                                                                                |
+|---------------------------------------------|-----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `controller_runtime_reconcile_total`        | Counter   | Total number of reconciliations per controller, with `result` label (`success`/`error`/`requeue`/`requeue_after`); `requeue_after` counts the passes whose status write hit a 409 Conflict |
+| `controller_runtime_reconcile_errors_total` | Counter   | Total number of reconciliation errors per controller                                                                                                                                       |
+| `controller_runtime_reconcile_time_seconds` | Histogram | Duration of reconciliation per controller                                                                                                                                                  |
+| `workqueue_depth`                           | Gauge     | Current depth of the work queue                                                                                                                                                            |
+| `workqueue_adds_total`                      | Counter   | Total number of adds to the work queue                                                                                                                                                     |
+| `workqueue_queue_duration_seconds`          | Histogram | Time an item stays in the work queue                                                                                                                                                       |
+| `workqueue_work_duration_seconds`           | Histogram | Time spent processing an item from the work queue                                                                                                                                          |
+| `workqueue_retries_total`                   | Counter   | Total number of retries handled by the work queue                                                                                                                                          |
 
 These metrics are served alongside custom metrics from the same registry and
 endpoint.
