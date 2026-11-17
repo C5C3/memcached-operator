@@ -4,6 +4,7 @@
   "ignorePaths": [
     "**/node_modules/**",
     "**/package-lock.json",
+    "**/osv-scanner.toml",
     "**/.git/**",
     "**/go.sum",
     "**/go.mod",
