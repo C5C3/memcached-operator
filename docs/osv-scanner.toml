@@ -1,0 +1,13 @@
+# osv-scanner configuration for the documentation site dependencies.
+# https://google.github.io/osv-scanner/configuration/
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2027-02-17
+reason = """
+picomatch ReDoS (CVE-2026-112366). Every release through 4.0.7, the latest, is
+affected and no fixed version exists. picomatch is a dev dependency of the
+VitePress build (vite, tinyglobby) and only matches glob patterns from this
+repository's own configuration, so no untrusted pattern reaches it. Remove this
+entry once a fixed release is available.
+"""
