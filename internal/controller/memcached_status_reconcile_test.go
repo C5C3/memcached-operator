@@ -3,13 +3,16 @@ package controller_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -250,6 +253,64 @@ var _ = Describe("Status Reconciliation", func() {
 
 			svc := &corev1.Service{}
 			Expect(fakeClient.Get(ctx, key, svc)).To(Succeed(), "Service should exist despite status update failure")
+		})
+	})
+
+	Context("status update conflict (issue #5)", func() {
+		It("should requeue after one second without an error and persist the status on the next pass", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+				WithStatusSubresource(&memcachedv1beta1.Memcached{}).
+				Build()
+			conflicted := false
+			conflictingClient := interceptor.NewClient(fakeClient, interceptor.Funcs{
+				SubResourceUpdate: func(ctx context.Context, c client.Client, subResourceName string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+					// Fail the first status write for the Memcached CR with a 409 Conflict.
+					if _, ok := obj.(*memcachedv1beta1.Memcached); ok && !conflicted {
+						conflicted = true
+						return apierrors.NewConflict(schema.GroupResource{Group: "memcached.c5c3.io", Resource: "memcacheds"}, obj.GetName(), fmt.Errorf("the object has been modified"))
+					}
+					return c.SubResource(subResourceName).Update(ctx, obj, opts...)
+				},
+			})
+
+			mc := validMemcached(uniqueName("status-conflict"))
+			Expect(fakeClient.Create(ctx, mc)).To(Succeed())
+
+			r := &controller.MemcachedReconciler{
+				Client: conflictingClient,
+				Scheme: scheme.Scheme,
+			}
+			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(mc)}
+			key := client.ObjectKey{Name: mc.Name, Namespace: mc.Namespace}
+
+			// First pass: the status write conflicts.
+			result, err := r.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(ctrl.Result{RequeueAfter: time.Second}))
+
+			Expect(fakeClient.Get(ctx, key, &appsv1.StatefulSet{})).To(Succeed(), "StatefulSet should exist after the conflict pass")
+			Expect(fakeClient.Get(ctx, key, &corev1.Service{})).To(Succeed(), "Service should exist after the conflict pass")
+			stored := &memcachedv1beta1.Memcached{}
+			Expect(fakeClient.Get(ctx, key, stored)).To(Succeed())
+			Expect(stored.Status.Conditions).To(BeEmpty(), "the conflicting status write should not have landed")
+
+			reconcileTotal := func(outcome string) float64 {
+				return gatherMetricValue("memcached_operator_reconcile_total", map[string]string{
+					"name":      mc.Name,
+					"namespace": mc.Namespace,
+					"result":    outcome,
+				})
+			}
+			Expect(reconcileTotal("success")).To(Equal(float64(1)))
+			Expect(reconcileTotal("error")).To(Equal(float64(0)))
+
+			// Second pass: the status write goes through.
+			result, err = r.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(Equal(ctrl.Result{}))
+
+			Expect(fakeClient.Get(ctx, key, stored)).To(Succeed())
+			Expect(stored.Status.Conditions).To(HaveLen(4))
 		})
 	})
 

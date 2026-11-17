@@ -5,12 +5,14 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
@@ -45,6 +47,10 @@ const (
 )
 
 const msgWaitingForStatefulSet = "Waiting for StatefulSet to be created"
+
+// statusConflictRequeueAfter is the delay before the pass that follows a 409 Conflict
+// on the status write.
+const statusConflictRequeueAfter = time.Second
 
 // replicaState holds the computed replica counts used across condition builders.
 type replicaState struct {
@@ -194,7 +200,10 @@ func buildServerList(workloadName, serviceName, namespace string, replicas int32
 
 // reconcileStatus fetches the owned StatefulSet, computes conditions, and updates the Memcached status.
 // missingSecrets is the list of Secret names that could not be found during StatefulSet reconciliation.
-func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1beta1.Memcached, missingSecrets []string) error {
+// A 409 Conflict on the status write drops the computed status and returns
+// RequeueAfter: statusConflictRequeueAfter without an error. Any other failure returns a wrapped error
+// with a zero result.
+func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcachedv1beta1.Memcached, missingSecrets []string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
 	// Fetch the current StatefulSet.
@@ -204,7 +213,7 @@ func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcached
 		if apierrors.IsNotFound(err) {
 			sts = nil
 		} else {
-			return fmt.Errorf("fetching StatefulSet for status: %w", err)
+			return ctrl.Result{}, fmt.Errorf("fetching StatefulSet for status: %w", err)
 		}
 	}
 
@@ -242,8 +251,12 @@ func (r *MemcachedReconciler) reconcileStatus(ctx context.Context, mc *memcached
 		"serverList", mc.Status.ServerList)
 
 	if err := r.Status().Update(ctx, mc); err != nil {
-		return fmt.Errorf("updating Memcached status: %w", err)
+		if apierrors.IsConflict(err) {
+			logger.Info("Status update conflict, requeueing", "requeueAfter", statusConflictRequeueAfter.String())
+			return ctrl.Result{RequeueAfter: statusConflictRequeueAfter}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("updating Memcached status: %w", err)
 	}
 
-	return nil
+	return ctrl.Result{}, nil
 }

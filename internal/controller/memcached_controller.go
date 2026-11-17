@@ -111,13 +111,15 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, reconcileErr
 	}
 
-	if reconcileErr = r.reconcileStatus(ctx, memcached, missingSecrets); reconcileErr != nil {
+	var statusResult ctrl.Result
+	statusResult, reconcileErr = r.reconcileStatus(ctx, memcached, missingSecrets)
+	if reconcileErr != nil {
 		return ctrl.Result{}, reconcileErr
 	}
 
 	metrics.RecordReadyReplicas(memcached.Name, memcached.Namespace, memcached.Status.ReadyReplicas)
 
-	return ctrl.Result{}, nil
+	return statusResult, nil
 }
 
 // reconcileStatefulSet ensures the StatefulSet for the Memcached CR matches the desired state.
