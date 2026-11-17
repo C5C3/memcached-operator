@@ -263,7 +263,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
     // ... reconcilePDB, reconcileServiceMonitor, reconcileNetworkPolicy, reconcileStatus ...
 
-    return ctrl.Result{}, nil
+    return statusResult, nil
 }
 ```
 

@@ -168,6 +168,7 @@ Reconcile(ctx, req)
 |
 +-- 9. Return result
     +-- No timed requeue; a change to the owned StatefulSet's status triggers the next reconcile through the watch
+    +-- Exception: a 409 Conflict on the status write requeues the pass after 1 s without an error
 ```
 
 ### Create-or-Update Pattern
@@ -272,7 +273,8 @@ This enables Kubernetes garbage collection: when the `Memcached` CR is deleted, 
 
 ## Requeue Strategy
 
-The reconciler does not requeue on a timer. The watch on the owned StatefulSet enqueues the Memcached CR whenever the StatefulSet or its status changes, so rollout progress is tracked through events. A reconcile that returns an error is requeued with exponential backoff.
+The reconciler does not poll on a timer. The watch on the owned StatefulSet enqueues the Memcached CR whenever the StatefulSet or its status changes, so rollout progress is tracked through events. A reconcile that returns an error is requeued with exponential backoff.
+The one timed requeue follows a 409 Conflict on the status write: the pass drops the status it computed, logs `Status update conflict, requeueing` at Info level, and returns `RequeueAfter: 1s` without an error, so the next pass recomputes the status from a fresh read.
 
 ---
 
