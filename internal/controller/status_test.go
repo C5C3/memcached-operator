@@ -2,18 +2,25 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
@@ -473,16 +480,20 @@ func statusTestStatefulSet(name string, replicas *int32, ready int32) *appsv1.St
 	}
 }
 
-// runReconcileStatus calls reconcileStatus for the Memcached stored in c and returns the
-// Memcached as stored after the status update.
+// runReconcileStatus calls reconcileStatus for the Memcached stored in c, fails the test unless
+// it returns a zero result and no error, and returns the Memcached as stored after the status update.
 func runReconcileStatus(t *testing.T, c client.Client, key client.ObjectKey) *memcachedv1beta1.Memcached {
 	t.Helper()
 	mc := &memcachedv1beta1.Memcached{}
 	if err := c.Get(context.Background(), key, mc); err != nil {
 		t.Fatalf("failed to get Memcached: %v", err)
 	}
-	if err := newTestReconciler(c).reconcileStatus(context.Background(), mc, nil); err != nil {
+	result, err := newTestReconciler(c).reconcileStatus(context.Background(), mc, nil)
+	if err != nil {
 		t.Fatalf("reconcileStatus: unexpected error: %v", err)
+	}
+	if result != (ctrl.Result{}) {
+		t.Fatalf("reconcileStatus: result = %+v, want %+v", result, ctrl.Result{})
 	}
 	stored := &memcachedv1beta1.Memcached{}
 	if err := c.Get(context.Background(), key, stored); err != nil {
@@ -637,9 +648,12 @@ func TestReconcileStatus_StatefulSetGetError(t *testing.T) {
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(mc), stored); err != nil {
 		t.Fatalf("failed to get Memcached: %v", err)
 	}
-	err := newTestReconciler(c).reconcileStatus(context.Background(), stored, nil)
+	result, err := newTestReconciler(c).reconcileStatus(context.Background(), stored, nil)
 	if err == nil {
 		t.Fatal("expected an error, got nil")
+	}
+	if result != (ctrl.Result{}) {
+		t.Errorf("result = %+v, want %+v", result, ctrl.Result{})
 	}
 	if !strings.HasPrefix(err.Error(), "fetching StatefulSet for status: ") {
 		t.Errorf("error = %q, want prefix %q", err.Error(), "fetching StatefulSet for status: ")
@@ -668,6 +682,154 @@ func TestReconcileStatus_ServerListStableAcrossReconciles(t *testing.T) {
 	}
 	if !reflect.DeepEqual(first.Status.ServerList, second.Status.ServerList) {
 		t.Errorf("serverList changed between reconciles: %v, then %v", first.Status.ServerList, second.Status.ServerList)
+	}
+}
+
+// conflictLogMsg is the JSON field of the Info line reconcileStatus logs on a status update conflict.
+const conflictLogMsg = `"msg":"Status update conflict, requeueing"`
+
+// statusWriteTestMemcached returns the Memcached "cache" in namespace "ns" with three desired
+// replicas that the status write tests reconcile.
+func statusWriteTestMemcached() *memcachedv1beta1.Memcached {
+	return &memcachedv1beta1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
+	}
+}
+
+// newFailingStatusWriteClient returns a client that serves mc and a StatefulSet "cache" with three
+// ready replicas, fails every status write with updateErr, and counts the writes in *writes.
+func newFailingStatusWriteClient(mc *memcachedv1beta1.Memcached, updateErr error, writes *int) client.WithWatch {
+	return interceptor.NewClient(newStatusTestClient(mc, statusTestStatefulSet("cache", int32Ptr(3), 3)), interceptor.Funcs{
+		SubResourceUpdate: func(_ context.Context, _ client.Client, _ string, _ client.Object, _ ...client.SubResourceUpdateOption) error {
+			*writes++
+			return updateErr
+		},
+	})
+}
+
+// countLogLines returns the number of non-empty lines in out that contain every one of substrings.
+func countLogLines(out string, substrings ...string) int {
+	n := 0
+	for _, line := range strings.Split(out, "\n") {
+		if line == "" {
+			continue
+		}
+		matches := true
+		for _, s := range substrings {
+			if !strings.Contains(line, s) {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			n++
+		}
+	}
+	return n
+}
+
+func TestReconcileStatus_ConflictRequeuesWithoutError(t *testing.T) {
+	if statusConflictRequeueAfter != time.Second {
+		t.Fatalf("statusConflictRequeueAfter = %v, want %v", statusConflictRequeueAfter, time.Second)
+	}
+	mc := statusWriteTestMemcached()
+	conflict := apierrors.NewConflict(schema.GroupResource{Group: "memcached.c5c3.io", Resource: "memcacheds"}, "cache", errors.New("the object has been modified"))
+	var statusUpdates int
+	c := newFailingStatusWriteClient(mc, conflict, &statusUpdates)
+	var buf bytes.Buffer
+	ctx := log.IntoContext(context.Background(), zap.New(zap.WriteTo(&buf)))
+
+	stored := &memcachedv1beta1.Memcached{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(mc), stored); err != nil {
+		t.Fatalf("failed to get Memcached: %v", err)
+	}
+	result, err := newTestReconciler(c).reconcileStatus(ctx, stored, nil)
+	if err != nil {
+		t.Fatalf("reconcileStatus: unexpected error: %v", err)
+	}
+	if want := (ctrl.Result{RequeueAfter: statusConflictRequeueAfter}); result != want {
+		t.Errorf("result = %+v, want %+v", result, want)
+	}
+	if statusUpdates != 1 {
+		t.Errorf("status updates = %d, want 1", statusUpdates)
+	}
+	out := buf.String()
+	if n := countLogLines(out, conflictLogMsg); n != 1 {
+		t.Errorf("log lines with %s = %d, want 1; log:\n%s", conflictLogMsg, n, out)
+	}
+	if n := countLogLines(out, conflictLogMsg, `"level":"info"`, `"requeueAfter":"1s"`); n != 1 {
+		t.Errorf("conflict log lines at info level with requeueAfter 1s = %d, want 1; log:\n%s", n, out)
+	}
+	if n := countLogLines(out, `"level":"error"`); n != 0 {
+		t.Errorf("error-level log lines = %d, want 0; log:\n%s", n, out)
+	}
+}
+
+func TestReconcileStatus_StaleReadConflictKeepsNewerStatus(t *testing.T) {
+	mc := statusWriteTestMemcached()
+	c := newStatusTestClient(mc, statusTestStatefulSet("cache", int32Ptr(3), 3))
+	key := client.ObjectKeyFromObject(mc)
+
+	stale := &memcachedv1beta1.Memcached{}
+	if err := c.Get(context.Background(), key, stale); err != nil {
+		t.Fatalf("failed to get Memcached: %v", err)
+	}
+	newer := stale.DeepCopy()
+	newer.Status.ReadyReplicas = 7
+	if err := c.Status().Update(context.Background(), newer); err != nil {
+		t.Fatalf("failed to write the newer status: %v", err)
+	}
+
+	result, err := newTestReconciler(c).reconcileStatus(context.Background(), stale, nil)
+	if err != nil {
+		t.Fatalf("reconcileStatus: unexpected error: %v", err)
+	}
+	if want := (ctrl.Result{RequeueAfter: statusConflictRequeueAfter}); result != want {
+		t.Errorf("result = %+v, want %+v", result, want)
+	}
+
+	stored := &memcachedv1beta1.Memcached{}
+	if err := c.Get(context.Background(), key, stored); err != nil {
+		t.Fatalf("failed to get Memcached after the conflict: %v", err)
+	}
+	if stored.Status.ReadyReplicas != 7 {
+		t.Errorf("readyReplicas = %d, want 7", stored.Status.ReadyReplicas)
+	}
+	if len(stored.Status.Conditions) != 0 {
+		t.Errorf("conditions = %v, want none", stored.Status.Conditions)
+	}
+}
+
+func TestReconcileStatus_NonConflictUpdateErrorKeepsErrorPath(t *testing.T) {
+	mc := statusWriteTestMemcached()
+	var statusUpdates int
+	c := newFailingStatusWriteClient(mc, apierrors.NewInternalError(errors.New("injected status error")), &statusUpdates)
+	var buf bytes.Buffer
+	ctx := log.IntoContext(context.Background(), zap.New(zap.WriteTo(&buf)))
+
+	stored := &memcachedv1beta1.Memcached{}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(mc), stored); err != nil {
+		t.Fatalf("failed to get Memcached: %v", err)
+	}
+	result, err := newTestReconciler(c).reconcileStatus(ctx, stored, nil)
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	if result != (ctrl.Result{}) {
+		t.Errorf("result = %+v, want %+v", result, ctrl.Result{})
+	}
+	if !strings.HasPrefix(err.Error(), "updating Memcached status: ") {
+		t.Errorf("error = %q, want prefix %q", err.Error(), "updating Memcached status: ")
+	}
+	if !apierrors.IsInternalError(err) {
+		t.Errorf("apierrors.IsInternalError(%v) = false, want true", err)
+	}
+	if statusUpdates != 1 {
+		t.Errorf("status updates = %d, want 1", statusUpdates)
+	}
+	if n := countLogLines(buf.String(), conflictLogMsg); n != 0 {
+		t.Errorf("log lines with %s = %d, want 0; log:\n%s", conflictLogMsg, n, buf.String())
 	}
 }
 
