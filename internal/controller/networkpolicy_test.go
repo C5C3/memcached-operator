@@ -20,7 +20,7 @@ func TestIsNetworkPolicyEnabled(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "nil Security",
+			name: "nil Security (IsNetworkPolicyEnabled)",
 			mc: &memcachedv1beta1.Memcached{
 				Spec: memcachedv1beta1.MemcachedSpec{Security: nil},
 			},
@@ -83,7 +83,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		{
 			name: "basic with only memcached port",
 			mc: &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Security: &memcachedv1beta1.SecuritySpec{
 						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
@@ -98,7 +98,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		{
 			name: "with monitoring enabled adds metrics port",
 			mc: &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
 					Security: &memcachedv1beta1.SecuritySpec{
@@ -115,7 +115,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		{
 			name: "with TLS enabled adds TLS port",
 			mc: &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Security: &memcachedv1beta1.SecuritySpec{
 						TLS:           &memcachedv1beta1.TLSSpec{Enabled: true},
@@ -132,7 +132,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		{
 			name: "with both monitoring and TLS",
 			mc: &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
 					Security: &memcachedv1beta1.SecuritySpec{
@@ -151,7 +151,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		{
 			name: "with allowedSources containing namespaceSelector",
 			mc: &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Security: &memcachedv1beta1.SecuritySpec{
 						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
@@ -159,7 +159,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 							AllowedSources: []networkingv1.NetworkPolicyPeer{
 								{
 									NamespaceSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"env": "production"},
+										MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProduction},
 									},
 								},
 							},
@@ -173,7 +173,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 			wantFrom: []networkingv1.NetworkPolicyPeer{
 				{
 					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"env": "production"},
+						MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProduction},
 					},
 				},
 			},
@@ -181,7 +181,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		{
 			name: "with allowedSources containing podSelector",
 			mc: &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Security: &memcachedv1beta1.SecuritySpec{
 						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
@@ -189,7 +189,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 							AllowedSources: []networkingv1.NetworkPolicyPeer{
 								{
 									PodSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{"app": "frontend"},
+										MatchLabels: map[string]string{testLabelKeyApp: "frontend"},
 									},
 								},
 							},
@@ -203,7 +203,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 			wantFrom: []networkingv1.NetworkPolicyPeer{
 				{
 					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{"app": "frontend"},
+						MatchLabels: map[string]string{testLabelKeyApp: "frontend"},
 					},
 				},
 			},
@@ -211,7 +211,7 @@ func TestConstructNetworkPolicy(t *testing.T) {
 		{
 			name: "empty allowedSources produces no from field",
 			mc: &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Security: &memcachedv1beta1.SecuritySpec{
 						NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
@@ -290,8 +290,8 @@ func TestConstructNetworkPolicy(t *testing.T) {
 func TestConstructNetworkPolicy_Labels(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "label-test",
-			Namespace: "default",
+			Name:      testInstanceNameLabelTest,
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
@@ -331,8 +331,8 @@ func TestConstructNetworkPolicy_InstanceScopedSelector(t *testing.T) {
 		name         string
 		instanceName string
 	}{
-		{name: "cache-alpha", instanceName: "cache-alpha"},
-		{name: "cache-beta", instanceName: "cache-beta"},
+		{name: testInstanceNameAlpha, instanceName: testInstanceNameAlpha},
+		{name: testInstanceNameBeta, instanceName: testInstanceNameBeta},
 	}
 
 	for _, tt := range tests {
@@ -340,7 +340,7 @@ func TestConstructNetworkPolicy_InstanceScopedSelector(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tt.instanceName,
-					Namespace: "default",
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Security: &memcachedv1beta1.SecuritySpec{
@@ -364,7 +364,7 @@ func TestConstructNetworkPolicy_MultiplePeers(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "multi-peer",
-			Namespace: "default",
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
@@ -373,12 +373,12 @@ func TestConstructNetworkPolicy_MultiplePeers(t *testing.T) {
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
 							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"env": "production"},
+								MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProduction},
 							},
 						},
 						{
 							PodSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"app": "backend"},
+								MatchLabels: map[string]string{testLabelKeyApp: "backend"},
 							},
 						},
 					},
@@ -410,7 +410,7 @@ func TestConstructNetworkPolicy_MultiplePeers(t *testing.T) {
 	if peer0.PodSelector != nil {
 		t.Error("from[0] should not have podSelector")
 	}
-	if peer0.NamespaceSelector.MatchLabels["env"] != "production" {
+	if peer0.NamespaceSelector.MatchLabels["env"] != testLabelValueEnvProduction {
 		t.Errorf("from[0] namespaceSelector matchLabels[env] = %q, want %q",
 			peer0.NamespaceSelector.MatchLabels["env"], "production")
 	}
@@ -433,7 +433,7 @@ func TestConstructNetworkPolicy_Idempotent(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "idem-np",
-			Namespace: "production",
+			Namespace: testNamespaceProduction,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
@@ -444,7 +444,7 @@ func TestConstructNetworkPolicy_Idempotent(t *testing.T) {
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
 							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"env": "prod"},
+								MatchLabels: map[string]string{testLabelKeyEnv: "prod"},
 							},
 						},
 						{

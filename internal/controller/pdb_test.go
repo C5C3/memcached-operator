@@ -66,8 +66,8 @@ func TestConstructPDB(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
@@ -111,8 +111,8 @@ func TestConstructPDB(t *testing.T) {
 func TestConstructPDB_Labels(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "label-test",
-			Namespace: "default",
+			Name:      testInstanceNameLabelTest,
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
@@ -155,8 +155,8 @@ func TestConstructPDB_InstanceScopedSelector(t *testing.T) {
 		name         string
 		instanceName string
 	}{
-		{name: "cache-alpha", instanceName: "cache-alpha"},
-		{name: "cache-beta", instanceName: "cache-beta"},
+		{name: testInstanceNameAlpha, instanceName: testInstanceNameAlpha},
+		{name: testInstanceNameBeta, instanceName: testInstanceNameBeta},
 	}
 
 	for _, tt := range tests {
@@ -164,7 +164,7 @@ func TestConstructPDB_InstanceScopedSelector(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tt.instanceName,
-					Namespace: "default",
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
@@ -191,7 +191,7 @@ func TestIsPDBEnabled(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "nil HighAvailability",
+			name: "nil HighAvailability (IsPDBEnabled)",
 			mc: &memcachedv1beta1.Memcached{
 				Spec: memcachedv1beta1.MemcachedSpec{HighAvailability: nil},
 			},
@@ -245,7 +245,7 @@ func TestIsPDBEnabled(t *testing.T) {
 func TestConstructPDB_SwitchMinAvailableToMaxUnavailable(t *testing.T) {
 	// Step 1: Create a PDB with minAvailable=2.
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "switch-min-max", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "switch-min-max", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
@@ -311,7 +311,7 @@ func TestConstructPDB_SwitchMinAvailableToMaxUnavailable(t *testing.T) {
 func TestConstructPDB_SwitchMaxUnavailableToMinAvailable(t *testing.T) {
 	// Step 1: Create a PDB with maxUnavailable=1.
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "switch-max-min", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "switch-max-min", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{
@@ -376,7 +376,7 @@ func TestConstructPDB_SwitchMaxUnavailableToMinAvailable(t *testing.T) {
 
 func TestConstructPDB_Idempotent(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-pdb", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-pdb", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				PodDisruptionBudget: &memcachedv1beta1.PDBSpec{

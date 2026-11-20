@@ -28,19 +28,19 @@ func TestConstructServiceMonitor(t *testing.T) {
 			},
 			wantInterval:      "30s",
 			wantScrapeTimeout: "10s",
-			wantEndpointPort:  "metrics",
+			wantEndpointPort:  testMetricsPort,
 		},
 		{
 			name: "custom interval",
 			monitoringSpec: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval: "60s",
+					Interval: testScrapeInterval60s,
 				},
 			},
-			wantInterval:      "60s",
+			wantInterval:      testScrapeInterval60s,
 			wantScrapeTimeout: "10s",
-			wantEndpointPort:  "metrics",
+			wantEndpointPort:  testMetricsPort,
 		},
 		{
 			name: "custom scrapeTimeout",
@@ -52,20 +52,20 @@ func TestConstructServiceMonitor(t *testing.T) {
 			},
 			wantInterval:      "30s",
 			wantScrapeTimeout: "20s",
-			wantEndpointPort:  "metrics",
+			wantEndpointPort:  testMetricsPort,
 		},
 		{
 			name: "custom interval and scrapeTimeout",
 			monitoringSpec: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval:      "15s",
+					Interval:      testScrapeInterval15s,
 					ScrapeTimeout: "5s",
 				},
 			},
-			wantInterval:      "15s",
+			wantInterval:      testScrapeInterval15s,
 			wantScrapeTimeout: "5s",
-			wantEndpointPort:  "metrics",
+			wantEndpointPort:  testMetricsPort,
 		},
 	}
 
@@ -73,8 +73,8 @@ func TestConstructServiceMonitor(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Monitoring: tt.monitoringSpec,
@@ -105,8 +105,8 @@ func TestConstructServiceMonitor(t *testing.T) {
 func TestConstructServiceMonitor_Labels(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "label-test",
-			Namespace: "default",
+			Name:      testInstanceNameLabelTest,
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
@@ -146,15 +146,15 @@ func TestConstructServiceMonitor_AdditionalLabels(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "addl-labels",
-			Namespace: "default",
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
-						"release": testReleaseLabel,
-						"team":    "platform",
+						testLabelKeyRelease: testReleaseLabel,
+						"team":              testLabelValueTeam,
 					},
 				},
 			},
@@ -168,7 +168,7 @@ func TestConstructServiceMonitor_AdditionalLabels(t *testing.T) {
 	if sm.Labels["release"] != testReleaseLabel {
 		t.Errorf("expected additional label release=prometheus, got %q", sm.Labels["release"])
 	}
-	if sm.Labels["team"] != "platform" {
+	if sm.Labels["team"] != testLabelValueTeam {
 		t.Errorf("expected additional label team=platform, got %q", sm.Labels["team"])
 	}
 	// Base labels still present.
@@ -186,15 +186,15 @@ func TestConstructServiceMonitor_AdditionalLabelsConflict(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "conflict-labels",
-			Namespace: "default",
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
-						"app.kubernetes.io/name": "override",
-						"release":                testReleaseLabel,
+						testLabelKeyAppName: "override",
+						testLabelKeyRelease: testReleaseLabel,
 					},
 				},
 			},
@@ -211,7 +211,7 @@ func TestConstructServiceMonitor_AdditionalLabelsConflict(t *testing.T) {
 	if sm.Labels["app.kubernetes.io/instance"] != "conflict-labels" {
 		t.Errorf("standard label app.kubernetes.io/instance = %q, want %q", sm.Labels["app.kubernetes.io/instance"], "conflict-labels")
 	}
-	if sm.Labels["app.kubernetes.io/managed-by"] != "memcached-operator" {
+	if sm.Labels["app.kubernetes.io/managed-by"] != testLabelValueAppManagedBy {
 		t.Errorf("standard label app.kubernetes.io/managed-by = %q, want %q", sm.Labels["app.kubernetes.io/managed-by"], "memcached-operator")
 	}
 	// Non-conflicting additional label should still be present.
@@ -224,7 +224,7 @@ func TestConstructServiceMonitor_NamespaceSelector(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ns-test",
-			Namespace: "production",
+			Namespace: testNamespaceProduction,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
@@ -239,7 +239,7 @@ func TestConstructServiceMonitor_NamespaceSelector(t *testing.T) {
 	if len(sm.Spec.NamespaceSelector.MatchNames) != 1 {
 		t.Fatalf("expected 1 namespace in selector, got %d", len(sm.Spec.NamespaceSelector.MatchNames))
 	}
-	if sm.Spec.NamespaceSelector.MatchNames[0] != "production" {
+	if sm.Spec.NamespaceSelector.MatchNames[0] != testNamespaceProduction {
 		t.Errorf("namespace selector = %q, want %q", sm.Spec.NamespaceSelector.MatchNames[0], "production")
 	}
 }
@@ -249,8 +249,8 @@ func TestConstructServiceMonitor_InstanceScopedSelector(t *testing.T) {
 		name         string
 		instanceName string
 	}{
-		{name: "cache-alpha", instanceName: "cache-alpha"},
-		{name: "cache-beta", instanceName: "cache-beta"},
+		{name: testInstanceNameAlpha, instanceName: testInstanceNameAlpha},
+		{name: testInstanceNameBeta, instanceName: testInstanceNameBeta},
 	}
 
 	for _, tt := range tests {
@@ -258,7 +258,7 @@ func TestConstructServiceMonitor_InstanceScopedSelector(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      tt.instanceName,
-					Namespace: "default",
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Monitoring: &memcachedv1beta1.MonitoringSpec{
@@ -292,7 +292,7 @@ func TestIsServiceMonitorEnabled(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "monitoring disabled",
+			name: "monitoring disabled (IsServiceMonitorEnabled)",
 			mc: &memcachedv1beta1.Memcached{
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false},
@@ -316,7 +316,7 @@ func TestIsServiceMonitorEnabled(t *testing.T) {
 					Monitoring: &memcachedv1beta1.MonitoringSpec{
 						Enabled: true,
 						ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-							Interval: "60s",
+							Interval: testScrapeInterval60s,
 						},
 					},
 				},
@@ -347,11 +347,11 @@ func TestConstructServiceMonitor_Idempotent(t *testing.T) {
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
-						"release": releaseLabel,
-						"team":    "platform",
+						testLabelKeyRelease: releaseLabel,
+						"team":              testLabelValueTeam,
 					},
 					Interval:      "45s",
-					ScrapeTimeout: "15s",
+					ScrapeTimeout: testScrapeTimeout15s,
 				},
 			},
 		},
@@ -399,7 +399,7 @@ func TestConstructServiceMonitor_Idempotent(t *testing.T) {
 	if sm.Labels["release"] != releaseLabel {
 		t.Errorf("expected additional label release=%s, got %q", releaseLabel, sm.Labels["release"])
 	}
-	if sm.Labels["team"] != "platform" {
+	if sm.Labels["team"] != testLabelValueTeam {
 		t.Errorf("expected additional label team=platform, got %q", sm.Labels["team"])
 	}
 	if sm.Labels["app.kubernetes.io/name"] != testPortName {
@@ -412,10 +412,10 @@ func TestConstructServiceMonitor_Idempotent(t *testing.T) {
 	if ep.Interval != "45s" {
 		t.Errorf("interval = %q, want %q", ep.Interval, "45s")
 	}
-	if ep.ScrapeTimeout != "15s" {
+	if ep.ScrapeTimeout != testScrapeTimeout15s {
 		t.Errorf("scrapeTimeout = %q, want %q", ep.ScrapeTimeout, "15s")
 	}
-	if ep.Port != "metrics" {
+	if ep.Port != testMetricsPort {
 		t.Errorf("endpoint port = %q, want %q", ep.Port, "metrics")
 	}
 	if len(sm.Spec.NamespaceSelector.MatchNames) != 1 || sm.Spec.NamespaceSelector.MatchNames[0] != "monitoring" {

@@ -17,8 +17,8 @@ const testPortName = "memcached"
 func TestConstructService_MinimalSpec(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "my-cache",
-			Namespace: "default",
+			Name:      testInstanceNameMyCache,
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
@@ -72,7 +72,7 @@ func TestConstructService_MinimalSpec(t *testing.T) {
 
 func TestConstructService_ClusterIPNone(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	svc := &corev1.Service{}
@@ -86,7 +86,7 @@ func TestConstructService_ClusterIPNone(t *testing.T) {
 
 func TestConstructService_PortConfig(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "port-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "port-test", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	svc := &corev1.Service{}
@@ -114,7 +114,7 @@ func TestConstructService_PortConfig(t *testing.T) {
 
 func TestConstructService_Labels(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "label-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameLabelTest, Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	svc := &corev1.Service{}
@@ -146,12 +146,12 @@ func TestConstructService_Labels(t *testing.T) {
 
 func TestConstructService_CustomAnnotations(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "anno-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "anno-test", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Service: &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
-					"prometheus.io/scrape": "true",
-					"prometheus.io/port":   "9150",
+					testAnnotationKeyPrometheusScrape: testAnnotationValuePrometheusScrape,
+					"prometheus.io/port":              "9150",
 				},
 			},
 		},
@@ -163,7 +163,7 @@ func TestConstructService_CustomAnnotations(t *testing.T) {
 	if len(svc.Annotations) != 2 {
 		t.Fatalf("expected 2 annotations, got %d: %v", len(svc.Annotations), svc.Annotations)
 	}
-	if svc.Annotations["prometheus.io/scrape"] != "true" {
+	if svc.Annotations["prometheus.io/scrape"] != testAnnotationValuePrometheusScrape {
 		t.Errorf("annotation prometheus.io/scrape = %q, want %q", svc.Annotations["prometheus.io/scrape"], "true")
 	}
 	if svc.Annotations["prometheus.io/port"] != "9150" {
@@ -173,7 +173,7 @@ func TestConstructService_CustomAnnotations(t *testing.T) {
 
 func TestConstructService_NilServiceSpec(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "nil-svc", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "nil-svc", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{Service: nil},
 	}
 	svc := &corev1.Service{}
@@ -198,7 +198,7 @@ func TestConstructService_NilServiceSpec(t *testing.T) {
 
 func TestConstructService_MonitoringEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "mon-enabled", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-enabled", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
@@ -233,14 +233,14 @@ func TestConstructService_MonitoringOff(t *testing.T) {
 		name       string
 		monitoring *memcachedv1beta1.MonitoringSpec
 	}{
-		{name: "monitoring disabled", monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false}},
+		{name: "monitoring disabled (constructService)", monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false}},
 		{name: "nil monitoring", monitoring: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: testDefaultNamespace},
 				Spec:       memcachedv1beta1.MemcachedSpec{Monitoring: tt.monitoring},
 			}
 			svc := &corev1.Service{}
@@ -262,7 +262,7 @@ func TestConstructService_MonitoringOff(t *testing.T) {
 
 func TestConstructService_MonitoringEnabledPortDetails(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "mon-details", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-details", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
@@ -295,7 +295,7 @@ func TestConstructService_MonitoringEnabledPortDetails(t *testing.T) {
 
 func TestConstructService_TLSEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-svc", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-svc", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -341,10 +341,10 @@ func TestConstructService_TLSDisabled(t *testing.T) {
 		name     string
 		security *memcachedv1beta1.SecuritySpec
 	}{
-		{name: "nil Security", security: nil},
-		{name: "nil TLS", security: &memcachedv1beta1.SecuritySpec{}},
+		{name: "nil Security (constructService)", security: nil},
+		{name: "nil TLS (constructService)", security: &memcachedv1beta1.SecuritySpec{}},
 		{
-			name: "TLS disabled",
+			name: "TLS disabled (constructService)",
 			security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{Enabled: false},
 			},
@@ -354,7 +354,7 @@ func TestConstructService_TLSDisabled(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: testDefaultNamespace},
 				Spec:       memcachedv1beta1.MemcachedSpec{Security: tt.security},
 			}
 			svc := &corev1.Service{}
@@ -376,7 +376,7 @@ func TestConstructService_TLSDisabled(t *testing.T) {
 
 func TestConstructService_TLSWithMonitoring(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-mon", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-mon", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -426,7 +426,7 @@ func TestConstructService_TLSWithMonitoring(t *testing.T) {
 
 func TestConstructService_TLSNilSecurity(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-nil", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-nil", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{Security: nil},
 	}
 	svc := &corev1.Service{}
@@ -473,12 +473,12 @@ func TestConstructService_AnnotationClearing(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Step 1: Create a CR with annotations and apply to Service.
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "anno-clear", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "anno-clear", Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Service: &memcachedv1beta1.ServiceSpec{
 						Annotations: map[string]string{
-							"prometheus.io/scrape": "true",
-							"custom/key":           "value",
+							testAnnotationKeyPrometheusScrape: testAnnotationValuePrometheusScrape,
+							"custom/key":                      "value",
 						},
 					},
 				},
@@ -491,7 +491,7 @@ func TestConstructService_AnnotationClearing(t *testing.T) {
 			if len(svc.Annotations) != 2 {
 				t.Fatalf("after first call: expected 2 annotations, got %d: %v", len(svc.Annotations), svc.Annotations)
 			}
-			if svc.Annotations["prometheus.io/scrape"] != "true" {
+			if svc.Annotations["prometheus.io/scrape"] != testAnnotationValuePrometheusScrape {
 				t.Errorf("after first call: annotation prometheus.io/scrape = %q, want %q", svc.Annotations["prometheus.io/scrape"], "true")
 			}
 			if svc.Annotations["custom/key"] != "value" {
@@ -524,7 +524,7 @@ func TestConstructService_AnnotationClearing(t *testing.T) {
 
 func TestConstructService_Idempotent(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "idempotent-test", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Service: &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{

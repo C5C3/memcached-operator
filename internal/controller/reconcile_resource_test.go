@@ -56,14 +56,14 @@ func newFakeClient(objs ...client.Object) client.WithWatch {
 
 func TestReconcileResource_CreatesNewResource(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	result, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -87,14 +87,14 @@ func TestReconcileResource_CreatesNewResource(t *testing.T) {
 
 func TestReconcileResource_UpdatesExistingResource(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
-				{Name: "old", Port: 9999},
+				{Name: testStalePortName, Port: 9999},
 			},
 		},
 	}
@@ -102,7 +102,7 @@ func TestReconcileResource_UpdatesExistingResource(t *testing.T) {
 	r := newTestReconciler(c)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -126,11 +126,11 @@ func TestReconcileResource_UpdatesExistingResource(t *testing.T) {
 
 func TestReconcileResource_RetriesOnConflict(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	var updateCalls atomic.Int32
@@ -157,7 +157,7 @@ func TestReconcileResource_RetriesOnConflict(t *testing.T) {
 	r := newTestReconciler(wrappedClient)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	var mutateCalls int
@@ -180,11 +180,11 @@ func TestReconcileResource_RetriesOnConflict(t *testing.T) {
 
 func TestReconcileResource_ExhaustsRetriesOnConflict(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	conflictErr := apierrors.NewConflict(
@@ -206,7 +206,7 @@ func TestReconcileResource_ExhaustsRetriesOnConflict(t *testing.T) {
 	r := newTestReconciler(wrappedClient)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -224,11 +224,11 @@ func TestReconcileResource_ExhaustsRetriesOnConflict(t *testing.T) {
 
 func TestReconcileResource_DoesNotRetryNonConflictErrors(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	internalErr := apierrors.NewInternalError(fmt.Errorf("server exploded"))
@@ -248,7 +248,7 @@ func TestReconcileResource_DoesNotRetryNonConflictErrors(t *testing.T) {
 	r := newTestReconciler(wrappedClient)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -266,14 +266,14 @@ func TestReconcileResource_DoesNotRetryNonConflictErrors(t *testing.T) {
 
 func TestReconcileResource_PropagatesMutateError(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	mutateErr := fmt.Errorf("failed to set owner reference")
@@ -291,14 +291,14 @@ func TestReconcileResource_PropagatesMutateError(t *testing.T) {
 
 func TestReconcileResource_SetsOwnerReference(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -338,7 +338,7 @@ func TestReconcileResource_SetsOwnerReference(t *testing.T) {
 
 func TestReconcileResource_EmitsCreatedEvent(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -346,7 +346,7 @@ func TestReconcileResource_EmitsCreatedEvent(t *testing.T) {
 	r := newTestReconcilerWithRecorder(c, recorder)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -371,14 +371,14 @@ func TestReconcileResource_EmitsCreatedEvent(t *testing.T) {
 
 func TestReconcileResource_EmitsUpdatedEvent(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
-				{Name: "old", Port: 9999},
+				{Name: testStalePortName, Port: 9999},
 			},
 		},
 	}
@@ -387,7 +387,7 @@ func TestReconcileResource_EmitsUpdatedEvent(t *testing.T) {
 	r := newTestReconcilerWithRecorder(c, recorder)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -412,7 +412,7 @@ func TestReconcileResource_EmitsUpdatedEvent(t *testing.T) {
 
 func TestReconcileResource_NoEventOnUnchanged(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -420,7 +420,7 @@ func TestReconcileResource_NoEventOnUnchanged(t *testing.T) {
 	r := newTestReconcilerWithRecorder(c, recorder)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	// First call: creates the resource.
@@ -453,7 +453,7 @@ func TestReconcileResource_NoEventOnUnchanged(t *testing.T) {
 
 func TestReconcileResource_NilRecorderDoesNotPanic(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default", UID: "abc-123"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -461,7 +461,7 @@ func TestReconcileResource_NilRecorderDoesNotPanic(t *testing.T) {
 	r := newTestReconciler(c)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace},
 	}
 
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -517,7 +517,7 @@ func matchLabels(labels []*dto.LabelPair, resourceKind, result string) bool {
 
 func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: "default", UID: "m-1"},
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: testDefaultNamespace, UID: "m-1"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
@@ -526,7 +526,7 @@ func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
 	before := getReconcileResourceCounter(t, "created")
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-create", Namespace: testDefaultNamespace},
 	}
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
 		constructService(mc, svc)
@@ -544,13 +544,13 @@ func TestReconcileResource_IncrementsMetricOnCreate(t *testing.T) {
 
 func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default", UID: "m-2"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMetricUpdate, Namespace: testDefaultNamespace, UID: "m-2"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMetricUpdate, Namespace: testDefaultNamespace},
 		Spec: corev1.ServiceSpec{
-			Ports: []corev1.ServicePort{{Name: "old", Port: 9999}},
+			Ports: []corev1.ServicePort{{Name: testStalePortName, Port: 9999}},
 		},
 	}
 	c := newFakeClient(mc, existingSvc)
@@ -559,7 +559,7 @@ func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
 	before := getReconcileResourceCounter(t, "updated")
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-update", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMetricUpdate, Namespace: testDefaultNamespace},
 	}
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
 		constructService(mc, svc)
@@ -577,14 +577,14 @@ func TestReconcileResource_IncrementsMetricOnUpdate(t *testing.T) {
 
 func TestReconcileResource_IncrementsMetricOnUnchanged(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-unchanged", Namespace: "default", UID: "m-3"},
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-unchanged", Namespace: testDefaultNamespace, UID: "m-3"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	c := newFakeClient(mc)
 	r := newTestReconciler(c)
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-unchanged", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "metric-unchanged", Namespace: testDefaultNamespace},
 	}
 	// First call: create.
 	_, err := r.reconcileResource(context.Background(), mc, svc, func() error {
@@ -614,11 +614,11 @@ func TestReconcileResource_IncrementsMetricOnUnchanged(t *testing.T) {
 
 func TestReconcileResource_DoesNotIncrementMetricOnError(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default", UID: "m-4"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMetricErr, Namespace: testDefaultNamespace, UID: "m-4"},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	existingSvc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMetricErr, Namespace: testDefaultNamespace},
 	}
 
 	internalErr := apierrors.NewInternalError(fmt.Errorf("server exploded"))
@@ -639,7 +639,7 @@ func TestReconcileResource_DoesNotIncrementMetricOnError(t *testing.T) {
 	unchangedBefore := getReconcileResourceCounter(t, "unchanged")
 
 	svc := &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "metric-err", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMetricErr, Namespace: testDefaultNamespace},
 	}
 	_, _ = r.reconcileResource(context.Background(), mc, svc, func() error {
 		constructService(mc, svc)

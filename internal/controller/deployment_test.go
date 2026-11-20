@@ -40,38 +40,38 @@ func TestLabelsForMemcached(t *testing.T) {
 	}{
 		{
 			name:         "standard name",
-			instanceName: "my-cache",
+			instanceName: testInstanceNameMyCache,
 			wantLabels: map[string]string{
-				"app.kubernetes.io/name":       "memcached",
-				"app.kubernetes.io/instance":   "my-cache",
-				"app.kubernetes.io/managed-by": "memcached-operator",
+				testLabelKeyAppName:      testLabelValueAppName,
+				testLabelKeyAppInstance:  testInstanceNameMyCache,
+				testLabelKeyAppManagedBy: testLabelValueAppManagedBy,
 			},
 		},
 		{
 			name:         "another name",
 			instanceName: "test-instance",
 			wantLabels: map[string]string{
-				"app.kubernetes.io/name":       "memcached",
-				"app.kubernetes.io/instance":   "test-instance",
-				"app.kubernetes.io/managed-by": "memcached-operator",
+				testLabelKeyAppName:      testLabelValueAppName,
+				testLabelKeyAppInstance:  "test-instance",
+				testLabelKeyAppManagedBy: testLabelValueAppManagedBy,
 			},
 		},
 		{
 			name:         "empty name",
 			instanceName: "",
 			wantLabels: map[string]string{
-				"app.kubernetes.io/name":       "memcached",
-				"app.kubernetes.io/instance":   "",
-				"app.kubernetes.io/managed-by": "memcached-operator",
+				testLabelKeyAppName:      testLabelValueAppName,
+				testLabelKeyAppInstance:  "",
+				testLabelKeyAppManagedBy: testLabelValueAppManagedBy,
 			},
 		},
 		{
 			name:         "long name",
 			instanceName: strings.Repeat("a", 253),
 			wantLabels: map[string]string{
-				"app.kubernetes.io/name":       "memcached",
-				"app.kubernetes.io/instance":   strings.Repeat("a", 253),
-				"app.kubernetes.io/managed-by": "memcached-operator",
+				testLabelKeyAppName:      testLabelValueAppName,
+				testLabelKeyAppInstance:  strings.Repeat("a", 253),
+				testLabelKeyAppManagedBy: testLabelValueAppManagedBy,
 			},
 		},
 	}
@@ -108,7 +108,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 			name:   "default config",
 			config: &memcachedv1beta1.MemcachedConfig{},
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 			},
 		},
 		{
@@ -120,7 +120,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 				MaxItemSize:    "2m",
 			},
 			expected: []string{
-				"-m", "256", "-c", "2048", "-t", "8", "-I", "2m",
+				"-m", testCustomMaxMemoryArg, "-c", testCustomMaxConnectionsArg, "-t", "8", "-I", "2m",
 			},
 		},
 		{
@@ -129,7 +129,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 				Verbosity: 0,
 			},
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 			},
 		},
 		{
@@ -138,7 +138,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 				Verbosity: 1,
 			},
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m", "-v",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m", "-v",
 			},
 		},
 		{
@@ -147,33 +147,33 @@ func TestBuildMemcachedArgs(t *testing.T) {
 				Verbosity: 2,
 			},
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m", "-vv",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m", testVeryVerboseFlag,
 			},
 		},
 		{
 			name: "extra args appended after standard flags",
 			config: &memcachedv1beta1.MemcachedConfig{
-				ExtraArgs: []string{"-o", "modern"},
+				ExtraArgs: []string{"-o", testExtraArgModern},
 			},
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m", "-o", "modern",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m", "-o", testExtraArgModern,
 			},
 		},
 		{
 			name:   "nil config uses defaults",
 			config: nil,
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 			},
 		},
 		{
 			name: "combined verbosity 2 and extra args",
 			config: &memcachedv1beta1.MemcachedConfig{
 				Verbosity: 2,
-				ExtraArgs: []string{"-o", "modern"},
+				ExtraArgs: []string{"-o", testExtraArgModern},
 			},
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m", "-vv", "-o", "modern",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m", testVeryVerboseFlag, "-o", testExtraArgModern,
 			},
 		},
 		{
@@ -182,7 +182,7 @@ func TestBuildMemcachedArgs(t *testing.T) {
 				ExtraArgs: []string{},
 			},
 			expected: []string{
-				"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+				"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 			},
 		},
 	}
@@ -215,8 +215,8 @@ func stringPtr(s string) *string { return &s }
 func TestConstructStatefulSet_MinimalSpec(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "my-cache",
-			Namespace: "default",
+			Name:      testInstanceNameMyCache,
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
@@ -242,7 +242,7 @@ func TestConstructStatefulSet_MinimalSpec(t *testing.T) {
 	}
 
 	// Default args.
-	expectedArgs := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	expectedArgs := []string{"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m"}
 	if len(containers[0].Args) != len(expectedArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(expectedArgs), len(containers[0].Args), containers[0].Args)
 	}
@@ -297,7 +297,7 @@ func TestConstructStatefulSet_CustomSpec(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "custom-cache",
-			Namespace: "production",
+			Namespace: testNamespaceProduction,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(5),
@@ -334,7 +334,7 @@ func TestConstructStatefulSet_CustomSpec(t *testing.T) {
 	}
 
 	// Custom args.
-	expectedArgs := []string{"-m", "256", "-c", "2048", "-t", "8", "-I", "2m"}
+	expectedArgs := []string{"-m", testCustomMaxMemoryArg, "-c", testCustomMaxConnectionsArg, "-t", "8", "-I", "2m"}
 	if len(container.Args) != len(expectedArgs) {
 		t.Fatalf("expected %d args, got %d: %v", len(expectedArgs), len(container.Args), container.Args)
 	}
@@ -357,7 +357,7 @@ func TestConstructStatefulSet_CustomSpec(t *testing.T) {
 
 func TestConstructStatefulSet_ContainerPort(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "port-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "port-test", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -387,7 +387,7 @@ func TestConstructStatefulSet_ContainerPort(t *testing.T) {
 
 func TestConstructStatefulSet_Probes(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "probe-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "probe-test", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -465,7 +465,7 @@ func TestConstructStatefulSet_Resources(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "res-test", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "res-test", Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Resources: tt.resources,
 				},
@@ -517,7 +517,7 @@ func zoneSpreadConstraint() corev1.TopologySpreadConstraint {
 
 func TestBuildAntiAffinity_Soft(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
@@ -549,7 +549,7 @@ func TestBuildAntiAffinity_Soft(t *testing.T) {
 	if matchLabels["app.kubernetes.io/name"] != testPortName {
 		t.Errorf("expected label app.kubernetes.io/name=memcached, got %q", matchLabels["app.kubernetes.io/name"])
 	}
-	if matchLabels["app.kubernetes.io/instance"] != "my-cache" {
+	if matchLabels["app.kubernetes.io/instance"] != testInstanceNameMyCache {
 		t.Errorf("expected label app.kubernetes.io/instance=my-cache, got %q", matchLabels["app.kubernetes.io/instance"])
 	}
 	// Should NOT have required terms.
@@ -560,7 +560,7 @@ func TestBuildAntiAffinity_Soft(t *testing.T) {
 
 func TestBuildAntiAffinity_Hard(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetHard),
@@ -589,7 +589,7 @@ func TestBuildAntiAffinity_Hard(t *testing.T) {
 	if matchLabels["app.kubernetes.io/name"] != testPortName {
 		t.Errorf("expected label app.kubernetes.io/name=memcached, got %q", matchLabels["app.kubernetes.io/name"])
 	}
-	if matchLabels["app.kubernetes.io/instance"] != "my-cache" {
+	if matchLabels["app.kubernetes.io/instance"] != testInstanceNameMyCache {
 		t.Errorf("expected label app.kubernetes.io/instance=my-cache, got %q", matchLabels["app.kubernetes.io/instance"])
 	}
 	// Should NOT have preferred terms.
@@ -603,14 +603,14 @@ func TestBuildAntiAffinity_ReturnsNil(t *testing.T) {
 		name string
 		ha   *memcachedv1beta1.HighAvailabilitySpec
 	}{
-		{name: "nil HighAvailability", ha: nil},
+		{name: "nil HighAvailability (buildAntiAffinity)", ha: nil},
 		{name: "nil AntiAffinityPreset", ha: &memcachedv1beta1.HighAvailabilitySpec{}},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec:       memcachedv1beta1.MemcachedSpec{HighAvailability: tt.ha},
 			}
 
@@ -627,14 +627,14 @@ func TestBuildAntiAffinity_InstanceScopedLabels(t *testing.T) {
 		crName   string
 		wantInst string
 	}{
-		{name: "first instance", crName: "cache-alpha", wantInst: "cache-alpha"},
-		{name: "second instance", crName: "cache-beta", wantInst: "cache-beta"},
+		{name: "first instance", crName: testInstanceNameAlpha, wantInst: testInstanceNameAlpha},
+		{name: "second instance", crName: testInstanceNameBeta, wantInst: testInstanceNameBeta},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: tt.crName, Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: tt.crName, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 						AntiAffinityPreset: antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
@@ -710,7 +710,7 @@ func TestConstructStatefulSet_AntiAffinity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "aa-test", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "aa-test", Namespace: testDefaultNamespace},
 				Spec:       memcachedv1beta1.MemcachedSpec{HighAvailability: tt.ha},
 			}
 			sts := &appsv1.StatefulSet{}
@@ -724,7 +724,7 @@ func TestConstructStatefulSet_AntiAffinity(t *testing.T) {
 
 func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
@@ -734,7 +734,7 @@ func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
 						WhenUnsatisfiable: corev1.DoNotSchedule,
 						LabelSelector: &metav1.LabelSelector{
 							MatchLabels: map[string]string{
-								"app.kubernetes.io/name": "memcached",
+								testLabelKeyAppName: testLabelValueAppName,
 							},
 						},
 					},
@@ -764,7 +764,7 @@ func TestBuildTopologySpreadConstraints_SingleConstraint(t *testing.T) {
 
 func TestBuildTopologySpreadConstraints_MultipleConstraints(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
@@ -798,7 +798,7 @@ func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 		ha   *memcachedv1beta1.HighAvailabilitySpec
 	}{
 		{
-			name: "nil HighAvailability",
+			name: "nil HighAvailability (buildTopologySpreadConstraints)",
 			ha:   nil,
 		},
 		{
@@ -816,7 +816,7 @@ func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					HighAvailability: tt.ha,
 				},
@@ -833,7 +833,7 @@ func TestBuildTopologySpreadConstraints_ReturnsNil(t *testing.T) {
 
 func TestConstructStatefulSet_TopologySpreadConstraints(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tsc-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tsc-test", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
@@ -858,7 +858,7 @@ func TestConstructStatefulSet_TopologySpreadConstraints(t *testing.T) {
 
 func TestConstructStatefulSet_TopologySpreadConstraints_NilHA(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tsc-nil-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tsc-nil-test", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -872,7 +872,7 @@ func TestConstructStatefulSet_TopologySpreadConstraints_NilHA(t *testing.T) {
 
 func TestConstructStatefulSet_TopologySpreadAndAntiAffinity(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "both-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "both-test", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
@@ -904,7 +904,7 @@ func TestConstructStatefulSet_TopologySpreadAndAntiAffinity(t *testing.T) {
 
 func TestConstructStatefulSet_RollingUpdateStrategy(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "strategy-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "strategy-test", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -936,7 +936,7 @@ func TestConstructStatefulSet_RollingUpdateStrategy(t *testing.T) {
 
 func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-default", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-default", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
@@ -960,7 +960,7 @@ func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
 	if lifecycle.PreStop.Exec == nil {
 		t.Fatal("expected Exec handler on PreStop")
 	}
-	expectedCmd := []string{"sleep", "10"}
+	expectedCmd := []string{testPreStopCommandSleep, "10"}
 	if len(lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
 		t.Fatalf("expected command %v, got %v", expectedCmd, lifecycle.PreStop.Exec.Command)
 	}
@@ -981,7 +981,7 @@ func TestBuildGracefulShutdown_EnabledWithDefaults(t *testing.T) {
 
 func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-custom", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-custom", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
@@ -999,7 +999,7 @@ func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
 		t.Fatal("expected non-nil Lifecycle")
 		return
 	}
-	expectedCmd := []string{"sleep", "15"}
+	expectedCmd := []string{testPreStopCommandSleep, "15"}
 	for i, cmd := range expectedCmd {
 		if lifecycle.PreStop.Exec.Command[i] != cmd {
 			t.Errorf("command[%d] = %q, want %q", i, lifecycle.PreStop.Exec.Command[i], cmd)
@@ -1017,7 +1017,7 @@ func TestBuildGracefulShutdown_EnabledWithCustomValues(t *testing.T) {
 
 func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-zeros", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-zeros", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
@@ -1035,7 +1035,7 @@ func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
 		t.Fatal("expected non-nil Lifecycle")
 		return
 	}
-	expectedCmd := []string{"sleep", "10"}
+	expectedCmd := []string{testPreStopCommandSleep, "10"}
 	if len(lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
 		t.Fatalf("expected command %v, got %v", expectedCmd, lifecycle.PreStop.Exec.Command)
 	}
@@ -1056,7 +1056,7 @@ func TestBuildGracefulShutdown_ZeroValuesUseDefaults(t *testing.T) {
 
 func TestBuildGracefulShutdown_Disabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-disabled", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-disabled", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
@@ -1078,7 +1078,7 @@ func TestBuildGracefulShutdown_Disabled(t *testing.T) {
 
 func TestBuildGracefulShutdown_NilHA(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-nilha", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-nilha", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 
@@ -1094,7 +1094,7 @@ func TestBuildGracefulShutdown_NilHA(t *testing.T) {
 
 func TestConstructStatefulSet_GracefulShutdownEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-on", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-on", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
@@ -1116,7 +1116,7 @@ func TestConstructStatefulSet_GracefulShutdownEnabled(t *testing.T) {
 	if container.Lifecycle.PreStop == nil {
 		t.Fatal("expected PreStop on Lifecycle")
 	}
-	expectedCmd := []string{"sleep", "10"}
+	expectedCmd := []string{testPreStopCommandSleep, "10"}
 	if len(container.Lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
 		t.Fatalf("expected command %v, got %v", expectedCmd, container.Lifecycle.PreStop.Exec.Command)
 	}
@@ -1138,7 +1138,7 @@ func TestConstructStatefulSet_GracefulShutdownEnabled(t *testing.T) {
 
 func TestConstructStatefulSet_GracefulShutdownDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-off", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-off", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -1156,7 +1156,7 @@ func TestConstructStatefulSet_GracefulShutdownDisabled(t *testing.T) {
 
 func TestConstructStatefulSet_GracefulShutdownWithOtherHAFeatures(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-all", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "gs-dep-all", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
@@ -1191,7 +1191,7 @@ func TestConstructStatefulSet_GracefulShutdownWithOtherHAFeatures(t *testing.T) 
 	if container.Lifecycle == nil || container.Lifecycle.PreStop == nil {
 		t.Fatal("expected Lifecycle with PreStop")
 	}
-	expectedCmd := []string{"sleep", "10"}
+	expectedCmd := []string{testPreStopCommandSleep, "10"}
 	for i, cmd := range expectedCmd {
 		if container.Lifecycle.PreStop.Exec.Command[i] != cmd {
 			t.Errorf("command[%d] = %q, want %q", i, container.Lifecycle.PreStop.Exec.Command[i], cmd)
@@ -1204,7 +1204,7 @@ func TestConstructStatefulSet_GracefulShutdownWithOtherHAFeatures(t *testing.T) 
 
 func TestBuildExporterContainer_Enabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "exp-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-test", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
@@ -1238,14 +1238,14 @@ func TestBuildExporterContainer_ReturnsNil(t *testing.T) {
 		name       string
 		monitoring *memcachedv1beta1.MonitoringSpec
 	}{
-		{name: "monitoring disabled", monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false}},
+		{name: "monitoring disabled (buildExporterContainer)", monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: false}},
 		{name: "nil monitoring", monitoring: nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "exp-nil", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "exp-nil", Namespace: testDefaultNamespace},
 				Spec:       memcachedv1beta1.MemcachedSpec{Monitoring: tt.monitoring},
 			}
 
@@ -1259,7 +1259,7 @@ func TestBuildExporterContainer_ReturnsNil(t *testing.T) {
 func TestBuildExporterContainer_CustomImage(t *testing.T) {
 	customImage := testExporterImage
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "exp-custom", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-custom", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled:       true,
@@ -1281,7 +1281,7 @@ func TestBuildExporterContainer_CustomImage(t *testing.T) {
 
 func TestBuildExporterContainer_WithResources(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "exp-res", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-res", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
@@ -1325,7 +1325,7 @@ func TestBuildExporterContainer_WithResources(t *testing.T) {
 
 func TestBuildExporterContainer_NilResources(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "exp-nilres", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "exp-nilres", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
@@ -1347,7 +1347,7 @@ func TestBuildExporterContainer_NilResources(t *testing.T) {
 
 func TestConstructStatefulSet_MonitoringEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "mon-on", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-on", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Monitoring: &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
@@ -1372,7 +1372,7 @@ func TestConstructStatefulSet_MonitoringEnabled(t *testing.T) {
 
 func TestConstructStatefulSet_MonitoringDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "mon-off", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -1423,7 +1423,7 @@ func TestBuildPodSecurityContext_ReturnsNil(t *testing.T) {
 		name     string
 		security *memcachedv1beta1.SecuritySpec
 	}{
-		{name: "nil Security", security: nil},
+		{name: "nil Security (buildPodSecurityContext)", security: nil},
 		{name: "nil PodSecurityContext", security: &memcachedv1beta1.SecuritySpec{}},
 	}
 
@@ -1473,7 +1473,7 @@ func TestBuildContainerSecurityContext_ReturnsNil(t *testing.T) {
 		name     string
 		security *memcachedv1beta1.SecuritySpec
 	}{
-		{name: "nil Security", security: nil},
+		{name: "nil Security (buildContainerSecurityContext)", security: nil},
 		{name: "nil ContainerSecurityContext", security: &memcachedv1beta1.SecuritySpec{}},
 	}
 
@@ -1496,7 +1496,7 @@ func TestConstructStatefulSet_SecurityContexts(t *testing.T) {
 	runAsUser := int64(1000)
 	readOnly := true
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sec-test", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sec-test", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				PodSecurityContext: &corev1.PodSecurityContext{
@@ -1543,7 +1543,7 @@ func TestConstructStatefulSet_SecurityContexts(t *testing.T) {
 
 func TestConstructStatefulSet_SecurityContextsNil(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sec-nil", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sec-nil", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -1562,7 +1562,7 @@ func TestConstructStatefulSet_SecurityContextsOnExporterSidecar(t *testing.T) {
 	runAsUser := int64(1000)
 	readOnly := true
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sec-exp", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sec-exp", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				ContainerSecurityContext: &corev1.SecurityContext{
@@ -1611,7 +1611,7 @@ func TestConstructStatefulSet_SecurityContextsOnExporterSidecar(t *testing.T) {
 
 func TestBuildSASLVolume_Enabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sasl-vol", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-vol", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
@@ -1655,7 +1655,7 @@ func TestBuildSASLVolume_ReturnsNil(t *testing.T) {
 		name     string
 		security *memcachedv1beta1.SecuritySpec
 	}{
-		{name: "nil Security", security: nil},
+		{name: "nil Security (buildSASLVolume)", security: nil},
 		{name: "nil SASL", security: &memcachedv1beta1.SecuritySpec{}},
 		{
 			name: "SASL disabled",
@@ -1680,7 +1680,7 @@ func TestBuildSASLVolume_ReturnsNil(t *testing.T) {
 
 func TestBuildSASLVolumeMount_Enabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mount", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mount", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
@@ -1715,7 +1715,7 @@ func TestBuildSASLVolumeMount_ReturnsNil(t *testing.T) {
 		name     string
 		security *memcachedv1beta1.SecuritySpec
 	}{
-		{name: "nil Security", security: nil},
+		{name: "nil Security (buildSASLVolumeMount)", security: nil},
 		{name: "nil SASL", security: &memcachedv1beta1.SecuritySpec{}},
 		{
 			name: "SASL disabled",
@@ -1750,8 +1750,8 @@ func TestBuildMemcachedArgs_SASLEnabled(t *testing.T) {
 
 	// Should contain -Y /etc/memcached/sasl/password-file after standard flags.
 	expected := []string{
-		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
-		"-Y", "/etc/memcached/sasl/password-file",
+		"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
+		"-Y", testSASLPasswordFilePath,
 	}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
@@ -1773,7 +1773,7 @@ func TestBuildMemcachedArgs_SASLDisabled(t *testing.T) {
 	got := buildMemcachedArgs(nil, sasl, nil)
 
 	// Should NOT contain -Y flag.
-	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	expected := []string{"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m"}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
 			len(got), len(expected), got, expected)
@@ -1788,7 +1788,7 @@ func TestBuildMemcachedArgs_SASLDisabled(t *testing.T) {
 func TestBuildMemcachedArgs_SASLNil(t *testing.T) {
 	got := buildMemcachedArgs(nil, nil, nil)
 
-	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	expected := []string{"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m"}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
 			len(got), len(expected), got, expected)
@@ -1798,7 +1798,7 @@ func TestBuildMemcachedArgs_SASLNil(t *testing.T) {
 func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
 	config := &memcachedv1beta1.MemcachedConfig{
 		Verbosity: 1,
-		ExtraArgs: []string{"-o", "modern"},
+		ExtraArgs: []string{"-o", testExtraArgModern},
 	}
 	sasl := &memcachedv1beta1.SASLSpec{
 		Enabled: true,
@@ -1811,10 +1811,10 @@ func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
 
 	// Order: standard flags, verbosity, -Y flag, extra args.
 	expected := []string{
-		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 		"-v",
-		"-Y", "/etc/memcached/sasl/password-file",
-		"-o", "modern",
+		"-Y", testSASLPasswordFilePath,
+		"-o", testExtraArgModern,
 	}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
@@ -1830,7 +1830,7 @@ func TestBuildMemcachedArgs_SASLWithVerbosityAndExtraArgs(t *testing.T) {
 
 func TestConstructStatefulSet_SASLEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sasl-dep", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-dep", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
@@ -1855,7 +1855,7 @@ func TestConstructStatefulSet_SASLEnabled(t *testing.T) {
 			if i+1 >= len(container.Args) {
 				t.Fatal("-Y flag has no value")
 			}
-			if container.Args[i+1] != "/etc/memcached/sasl/password-file" {
+			if container.Args[i+1] != testSASLPasswordFilePath {
 				t.Errorf("-Y value = %q, want %q", container.Args[i+1], "/etc/memcached/sasl/password-file")
 			}
 			break
@@ -1905,7 +1905,7 @@ func TestConstructStatefulSet_SASLEnabled(t *testing.T) {
 
 func TestConstructStatefulSet_SASLDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sasl-off", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-off", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -1934,13 +1934,13 @@ func TestConstructStatefulSet_SASLDisabled(t *testing.T) {
 
 func TestConstructStatefulSet_SASLWithMonitoring(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mon", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-mon", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "sasl-creds",
+						Name: testSASLCredsSecretName,
 					},
 				},
 			},
@@ -1971,20 +1971,20 @@ func TestConstructStatefulSet_SASLWithMonitoring(t *testing.T) {
 	if len(sts.Spec.Template.Spec.Volumes) != 1 {
 		t.Fatalf("expected 1 volume, got %d", len(sts.Spec.Template.Spec.Volumes))
 	}
-	if sts.Spec.Template.Spec.Volumes[0].Secret.SecretName != "sasl-creds" {
+	if sts.Spec.Template.Spec.Volumes[0].Secret.SecretName != testSASLCredsSecretName {
 		t.Errorf("volume secretName = %q, want %q", sts.Spec.Template.Spec.Volumes[0].Secret.SecretName, "sasl-creds")
 	}
 }
 
 func TestConstructStatefulSet_SASLWithGracefulShutdown(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sasl-gs", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-gs", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "sasl-secret",
+						Name: testSASLSecretName,
 					},
 				},
 			},
@@ -2030,7 +2030,7 @@ func TestConstructStatefulSet_SASLWithGracefulShutdown(t *testing.T) {
 	if container.Lifecycle.PreStop == nil {
 		t.Fatal("expected PreStop on Lifecycle")
 	}
-	expectedCmd := []string{"sleep", "10"}
+	expectedCmd := []string{testPreStopCommandSleep, "10"}
 	if len(container.Lifecycle.PreStop.Exec.Command) != len(expectedCmd) {
 		t.Fatalf("expected command %v, got %v", expectedCmd, container.Lifecycle.PreStop.Exec.Command)
 	}
@@ -2064,13 +2064,13 @@ func TestConstructStatefulSet_SASLWithSecurityContexts(t *testing.T) {
 	runAsUser := int64(1000)
 	readOnly := true
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "sasl-sec", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "sasl-sec", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "sasl-secret",
+						Name: testSASLSecretName,
 					},
 				},
 				PodSecurityContext: &corev1.PodSecurityContext{
@@ -2143,7 +2143,7 @@ func TestConstructStatefulSet_SASLWithSecurityContexts(t *testing.T) {
 
 func TestBuildTLSVolume_Enabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-vol", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-vol", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -2174,16 +2174,16 @@ func TestBuildTLSVolume_Enabled(t *testing.T) {
 	if len(vol.Secret.Items) != 2 {
 		t.Fatalf("expected 2 Items entries, got %d", len(vol.Secret.Items))
 	}
-	if vol.Secret.Items[0].Key != "tls.crt" {
+	if vol.Secret.Items[0].Key != testTLSCertKey {
 		t.Errorf("Items[0].Key = %q, want %q", vol.Secret.Items[0].Key, "tls.crt")
 	}
-	if vol.Secret.Items[0].Path != "tls.crt" {
+	if vol.Secret.Items[0].Path != testTLSCertPath {
 		t.Errorf("Items[0].Path = %q, want %q", vol.Secret.Items[0].Path, "tls.crt")
 	}
-	if vol.Secret.Items[1].Key != "tls.key" {
+	if vol.Secret.Items[1].Key != testTLSPrivateKeyKey {
 		t.Errorf("Items[1].Key = %q, want %q", vol.Secret.Items[1].Key, "tls.key")
 	}
-	if vol.Secret.Items[1].Path != "tls.key" {
+	if vol.Secret.Items[1].Path != testTLSPrivateKeyPath {
 		t.Errorf("Items[1].Path = %q, want %q", vol.Secret.Items[1].Path, "tls.key")
 	}
 }
@@ -2193,10 +2193,10 @@ func TestBuildTLSVolume_ReturnsNil(t *testing.T) {
 		name     string
 		security *memcachedv1beta1.SecuritySpec
 	}{
-		{name: "nil Security", security: nil},
-		{name: "nil TLS", security: &memcachedv1beta1.SecuritySpec{}},
+		{name: "nil Security (buildTLSVolume)", security: nil},
+		{name: "nil TLS (buildTLSVolume)", security: &memcachedv1beta1.SecuritySpec{}},
 		{
-			name: "TLS disabled",
+			name: "TLS disabled (buildTLSVolume)",
 			security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{Enabled: false},
 			},
@@ -2218,7 +2218,7 @@ func TestBuildTLSVolume_ReturnsNil(t *testing.T) {
 
 func TestBuildTLSVolume_WithClientCert(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-mtls", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-mtls", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -2241,17 +2241,17 @@ func TestBuildTLSVolume_WithClientCert(t *testing.T) {
 	if len(vol.Secret.Items) != 3 {
 		t.Fatalf("expected 3 Items entries, got %d", len(vol.Secret.Items))
 	}
-	if vol.Secret.Items[2].Key != "ca.crt" {
+	if vol.Secret.Items[2].Key != testCACertKey {
 		t.Errorf("Items[2].Key = %q, want %q", vol.Secret.Items[2].Key, "ca.crt")
 	}
-	if vol.Secret.Items[2].Path != "ca.crt" {
+	if vol.Secret.Items[2].Path != testCACertPath {
 		t.Errorf("Items[2].Path = %q, want %q", vol.Secret.Items[2].Path, "ca.crt")
 	}
 }
 
 func TestBuildTLSVolumeMount_Enabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-mount", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-mount", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -2286,10 +2286,10 @@ func TestBuildTLSVolumeMount_ReturnsNil(t *testing.T) {
 		name     string
 		security *memcachedv1beta1.SecuritySpec
 	}{
-		{name: "nil Security", security: nil},
-		{name: "nil TLS", security: &memcachedv1beta1.SecuritySpec{}},
+		{name: "nil Security (buildTLSVolumeMount)", security: nil},
+		{name: "nil TLS (buildTLSVolumeMount)", security: &memcachedv1beta1.SecuritySpec{}},
 		{
-			name: "TLS disabled",
+			name: "TLS disabled (buildTLSVolumeMount)",
 			security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{Enabled: false},
 			},
@@ -2320,10 +2320,10 @@ func TestBuildMemcachedArgs_TLSEnabled(t *testing.T) {
 	got := buildMemcachedArgs(nil, nil, tls)
 
 	expected := []string{
-		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 		"-Z",
-		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
-		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+		"-o", testSSLChainCertOption,
+		"-o", testSSLKeyOption,
 	}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
@@ -2344,7 +2344,7 @@ func TestBuildMemcachedArgs_TLSDisabled(t *testing.T) {
 
 	got := buildMemcachedArgs(nil, nil, tls)
 
-	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	expected := []string{"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m"}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
 			len(got), len(expected), got, expected)
@@ -2359,7 +2359,7 @@ func TestBuildMemcachedArgs_TLSDisabled(t *testing.T) {
 func TestBuildMemcachedArgs_TLSNil(t *testing.T) {
 	got := buildMemcachedArgs(nil, nil, nil)
 
-	expected := []string{"-m", "64", "-c", "1024", "-t", "4", "-I", "1m"}
+	expected := []string{"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m"}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
 			len(got), len(expected), got, expected)
@@ -2378,10 +2378,10 @@ func TestBuildMemcachedArgs_TLSWithClientCert(t *testing.T) {
 	got := buildMemcachedArgs(nil, nil, tls)
 
 	expected := []string{
-		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 		"-Z",
-		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
-		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+		"-o", testSSLChainCertOption,
+		"-o", testSSLKeyOption,
 		"-o", "ssl_ca_cert=/etc/memcached/tls/ca.crt",
 	}
 	if len(got) != len(expected) {
@@ -2414,11 +2414,11 @@ func TestBuildMemcachedArgs_TLSWithSASL(t *testing.T) {
 
 	// Order: standard flags, SASL -Y, TLS -Z/ssl flags.
 	expected := []string{
-		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
-		"-Y", "/etc/memcached/sasl/password-file",
+		"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
+		"-Y", testSASLPasswordFilePath,
 		"-Z",
-		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
-		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+		"-o", testSSLChainCertOption,
+		"-o", testSSLKeyOption,
 	}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
@@ -2435,7 +2435,7 @@ func TestBuildMemcachedArgs_TLSWithSASL(t *testing.T) {
 func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
 	config := &memcachedv1beta1.MemcachedConfig{
 		Verbosity: 1,
-		ExtraArgs: []string{"-o", "modern"},
+		ExtraArgs: []string{"-o", testExtraArgModern},
 	}
 	tls := &memcachedv1beta1.TLSSpec{
 		Enabled: true,
@@ -2448,12 +2448,12 @@ func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
 
 	// Order: standard flags, verbosity, TLS flags, extra args.
 	expected := []string{
-		"-m", "64", "-c", "1024", "-t", "4", "-I", "1m",
+		"-m", "64", "-c", testDefaultMaxConnectionsArg, "-t", "4", "-I", "1m",
 		"-v",
 		"-Z",
-		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
-		"-o", "ssl_key=/etc/memcached/tls/tls.key",
-		"-o", "modern",
+		"-o", testSSLChainCertOption,
+		"-o", testSSLKeyOption,
+		"-o", testExtraArgModern,
 	}
 	if len(got) != len(expected) {
 		t.Fatalf("buildMemcachedArgs() returned %d args, want %d\ngot:  %v\nwant: %v",
@@ -2469,7 +2469,7 @@ func TestBuildMemcachedArgs_TLSWithVerbosityAndExtraArgs(t *testing.T) {
 
 func TestConstructStatefulSet_TLSEnabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-dep", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-dep", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -2502,7 +2502,7 @@ func TestConstructStatefulSet_TLSEnabled(t *testing.T) {
 	// Verify ssl_chain_cert in args.
 	foundChainCert := false
 	for _, arg := range container.Args {
-		if arg == "ssl_chain_cert=/etc/memcached/tls/tls.crt" {
+		if arg == testSSLChainCertOption {
 			foundChainCert = true
 			break
 		}
@@ -2514,7 +2514,7 @@ func TestConstructStatefulSet_TLSEnabled(t *testing.T) {
 	// Verify ssl_key in args.
 	foundKey := false
 	for _, arg := range container.Args {
-		if arg == "ssl_key=/etc/memcached/tls/tls.key" {
+		if arg == testSSLKeyOption {
 			foundKey = true
 			break
 		}
@@ -2560,7 +2560,7 @@ func TestConstructStatefulSet_TLSEnabled(t *testing.T) {
 
 func TestConstructStatefulSet_TLSDisabled(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-off", Namespace: testDefaultNamespace},
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 	sts := &appsv1.StatefulSet{}
@@ -2597,13 +2597,13 @@ func TestConstructStatefulSet_TLSDisabled(t *testing.T) {
 
 func TestConstructStatefulSet_TLSWithSASL(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-sasl", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-sasl", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "sasl-creds",
+						Name: testSASLCredsSecretName,
 					},
 				},
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -2683,7 +2683,7 @@ func TestConstructStatefulSet_TLSWithSASL(t *testing.T) {
 
 func TestConstructStatefulSet_TLSPort(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-port", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-port", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -2732,7 +2732,7 @@ func TestConstructStatefulSet_TLSWithMonitoringAndSecurityContexts(t *testing.T)
 	runAsNonRoot := true
 	readOnly := true
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "tls-full", Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: "tls-full", Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Security: &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
@@ -2818,7 +2818,7 @@ func kitchenSinkStatefulSet(t *testing.T) *appsv1.StatefulSet {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kitchen-sink",
-			Namespace: "production",
+			Namespace: testNamespaceProduction,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
@@ -2889,7 +2889,7 @@ func kitchenSinkStatefulSet(t *testing.T) *appsv1.StatefulSet {
 			},
 			Service: &memcachedv1beta1.ServiceSpec{
 				Annotations: map[string]string{
-					"prometheus.io/scrape": "true",
+					testAnnotationKeyPrometheusScrape: testAnnotationValuePrometheusScrape,
 				},
 			},
 		},
@@ -2939,12 +2939,12 @@ func TestConstructStatefulSet_KitchenSink_Args(t *testing.T) {
 	mc := sts.Spec.Template.Spec.Containers[0]
 
 	expectedArgs := []string{
-		"-m", "256", "-c", "2048", "-t", "8", "-I", "2m",
-		"-vv",
+		"-m", testCustomMaxMemoryArg, "-c", testCustomMaxConnectionsArg, "-t", "8", "-I", "2m",
+		testVeryVerboseFlag,
 		"-Y", saslMountPath + "/password-file",
 		"-Z",
-		"-o", "ssl_chain_cert=/etc/memcached/tls/tls.crt",
-		"-o", "ssl_key=/etc/memcached/tls/tls.key",
+		"-o", testSSLChainCertOption,
+		"-o", testSSLKeyOption,
 		"-o", "ssl_ca_cert=/etc/memcached/tls/ca.crt",
 		"--max-reqs-per-event", "20",
 	}
@@ -3069,7 +3069,7 @@ func TestConstructStatefulSet_KitchenSink_HA(t *testing.T) {
 	if mc.Lifecycle == nil || mc.Lifecycle.PreStop == nil || mc.Lifecycle.PreStop.Exec == nil {
 		t.Fatal("expected PreStop Exec handler on memcached container")
 	}
-	expectedCmd := []string{"sleep", "15"}
+	expectedCmd := []string{testPreStopCommandSleep, "15"}
 	for i, cmd := range expectedCmd {
 		if mc.Lifecycle.PreStop.Exec.Command[i] != cmd {
 			t.Errorf("preStop command[%d] = %q, want %q", i, mc.Lifecycle.PreStop.Exec.Command[i], cmd)
@@ -3145,7 +3145,7 @@ func TestConstructStatefulSet_KitchenSink_Volumes(t *testing.T) {
 	if len(volumes[1].Secret.Items) != 3 {
 		t.Fatalf("expected 3 TLS volume items, got %d", len(volumes[1].Secret.Items))
 	}
-	wantKeys := []string{"tls.crt", "tls.key", "ca.crt"}
+	wantKeys := []string{testTLSCertKey, testTLSPrivateKeyKey, testCACertKey}
 	for i, wantKey := range wantKeys {
 		if volumes[1].Secret.Items[i].Key != wantKey {
 			t.Errorf("TLS items[%d].Key = %q, want %s", i, volumes[1].Secret.Items[i].Key, wantKey)
@@ -3192,7 +3192,7 @@ func TestConstructStatefulSet_ZeroReplicas(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "zero-replicas",
-			Namespace: "default",
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(0),
@@ -3225,7 +3225,7 @@ func TestConstructStatefulSet_Idempotent(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "idempotent-test",
-			Namespace: "default",
+			Namespace: testDefaultNamespace,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Replicas: int32Ptr(3),
@@ -3242,7 +3242,7 @@ func TestConstructStatefulSet_Idempotent(t *testing.T) {
 				Threads:        4,
 				MaxItemSize:    "1m",
 				Verbosity:      1,
-				ExtraArgs:      []string{"-o", "modern"},
+				ExtraArgs:      []string{"-o", testExtraArgModern},
 			},
 			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 				AntiAffinityPreset:        antiAffinityPresetPtr(memcachedv1beta1.AntiAffinityPresetSoft),
@@ -3257,13 +3257,13 @@ func TestConstructStatefulSet_Idempotent(t *testing.T) {
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "sasl-secret",
+						Name: testSASLSecretName,
 					},
 				},
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "tls-secret",
+						Name: testTLSSecretName,
 					},
 				},
 			},
@@ -3298,9 +3298,9 @@ func TestConstructStatefulSet_Annotations(t *testing.T) {
 	}{
 		{
 			name:       "non-empty secretHash sets annotation",
-			secretHash: "abc123",
+			secretHash: testSecretHash,
 			wantAnnotations: map[string]string{
-				AnnotationSecretHash: "abc123",
+				AnnotationSecretHash: testSecretHash,
 			},
 		},
 		{
@@ -3310,9 +3310,9 @@ func TestConstructStatefulSet_Annotations(t *testing.T) {
 		},
 		{
 			name:           "non-empty restartTrigger sets annotation",
-			restartTrigger: "2024-01-15T10:00:00Z",
+			restartTrigger: testRestartTriggerTimestamp,
 			wantAnnotations: map[string]string{
-				AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
+				AnnotationRestartTrigger: testRestartTriggerTimestamp,
 			},
 		},
 		{
@@ -3322,11 +3322,11 @@ func TestConstructStatefulSet_Annotations(t *testing.T) {
 		},
 		{
 			name:           "both secretHash and restartTrigger set",
-			secretHash:     "abc123",
-			restartTrigger: "2024-01-15T10:00:00Z",
+			secretHash:     testSecretHash,
+			restartTrigger: testRestartTriggerTimestamp,
 			wantAnnotations: map[string]string{
-				AnnotationSecretHash:     "abc123",
-				AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
+				AnnotationSecretHash:     testSecretHash,
+				AnnotationRestartTrigger: testRestartTriggerTimestamp,
 			},
 		},
 		{
@@ -3341,8 +3341,8 @@ func TestConstructStatefulSet_Annotations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{},
 			}
@@ -3409,8 +3409,8 @@ func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 			name: "HPA disabled with replicas set",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: int32Ptr(5),
@@ -3422,8 +3422,8 @@ func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 			name: "HPA disabled with replicas nil uses default",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{},
 			},
@@ -3433,8 +3433,8 @@ func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 			name: "HPA enabled with replicas set ignores spec.replicas and seeds 1",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: int32Ptr(5),
@@ -3450,8 +3450,8 @@ func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 			name: "HPA enabled with replicas nil seeds 1",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Autoscaling: &memcachedv1beta1.AutoscalingSpec{
@@ -3466,8 +3466,8 @@ func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 			name: "HPA enabled seeds a new StatefulSet with minReplicas",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: int32Ptr(5),
@@ -3484,8 +3484,8 @@ func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 			name: "HPA enabled keeps the replica count of the existing StatefulSet",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Autoscaling: &memcachedv1beta1.AutoscalingSpec{
@@ -3502,8 +3502,8 @@ func TestConstructStatefulSet_HPAReplicas(t *testing.T) {
 			name: "HPA disabled restores spec.replicas on the existing StatefulSet",
 			mc: &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: int32Ptr(3),
@@ -3645,7 +3645,7 @@ func TestStatefulSetReplicas(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: "my-cache", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameMyCache, Namespace: testDefaultNamespace},
 				Spec:       tt.spec,
 			}
 
@@ -3665,14 +3665,14 @@ func TestConstructStatefulSet_StatefulSetSpec(t *testing.T) {
 		name string
 		mc   string
 	}{
-		{name: "short name", mc: "my-cache"},
+		{name: "short name", mc: testInstanceNameMyCache},
 		{name: "60-character name", mc: strings.Repeat("l", 60)},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
-				ObjectMeta: metav1.ObjectMeta{Name: tt.mc, Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: tt.mc, Namespace: testDefaultNamespace},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Replicas: int32Ptr(3),
 				},
