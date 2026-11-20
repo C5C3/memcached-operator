@@ -17,10 +17,10 @@ func TestSchemeBuilder_IsNotNil(t *testing.T) {
 }
 
 func TestScheme_GroupVersionFields(t *testing.T) {
-	if GroupVersion.Group != "memcached.c5c3.io" {
+	if GroupVersion.Group != testAPIGroup {
 		t.Errorf("expected GroupVersion.Group=%q, got %q", "memcached.c5c3.io", GroupVersion.Group)
 	}
-	if GroupVersion.Version != "v1alpha1" {
+	if GroupVersion.Version != testVersion {
 		t.Errorf("expected GroupVersion.Version=%q, got %q", "v1alpha1", GroupVersion.Version)
 	}
 }
@@ -47,18 +47,18 @@ func TestScheme_GVKResolution(t *testing.T) {
 			name: "Memcached resolves to correct GVK",
 			obj:  &Memcached{},
 			expectedGVK: schema.GroupVersionKind{
-				Group:   "memcached.c5c3.io",
-				Version: "v1alpha1",
-				Kind:    "Memcached",
+				Group:   testAPIGroup,
+				Version: testVersion,
+				Kind:    testKindMemcached,
 			},
 		},
 		{
 			name: "MemcachedList resolves to correct GVK",
 			obj:  &MemcachedList{},
 			expectedGVK: schema.GroupVersionKind{
-				Group:   "memcached.c5c3.io",
-				Version: "v1alpha1",
-				Kind:    "MemcachedList",
+				Group:   testAPIGroup,
+				Version: testVersion,
+				Kind:    testKindMemcachedList,
 			},
 		},
 	}
@@ -93,18 +93,18 @@ func TestScheme_TypeMappingFromGVK(t *testing.T) {
 		{
 			name: "GVK maps to *Memcached",
 			gvk: schema.GroupVersionKind{
-				Group:   "memcached.c5c3.io",
-				Version: "v1alpha1",
-				Kind:    "Memcached",
+				Group:   testAPIGroup,
+				Version: testVersion,
+				Kind:    testKindMemcached,
 			},
 			expectedType: reflect.TypeOf(&Memcached{}),
 		},
 		{
 			name: "GVK maps to *MemcachedList",
 			gvk: schema.GroupVersionKind{
-				Group:   "memcached.c5c3.io",
-				Version: "v1alpha1",
-				Kind:    "MemcachedList",
+				Group:   testAPIGroup,
+				Version: testVersion,
+				Kind:    testKindMemcachedList,
 			},
 			expectedType: reflect.TypeOf(&MemcachedList{}),
 		},

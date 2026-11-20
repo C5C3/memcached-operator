@@ -45,7 +45,7 @@ func TestMemcachedConfig_AllFieldsSet(t *testing.T) {
 		Threads:        8,
 		MaxItemSize:    "2m",
 		Verbosity:      2,
-		ExtraArgs:      []string{"-o", "modern"},
+		ExtraArgs:      []string{"-o", testExtraArgModern},
 	}
 
 	if cfg.MaxMemoryMB != 256 {
@@ -90,7 +90,7 @@ func TestHighAvailabilitySpec_AllFieldsSet(t *testing.T) {
 		TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 			{
 				MaxSkew:           1,
-				TopologyKey:       "topology.kubernetes.io/zone",
+				TopologyKey:       testTopologyKeyZone,
 				WhenUnsatisfiable: corev1.DoNotSchedule,
 			},
 		},
@@ -106,7 +106,7 @@ func TestHighAvailabilitySpec_AllFieldsSet(t *testing.T) {
 	if len(ha.TopologySpreadConstraints) != 1 {
 		t.Fatalf("expected 1 TopologySpreadConstraint, got %d", len(ha.TopologySpreadConstraints))
 	}
-	if ha.TopologySpreadConstraints[0].TopologyKey != "topology.kubernetes.io/zone" {
+	if ha.TopologySpreadConstraints[0].TopologyKey != testTopologyKeyZone {
 		t.Errorf("unexpected TopologyKey: %s", ha.TopologySpreadConstraints[0].TopologyKey)
 	}
 	if !ha.PodDisruptionBudget.Enabled {
@@ -322,14 +322,14 @@ func TestTLSSpec_WithEnableClientCert(t *testing.T) {
 	tls := TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
-			Name: "tls-cert",
+			Name: testTLSCertSecretName,
 		},
 		EnableClientCert: true,
 	}
 	if !tls.Enabled {
 		t.Error("expected Enabled to be true")
 	}
-	if tls.CertificateSecretRef.Name != "tls-cert" {
+	if tls.CertificateSecretRef.Name != testTLSCertSecretName {
 		t.Errorf("unexpected CertificateSecretRef.Name: %s", tls.CertificateSecretRef.Name)
 	}
 	if !tls.EnableClientCert {
@@ -341,7 +341,7 @@ func TestTLSSpec_EnableClientCertDefaultsFalse(t *testing.T) {
 	tls := TLSSpec{
 		Enabled: true,
 		CertificateSecretRef: corev1.LocalObjectReference{
-			Name: "tls-cert",
+			Name: testTLSCertSecretName,
 		},
 	}
 	if tls.EnableClientCert {
@@ -379,12 +379,12 @@ func TestNetworkPolicySpec_WithAllowedSources(t *testing.T) {
 		AllowedSources: []networkingv1.NetworkPolicyPeer{
 			{
 				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"env": "prod"},
+					MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnv},
 				},
 			},
 			{
 				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"app": "keystone"},
+					MatchLabels: map[string]string{testLabelKeyApp: "keystone"},
 				},
 			},
 		},
@@ -395,7 +395,7 @@ func TestNetworkPolicySpec_WithAllowedSources(t *testing.T) {
 	if len(np.AllowedSources) != 2 {
 		t.Fatalf("expected 2 AllowedSources, got %d", len(np.AllowedSources))
 	}
-	if np.AllowedSources[0].NamespaceSelector.MatchLabels["env"] != "prod" {
+	if np.AllowedSources[0].NamespaceSelector.MatchLabels["env"] != testLabelValueEnv {
 		t.Errorf("unexpected NamespaceSelector: %v", np.AllowedSources[0].NamespaceSelector)
 	}
 	if np.AllowedSources[1].PodSelector.MatchLabels["app"] != "keystone" {
@@ -452,7 +452,7 @@ func TestMemcachedSpec_WithAllNestedStructs(t *testing.T) {
 			TLS: &TLSSpec{
 				Enabled: true,
 				CertificateSecretRef: corev1.LocalObjectReference{
-					Name: "tls-secret",
+					Name: testTLSSecretName,
 				},
 			},
 			NetworkPolicy: &NetworkPolicySpec{
@@ -460,7 +460,7 @@ func TestMemcachedSpec_WithAllNestedStructs(t *testing.T) {
 				AllowedSources: []networkingv1.NetworkPolicyPeer{
 					{
 						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{"env": "prod"},
+							MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnv},
 						},
 					},
 				},
@@ -501,12 +501,12 @@ func TestMemcached_FullResource(t *testing.T) {
 	replicas := int32(1)
 	mc := Memcached{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "memcached.c5c3.io/v1alpha1",
-			Kind:       "Memcached",
+			APIVersion: testAPIVersion,
+			Kind:       testKindMemcached,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-memcached",
-			Namespace: "default",
+			Namespace: testNamespaceDefault,
 		},
 		Spec: MemcachedSpec{
 			Replicas: &replicas,
@@ -514,7 +514,7 @@ func TestMemcached_FullResource(t *testing.T) {
 		Status: MemcachedStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:   "Available",
+					Type:   testConditionTypeAvailable,
 					Status: metav1.ConditionTrue,
 				},
 			},
@@ -524,7 +524,7 @@ func TestMemcached_FullResource(t *testing.T) {
 	if mc.Name != "test-memcached" {
 		t.Errorf("unexpected Name: %s", mc.Name)
 	}
-	if mc.Kind != "Memcached" {
+	if mc.Kind != testKindMemcached {
 		t.Errorf("unexpected Kind: %s", mc.Kind)
 	}
 	if *mc.Spec.Replicas != 1 {
@@ -533,7 +533,7 @@ func TestMemcached_FullResource(t *testing.T) {
 	if len(mc.Status.Conditions) != 1 {
 		t.Fatalf("expected 1 condition, got %d", len(mc.Status.Conditions))
 	}
-	if mc.Status.Conditions[0].Type != "Available" {
+	if mc.Status.Conditions[0].Type != testConditionTypeAvailable {
 		t.Errorf("unexpected condition type: %s", mc.Status.Conditions[0].Type)
 	}
 }
@@ -543,7 +543,7 @@ func TestMemcached_FullResource(t *testing.T) {
 func TestMemcachedConfig_DeepCopy(t *testing.T) {
 	cfg := &MemcachedConfig{
 		MaxMemoryMB: 64,
-		ExtraArgs:   []string{"-o", "modern"},
+		ExtraArgs:   []string{"-o", testExtraArgModern},
 	}
 	clone := cfg.DeepCopy()
 	if clone == cfg {
@@ -620,7 +620,7 @@ func TestSecuritySpec_DeepCopy(t *testing.T) {
 		TLS: &TLSSpec{
 			Enabled: true,
 			CertificateSecretRef: corev1.LocalObjectReference{
-				Name: "tls-secret",
+				Name: testTLSSecretName,
 			},
 		},
 	}
@@ -644,7 +644,7 @@ func TestNetworkPolicySpec_DeepCopy(t *testing.T) {
 		AllowedSources: []networkingv1.NetworkPolicyPeer{
 			{
 				NamespaceSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{"env": "prod"},
+					MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnv},
 				},
 			},
 		},
@@ -655,7 +655,7 @@ func TestNetworkPolicySpec_DeepCopy(t *testing.T) {
 	}
 	// Mutate original; clone must be unaffected.
 	np.AllowedSources[0].NamespaceSelector.MatchLabels["env"] = testMutatedValue
-	if clone.AllowedSources[0].NamespaceSelector.MatchLabels["env"] != "prod" {
+	if clone.AllowedSources[0].NamespaceSelector.MatchLabels["env"] != testLabelValueEnv {
 		t.Error("DeepCopy is not independent: AllowedSources was mutated")
 	}
 }
@@ -672,14 +672,14 @@ func TestServiceSpec_ZeroValue(t *testing.T) {
 func TestServiceSpec_AllFieldsSet(t *testing.T) {
 	s := ServiceSpec{
 		Annotations: map[string]string{
-			"prometheus.io/scrape": "true",
+			"prometheus.io/scrape": testAnnotationValueScrape,
 			"prometheus.io/port":   "9150",
 		},
 	}
 	if len(s.Annotations) != 2 {
 		t.Errorf("expected 2 annotations, got %d", len(s.Annotations))
 	}
-	if s.Annotations["prometheus.io/scrape"] != "true" {
+	if s.Annotations["prometheus.io/scrape"] != testAnnotationValueScrape {
 		t.Errorf("unexpected annotation value: %s", s.Annotations["prometheus.io/scrape"])
 	}
 	if s.Annotations["prometheus.io/port"] != "9150" {
@@ -707,14 +707,14 @@ func TestMemcachedSpec_WithServiceSpec(t *testing.T) {
 		Replicas: &replicas,
 		Service: &ServiceSpec{
 			Annotations: map[string]string{
-				"prometheus.io/scrape": "true",
+				"prometheus.io/scrape": testAnnotationValueScrape,
 			},
 		},
 	}
 	if spec.Service == nil {
 		t.Fatal("expected Service to be set")
 	}
-	if spec.Service.Annotations["prometheus.io/scrape"] != "true" {
+	if spec.Service.Annotations["prometheus.io/scrape"] != testAnnotationValueScrape {
 		t.Errorf("unexpected annotation: %s", spec.Service.Annotations["prometheus.io/scrape"])
 	}
 }

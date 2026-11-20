@@ -33,13 +33,13 @@ func fullyPopulated() *Memcached {
 
 	return &Memcached{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "memcached.c5c3.io/v1alpha1",
-			Kind:       "Memcached",
+			APIVersion: testAPIVersion,
+			Kind:       testKindMemcached,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "full-mc",
-			Namespace:       "prod",
-			Labels:          map[string]string{"app": "memcached", "env": "prod"},
+			Namespace:       testNamespaceProd,
+			Labels:          map[string]string{testLabelKeyApp: testLabelValueApp, testLabelKeyEnv: testLabelValueEnv},
 			Annotations:     map[string]string{"note": "conversion-test"},
 			ResourceVersion: "12345",
 		},
@@ -62,14 +62,14 @@ func fullyPopulated() *Memcached {
 				Threads:        8,
 				MaxItemSize:    "2m",
 				Verbosity:      1,
-				ExtraArgs:      []string{"-o", "modern", "-B", "binary"},
+				ExtraArgs:      []string{"-o", testExtraArgModern, "-B", "binary"},
 			},
 			HighAvailability: &HighAvailabilitySpec{
 				AntiAffinityPreset: &antiAffinity,
 				TopologySpreadConstraints: []corev1.TopologySpreadConstraint{
 					{
 						MaxSkew:           1,
-						TopologyKey:       "topology.kubernetes.io/zone",
+						TopologyKey:       testTopologyKeyZone,
 						WhenUnsatisfiable: corev1.DoNotSchedule,
 					},
 				},
@@ -111,7 +111,7 @@ func fullyPopulated() *Memcached {
 				},
 				TLS: &TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecretName},
 					EnableClientCert:     true,
 				},
 				NetworkPolicy: &NetworkPolicySpec{
@@ -119,7 +119,7 @@ func fullyPopulated() *Memcached {
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
 							PodSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"app": "client"},
+								MatchLabels: map[string]string{testLabelKeyApp: "client"},
 							},
 						},
 					},
@@ -149,16 +149,16 @@ func fullyPopulated() *Memcached {
 		Status: MemcachedStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:               "Available",
+					Type:               testConditionTypeAvailable,
 					Status:             metav1.ConditionTrue,
-					Reason:             "Ready",
+					Reason:             testConditionReasonReady,
 					Message:            "All replicas ready",
 					LastTransitionTime: metav1.Now(),
 				},
 			},
 			ReadyReplicas:      5,
 			ObservedGeneration: 42,
-			ServerList:         []string{"10.244.0.5:11211", "10.244.0.6:11211", "10.244.0.7:11211"},
+			ServerList:         []string{testServerAddress, "10.244.0.6:11211", "10.244.0.7:11211"},
 		},
 	}
 }
@@ -339,8 +339,8 @@ func TestRoundTrip_FullyPopulated_NoDataLoss(t *testing.T) {
 func TestRoundTrip_MinimalObject_PreservesNils(t *testing.T) {
 	original := &Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "minimal",
-			Namespace: "default",
+			Name:      testMinimalObjectName,
+			Namespace: testNamespaceDefault,
 		},
 	}
 
@@ -422,8 +422,8 @@ func TestRoundTrip_ObjectMeta_Preserved(t *testing.T) {
 func TestConvertTo_MinimalObject(t *testing.T) {
 	src := &Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "minimal",
-			Namespace: "default",
+			Name:      testMinimalObjectName,
+			Namespace: testNamespaceDefault,
 		},
 	}
 	dst := &v1beta1.Memcached{}
@@ -432,7 +432,7 @@ func TestConvertTo_MinimalObject(t *testing.T) {
 		t.Fatalf("ConvertTo minimal object failed: %v", err)
 	}
 
-	if dst.Name != "minimal" {
+	if dst.Name != testMinimalObjectName {
 		t.Errorf("Name: got %q, want %q", dst.Name, "minimal")
 	}
 }
