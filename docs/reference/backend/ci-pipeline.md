@@ -21,7 +21,7 @@ through these jobs:
 | `merge-manifest`       | Merge platform digests into multi-arch manifest     | main only | `build-push`           |
 | `validate-manifests`   | Verify generated CRDs/deepcopy are up-to-date       | PR + main | none                   |
 | `e2e`                  | End-to-end tests on a kind cluster with Chainsaw    | PR + main | none                   |
-| `detect-chart-changes` | Path filter — skip helm-lint when charts/ unchanged | PR only   | none                   |
+| `detect-chart-changes` | Path filter — run Helm jobs on chart/ci.yml changes | PR only   | none                   |
 | `helm-lint`            | Helm chart lint, chart-testing, and unit tests      | PR only   | `detect-chart-changes` |
 
 Independent jobs run in parallel, minimising total pipeline time.
@@ -144,15 +144,16 @@ Runs the full Chainsaw end-to-end test suite on a kind cluster:
 ### detect-chart-changes (PR only)
 
 Uses [`dorny/paths-filter@v3`](https://github.com/dorny/paths-filter) to detect
-whether any files under `charts/` or `ct.yaml` were modified. The output
-`charts-changed` gates the `helm-lint` job so it only runs when chart files
-change.
+whether any files under `charts/`, `ct.yaml`, or `.github/workflows/ci.yml`
+were modified. The output `charts-changed` gates the `helm-lint` and
+`helm-e2e` jobs so they only run on a pull request when the chart or the
+workflow that tests it changes.
 
 ### helm-lint
 
-Depends on `detect-chart-changes` and only runs when chart-related files are
-modified. Validates the Helm chart at `charts/memcached-operator/` through two
-checks:
+Depends on `detect-chart-changes` and, on a pull request, only runs when
+chart-related files or `.github/workflows/ci.yml` are modified. Validates the
+Helm chart at `charts/memcached-operator/` through two checks:
 
 1. **chart-testing lint** — Runs `ct lint --config ct.yaml` using the
    [helm/chart-testing-action](https://github.com/helm/chart-testing-action).
