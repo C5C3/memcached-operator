@@ -131,7 +131,7 @@ Kustomize-based deployment configuration following Kubebuilder v4 conventions:
 
 Multi-stage build:
 
-- **Builder stage**: `golang:1.25` with `CGO_ENABLED=0`, `TARGETOS`/`TARGETARCH` build args for cross-platform support
+- **Builder stage**: `golang:1.27.4` with `CGO_ENABLED=0`, `TARGETOS`/`TARGETARCH` build args for cross-platform support
 - **Runtime stage**: `gcr.io/distroless/static:nonroot` running as UID 65532
 
 ## Makefile Targets
@@ -177,14 +177,18 @@ Tools are auto-downloaded to `bin/` on first use via Makefile targets:
 | `controller-gen` | v0.17.2      | CRD/RBAC manifest and DeepCopy generation |
 | `kustomize`      | v5.6.0       | Kubernetes manifest composition           |
 | `setup-envtest`  | release-0.20 | Download envtest API server binaries      |
-| `golangci-lint`  | v2.10.1      | Go linter aggregator                      |
+| `golangci-lint`  | v2.15.0      | Go linter aggregator                      |
+
+A tool already in `bin/` is not rebuilt when its pinned version changes. Delete
+it, for example with `rm bin/golangci-lint`, and the next Makefile target that
+needs it installs the pinned version.
 
 ## Go Module
 
 | Field               | Value                                |
 |---------------------|--------------------------------------|
 | Module path         | `github.com/c5c3/memcached-operator` |
-| Go version          | 1.25                                 |
+| Go version          | 1.27.4                               |
 | controller-runtime  | v0.23.1                              |
 | k8s.io/apimachinery | v0.35.1                              |
 | k8s.io/client-go    | v0.35.0                              |

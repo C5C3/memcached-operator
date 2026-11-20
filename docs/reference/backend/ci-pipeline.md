@@ -14,7 +14,7 @@ through these jobs:
 
 | Job                    | Purpose                                             | Trigger   | Dependencies           |
 |------------------------|-----------------------------------------------------|-----------|------------------------|
-| `lint`                 | `go vet` + golangci-lint v2.10.1                    | PR + main | none                   |
+| `lint`                 | `go vet` + golangci-lint v2.15.0                    | PR + main | none                   |
 | `test`                 | envtest integration tests with race + coverage      | PR + main | none                   |
 | `build`                | Native per-platform image build (no push)           | PR only   | none                   |
 | `build-push`           | Native per-platform image build and push            | main only | none                   |
@@ -73,7 +73,7 @@ The workflow uses least-privilege permissions:
 
 Runs `go vet` followed by golangci-lint using the official
 `golangci/golangci-lint-action@v7` action. The golangci-lint version is pinned
-to `v2.10.1` to match the project's `Makefile` and `.golangci.yml`.
+to `v2.15.0` to match the project's `Makefile` and `.golangci.yml`.
 
 Go is set up using `go-version-file: go.mod` so the CI Go version always
 matches the project's `go.mod` directive.

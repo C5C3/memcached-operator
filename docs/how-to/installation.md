@@ -48,7 +48,7 @@ kubectl get crd servicemonitors.monitoring.coreos.com
 
 If you plan to build the operator from source or run it locally, you also need:
 
-- **Go** 1.25 or later
+- **Go** 1.27.4 or later
 - **Docker** or **Podman** (for building container images)
 - **kind** or **minikube** (for local Kubernetes clusters)
 - **Operator SDK** v1.42 or later (optional, for scaffolding changes)

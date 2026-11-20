@@ -22,7 +22,7 @@ The operator automates the deployment, configuration, and lifecycle management o
 
 | Component       | Technology                                  |
 |-----------------|---------------------------------------------|
-| Language        | Go 1.24+                                    |
+| Language        | Go 1.27.4+                                  |
 | Scaffolding     | Operator SDK / Kubebuilder                  |
 | Runtime         | controller-runtime                          |
 | CRD API group   | `memcached.c5c3.io`                         |
