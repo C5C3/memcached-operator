@@ -122,7 +122,7 @@ kubectl apply -f memcached-v1beta1.yaml
 | Phase                | Action                                                                                                                 |
 |----------------------|------------------------------------------------------------------------------------------------------------------------|
 | v0.2.0 to v0.6.0     | `v1beta1` is the storage version. `v1alpha1` remains served with automatic conversion.                                 |
-| Current              | `v1alpha1` is marked `deprecated: true` in the CRD served-versions list. Requests that use it return a warning header. |
+| v0.7.0               | `v1alpha1` is marked `deprecated: true` in the CRD served-versions list. Requests that use it return a warning header. |
 | Future major release | `v1alpha1` is removed from served versions. No data migration needed — objects are already stored as `v1beta1`.        |
 
 ## Frequently asked questions

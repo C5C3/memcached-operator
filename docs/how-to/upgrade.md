@@ -458,6 +458,7 @@ is running correctly and all Memcached instances are healthy.
 | v0.4.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `Ready` condition, `status.serverList`                                               |
 | v0.5.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | StatefulSet workload; see [per-pod server lists](#upgrading-to-per-pod-server-lists) |
 | v0.6.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | Status update conflicts requeue without an error                                     |
+| v0.7.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `v1alpha1` requests return a deprecation warning                                     |
 
 Check the release notes for each version to confirm compatibility with your
 Kubernetes cluster version. The operator is tested against the Kubernetes
