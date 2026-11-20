@@ -223,8 +223,8 @@ func TestConstructHPA(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mc := &memcachedv1beta1.Memcached{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-cache",
-					Namespace: "default",
+					Name:      testInstanceNameMyCache,
+					Namespace: testDefaultNamespace,
 				},
 				Spec: memcachedv1beta1.MemcachedSpec{
 					Autoscaling: tt.autoscaling,
@@ -249,7 +249,7 @@ func TestConstructHPA(t *testing.T) {
 			wantRef := autoscalingv2.CrossVersionObjectReference{
 				APIVersion: "apps/v1",
 				Kind:       "StatefulSet",
-				Name:       "my-cache",
+				Name:       testInstanceNameMyCache,
 			}
 			if hpa.Spec.ScaleTargetRef != wantRef {
 				t.Errorf("ScaleTargetRef = %+v, want %+v", hpa.Spec.ScaleTargetRef, wantRef)
@@ -290,7 +290,7 @@ func TestConstructHPA(t *testing.T) {
 func TestConstructHPA_LongNameTargetsShortenedStatefulSet(t *testing.T) {
 	name := strings.Repeat("h", 60)
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testDefaultNamespace},
 		Spec: memcachedv1beta1.MemcachedSpec{
 			Autoscaling: &memcachedv1beta1.AutoscalingSpec{
 				Enabled:     true,

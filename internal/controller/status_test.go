@@ -259,7 +259,7 @@ func TestComputeConditions_SecretNotFound_SingleMissing(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, stsWithStatus(3, 3, 3), []string{"sasl-secret"}, false)
+	conditions := computeConditions(mc, stsWithStatus(3, 3, 3), []string{testSASLSecretName}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
 	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
@@ -273,7 +273,7 @@ func TestComputeConditions_SecretNotFound_MultipleMissing(t *testing.T) {
 		},
 	}
 
-	conditions := computeConditions(mc, stsWithStatus(3, 3, 3), []string{"sasl-secret", "tls-secret"}, false)
+	conditions := computeConditions(mc, stsWithStatus(3, 3, 3), []string{testSASLSecretName, testTLSSecretName}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
 	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
@@ -289,7 +289,7 @@ func TestComputeConditions_SecretNotFound_PrecedenceOverReplica(t *testing.T) {
 	}
 
 	// All replicas ready, but missing secrets should still trigger Degraded=True with SecretNotFound.
-	conditions := computeConditions(mc, stsWithStatus(3, 3, 3), []string{"my-secret"}, false)
+	conditions := computeConditions(mc, stsWithStatus(3, 3, 3), []string{testReferencedSecretName}, false)
 
 	assertCondition(t, conditions, ConditionTypeDegraded, metav1.ConditionTrue, ConditionReasonSecretNotFound)
 	assertCondition(t, conditions, ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)
@@ -413,9 +413,9 @@ func TestBuildServerList(t *testing.T) {
 		},
 		{
 			name:         "one replica",
-			workloadName: "cache",
-			serviceName:  "cache",
-			namespace:    "default",
+			workloadName: testWorkloadNameCache,
+			serviceName:  testServiceNameCache,
+			namespace:    testDefaultNamespace,
 			replicas:     1,
 			want:         []string{"cache-0.cache.default.svc:11211"},
 		},
@@ -504,7 +504,7 @@ func runReconcileStatus(t *testing.T, c client.Client, key client.ObjectKey) *me
 
 func TestReconcileStatus_ServerListIgnoresReadiness(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameCache, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
 	}
 	c := newStatusTestClient(mc, statusTestStatefulSet("cache", int32Ptr(3), 0))
@@ -512,7 +512,7 @@ func TestReconcileStatus_ServerListIgnoresReadiness(t *testing.T) {
 	got := runReconcileStatus(t, c, client.ObjectKeyFromObject(mc))
 
 	want := []string{
-		"cache-0.cache.ns.svc:11211",
+		testFirstServerListEntry,
 		"cache-1.cache.ns.svc:11211",
 		"cache-2.cache.ns.svc:11211",
 	}
@@ -533,10 +533,10 @@ func TestReconcileStatus_ServerListIgnoresReadiness(t *testing.T) {
 
 func TestReconcileStatus_ZeroReplicasClearsServerList(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameCache, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(0)},
 		Status: memcachedv1beta1.MemcachedStatus{
-			ServerList: []string{"cache-0.cache.ns.svc:11211"},
+			ServerList: []string{testFirstServerListEntry},
 		},
 	}
 	c := newStatusTestClient(mc, statusTestStatefulSet("cache", int32Ptr(0), 0))
@@ -562,7 +562,7 @@ func TestReconcileStatus_NilReplicasYieldsOneEntry(t *testing.T) {
 	// The Memcached asks for 3 replicas, so the single entry can only come from the
 	// StatefulSet's nil spec.replicas counting as 1.
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameCache, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
 	}
 	// The fake client does not default spec.replicas, so it stays nil.
@@ -570,7 +570,7 @@ func TestReconcileStatus_NilReplicasYieldsOneEntry(t *testing.T) {
 
 	got := runReconcileStatus(t, c, client.ObjectKeyFromObject(mc))
 
-	want := []string{"cache-0.cache.ns.svc:11211"}
+	want := []string{testFirstServerListEntry}
 	if !reflect.DeepEqual(got.Status.ServerList, want) {
 		t.Errorf("serverList = %v, want %v", got.Status.ServerList, want)
 	}
@@ -579,7 +579,7 @@ func TestReconcileStatus_NilReplicasYieldsOneEntry(t *testing.T) {
 func TestReconcileStatus_LongNameUsesStatefulSetNameAsHost(t *testing.T) {
 	name := strings.Repeat("s", 60)
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(2)},
 	}
 	stsName := statefulSetName(name)
@@ -598,10 +598,10 @@ func TestReconcileStatus_LongNameUsesStatefulSetNameAsHost(t *testing.T) {
 
 func TestReconcileStatus_NoStatefulSet(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameCache, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
 		Status: memcachedv1beta1.MemcachedStatus{
-			ServerList:    []string{"cache-0.cache.ns.svc:11211"},
+			ServerList:    []string{testFirstServerListEntry},
 			ReadyReplicas: 1,
 		},
 	}
@@ -626,7 +626,7 @@ func TestReconcileStatus_NoStatefulSet(t *testing.T) {
 
 func TestReconcileStatus_StatefulSetGetError(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameCache, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
 	}
 	injected := errors.New("injected get error")
@@ -668,7 +668,7 @@ func TestReconcileStatus_StatefulSetGetError(t *testing.T) {
 
 func TestReconcileStatus_ServerListStableAcrossReconciles(t *testing.T) {
 	mc := &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameCache, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
 	}
 	c := newStatusTestClient(mc, statusTestStatefulSet("cache", int32Ptr(3), 1))
@@ -692,7 +692,7 @@ const conflictLogMsg = `"msg":"Status update conflict, requeueing"`
 // replicas that the status write tests reconcile.
 func statusWriteTestMemcached() *memcachedv1beta1.Memcached {
 	return &memcachedv1beta1.Memcached{
-		ObjectMeta: metav1.ObjectMeta{Name: "cache", Namespace: "ns", UID: "uid-status"},
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameCache, Namespace: "ns", UID: testStatusInstanceUID},
 		Spec:       memcachedv1beta1.MemcachedSpec{Replicas: int32Ptr(3)},
 	}
 }
