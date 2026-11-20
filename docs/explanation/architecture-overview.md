@@ -184,14 +184,20 @@ sts := &appsv1.StatefulSet{
 }
 
 op, err := controllerutil.CreateOrUpdate(ctx, r.Client, sts, func() error {
+    // Keep the stored containers, because constructStatefulSet replaces the spec
+    storedContainers := sts.Spec.Template.Spec.Containers
     // Set the desired state on the resource
     constructStatefulSet(mc, sts, secretHash, restartTrigger)
+    // Add the values the API server would default
+    setStatefulSetServerDefaults(sts, storedContainers)
     // Set owner reference for garbage collection
     return controllerutil.SetControllerReference(mc, sts, r.Scheme)
 })
 ```
 
 This pattern is idempotent: if the resource already exists and matches the desired state, the update is a no-op. If it differs, the resource is updated in place. If it does not exist, it is created.
+
+The API server fills StatefulSet fields that the builder leaves empty, such as `revisionHistoryLimit`, the pod's `restartPolicy`, `dnsPolicy`, and `schedulerName`, the container's termination message settings, the probe timeout and thresholds, and the Secret volume mode. `setStatefulSetServerDefaults` writes those values itself, so the desired state matches the stored StatefulSet when nothing changed. A container keeps the image pull policy the API server chose for it while its image is unchanged; after an image change the API server chooses again. A pass with nothing to change therefore sends no update, emits no event, and counts as `unchanged` in `memcached_operator_reconcile_resource_total`.
 
 ---
 
