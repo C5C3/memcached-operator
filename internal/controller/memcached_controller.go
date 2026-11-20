@@ -125,6 +125,8 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // reconcileStatefulSet ensures the StatefulSet for the Memcached CR matches the desired state.
 // It fetches referenced Secrets, computes a hash for rolling-update annotations, reads the
 // restart-trigger annotation from the CR, and passes everything to constructStatefulSet.
+// setStatefulSetServerDefaults then adds the values the API server would default, so a
+// StatefulSet with nothing to change is reported as unchanged and not updated.
 // Once the StatefulSet is reconciled, it deletes the Deployment that earlier operator
 // releases ran the pods in. It returns the names of any missing Secrets for use by status
 // reconciliation.
@@ -141,7 +143,10 @@ func (r *MemcachedReconciler) reconcileStatefulSet(ctx context.Context, mc *memc
 	}
 
 	if _, err := r.reconcileResource(ctx, mc, sts, func() error {
+		// constructStatefulSet replaces the spec, so this slice keeps the stored containers.
+		storedContainers := sts.Spec.Template.Spec.Containers
 		constructStatefulSet(mc, sts, secretHash, restartTrigger)
+		setStatefulSetServerDefaults(sts, storedContainers)
 		return nil
 	}, "StatefulSet"); err != nil {
 		return missing, err
