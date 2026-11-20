@@ -134,20 +134,24 @@ The conversion test suite in `api/v1alpha1/memcached_conversion_test.go` covers:
 
 ## v1alpha1 Deprecation Timeline
 
-`v1alpha1` is deprecated as of this release. The `Memcached` type in
-`api/v1alpha1/memcached_types.go` carries the comment:
+`v1alpha1` is deprecated. The `Memcached` type in
+`api/v1alpha1/memcached_types.go` carries the marker:
 
 ```go
-// Deprecated: Use v1beta1.Memcached instead.
+// +kubebuilder:deprecatedversion:warning="memcached.c5c3.io/v1alpha1 Memcached is deprecated; use memcached.c5c3.io/v1beta1 Memcached"
 ```
 
-Planned deprecation timeline:
+`make manifests` turns it into `deprecated: true` and a `deprecationWarning` on
+the `v1alpha1` entry of the CRD served-versions list. The API server returns
+that warning on every request that uses `v1alpha1`.
 
-| Phase                | Action                                                                                                                                       |
-|----------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
-| Current              | `v1beta1` is the storage version. `v1alpha1` remains served with automatic conversion.                                                       |
-| Next minor release   | `v1alpha1` is marked as `deprecated: true` in the CRD served-versions list (Kubernetes 1.28+). Clients receive a deprecation warning header. |
-| Future major release | `v1alpha1` is removed from served versions. Existing stored objects are already in `v1beta1` format and require no migration.                |
+Deprecation timeline:
+
+| Phase                | Action                                                                                                                        |
+|----------------------|-------------------------------------------------------------------------------------------------------------------------------|
+| v0.2.0 to v0.6.0     | `v1beta1` is the storage version. `v1alpha1` remains served with automatic conversion.                                        |
+| Current              | `v1alpha1` is marked as `deprecated: true` in the CRD served-versions list. Clients receive a deprecation warning header.     |
+| Future major release | `v1alpha1` is removed from served versions. Existing stored objects are already in `v1beta1` format and require no migration. |
 
 ## Adding a New API Version
 

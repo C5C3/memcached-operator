@@ -39,7 +39,7 @@ make install
 make run
 
 # In another terminal, create a Memcached instance
-kubectl apply -f config/samples/memcached_v1alpha1_memcached.yaml
+kubectl apply -f config/samples/memcached_v1beta1_full.yaml
 
 # Verify
 kubectl get memcached

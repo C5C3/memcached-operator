@@ -58,6 +58,7 @@ controller-gen rbac:roleName=manager-role crd webhook \
 | `+kubebuilder:object:root=true`       | `Memcached`, `MemcachedList` | Marks types as CRD root objects                   |
 | `+kubebuilder:subresource:status`     | `Memcached`                  | Enables `/status` subresource                     |
 | `+kubebuilder:printcolumn:*`          | `Memcached`                  | Adds `additionalPrinterColumns` for `kubectl get` |
+| `+kubebuilder:deprecatedversion`      | `Memcached`                  | Sets `deprecated` and `deprecationWarning`        |
 | `+kubebuilder:validation:Minimum=N`   | Spec fields                  | Sets `minimum` in OpenAPI schema                  |
 | `+kubebuilder:validation:Maximum=N`   | Spec fields                  | Sets `maximum` in OpenAPI schema                  |
 | `+kubebuilder:validation:Pattern=...` | `MaxItemSize`                | Sets `pattern` in OpenAPI schema                  |

@@ -23,8 +23,10 @@ in `v1beta1` format internally and converts on the fly when clients request
 
 However, you should migrate to `v1beta1` because:
 
-- `v1alpha1` will be marked as deprecated in the CRD served-versions list in a
-  future release (Kubernetes 1.28+ clients will see deprecation warnings).
+- `v1alpha1` is marked `deprecated: true` in the CRD served-versions list.
+  Every request that uses it returns the warning
+  `memcached.c5c3.io/v1alpha1 Memcached is deprecated; use memcached.c5c3.io/v1beta1 Memcached`,
+  which `kubectl` prints as a `Warning:` line.
 - `v1alpha1` will eventually be removed from served versions entirely.
 - New documentation and samples use `v1beta1` exclusively.
 
@@ -117,11 +119,11 @@ kubectl apply -f memcached-v1beta1.yaml
 
 ## Deprecation timeline
 
-| Phase                | Action                                                                                                                    |
-|----------------------|---------------------------------------------------------------------------------------------------------------------------|
-| Current              | `v1beta1` is the storage version. `v1alpha1` remains served with automatic conversion.                                    |
-| Next minor release   | `v1alpha1` is marked `deprecated: true` in the CRD served-versions list. Clients on Kubernetes 1.28+ see warning headers. |
-| Future major release | `v1alpha1` is removed from served versions. No data migration needed — objects are already stored as `v1beta1`.           |
+| Phase                | Action                                                                                                                 |
+|----------------------|------------------------------------------------------------------------------------------------------------------------|
+| v0.2.0 to v0.6.0     | `v1beta1` is the storage version. `v1alpha1` remains served with automatic conversion.                                 |
+| Current              | `v1alpha1` is marked `deprecated: true` in the CRD served-versions list. Requests that use it return a warning header. |
+| Future major release | `v1alpha1` is removed from served versions. No data migration needed — objects are already stored as `v1beta1`.        |
 
 ## Frequently asked questions
 

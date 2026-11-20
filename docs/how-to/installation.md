@@ -212,7 +212,7 @@ resource.
 Create a file named `memcached.yaml`:
 
 ```yaml
-apiVersion: memcached.c5c3.io/v1alpha1
+apiVersion: memcached.c5c3.io/v1beta1
 kind: Memcached
 metadata:
   name: my-cache
@@ -335,7 +335,7 @@ inside the cluster.
 In a separate terminal:
 
 ```bash
-kubectl apply -f config/samples/memcached_v1alpha1_memcached.yaml
+kubectl apply -f config/samples/memcached_v1beta1_full.yaml
 ```
 
 ### 4. Observe reconciliation
