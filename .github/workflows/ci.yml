@@ -365,6 +365,7 @@ jobs:
             charts:
               - 'charts/**'
               - 'ct.yaml'
+              - '.github/workflows/ci.yml'
 
   helm-lint:
     name: Helm Lint & Test
