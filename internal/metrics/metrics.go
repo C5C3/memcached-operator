@@ -8,6 +8,12 @@ import (
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+// Label names that identify the Memcached instance a metric series belongs to.
+const (
+	labelName      = "name"
+	labelNamespace = "namespace"
+)
+
 var (
 	// reconcileResourceTotal counts reconcileResource outcomes per resource kind.
 	reconcileResourceTotal = prometheus.NewCounterVec(
@@ -24,7 +30,7 @@ var (
 			Name: "memcached_operator_reconcile_total",
 			Help: "Total number of Memcached reconciliations.",
 		},
-		[]string{"name", "namespace", "result"},
+		[]string{labelName, labelNamespace, "result"},
 	)
 
 	// reconcileDuration tracks the duration of reconciliations in seconds.
@@ -34,7 +40,7 @@ var (
 			Help:    "Duration of Memcached reconciliation in seconds.",
 			Buckets: prometheus.DefBuckets,
 		},
-		[]string{"name", "namespace"},
+		[]string{labelName, labelNamespace},
 	)
 
 	// instanceInfo is an info-style gauge for Memcached instances with labels
@@ -44,7 +50,7 @@ var (
 			Name: "memcached_operator_instance_info",
 			Help: "Information about a Memcached instance.",
 		},
-		[]string{"name", "namespace", "image"},
+		[]string{labelName, labelNamespace, "image"},
 	)
 
 	// instanceReplicasDesired tracks the desired replica count per Memcached instance.
@@ -53,7 +59,7 @@ var (
 			Name: "memcached_operator_instance_replicas_desired",
 			Help: "Desired number of replicas for a Memcached instance.",
 		},
-		[]string{"name", "namespace"},
+		[]string{labelName, labelNamespace},
 	)
 
 	// instanceReplicasReady tracks the ready replica count per Memcached instance.
@@ -62,7 +68,7 @@ var (
 			Name: "memcached_operator_instance_replicas_ready",
 			Help: "Number of ready replicas for a Memcached instance.",
 		},
-		[]string{"name", "namespace"},
+		[]string{labelName, labelNamespace},
 	)
 )
 
@@ -105,7 +111,7 @@ func RecordInstanceInfo(name, namespace, image string, replicas int32) {
 	// Delete any existing info gauge series for this instance (different image
 	// label values produce different series, so we need to clean up stale ones).
 	instanceInfo.DeletePartialMatch(prometheus.Labels{
-		"name": name, "namespace": namespace,
+		labelName: name, labelNamespace: namespace,
 	})
 	instanceInfo.WithLabelValues(name, namespace, image).Set(1)
 	instanceReplicasDesired.WithLabelValues(name, namespace).Set(float64(replicas))
@@ -119,7 +125,7 @@ func RecordReadyReplicas(name, namespace string, ready int32) {
 // ResetInstanceMetrics removes all metric series associated with a Memcached
 // instance. This should be called when an instance is deleted.
 func ResetInstanceMetrics(name, namespace string) {
-	labels := prometheus.Labels{"name": name, "namespace": namespace}
+	labels := prometheus.Labels{labelName: name, labelNamespace: namespace}
 	instanceInfo.DeletePartialMatch(labels)
 	instanceReplicasDesired.DeletePartialMatch(labels)
 	instanceReplicasReady.DeletePartialMatch(labels)
