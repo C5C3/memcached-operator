@@ -9,6 +9,7 @@ const (
 	testCRDSingularName        = "memcached"
 	testConditionReasonReady   = "Ready"
 	testConditionTypeAvailable = "Available"
+	testDeprecationWarning     = "memcached.c5c3.io/v1alpha1 Memcached is deprecated; use memcached.c5c3.io/v1beta1 Memcached"
 	testExtraArgModern         = "modern"
 	testKindMemcached          = "Memcached"
 	testKindMemcachedList      = "MemcachedList"
