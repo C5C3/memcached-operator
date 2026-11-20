@@ -12,12 +12,12 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 
 	original := &Memcached{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "memcached.c5c3.io/v1beta1",
-			Kind:       "Memcached",
+			APIVersion: testAPIVersion,
+			Kind:       testKindMemcached,
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "test-mc",
-			Namespace:   "default",
+			Name:        testObjectName,
+			Namespace:   testNamespaceDefault,
 			Labels:      map[string]string{"app": "memcached"},
 			Annotations: map[string]string{"note": "original"},
 		},
@@ -26,13 +26,13 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 			Image:    &image,
 			Memcached: &MemcachedConfig{
 				MaxMemoryMB: 64,
-				ExtraArgs:   []string{"-o", "modern"},
+				ExtraArgs:   []string{"-o", testExtraArgModern},
 			},
 		},
 		Status: MemcachedStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:   "Available",
+					Type:   testConditionTypeAvailable,
 					Status: metav1.ConditionTrue,
 					Reason: "Ready",
 				},
@@ -115,8 +115,8 @@ func TestMemcachedDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	replicas := int32(2)
 	original := &Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-mc",
-			Namespace: "default",
+			Name:      testObjectName,
+			Namespace: testNamespaceDefault,
 		},
 		Spec: MemcachedSpec{
 			Replicas: &replicas,
@@ -134,10 +134,10 @@ func TestMemcachedDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 		t.Error("DeepCopyObject returned the same pointer")
 	}
 
-	if mc.Name != "test-mc" {
+	if mc.Name != testObjectName {
 		t.Errorf("expected Name=test-mc, got %s", mc.Name)
 	}
-	if mc.Namespace != "default" {
+	if mc.Namespace != testNamespaceDefault {
 		t.Errorf("expected Namespace=default, got %s", mc.Namespace)
 	}
 	if *mc.Spec.Replicas != 2 {
@@ -148,13 +148,13 @@ func TestMemcachedDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 func TestMemcachedListDeepCopy_Independence(t *testing.T) {
 	original := &MemcachedList{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "memcached.c5c3.io/v1beta1",
-			Kind:       "MemcachedList",
+			APIVersion: testAPIVersion,
+			Kind:       testKindMemcachedList,
 		},
 		Items: []Memcached{
 			{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "mc-0",
+					Name:   testListItemName,
 					Labels: map[string]string{"index": "0"},
 				},
 			},
@@ -202,7 +202,7 @@ func TestMemcachedListDeepCopy_Independence(t *testing.T) {
 func TestMemcachedListDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	original := &MemcachedList{
 		Items: []Memcached{
-			{ObjectMeta: metav1.ObjectMeta{Name: "mc-0"}},
+			{ObjectMeta: metav1.ObjectMeta{Name: testListItemName}},
 		},
 	}
 
@@ -220,7 +220,7 @@ func TestMemcachedListDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	if len(ml.Items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(ml.Items))
 	}
-	if ml.Items[0].Name != "mc-0" {
+	if ml.Items[0].Name != testListItemName {
 		t.Errorf("expected item Name=mc-0, got %s", ml.Items[0].Name)
 	}
 }

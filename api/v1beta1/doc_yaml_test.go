@@ -133,13 +133,13 @@ func TestDocumentationYAMLExamples(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			// Verify apiVersion
-			expectedAPIVersion := "memcached.c5c3.io/v1beta1" //nolint:goconst // test literal
+			expectedAPIVersion := testAPIVersion
 			if memcached.APIVersion != expectedAPIVersion {
 				t.Errorf("apiVersion: got %q, want %q", memcached.APIVersion, expectedAPIVersion)
 			}
 
 			// Verify kind
-			expectedKind := "Memcached" //nolint:goconst // test literal
+			expectedKind := testKindMemcached
 			if memcached.Kind != expectedKind {
 				t.Errorf("kind: got %q, want %q", memcached.Kind, expectedKind)
 			}

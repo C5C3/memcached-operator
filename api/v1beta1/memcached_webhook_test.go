@@ -383,7 +383,7 @@ func TestMemcachedDefaulting_FullySpecifiedCRUnchanged(t *testing.T) {
 				Threads:        16,
 				MaxItemSize:    "4m",
 				Verbosity:      1,
-				ExtraArgs:      []string{"-o", "modern"},
+				ExtraArgs:      []string{"-o", testExtraArgModern},
 			},
 			Monitoring: &MonitoringSpec{
 				Enabled:       true,
@@ -539,7 +539,7 @@ func TestMemcachedDefaulting_ExtraArgsPreserved(t *testing.T) {
 	mc := &Memcached{
 		Spec: MemcachedSpec{
 			Memcached: &MemcachedConfig{
-				ExtraArgs: []string{"-o", "modern", "-B", "binary"},
+				ExtraArgs: []string{"-o", testExtraArgModern, "-B", "binary"},
 			},
 		},
 	}
@@ -552,7 +552,7 @@ func TestMemcachedDefaulting_ExtraArgsPreserved(t *testing.T) {
 	if len(mc.Spec.Memcached.ExtraArgs) != 4 {
 		t.Errorf("expected 4 extraArgs preserved, got %d", len(mc.Spec.Memcached.ExtraArgs))
 	}
-	if mc.Spec.Memcached.ExtraArgs[0] != "-o" || mc.Spec.Memcached.ExtraArgs[1] != "modern" {
+	if mc.Spec.Memcached.ExtraArgs[0] != "-o" || mc.Spec.Memcached.ExtraArgs[1] != testExtraArgModern {
 		t.Errorf("expected first two extraArgs=[-o, modern], got %v", mc.Spec.Memcached.ExtraArgs[:2])
 	}
 }

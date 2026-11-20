@@ -79,11 +79,11 @@ func TestValidateCreate_FullyPopulatedValidCR(t *testing.T) {
 			Security: &SecuritySpec{
 				SASL: &SASLSpec{
 					Enabled:              true,
-					CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
+					CredentialsSecretRef: corev1.LocalObjectReference{Name: testSASLSecretName},
 				},
 				TLS: &TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-cert"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSCertSecretName},
 				},
 			},
 		},
@@ -384,7 +384,7 @@ func TestValidatePDB(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name:      "nil HighAvailability",
+			name:      "nil HighAvailability (ValidateCreate)",
 			mc:        &Memcached{},
 			wantError: false,
 		},
@@ -554,7 +554,7 @@ func TestValidateSecuritySecretRefs(t *testing.T) {
 					Security: &SecuritySpec{
 						SASL: &SASLSpec{
 							Enabled:              true,
-							CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
+							CredentialsSecretRef: corev1.LocalObjectReference{Name: testSASLSecretName},
 						},
 					},
 				},
@@ -590,7 +590,7 @@ func TestValidateSecuritySecretRefs(t *testing.T) {
 					Security: &SecuritySpec{
 						TLS: &TLSSpec{
 							Enabled:              true,
-							CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-cert"},
+							CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSCertSecretName},
 						},
 					},
 				},
@@ -626,11 +626,11 @@ func TestValidateSecuritySecretRefs(t *testing.T) {
 					Security: &SecuritySpec{
 						SASL: &SASLSpec{
 							Enabled:              true,
-							CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
+							CredentialsSecretRef: corev1.LocalObjectReference{Name: testSASLSecretName},
 						},
 						TLS: &TLSSpec{
 							Enabled:              true,
-							CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-cert"},
+							CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSCertSecretName},
 						},
 					},
 				},

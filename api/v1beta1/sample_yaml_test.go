@@ -62,12 +62,12 @@ func TestSampleYAMLFiles(t *testing.T) {
 		t.Run(filename, func(t *testing.T) {
 			memcached := loadSampleYAML(t, filename)
 
-			expectedAPIVersion := "memcached.c5c3.io/v1beta1"
+			expectedAPIVersion := testAPIVersion
 			if memcached.APIVersion != expectedAPIVersion {
 				t.Errorf("apiVersion: got %q, want %q", memcached.APIVersion, expectedAPIVersion)
 			}
 
-			expectedKind := "Memcached" //nolint:goconst // test literal
+			expectedKind := testKindMemcached
 			if memcached.Kind != expectedKind {
 				t.Errorf("kind: got %q, want %q", memcached.Kind, expectedKind)
 			}
