@@ -14,7 +14,7 @@ func newTestMemcached(opts ...func(*Memcached)) *Memcached {
 	mc := &Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test",
-			Namespace: "default",
+			Namespace: testNamespaceDefault,
 		},
 	}
 	for _, opt := range opts {
@@ -99,9 +99,9 @@ func TestMemcached_IsTLSEnabled(t *testing.T) {
 		mc   *Memcached
 		want bool
 	}{
-		{"nil Security", newTestMemcached(), false},
-		{"nil TLS", newTestMemcached(withSecurity()), false},
-		{"TLS disabled", newTestMemcached(withTLS(false)), false},
+		{"nil Security (IsTLSEnabled)", newTestMemcached(), false},
+		{"nil TLS (IsTLSEnabled)", newTestMemcached(withSecurity()), false},
+		{"TLS disabled (IsTLSEnabled)", newTestMemcached(withTLS(false)), false},
 		{"TLS enabled", newTestMemcached(withTLS(true)), true},
 	}
 	for _, tt := range tests {
@@ -119,7 +119,7 @@ func TestMemcached_IsSASLEnabled(t *testing.T) {
 		mc   *Memcached
 		want bool
 	}{
-		{"nil Security", newTestMemcached(), false},
+		{"nil Security (IsSASLEnabled)", newTestMemcached(), false},
 		{"nil SASL", newTestMemcached(withSecurity()), false},
 		{"SASL disabled", newTestMemcached(withSASL(false)), false},
 		{"SASL enabled", newTestMemcached(withSASL(true)), true},
@@ -197,7 +197,7 @@ func TestMemcached_IsPDBEnabled(t *testing.T) {
 		mc   *Memcached
 		want bool
 	}{
-		{"nil HighAvailability", newTestMemcached(), false},
+		{"nil HighAvailability (IsPDBEnabled)", newTestMemcached(), false},
 		{"nil PDB", newTestMemcached(withHighAvailability()), false},
 		{"PDB disabled", newTestMemcached(withPDB(false)), false},
 		{"PDB enabled", newTestMemcached(withPDB(true)), true},
@@ -217,7 +217,7 @@ func TestMemcached_IsGracefulShutdownEnabled(t *testing.T) {
 		mc   *Memcached
 		want bool
 	}{
-		{"nil HighAvailability", newTestMemcached(), false},
+		{"nil HighAvailability (IsGracefulShutdownEnabled)", newTestMemcached(), false},
 		{"nil GracefulShutdown", newTestMemcached(withHighAvailability()), false},
 		{"GracefulShutdown disabled", newTestMemcached(withGracefulShutdown(false)), false},
 		{"GracefulShutdown enabled", newTestMemcached(withGracefulShutdown(true)), true},
@@ -237,7 +237,7 @@ func TestMemcached_IsNetworkPolicyEnabled(t *testing.T) {
 		mc   *Memcached
 		want bool
 	}{
-		{"nil Security", newTestMemcached(), false},
+		{"nil Security (IsNetworkPolicyEnabled)", newTestMemcached(), false},
 		{"nil NetworkPolicy", newTestMemcached(withSecurity()), false},
 		{"NetworkPolicy disabled", newTestMemcached(withNetworkPolicy(false)), false},
 		{"NetworkPolicy enabled", newTestMemcached(withNetworkPolicy(true)), true},
@@ -339,12 +339,12 @@ func TestMemcached_FullResource(t *testing.T) {
 	replicas := int32(1)
 	mc := Memcached{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "memcached.c5c3.io/v1beta1",
-			Kind:       "Memcached",
+			APIVersion: testAPIVersion,
+			Kind:       testKindMemcached,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-memcached",
-			Namespace: "default",
+			Namespace: testNamespaceDefault,
 		},
 		Spec: MemcachedSpec{
 			Replicas: &replicas,
@@ -352,7 +352,7 @@ func TestMemcached_FullResource(t *testing.T) {
 		Status: MemcachedStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:   "Available",
+					Type:   testConditionTypeAvailable,
 					Status: metav1.ConditionTrue,
 				},
 			},
@@ -362,10 +362,10 @@ func TestMemcached_FullResource(t *testing.T) {
 	if mc.Name != "test-memcached" {
 		t.Errorf("unexpected Name: %s", mc.Name)
 	}
-	if mc.Kind != "Memcached" {
+	if mc.Kind != testKindMemcached {
 		t.Errorf("unexpected Kind: %s", mc.Kind)
 	}
-	if mc.APIVersion != "memcached.c5c3.io/v1beta1" {
+	if mc.APIVersion != testAPIVersion {
 		t.Errorf("unexpected APIVersion: %s", mc.APIVersion)
 	}
 	if *mc.Spec.Replicas != 1 {
@@ -374,7 +374,7 @@ func TestMemcached_FullResource(t *testing.T) {
 	if len(mc.Status.Conditions) != 1 {
 		t.Fatalf("expected 1 condition, got %d", len(mc.Status.Conditions))
 	}
-	if mc.Status.Conditions[0].Type != "Available" {
+	if mc.Status.Conditions[0].Type != testConditionTypeAvailable {
 		t.Errorf("unexpected condition type: %s", mc.Status.Conditions[0].Type)
 	}
 }
