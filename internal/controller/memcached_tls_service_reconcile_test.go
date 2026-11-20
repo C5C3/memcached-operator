@@ -21,7 +21,7 @@ var _ = Describe("TLS Service Reconciliation", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -76,7 +76,7 @@ var _ = Describe("TLS Service Reconciliation", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecretName},
 				},
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
@@ -110,7 +110,7 @@ var _ = Describe("TLS Service Reconciliation", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -137,7 +137,7 @@ var _ = Describe("TLS Service Reconciliation", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecretName},
 				},
 			}
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{

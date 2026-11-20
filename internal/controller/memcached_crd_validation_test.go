@@ -25,7 +25,7 @@ func validMemcached(name string) *memcachedv1beta1.Memcached {
 	return &memcachedv1beta1.Memcached{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: "default",
+			Namespace: testNamespaceDefault,
 		},
 		Spec: memcachedv1beta1.MemcachedSpec{},
 	}
@@ -237,7 +237,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 		It("should accept a list of extra args", func() {
 			mc := validMemcached(uniqueName("extra"))
 			mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
-				ExtraArgs: []string{"-o", "modern", "-B", "binary"},
+				ExtraArgs: []string{"-o", testExtraArgModern, "-B", "binary"},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 		})
@@ -277,7 +277,7 @@ var _ = Describe("CRD Validation: MemcachedConfig and Spec fields", func() {
 				Threads:        8,
 				MaxItemSize:    "2m",
 				Verbosity:      1,
-				ExtraArgs:      []string{"-o", "modern"},
+				ExtraArgs:      []string{"-o", testExtraArgModern},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 		})
@@ -524,7 +524,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval:      "30s",
+					Interval:      testScrapeInterval30s,
 					ScrapeTimeout: "10s",
 					AdditionalLabels: map[string]string{
 						"team": "platform",
@@ -546,10 +546,10 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 					},
 				},
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval:      "15s",
+					Interval:      testScrapeInterval15s,
 					ScrapeTimeout: "5s",
 					AdditionalLabels: map[string]string{
-						"prometheus": "default",
+						testLabelKeyPrometheus: testLabelValuePrometheus,
 					},
 				},
 			}
@@ -564,7 +564,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled: true,
 					CredentialsSecretRef: corev1.LocalObjectReference{
-						Name: "sasl-secret",
+						Name: testSASLSecretName,
 					},
 				},
 			}
@@ -589,7 +589,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "tls-cert",
+						Name: testTLSCertSecretName,
 					},
 				},
 			}
@@ -612,7 +612,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "tls-cert",
+						Name: testTLSCertSecretName,
 					},
 					EnableClientCert: true,
 				},
@@ -633,7 +633,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "tls-cert",
+						Name: testTLSCertSecretName,
 					},
 				},
 			}
@@ -674,7 +674,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
 							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"env": "production"},
+								MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProduction},
 							},
 						},
 					},
@@ -728,7 +728,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
 							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"env": "prod"},
+								MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProd},
 							},
 						},
 						{
@@ -786,7 +786,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled: true,
 					CertificateSecretRef: corev1.LocalObjectReference{
-						Name: "tls-cert",
+						Name: testTLSCertSecretName,
 					},
 				},
 				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
@@ -794,7 +794,7 @@ var _ = Describe("CRD Validation: HighAvailability, Monitoring, and Security fie
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
 							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"env": "prod"},
+								MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProd},
 							},
 						},
 					},
@@ -859,7 +859,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			now := metav1.Now()
 			fetched.Status.Conditions = []metav1.Condition{
 				{
-					Type:               "Available",
+					Type:               testConditionTypeAvailable,
 					Status:             metav1.ConditionTrue,
 					ObservedGeneration: fetched.Generation,
 					LastTransitionTime: now,
@@ -887,12 +887,12 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 			now := metav1.Now()
 			fetched.Status.Conditions = []metav1.Condition{
 				{
-					Type:               "Available",
+					Type:               testConditionTypeAvailable,
 					Status:             metav1.ConditionTrue,
 					ObservedGeneration: fetched.Generation,
 					LastTransitionTime: now,
 					Reason:             "Ready",
-					Message:            "Available",
+					Message:            testConditionMessageAvailable,
 				},
 				{
 					Type:               "Progressing",
@@ -1022,7 +1022,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 					Threads:        4,
 					MaxItemSize:    "2m",
 					Verbosity:      1,
-					ExtraArgs:      []string{"-o", "modern"},
+					ExtraArgs:      []string{"-o", testExtraArgModern},
 				},
 				HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
 					AntiAffinityPreset: &hard,
@@ -1035,7 +1035,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 					Enabled:       true,
 					ExporterImage: strPtr("prom/memcached-exporter:v0.15.4"),
 					ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-						Interval: "30s",
+						Interval: testScrapeInterval30s,
 					},
 				},
 				Security: &memcachedv1beta1.SecuritySpec{
@@ -1051,7 +1051,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 					TLS: &memcachedv1beta1.TLSSpec{
 						Enabled: true,
 						CertificateSecretRef: corev1.LocalObjectReference{
-							Name: "tls-cert",
+							Name: testTLSCertSecretName,
 						},
 					},
 					NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{
@@ -1059,7 +1059,7 @@ var _ = Describe("CRD Validation: MemcachedStatus and printer columns", func() {
 						AllowedSources: []networkingv1.NetworkPolicyPeer{
 							{
 								NamespaceSelector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{"env": "prod"},
+									MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProd},
 								},
 							},
 						},

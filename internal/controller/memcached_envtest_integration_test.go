@@ -411,7 +411,7 @@ var _ = Describe("Optional resource enable/disable lifecycle", func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 			mc.Spec.Monitoring.Enabled = true
 			mc.Spec.Monitoring.ServiceMonitor = &memcachedv1beta1.ServiceMonitorSpec{
-				Interval: "60s",
+				Interval: testScrapeInterval60s,
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 

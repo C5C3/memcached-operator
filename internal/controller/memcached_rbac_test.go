@@ -103,7 +103,7 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 		})
 	})
 
-	fullCRUDVerbs := []string{"create", "delete", "get", "list", "patch", "update", "watch"}
+	fullCRUDVerbs := []string{"create", "delete", testVerbGet, testVerbList, testVerbPatch, "update", testVerbWatch}
 
 	Context("Memcached CR permissions", func() {
 		It("should grant full CRUD on memcacheds", func() {
@@ -115,7 +115,7 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 		It("should grant get, update, patch on memcacheds/status", func() {
 			rule := findRule(role.Rules, "memcached.c5c3.io", "memcacheds/status")
 			Expect(rule).NotTo(BeNil(), "rule for memcacheds/status not found")
-			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"get", "patch", "update"}))
+			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{testVerbGet, testVerbPatch, "update"}))
 		})
 
 	})
@@ -140,7 +140,7 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 		It("should grant only delete, get, list, watch on deployments", func() {
 			rule := findRule(role.Rules, "apps", "deployments")
 			Expect(rule).NotTo(BeNil(), "rule for apps/deployments not found")
-			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"delete", "get", "list", "watch"}))
+			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"delete", testVerbGet, testVerbList, testVerbWatch}))
 		})
 	})
 
@@ -148,7 +148,7 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 		It("should grant read-only access on secrets", func() {
 			rule := findRule(role.Rules, "", "secrets")
 			Expect(rule).NotTo(BeNil(), "rule for secrets not found")
-			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"get", "list", "watch"}))
+			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{testVerbGet, testVerbList, testVerbWatch}))
 		})
 	})
 
@@ -156,7 +156,7 @@ var _ = Describe("RBAC Manifest Verification (REQ-007)", func() {
 		It("should grant create and patch on events", func() {
 			rule := findRule(role.Rules, "", "events")
 			Expect(rule).NotTo(BeNil(), "rule for events not found")
-			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"create", "patch"}))
+			Expect(sortedVerbs(rule.Verbs)).To(Equal([]string{"create", testVerbPatch}))
 		})
 	})
 

@@ -296,9 +296,9 @@ var _ = Describe("Status Reconciliation", func() {
 
 			reconcileTotal := func(outcome string) float64 {
 				return gatherMetricValue("memcached_operator_reconcile_total", map[string]string{
-					"name":      mc.Name,
-					"namespace": mc.Namespace,
-					"result":    outcome,
+					testMetricLabelName:      mc.Name,
+					testMetricLabelNamespace: mc.Namespace,
+					testMetricLabelResult:    outcome,
 				})
 			}
 			Expect(reconcileTotal("success")).To(Equal(float64(1)))

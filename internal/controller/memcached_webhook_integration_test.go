@@ -58,13 +58,13 @@ var _ = Describe("Webhook Defaulting via API Server", func() {
 					Threads:        16,
 					MaxItemSize:    "4m",
 					Verbosity:      1,
-					ExtraArgs:      []string{"-o", "modern"},
+					ExtraArgs:      []string{"-o", testExtraArgModern},
 				},
 				Monitoring: &memcachedv1beta1.MonitoringSpec{
 					Enabled:       true,
 					ExporterImage: &exporterImage,
 					ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-						Interval:      "15s",
+						Interval:      testScrapeInterval15s,
 						ScrapeTimeout: "5s",
 					},
 				},
@@ -85,7 +85,7 @@ var _ = Describe("Webhook Defaulting via API Server", func() {
 			Expect(fetched.Spec.Memcached.Threads).To(Equal(int32(16)))
 			Expect(fetched.Spec.Memcached.MaxItemSize).To(Equal("4m"))
 			Expect(fetched.Spec.Memcached.Verbosity).To(Equal(int32(1)))
-			Expect(fetched.Spec.Memcached.ExtraArgs).To(Equal([]string{"-o", "modern"}))
+			Expect(fetched.Spec.Memcached.ExtraArgs).To(Equal([]string{"-o", testExtraArgModern}))
 			Expect(*fetched.Spec.Monitoring.ExporterImage).To(Equal("custom/exporter:v2"))
 			Expect(fetched.Spec.Monitoring.ServiceMonitor.Interval).To(Equal("15s"))
 			Expect(fetched.Spec.Monitoring.ServiceMonitor.ScrapeTimeout).To(Equal("5s"))

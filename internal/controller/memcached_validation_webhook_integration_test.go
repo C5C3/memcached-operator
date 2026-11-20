@@ -134,11 +134,11 @@ var _ = Describe("Webhook Validation via API Server", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
-					CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
+					CredentialsSecretRef: corev1.LocalObjectReference{Name: testSASLSecretName},
 				},
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-cert"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSCertSecretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -158,7 +158,7 @@ var _ = Describe("Webhook Validation via API Server", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				SASL: &memcachedv1beta1.SASLSpec{
 					Enabled:              true,
-					CredentialsSecretRef: corev1.LocalObjectReference{Name: "sasl-secret"},
+					CredentialsSecretRef: corev1.LocalObjectReference{Name: testSASLSecretName},
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())

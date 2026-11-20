@@ -20,7 +20,7 @@ var hexHash64 = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // newSASLSecret creates a Secret with SASL credential data.
 func newSASLSecret(name, password string) *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespaceDefault},
 		Data:       map[string][]byte{"password-file": []byte(password)},
 	}
 }
@@ -28,7 +28,7 @@ func newSASLSecret(name, password string) *corev1.Secret {
 // newTLSSecret creates a Secret with TLS certificate data.
 func newTLSSecret(name string) *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespaceDefault},
 		Data: map[string][]byte{
 			"tls.crt": []byte("cert-data"),
 			"tls.key": []byte("key-data"),
@@ -297,7 +297,7 @@ var _ = Describe("Manual restart trigger", func() {
 		if mc.Annotations == nil {
 			mc.Annotations = map[string]string{}
 		}
-		mc.Annotations[controller.AnnotationRestartTrigger] = "2024-01-15T10:00:00Z"
+		mc.Annotations[controller.AnnotationRestartTrigger] = testRestartTriggerTimestamp
 		Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
 		_, err = reconcileOnce(mc)
@@ -311,7 +311,7 @@ var _ = Describe("Manual restart trigger", func() {
 	It("should update StatefulSet when restart-trigger annotation value changes", func() {
 		mc := validMemcached(uniqueName("restart-upd"))
 		mc.Annotations = map[string]string{
-			controller.AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
+			controller.AnnotationRestartTrigger: testRestartTriggerTimestamp,
 		}
 		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -341,7 +341,7 @@ var _ = Describe("Manual restart trigger", func() {
 
 		mc := validMemcached(uniqueName("restart-coexist"))
 		mc.Annotations = map[string]string{
-			controller.AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
+			controller.AnnotationRestartTrigger: testRestartTriggerTimestamp,
 		}
 		mc.Spec.Security = &memcachedv1beta1.SecuritySpec{SASL: saslSpec(secretName)}
 		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -359,7 +359,7 @@ var _ = Describe("Manual restart trigger", func() {
 	It("should propagate restart-trigger on CR without Secrets", func() {
 		mc := validMemcached(uniqueName("restart-nosec"))
 		mc.Annotations = map[string]string{
-			controller.AnnotationRestartTrigger: "2024-01-15T10:00:00Z",
+			controller.AnnotationRestartTrigger: testRestartTriggerTimestamp,
 		}
 		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 

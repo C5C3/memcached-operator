@@ -129,8 +129,8 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 		It("should set matching labels on pod template and selector", func() {
 			sts := fetchStatefulSet(mc)
 			expectedLabels := map[string]string{
-				"app.kubernetes.io/name":       "memcached",
-				"app.kubernetes.io/instance":   mc.Name,
+				testLabelKeyAppName:            testLabelValueAppName,
+				testLabelKeyAppInstance:        mc.Name,
 				"app.kubernetes.io/managed-by": "memcached-operator",
 			}
 			for k, v := range expectedLabels {
@@ -182,7 +182,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 				Threads:        8,
 				MaxItemSize:    "2m",
 				Verbosity:      2,
-				ExtraArgs:      []string{"-o", "modern"},
+				ExtraArgs:      []string{"-o", testExtraArgModern},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
@@ -202,7 +202,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 			// Args with custom values, verbosity=2, and extraArgs.
 			expectedArgs := []string{
 				"-m", "256", "-c", "2048", "-t", "8", "-I", "2m",
-				"-vv", "-o", "modern",
+				"-vv", "-o", testExtraArgModern,
 			}
 			Expect(container.Args).To(Equal(expectedArgs))
 
@@ -654,7 +654,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 			constraint := zoneSpreadConstraint()
 			constraint.LabelSelector = &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app.kubernetes.io/name": "memcached",
+					testLabelKeyAppName: testLabelValueAppName,
 				},
 			}
 			mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
@@ -956,7 +956,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 			Expect(container.Lifecycle).NotTo(BeNil())
 			Expect(container.Lifecycle.PreStop).NotTo(BeNil())
 			Expect(container.Lifecycle.PreStop.Exec).NotTo(BeNil())
-			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{testPreStopCommandSleep, "10"}))
 
 			Expect(sts.Spec.Template.Spec.TerminationGracePeriodSeconds).NotTo(BeNil())
 			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
@@ -981,7 +981,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 			Expect(container.Lifecycle).NotTo(BeNil())
 			Expect(container.Lifecycle.PreStop).NotTo(BeNil())
 			Expect(container.Lifecycle.PreStop.Exec).NotTo(BeNil())
-			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "15"}))
+			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{testPreStopCommandSleep, "15"}))
 
 			Expect(sts.Spec.Template.Spec.TerminationGracePeriodSeconds).NotTo(BeNil())
 			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(45)))
@@ -1002,7 +1002,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			sts := fetchStatefulSet(mc)
-			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{testPreStopCommandSleep, "10"}))
 
 			// Update preStopDelaySeconds to 20.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
@@ -1014,7 +1014,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			sts = fetchStatefulSet(mc)
-			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "20"}))
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{testPreStopCommandSleep, "20"}))
 			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(45)))
 		})
 
@@ -1109,7 +1109,7 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 			// Graceful shutdown.
 			container := sts.Spec.Template.Spec.Containers[0]
 			Expect(container.Lifecycle).NotTo(BeNil())
-			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(container.Lifecycle.PreStop.Exec.Command).To(Equal([]string{testPreStopCommandSleep, "10"}))
 			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
 		})
 	})
@@ -1120,8 +1120,8 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 // owner references.
 func legacyMemcachedDeployment(mc *memcachedv1beta1.Memcached, ownerRefs []metav1.OwnerReference) *appsv1.Deployment {
 	labels := map[string]string{
-		"app.kubernetes.io/name":       "memcached",
-		"app.kubernetes.io/instance":   mc.Name,
+		testLabelKeyAppName:            testLabelValueAppName,
+		testLabelKeyAppInstance:        mc.Name,
 		"app.kubernetes.io/managed-by": "memcached-operator",
 	}
 	return &appsv1.Deployment{
@@ -1137,7 +1137,7 @@ func legacyMemcachedDeployment(mc *memcachedv1beta1.Memcached, ownerRefs []metav
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
 				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{Name: "memcached", Image: "memcached:1.6"}},
+					Containers: []corev1.Container{{Name: testContainerNameMemcached, Image: "memcached:1.6"}},
 				},
 			},
 		},
@@ -1200,7 +1200,7 @@ var _ = Describe("StatefulSet naming and legacy Deployment migration", func() {
 			stsList := &appsv1.StatefulSetList{}
 			Expect(k8sClient.List(ctx, stsList,
 				client.InNamespace(mc.Namespace),
-				client.MatchingLabels{"app.kubernetes.io/instance": name},
+				client.MatchingLabels{testLabelKeyAppInstance: name},
 			)).To(Succeed())
 			Expect(stsList.Items).To(HaveLen(1))
 			sts := &stsList.Items[0]
@@ -1239,7 +1239,7 @@ var _ = Describe("StatefulSet naming and legacy Deployment migration", func() {
 
 			Expect(k8sClient.List(ctx, stsList,
 				client.InNamespace(mc.Namespace),
-				client.MatchingLabels{"app.kubernetes.io/instance": name},
+				client.MatchingLabels{testLabelKeyAppInstance: name},
 			)).To(Succeed())
 			Expect(stsList.Items).To(HaveLen(1))
 			Expect(stsList.Items[0].Name).To(Equal(sts.Name))

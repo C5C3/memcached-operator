@@ -86,7 +86,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval: "60s",
+					Interval: testScrapeInterval60s,
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -126,7 +126,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval:      "15s",
+					Interval:      testScrapeInterval15s,
 					ScrapeTimeout: "5s",
 				},
 			}
@@ -148,8 +148,8 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
-						"release": "prometheus",
-						"team":    "platform",
+						testLabelKeyRelease: testLabelValueRelease,
+						"team":              "platform",
 					},
 				},
 			}
@@ -176,8 +176,8 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
-						"app.kubernetes.io/name": "override",
-						"release":                "prometheus",
+						testLabelKeyAppName: "override",
+						testLabelKeyRelease: testLabelValueRelease,
 					},
 				},
 			}
@@ -260,7 +260,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: false,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval: "30s",
+					Interval: testScrapeInterval30s,
 				},
 			}
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
@@ -380,7 +380,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 
 			// Update the CR's ServiceMonitor interval.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
-			mc.Spec.Monitoring.ServiceMonitor.Interval = "60s"
+			mc.Spec.Monitoring.ServiceMonitor.Interval = testScrapeInterval60s
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
 			_, err = reconcileOnce(mc)
@@ -396,7 +396,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
 					AdditionalLabels: map[string]string{
-						"release": "prometheus",
+						testLabelKeyRelease: testLabelValueRelease,
 					},
 				},
 			}
@@ -411,8 +411,8 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			// Update additional labels.
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
 			mc.Spec.Monitoring.ServiceMonitor.AdditionalLabels = map[string]string{
-				"release": "kube-prom-stack",
-				"env":     "production",
+				testLabelKeyRelease: "kube-prom-stack",
+				testLabelKeyEnv:     testLabelValueEnvProduction,
 			}
 			Expect(k8sClient.Update(ctx, mc)).To(Succeed())
 
@@ -485,9 +485,9 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
 				Enabled: true,
 				ServiceMonitor: &memcachedv1beta1.ServiceMonitorSpec{
-					Interval: "15s",
+					Interval: testScrapeInterval15s,
 					AdditionalLabels: map[string]string{
-						"release": "prometheus",
+						testLabelKeyRelease: testLabelValueRelease,
 					},
 				},
 			}
@@ -505,7 +505,7 @@ var _ = Describe("ServiceMonitor Reconciliation", func() {
 			sts := fetchStatefulSet(mc)
 			Expect(sts.Spec.Template.Spec.Containers).To(HaveLen(2))
 			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
-			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{testPreStopCommandSleep, "10"}))
 			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
 			Expect(sts.Spec.Template.Spec.Affinity).NotTo(BeNil())
 			Expect(sts.Spec.Template.Spec.Affinity.PodAntiAffinity).NotTo(BeNil())

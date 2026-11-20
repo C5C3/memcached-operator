@@ -36,7 +36,7 @@ var _ = Describe("Memcached Controller", func() {
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "nonexistent-memcached",
-					Namespace: "default",
+					Namespace: testNamespaceDefault,
 				},
 			})
 
