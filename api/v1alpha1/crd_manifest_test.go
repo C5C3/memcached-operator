@@ -106,10 +106,33 @@ func TestCRDVersion(t *testing.T) {
 		}
 	})
 
+	t.Run("v1alpha1 is deprecated with a warning naming v1beta1", func(t *testing.T) {
+		v := findVersion(t, crd, "v1alpha1")
+		if !v.Deprecated {
+			t.Error("expected v1alpha1 to be deprecated")
+		}
+		if v.DeprecationWarning == nil {
+			t.Fatal("expected v1alpha1 to carry a deprecation warning")
+		}
+		if *v.DeprecationWarning != testDeprecationWarning {
+			t.Errorf("expected deprecation warning %q, got %q", testDeprecationWarning, *v.DeprecationWarning)
+		}
+	})
+
 	t.Run("v1beta1 exists and is served", func(t *testing.T) {
 		v := findVersion(t, crd, "v1beta1")
 		if !v.Served {
 			t.Error("expected v1beta1 to be served")
+		}
+	})
+
+	t.Run("v1beta1 is not deprecated", func(t *testing.T) {
+		v := findVersion(t, crd, "v1beta1")
+		if v.Deprecated {
+			t.Error("expected v1beta1 not to be deprecated")
+		}
+		if v.DeprecationWarning != nil {
+			t.Errorf("expected no deprecation warning on v1beta1, got %q", *v.DeprecationWarning)
 		}
 	})
 
