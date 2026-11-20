@@ -59,6 +59,7 @@
     "Dedup",
     "dorny",
     "deepcopy",
+    "deprecatedversion",
     "determ",
     "distroless",
     "dockerfile",
