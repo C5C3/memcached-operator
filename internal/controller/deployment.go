@@ -15,11 +15,14 @@ import (
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
 
+// memcachedAppName is the app.kubernetes.io/name label value of every Memcached pod.
+const memcachedAppName = "memcached"
+
 // labelsForMemcached returns the standard Kubernetes recommended labels for a Memcached resource.
 // These labels are used for selectors and must not include mutable fields like version.
 func labelsForMemcached(name string) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":       "memcached",
+		"app.kubernetes.io/name":       memcachedAppName,
 		"app.kubernetes.io/instance":   name,
 		"app.kubernetes.io/managed-by": "memcached-operator",
 	}
@@ -119,7 +122,7 @@ func buildAntiAffinity(mc *memcachedv1beta1.Memcached) *corev1.Affinity {
 
 	labelSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"app.kubernetes.io/name":     "memcached",
+			"app.kubernetes.io/name":     memcachedAppName,
 			"app.kubernetes.io/instance": mc.Name,
 		},
 	}
@@ -217,7 +220,7 @@ func buildExporterContainer(mc *memcachedv1beta1.Memcached) *corev1.Container {
 		Resources: resources,
 		Ports: []corev1.ContainerPort{
 			{
-				Name:          "metrics",
+				Name:          metricsPortName,
 				ContainerPort: PortMetrics,
 				Protocol:      corev1.ProtocolTCP,
 			},
@@ -277,6 +280,15 @@ const tlsMountPath = "/etc/memcached/tls"
 
 // tlsPortName is the name used for the TLS container and service port.
 const tlsPortName = "memcached-tls"
+
+// memcachedPortName is the name used for the memcached container and service port.
+const memcachedPortName = "memcached"
+
+// metricsPortName is the name used for the exporter container and metrics service port.
+const metricsPortName = "metrics"
+
+// memcachedContainerName is the name of the memcached container in the pod.
+const memcachedContainerName = "memcached"
 
 // Well-known port numbers used across Deployment, Service, NetworkPolicy, and ServiceMonitor.
 const (
@@ -435,7 +447,7 @@ func constructStatefulSet(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSe
 
 	ports := []corev1.ContainerPort{
 		{
-			Name:          "memcached",
+			Name:          memcachedPortName,
 			ContainerPort: PortMemcached,
 			Protocol:      corev1.ProtocolTCP,
 		},
@@ -449,7 +461,7 @@ func constructStatefulSet(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSe
 	}
 
 	memcachedContainer := corev1.Container{
-		Name:            "memcached",
+		Name:            memcachedContainerName,
 		Image:           image,
 		Args:            args,
 		Resources:       resources,
@@ -460,7 +472,7 @@ func constructStatefulSet(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSe
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				TCPSocket: &corev1.TCPSocketAction{
-					Port: intstr.FromString("memcached"),
+					Port: intstr.FromString(memcachedPortName),
 				},
 			},
 			InitialDelaySeconds: 10,
@@ -469,7 +481,7 @@ func constructStatefulSet(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSe
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				TCPSocket: &corev1.TCPSocketAction{
-					Port: intstr.FromString("memcached"),
+					Port: intstr.FromString(memcachedPortName),
 				},
 			},
 			InitialDelaySeconds: 5,
