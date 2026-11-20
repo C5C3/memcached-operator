@@ -8,6 +8,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 )
 
+const (
+	testNamespaceProduction = "production"
+	testFirstNamespace      = "ns1"
+	testSecondNamespace     = "ns2"
+)
+
 func TestBuildWebhookServer(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -76,41 +82,41 @@ func TestParseWatchNamespaces(t *testing.T) {
 		},
 		{
 			name:  "single namespace",
-			input: "production",
+			input: testNamespaceProduction,
 			expected: map[string]cache.Config{
-				"production": {},
+				testNamespaceProduction: {},
 			},
 		},
 		{
 			name:  "single namespace with whitespace",
 			input: " production ",
 			expected: map[string]cache.Config{
-				"production": {},
+				testNamespaceProduction: {},
 			},
 		},
 		{
 			name:  "multiple namespaces",
 			input: "ns1,ns2",
 			expected: map[string]cache.Config{
-				"ns1": {},
-				"ns2": {},
+				testFirstNamespace:  {},
+				testSecondNamespace: {},
 			},
 		},
 		{
 			name:  "multiple namespaces with whitespace",
 			input: " ns1 , ns2 , ns3 ",
 			expected: map[string]cache.Config{
-				"ns1": {},
-				"ns2": {},
-				"ns3": {},
+				testFirstNamespace:  {},
+				testSecondNamespace: {},
+				"ns3":               {},
 			},
 		},
 		{
 			name:  "trailing comma skips empty segment",
 			input: "ns1,ns2,",
 			expected: map[string]cache.Config{
-				"ns1": {},
-				"ns2": {},
+				testFirstNamespace:  {},
+				testSecondNamespace: {},
 			},
 		},
 	}
