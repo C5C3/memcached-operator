@@ -150,7 +150,7 @@ Deprecation timeline:
 | Phase                | Action                                                                                                                        |
 |----------------------|-------------------------------------------------------------------------------------------------------------------------------|
 | v0.2.0 to v0.6.0     | `v1beta1` is the storage version. `v1alpha1` remains served with automatic conversion.                                        |
-| Current              | `v1alpha1` is marked as `deprecated: true` in the CRD served-versions list. Clients receive a deprecation warning header.     |
+| v0.7.0               | `v1alpha1` is marked as `deprecated: true` in the CRD served-versions list. Clients receive a deprecation warning header.     |
 | Future major release | `v1alpha1` is removed from served versions. Existing stored objects are already in `v1beta1` format and require no migration. |
 
 ## Adding a New API Version
