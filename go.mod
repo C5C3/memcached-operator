@@ -1,6 +1,6 @@
 module github.com/c5c3/memcached-operator
 
-go 1.26.11
+go 1.27.4
 
 require (
 	github.com/google/uuid v1.6.0
