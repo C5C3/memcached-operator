@@ -105,7 +105,7 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecretName},
 				},
 				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
@@ -131,7 +131,7 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 			mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
 				TLS: &memcachedv1beta1.TLSSpec{
 					Enabled:              true,
-					CertificateSecretRef: corev1.LocalObjectReference{Name: "tls-secret"},
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecretName},
 				},
 				NetworkPolicy: &memcachedv1beta1.NetworkPolicySpec{Enabled: true},
 			}
@@ -160,7 +160,7 @@ var _ = Describe("NetworkPolicy Reconciliation", func() {
 					AllowedSources: []networkingv1.NetworkPolicyPeer{
 						{
 							NamespaceSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"env": "production"},
+								MatchLabels: map[string]string{testLabelKeyEnv: testLabelValueEnvProduction},
 							},
 						},
 					},

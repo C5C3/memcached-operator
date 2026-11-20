@@ -104,16 +104,16 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 
 			// Verify instance info gauge is set to 1 with the image label.
 			infoLabels := map[string]string{
-				"name":      mc.Name,
-				"namespace": mc.Namespace,
-				"image":     "memcached:1.6.29",
+				testMetricLabelName:      mc.Name,
+				testMetricLabelNamespace: mc.Namespace,
+				"image":                  "memcached:1.6.29",
 			}
 			Expect(gatherMetricValue("memcached_operator_instance_info", infoLabels)).To(Equal(float64(1)))
 
 			// Verify desired replicas gauge.
 			desiredLabels := map[string]string{
-				"name":      mc.Name,
-				"namespace": mc.Namespace,
+				testMetricLabelName:      mc.Name,
+				testMetricLabelNamespace: mc.Namespace,
 			}
 			Expect(gatherMetricValue("memcached_operator_instance_replicas_desired", desiredLabels)).To(Equal(float64(2)))
 
@@ -129,12 +129,12 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
 
 			stsCreatedBefore := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
-				"resource_kind": "StatefulSet",
-				"result":        "created",
+				testMetricLabelResourceKind: "StatefulSet",
+				testMetricLabelResult:       testMetricResultCreated,
 			})
 			svcCreatedBefore := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
-				"resource_kind": "Service",
-				"result":        "created",
+				testMetricLabelResourceKind: "Service",
+				testMetricLabelResult:       testMetricResultCreated,
 			})
 
 			r := newReconciler()
@@ -144,12 +144,12 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			stsCreatedAfter := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
-				"resource_kind": "StatefulSet",
-				"result":        "created",
+				testMetricLabelResourceKind: "StatefulSet",
+				testMetricLabelResult:       testMetricResultCreated,
 			})
 			svcCreatedAfter := gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
-				"resource_kind": "Service",
-				"result":        "created",
+				testMetricLabelResourceKind: "Service",
+				testMetricLabelResult:       testMetricResultCreated,
 			})
 
 			Expect(stsCreatedAfter).To(BeNumerically(">", stsCreatedBefore))
@@ -171,8 +171,8 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 
 			// Verify metrics exist before deletion.
 			labels := map[string]string{
-				"name":      mc.Name,
-				"namespace": mc.Namespace,
+				testMetricLabelName:      mc.Name,
+				testMetricLabelNamespace: mc.Namespace,
 			}
 			Expect(gatherMetricExists("memcached_operator_instance_replicas_desired", labels)).To(BeTrue())
 
@@ -215,8 +215,8 @@ var _ = Describe("Memcached Metrics Reconciliation", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Verify both have metrics.
-			labelsA := map[string]string{"name": mcA.Name, "namespace": mcA.Namespace}
-			labelsB := map[string]string{"name": mcB.Name, "namespace": mcB.Namespace}
+			labelsA := map[string]string{testMetricLabelName: mcA.Name, testMetricLabelNamespace: mcA.Namespace}
+			labelsB := map[string]string{testMetricLabelName: mcB.Name, testMetricLabelNamespace: mcB.Namespace}
 			Expect(gatherMetricExists("memcached_operator_instance_replicas_desired", labelsA)).To(BeTrue())
 			Expect(gatherMetricExists("memcached_operator_instance_replicas_desired", labelsB)).To(BeTrue())
 

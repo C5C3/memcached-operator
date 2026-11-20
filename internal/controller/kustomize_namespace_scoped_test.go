@@ -33,7 +33,7 @@ func TestKustomizeBuildNamespaceScoped_ManagerRolesAreNamespaceScoped(t *testing
 		expectedKind string
 		rejectedKind string
 	}{
-		{"manager-role is Role not ClusterRole", "manager-role", "Role", "ClusterRole"},
+		{"manager-role is Role not ClusterRole", "manager-role", "Role", testKindClusterRole},
 		{"manager-rolebinding is RoleBinding not ClusterRoleBinding", "manager-rolebinding", "RoleBinding", "ClusterRoleBinding"},
 	}
 
@@ -61,8 +61,8 @@ func TestKustomizeBuildNamespaceScoped_MetricsRolesRemainClusterScoped(t *testin
 		resourceName string
 		expectedKind string
 	}{
-		{"metrics-auth-role stays ClusterRole", "metrics-auth-role", "ClusterRole"},
-		{"metrics-reader stays ClusterRole", "metrics-reader", "ClusterRole"},
+		{"metrics-auth-role stays ClusterRole", "metrics-auth-role", testKindClusterRole},
+		{"metrics-reader stays ClusterRole", "metrics-reader", testKindClusterRole},
 		{"metrics-auth-rolebinding stays ClusterRoleBinding", "metrics-auth-rolebinding", "ClusterRoleBinding"},
 	}
 

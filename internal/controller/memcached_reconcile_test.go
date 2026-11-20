@@ -37,7 +37,7 @@ var _ = Describe("Memcached Reconcile", func() {
 			result, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKey{
 					Name:      "does-not-exist",
-					Namespace: "default",
+					Namespace: testNamespaceDefault,
 				},
 			})
 
@@ -78,7 +78,7 @@ var _ = Describe("Memcached Reconcile", func() {
 			result, err := r.Reconcile(ctx, ctrl.Request{
 				NamespacedName: client.ObjectKey{
 					Name:      "any-name",
-					Namespace: "default",
+					Namespace: testNamespaceDefault,
 				},
 			})
 

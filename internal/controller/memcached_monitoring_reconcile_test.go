@@ -358,7 +358,7 @@ var _ = Describe("Monitoring Reconciliation", func() {
 
 			// Graceful shutdown: preStop hook on memcached container.
 			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle).NotTo(BeNil())
-			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{"sleep", "10"}))
+			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle.PreStop.Exec.Command).To(Equal([]string{testPreStopCommandSleep, "10"}))
 			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
 
 			// Anti-affinity.

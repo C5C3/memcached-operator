@@ -92,7 +92,7 @@ var _ = Describe("CRD Installation: Status Subresource Isolation", func() {
 			fetched.Status.ReadyReplicas = 1
 			fetched.Status.Conditions = []metav1.Condition{
 				{
-					Type:               "Available",
+					Type:               testConditionTypeAvailable,
 					Status:             metav1.ConditionTrue,
 					ObservedGeneration: genAfterCreate,
 					LastTransitionTime: metav1.Now(),
