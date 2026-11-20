@@ -26,9 +26,9 @@ func constructService(mc *memcachedv1beta1.Memcached, svc *corev1.Service) {
 	svc.Spec.Selector = labels
 	ports := []corev1.ServicePort{
 		{
-			Name:       "memcached",
+			Name:       memcachedPortName,
 			Port:       PortMemcached,
-			TargetPort: intstr.FromString("memcached"),
+			TargetPort: intstr.FromString(memcachedPortName),
 			Protocol:   corev1.ProtocolTCP,
 		},
 	}
@@ -44,9 +44,9 @@ func constructService(mc *memcachedv1beta1.Memcached, svc *corev1.Service) {
 
 	if mc.IsMonitoringEnabled() {
 		ports = append(ports, corev1.ServicePort{
-			Name:       "metrics",
+			Name:       metricsPortName,
 			Port:       PortMetrics,
-			TargetPort: intstr.FromString("metrics"),
+			TargetPort: intstr.FromString(metricsPortName),
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}

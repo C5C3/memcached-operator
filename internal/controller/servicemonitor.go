@@ -51,7 +51,7 @@ func constructServiceMonitor(mc *memcachedv1beta1.Memcached, sm *monitoringv1.Se
 
 	sm.Spec.Endpoints = []monitoringv1.Endpoint{
 		{
-			Port:          "metrics",
+			Port:          metricsPortName,
 			Interval:      interval,
 			ScrapeTimeout: scrapeTimeout,
 		},
