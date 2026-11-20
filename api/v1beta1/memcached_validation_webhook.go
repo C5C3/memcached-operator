@@ -4,6 +4,7 @@ package v1beta1
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
@@ -48,13 +49,13 @@ func (v *MemcachedCustomValidator) ValidateDelete(_ context.Context, _ *Memcache
 
 // validateMemcached runs all validation rules and aggregates field errors.
 func validateMemcached(mc *Memcached) error {
-	var allErrs field.ErrorList
-
-	allErrs = append(allErrs, validateMemoryLimit(mc)...)
-	allErrs = append(allErrs, validatePDB(mc)...)
-	allErrs = append(allErrs, validateGracefulShutdown(mc)...)
-	allErrs = append(allErrs, validateSecuritySecretRefs(mc)...)
-	allErrs = append(allErrs, validateAutoscaling(mc)...)
+	allErrs := slices.Concat(
+		validateMemoryLimit(mc),
+		validatePDB(mc),
+		validateGracefulShutdown(mc),
+		validateSecuritySecretRefs(mc),
+		validateAutoscaling(mc),
+	)
 
 	if len(allErrs) == 0 {
 		return nil
