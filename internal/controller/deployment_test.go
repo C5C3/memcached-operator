@@ -3714,3 +3714,180 @@ func TestConstructStatefulSet_StatefulSetSpec(t *testing.T) {
 		})
 	}
 }
+
+func TestSetStatefulSetServerDefaults_FillsEmptyFields(t *testing.T) {
+	mc := &memcachedv1beta1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "defaults-empty", Namespace: testDefaultNamespace},
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Monitoring: &memcachedv1beta1.MonitoringSpec{Enabled: true},
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
+					Enabled:              true,
+					CredentialsSecretRef: corev1.LocalObjectReference{Name: testSASLSecret},
+				},
+				TLS: &memcachedv1beta1.TLSSpec{
+					Enabled:              true,
+					CertificateSecretRef: corev1.LocalObjectReference{Name: testTLSSecret},
+				},
+			},
+		},
+	}
+	sts := &appsv1.StatefulSet{}
+	constructStatefulSet(mc, sts, "", "")
+
+	setStatefulSetServerDefaults(sts, nil)
+
+	if got := sts.Spec.RevisionHistoryLimit; got == nil || *got != 10 {
+		t.Errorf("RevisionHistoryLimit = %v, want 10", got)
+	}
+	wantRetention := &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+		WhenDeleted: appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+		WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+	}
+	if got := sts.Spec.PersistentVolumeClaimRetentionPolicy; !reflect.DeepEqual(got, wantRetention) {
+		t.Errorf("PersistentVolumeClaimRetentionPolicy = %+v, want %+v", got, wantRetention)
+	}
+	if sts.Spec.UpdateStrategy.RollingUpdate != nil {
+		t.Errorf("UpdateStrategy.RollingUpdate = %+v, want nil", sts.Spec.UpdateStrategy.RollingUpdate)
+	}
+
+	podSpec := sts.Spec.Template.Spec
+	if podSpec.RestartPolicy != corev1.RestartPolicyAlways {
+		t.Errorf("RestartPolicy = %q, want %q", podSpec.RestartPolicy, corev1.RestartPolicyAlways)
+	}
+	if podSpec.DNSPolicy != corev1.DNSClusterFirst {
+		t.Errorf("DNSPolicy = %q, want %q", podSpec.DNSPolicy, corev1.DNSClusterFirst)
+	}
+	if podSpec.SchedulerName != corev1.DefaultSchedulerName {
+		t.Errorf("SchedulerName = %q, want %q", podSpec.SchedulerName, corev1.DefaultSchedulerName)
+	}
+	if got := podSpec.TerminationGracePeriodSeconds; got == nil || *got != 30 {
+		t.Errorf("TerminationGracePeriodSeconds = %v, want 30", got)
+	}
+	if got := podSpec.SecurityContext; !reflect.DeepEqual(got, &corev1.PodSecurityContext{}) {
+		t.Errorf("SecurityContext = %+v, want an empty PodSecurityContext", got)
+	}
+
+	if len(podSpec.Containers) != 2 {
+		t.Fatalf("expected the memcached and exporter containers, got %d", len(podSpec.Containers))
+	}
+	for _, c := range podSpec.Containers {
+		if c.TerminationMessagePath != corev1.TerminationMessagePathDefault {
+			t.Errorf("container %q TerminationMessagePath = %q, want %q", c.Name, c.TerminationMessagePath, corev1.TerminationMessagePathDefault)
+		}
+		if c.TerminationMessagePolicy != corev1.TerminationMessageReadFile {
+			t.Errorf("container %q TerminationMessagePolicy = %q, want %q", c.Name, c.TerminationMessagePolicy, corev1.TerminationMessageReadFile)
+		}
+		if c.ImagePullPolicy != "" {
+			t.Errorf("container %q ImagePullPolicy = %q, want empty without a stored container", c.Name, c.ImagePullPolicy)
+		}
+	}
+	for name, probe := range map[string]*corev1.Probe{
+		"liveness":  podSpec.Containers[0].LivenessProbe,
+		"readiness": podSpec.Containers[0].ReadinessProbe,
+	} {
+		if probe.TimeoutSeconds != 1 || probe.SuccessThreshold != 1 || probe.FailureThreshold != 3 {
+			t.Errorf("%s probe timeout/success/failure = %d/%d/%d, want 1/1/3",
+				name, probe.TimeoutSeconds, probe.SuccessThreshold, probe.FailureThreshold)
+		}
+	}
+
+	if len(podSpec.Volumes) != 2 {
+		t.Fatalf("expected the SASL and TLS volumes, got %d", len(podSpec.Volumes))
+	}
+	for _, v := range podSpec.Volumes {
+		if got := v.Secret.DefaultMode; got == nil || *got != corev1.SecretVolumeSourceDefaultMode {
+			t.Errorf("volume %q DefaultMode = %v, want %o", v.Name, got, corev1.SecretVolumeSourceDefaultMode)
+		}
+	}
+}
+
+func TestSetStatefulSetServerDefaults_KeepsSetFields(t *testing.T) {
+	runAsNonRoot := true
+	podSecurityContext := &corev1.PodSecurityContext{RunAsNonRoot: &runAsNonRoot}
+	mc := &memcachedv1beta1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "defaults-set", Namespace: testDefaultNamespace},
+		Spec: memcachedv1beta1.MemcachedSpec{
+			HighAvailability: &memcachedv1beta1.HighAvailabilitySpec{
+				GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
+					Enabled:                       true,
+					PreStopDelaySeconds:           5,
+					TerminationGracePeriodSeconds: 45,
+				},
+			},
+			Security: &memcachedv1beta1.SecuritySpec{PodSecurityContext: podSecurityContext},
+		},
+	}
+	sts := &appsv1.StatefulSet{}
+	constructStatefulSet(mc, sts, "", "")
+	revisionHistoryLimit := int32(3)
+	sts.Spec.RevisionHistoryLimit = &revisionHistoryLimit
+
+	setStatefulSetServerDefaults(sts, nil)
+
+	if got := *sts.Spec.RevisionHistoryLimit; got != 3 {
+		t.Errorf("RevisionHistoryLimit = %d, want the set value 3", got)
+	}
+	if got := sts.Spec.Template.Spec.TerminationGracePeriodSeconds; got == nil || *got != 45 {
+		t.Errorf("TerminationGracePeriodSeconds = %v, want the CR's 45", got)
+	}
+	if got := sts.Spec.Template.Spec.SecurityContext; !reflect.DeepEqual(got, &corev1.PodSecurityContext{RunAsNonRoot: &runAsNonRoot}) {
+		t.Errorf("SecurityContext = %+v, want the CR's pod security context", got)
+	}
+	if !reflect.DeepEqual(mc.Spec.Security.PodSecurityContext, &corev1.PodSecurityContext{RunAsNonRoot: &runAsNonRoot}) {
+		t.Errorf("the CR's pod security context changed to %+v", mc.Spec.Security.PodSecurityContext)
+	}
+	container := sts.Spec.Template.Spec.Containers[0]
+	if got := container.LivenessProbe.PeriodSeconds; got != 10 {
+		t.Errorf("liveness PeriodSeconds = %d, want the built 10", got)
+	}
+	if got := container.ReadinessProbe.PeriodSeconds; got != 5 {
+		t.Errorf("readiness PeriodSeconds = %d, want the built 5", got)
+	}
+}
+
+func TestSetStatefulSetServerDefaults_ImagePullPolicy(t *testing.T) {
+	const otherImage = "memcached:1.6.29"
+	tests := []struct {
+		name   string
+		stored []corev1.Container
+		want   corev1.PullPolicy
+	}{
+		{
+			name:   "same name and image keeps the stored policy",
+			stored: []corev1.Container{{Name: memcachedContainerName, Image: testDefaultImage, ImagePullPolicy: corev1.PullAlways}},
+			want:   corev1.PullAlways,
+		},
+		{
+			name:   "changed image leaves the policy to the API server",
+			stored: []corev1.Container{{Name: memcachedContainerName, Image: otherImage, ImagePullPolicy: corev1.PullAlways}},
+			want:   "",
+		},
+		{
+			name:   "other container name leaves the policy to the API server",
+			stored: []corev1.Container{{Name: testExporterContainer, Image: testDefaultImage, ImagePullPolicy: corev1.PullAlways}},
+			want:   "",
+		},
+		{
+			name:   "no stored container leaves the policy to the API server",
+			stored: nil,
+			want:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := &memcachedv1beta1.Memcached{
+				ObjectMeta: metav1.ObjectMeta{Name: "defaults-pull", Namespace: testDefaultNamespace},
+			}
+			sts := &appsv1.StatefulSet{}
+			constructStatefulSet(mc, sts, "", "")
+
+			setStatefulSetServerDefaults(sts, tt.stored)
+
+			if got := sts.Spec.Template.Spec.Containers[0].ImagePullPolicy; got != tt.want {
+				t.Errorf("ImagePullPolicy = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

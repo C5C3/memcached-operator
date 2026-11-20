@@ -533,6 +533,106 @@ func constructStatefulSet(mc *memcachedv1beta1.Memcached, sts *appsv1.StatefulSe
 	}
 }
 
+// defaultRevisionHistoryLimit is the revisionHistoryLimit the API server stores for a
+// StatefulSet that sets none.
+const defaultRevisionHistoryLimit int32 = 10
+
+// Probe fields the API server stores for a probe that sets none.
+const (
+	defaultProbeTimeoutSeconds   int32 = 1
+	defaultProbePeriodSeconds    int32 = 10
+	defaultProbeSuccessThreshold int32 = 1
+	defaultProbeFailureThreshold int32 = 3
+)
+
+// setStatefulSetServerDefaults fills the fields of sts that the API server defaults with the
+// values it stores, where constructStatefulSet left them empty. A StatefulSet that has been through
+// it compares equal to the stored one when nothing changed, so CreateOrUpdate sends no update.
+// storedContainers are the containers of the stored StatefulSet: a container keeps the image pull
+// policy the API server chose for it while its image is unchanged. With a new image it gets none,
+// so the API server chooses again.
+func setStatefulSetServerDefaults(sts *appsv1.StatefulSet, storedContainers []corev1.Container) {
+	if sts.Spec.RevisionHistoryLimit == nil {
+		limit := defaultRevisionHistoryLimit
+		sts.Spec.RevisionHistoryLimit = &limit
+	}
+	if sts.Spec.PersistentVolumeClaimRetentionPolicy == nil {
+		sts.Spec.PersistentVolumeClaimRetentionPolicy = &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+			WhenDeleted: appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+			WhenScaled:  appsv1.RetainPersistentVolumeClaimRetentionPolicyType,
+		}
+	}
+
+	podSpec := &sts.Spec.Template.Spec
+	if podSpec.RestartPolicy == "" {
+		podSpec.RestartPolicy = corev1.RestartPolicyAlways
+	}
+	if podSpec.DNSPolicy == "" {
+		podSpec.DNSPolicy = corev1.DNSClusterFirst
+	}
+	if podSpec.SchedulerName == "" {
+		podSpec.SchedulerName = corev1.DefaultSchedulerName
+	}
+	if podSpec.TerminationGracePeriodSeconds == nil {
+		gracePeriod := int64(corev1.DefaultTerminationGracePeriodSeconds)
+		podSpec.TerminationGracePeriodSeconds = &gracePeriod
+	}
+	if podSpec.SecurityContext == nil {
+		podSpec.SecurityContext = &corev1.PodSecurityContext{}
+	}
+	for i := range podSpec.Containers {
+		setContainerServerDefaults(&podSpec.Containers[i], storedContainers)
+	}
+	for i := range podSpec.Volumes {
+		if secret := podSpec.Volumes[i].Secret; secret != nil && secret.DefaultMode == nil {
+			mode := corev1.SecretVolumeSourceDefaultMode
+			secret.DefaultMode = &mode
+		}
+	}
+}
+
+// setContainerServerDefaults fills the fields of container that the API server defaults, as
+// setStatefulSetServerDefaults describes.
+func setContainerServerDefaults(container *corev1.Container, storedContainers []corev1.Container) {
+	if container.TerminationMessagePath == "" {
+		container.TerminationMessagePath = corev1.TerminationMessagePathDefault
+	}
+	if container.TerminationMessagePolicy == "" {
+		container.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+	}
+	if container.ImagePullPolicy == "" {
+		for _, stored := range storedContainers {
+			if stored.Name == container.Name && stored.Image == container.Image {
+				container.ImagePullPolicy = stored.ImagePullPolicy
+				break
+			}
+		}
+	}
+	setProbeServerDefaults(container.LivenessProbe)
+	setProbeServerDefaults(container.ReadinessProbe)
+	setProbeServerDefaults(container.StartupProbe)
+}
+
+// setProbeServerDefaults fills the fields of probe that the API server defaults. It leaves a nil
+// probe alone.
+func setProbeServerDefaults(probe *corev1.Probe) {
+	if probe == nil {
+		return
+	}
+	if probe.TimeoutSeconds == 0 {
+		probe.TimeoutSeconds = defaultProbeTimeoutSeconds
+	}
+	if probe.PeriodSeconds == 0 {
+		probe.PeriodSeconds = defaultProbePeriodSeconds
+	}
+	if probe.SuccessThreshold == 0 {
+		probe.SuccessThreshold = defaultProbeSuccessThreshold
+	}
+	if probe.FailureThreshold == 0 {
+		probe.FailureThreshold = defaultProbeFailureThreshold
+	}
+}
+
 // buildPodAnnotations returns Pod template annotations for secret-hash and restart-trigger.
 // Returns nil if both values are empty.
 func buildPodAnnotations(secretHash, restartTrigger string) map[string]string {

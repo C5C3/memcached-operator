@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1046,8 +1047,8 @@ var _ = Describe("StatefulSet Reconciliation", func() {
 
 			sts = fetchStatefulSet(mc)
 			Expect(sts.Spec.Template.Spec.Containers[0].Lifecycle).To(BeNil())
-			// When graceful shutdown is disabled, terminationGracePeriodSeconds is set to nil
-			// by the controller, but the Kubernetes API server applies its default of 30.
+			// When graceful shutdown is disabled, the controller writes the Kubernetes API
+			// server's default terminationGracePeriodSeconds of 30.
 			// Verify the controller is not setting a custom value.
 			Expect(sts.Spec.Template.Spec.TerminationGracePeriodSeconds).NotTo(BeNil())
 			Expect(*sts.Spec.Template.Spec.TerminationGracePeriodSeconds).To(Equal(int64(30)))
@@ -1303,5 +1304,157 @@ var _ = Describe("StatefulSet naming and legacy Deployment migration", func() {
 			}
 			fetchStatefulSet(mc)
 		})
+	})
+})
+
+// recordingReconciler returns a reconciler that records its events in recorder.
+func recordingReconciler(recorder *events.FakeRecorder) *controller.MemcachedReconciler {
+	return &controller.MemcachedReconciler{
+		Client:   k8sClient,
+		Scheme:   scheme.Scheme,
+		Recorder: recorder,
+	}
+}
+
+// takeEvents returns the events recorder holds and empties it.
+func takeEvents(recorder *events.FakeRecorder) []string {
+	var got []string
+	for {
+		select {
+		case e := <-recorder.Events:
+			got = append(got, e)
+		default:
+			return got
+		}
+	}
+}
+
+// statefulSetResultCount returns the per-resource reconcile counter of the StatefulSet kind for result.
+func statefulSetResultCount(result string) float64 {
+	return gatherMetricValue("memcached_operator_reconcile_resource_total", map[string]string{
+		testMetricLabelResourceKind: testResourceKindStatefulSet,
+		testMetricLabelResult:       result,
+	})
+}
+
+// fullyFeaturedMemcached creates the SASL and TLS Secrets for a Memcached named name and returns
+// a Memcached that sets every field the StatefulSet pod template is built from.
+func fullyFeaturedMemcached(name string) *memcachedv1beta1.Memcached {
+	saslSecret := newSASLSecret(name+"-sasl", "user:password")
+	tlsSecret := newTLSSecret(name + "-tls")
+	tlsSecret.Data["ca.crt"] = []byte("ca-data")
+	Expect(k8sClient.Create(ctx, saslSecret)).To(Succeed())
+	Expect(k8sClient.Create(ctx, tlsSecret)).To(Succeed())
+
+	soft := memcachedv1beta1.AntiAffinityPresetSoft
+	runAsNonRoot := true
+	readOnlyRootFilesystem := true
+	runAsUser := int64(1000)
+	fsGroup := int64(1000)
+
+	mc := validMemcached(name)
+	mc.Annotations = map[string]string{controller.AnnotationRestartTrigger: testRestartTriggerTimestamp}
+	mc.Spec.Replicas = int32Ptr(3)
+	mc.Spec.Image = strPtr("memcached:1.6.29")
+	mc.Spec.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("100m"),
+			corev1.ResourceMemory: resource.MustParse("128Mi"),
+		},
+		Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("256Mi"),
+		},
+	}
+	mc.Spec.Memcached = &memcachedv1beta1.MemcachedConfig{
+		MaxMemoryMB: 128,
+		Verbosity:   1,
+		ExtraArgs:   []string{"-o", testExtraArgModern},
+	}
+	mc.Spec.HighAvailability = &memcachedv1beta1.HighAvailabilitySpec{
+		AntiAffinityPreset:        &soft,
+		TopologySpreadConstraints: []corev1.TopologySpreadConstraint{zoneSpreadConstraint()},
+		GracefulShutdown: &memcachedv1beta1.GracefulShutdownSpec{
+			Enabled:                       true,
+			PreStopDelaySeconds:           5,
+			TerminationGracePeriodSeconds: 45,
+		},
+	}
+	mc.Spec.Monitoring = &memcachedv1beta1.MonitoringSpec{
+		Enabled: true,
+		ExporterResources: &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("64Mi")},
+		},
+	}
+	mc.Spec.Security = &memcachedv1beta1.SecuritySpec{
+		PodSecurityContext: &corev1.PodSecurityContext{
+			RunAsNonRoot: &runAsNonRoot,
+			FSGroup:      &fsGroup,
+		},
+		ContainerSecurityContext: &corev1.SecurityContext{
+			RunAsUser:              &runAsUser,
+			ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
+		},
+		SASL: saslSpec(saslSecret.Name),
+		TLS: &memcachedv1beta1.TLSSpec{
+			Enabled:              true,
+			CertificateSecretRef: corev1.LocalObjectReference{Name: tlsSecret.Name},
+			EnableClientCert:     true,
+		},
+	}
+	return mc
+}
+
+var _ = Describe("StatefulSet reconcile result for an unchanged instance", func() {
+
+	DescribeTable("should report the StatefulSet as unchanged on the second reconcile",
+		func(newMemcached func(name string) *memcachedv1beta1.Memcached) {
+			mc := newMemcached(uniqueName("sts-unchanged"))
+			Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+			recorder := events.NewFakeRecorder(100)
+			r := recordingReconciler(recorder)
+			req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(mc)}
+
+			_, err := r.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(takeEvents(recorder)).To(ContainElement(ContainSubstring("Created StatefulSet")))
+
+			resourceVersion := fetchStatefulSet(mc).ResourceVersion
+			updatedBefore := statefulSetResultCount(testMetricResultUpdated)
+			unchangedBefore := statefulSetResultCount(testMetricResultUnchanged)
+
+			_, err = r.Reconcile(ctx, req)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(takeEvents(recorder)).NotTo(ContainElement(ContainSubstring("Updated StatefulSet")))
+			Expect(statefulSetResultCount(testMetricResultUpdated)).To(Equal(updatedBefore))
+			Expect(statefulSetResultCount(testMetricResultUnchanged)).To(Equal(unchangedBefore + 1))
+			Expect(fetchStatefulSet(mc).ResourceVersion).To(Equal(resourceVersion))
+		},
+		Entry("default spec", validMemcached),
+		Entry("every pod template feature", fullyFeaturedMemcached),
+		Entry("untagged image", func(name string) *memcachedv1beta1.Memcached {
+			mc := validMemcached(name)
+			mc.Spec.Image = strPtr("memcached")
+			return mc
+		}),
+	)
+
+	It("should let the API server choose the image pull policy again when the image changes", func() {
+		mc := validMemcached(uniqueName("sts-pull-policy"))
+		mc.Spec.Image = strPtr("memcached:1.6")
+		Expect(k8sClient.Create(ctx, mc)).To(Succeed())
+
+		_, err := reconcileOnce(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(fetchStatefulSet(mc).Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
+
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(mc), mc)).To(Succeed())
+		mc.Spec.Image = strPtr("memcached:latest")
+		Expect(k8sClient.Update(ctx, mc)).To(Succeed())
+
+		_, err = reconcileOnce(mc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(fetchStatefulSet(mc).Spec.Template.Spec.Containers[0].ImagePullPolicy).To(Equal(corev1.PullAlways))
 	})
 })
