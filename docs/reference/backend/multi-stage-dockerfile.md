@@ -25,7 +25,7 @@ and OCI-labeled image with no manual intervention.
 
 | Property      | Value                                       |
 |---------------|---------------------------------------------|
-| Base image    | `golang:1.25`                               |
+| Base image    | `golang:1.27.4`                             |
 | `CGO_ENABLED` | `0` (static binary, no libc dependency)     |
 | `GOOS`        | `${TARGETOS:-linux}`                        |
 | `GOARCH`      | `${TARGETARCH}`                             |
