@@ -80,11 +80,11 @@ func TestCRDMetadata(t *testing.T) {
 		{"apiVersion", crd.APIVersion, "apiextensions.k8s.io/v1"},
 		{"kind", crd.Kind, "CustomResourceDefinition"},
 		{"metadata.name", crd.Name, "memcacheds.memcached.c5c3.io"},
-		{"spec.group", crd.Spec.Group, "memcached.c5c3.io"},
-		{"spec.names.kind", crd.Spec.Names.Kind, "Memcached"},
-		{"spec.names.listKind", crd.Spec.Names.ListKind, "MemcachedList"},
+		{"spec.group", crd.Spec.Group, testAPIGroup},
+		{"spec.names.kind", crd.Spec.Names.Kind, testKindMemcached},
+		{"spec.names.listKind", crd.Spec.Names.ListKind, testKindMemcachedList},
 		{"spec.names.plural", crd.Spec.Names.Plural, "memcacheds"},
-		{"spec.names.singular", crd.Spec.Names.Singular, "memcached"},
+		{"spec.names.singular", crd.Spec.Names.Singular, testCRDSingularName},
 		{"spec.scope", string(crd.Spec.Scope), "Namespaced"},
 	}
 	for _, tt := range tests {
@@ -162,7 +162,7 @@ func TestCRDPrinterColumns(t *testing.T) {
 		colType  string
 	}{
 		{"Replicas", ".spec.replicas", "integer"},
-		{"Ready", ".status.readyReplicas", "integer"},
+		{testPrinterColumnReady, ".status.readyReplicas", "integer"},
 		{"Age", ".metadata.creationTimestamp", "date"},
 	}
 
@@ -187,7 +187,7 @@ func TestCRDSchemaTopLevelProperties(t *testing.T) {
 	schema := getVersionSchema(t, crd)
 
 	t.Run("spec and status exist", func(t *testing.T) {
-		for _, prop := range []string{"spec", "status"} {
+		for _, prop := range []string{testPropertySpec, "status"} {
 			if _, ok := schema.Properties[prop]; !ok {
 				t.Errorf("top-level property %q not found", prop)
 			}
@@ -197,7 +197,7 @@ func TestCRDSchemaTopLevelProperties(t *testing.T) {
 	t.Run("spec properties", func(t *testing.T) {
 		specSchema := getNestedProperty(t, schema, "spec")
 		expectedProps := []string{
-			"replicas", "image", "resources", "memcached",
+			"replicas", "image", "resources", testPropertyMemcached,
 			"highAvailability", "monitoring", "security",
 		}
 		for _, prop := range expectedProps {
@@ -321,12 +321,12 @@ func TestCRDSchemaDefaultValues(t *testing.T) {
 		path         []string
 		expectedJSON string
 	}{
-		{"spec.image default=memcached:1.6", []string{"spec", "image"}, `"memcached:1.6"`},
-		{"spec.memcached.maxMemoryMB default=64", []string{"spec", "memcached", "maxMemoryMB"}, "64"},
-		{"spec.memcached.maxConnections default=1024", []string{"spec", "memcached", "maxConnections"}, "1024"},
-		{"spec.memcached.threads default=4", []string{"spec", "memcached", "threads"}, "4"},
-		{"spec.memcached.maxItemSize default=1m", []string{"spec", "memcached", "maxItemSize"}, `"1m"`},
-		{"spec.memcached.verbosity default=0", []string{"spec", "memcached", "verbosity"}, "0"},
+		{"spec.image default=memcached:1.6", []string{testPropertySpec, "image"}, `"memcached:1.6"`},
+		{"spec.memcached.maxMemoryMB default=64", []string{testPropertySpec, testPropertyMemcached, "maxMemoryMB"}, "64"},
+		{"spec.memcached.maxConnections default=1024", []string{testPropertySpec, testPropertyMemcached, "maxConnections"}, "1024"},
+		{"spec.memcached.threads default=4", []string{testPropertySpec, testPropertyMemcached, "threads"}, "4"},
+		{"spec.memcached.maxItemSize default=1m", []string{testPropertySpec, testPropertyMemcached, "maxItemSize"}, `"1m"`},
+		{"spec.memcached.verbosity default=0", []string{testPropertySpec, testPropertyMemcached, "verbosity"}, "0"},
 	}
 
 	for _, tt := range tests {

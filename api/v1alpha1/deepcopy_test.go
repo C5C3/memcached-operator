@@ -17,13 +17,13 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 
 	original := &Memcached{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "memcached.c5c3.io/v1alpha1",
-			Kind:       "Memcached",
+			APIVersion: testAPIVersion,
+			Kind:       testKindMemcached,
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "test-mc",
-			Namespace:   "default",
-			Labels:      map[string]string{"app": "memcached"},
+			Name:        testObjectName,
+			Namespace:   testNamespaceDefault,
+			Labels:      map[string]string{testLabelKeyApp: testLabelValueApp},
 			Annotations: map[string]string{"note": "original"},
 		},
 		Spec: MemcachedSpec{
@@ -31,20 +31,20 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 			Image:    &image,
 			Memcached: &MemcachedConfig{
 				MaxMemoryMB: 64,
-				ExtraArgs:   []string{"-o", "modern"},
+				ExtraArgs:   []string{"-o", testExtraArgModern},
 			},
 		},
 		Status: MemcachedStatus{
 			Conditions: []metav1.Condition{
 				{
-					Type:   "Available",
+					Type:   testConditionTypeAvailable,
 					Status: metav1.ConditionTrue,
-					Reason: "Ready",
+					Reason: testConditionReasonReady,
 				},
 			},
 			ReadyReplicas:      3,
 			ObservedGeneration: 1,
-			ServerList:         []string{"10.244.0.5:11211", "10.244.0.6:11211"},
+			ServerList:         []string{testServerAddress, "10.244.0.6:11211"},
 		},
 	}
 
@@ -57,7 +57,7 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 
 	// Mutate Labels in original.
 	original.Labels["app"] = testMutatedValue
-	if clone.Labels["app"] != "memcached" {
+	if clone.Labels["app"] != testLabelValueApp {
 		t.Error("clone Labels were affected by mutating original Labels")
 	}
 
@@ -87,7 +87,7 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 
 	// Mutate Conditions slice in original.
 	original.Status.Conditions[0].Reason = "NotReady"
-	if clone.Status.Conditions[0].Reason != "Ready" {
+	if clone.Status.Conditions[0].Reason != testConditionReasonReady {
 		t.Error("clone Status.Conditions was affected by mutating original")
 	}
 
@@ -104,7 +104,7 @@ func TestMemcachedDeepCopy_Independence(t *testing.T) {
 
 	// Mutate ServerList slice in original.
 	original.Status.ServerList[0] = "changed:11211"
-	if clone.Status.ServerList[0] != "10.244.0.5:11211" {
+	if clone.Status.ServerList[0] != testServerAddress {
 		t.Error("clone Status.ServerList was affected by mutating original")
 	}
 }
@@ -113,8 +113,8 @@ func TestMemcachedDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	replicas := int32(2)
 	original := &Memcached{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-mc",
-			Namespace: "default",
+			Name:      testObjectName,
+			Namespace: testNamespaceDefault,
 		},
 		Spec: MemcachedSpec{
 			Replicas: &replicas,
@@ -134,10 +134,10 @@ func TestMemcachedDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	}
 
 	// Verify fields match.
-	if mc.Name != "test-mc" {
+	if mc.Name != testObjectName {
 		t.Errorf("expected Name=test-mc, got %s", mc.Name)
 	}
-	if mc.Namespace != "default" {
+	if mc.Namespace != testNamespaceDefault {
 		t.Errorf("expected Namespace=default, got %s", mc.Namespace)
 	}
 	if *mc.Spec.Replicas != 2 {
@@ -156,13 +156,13 @@ func TestMemcachedDeepCopy_NilReceiver(t *testing.T) {
 func TestMemcachedListDeepCopy_Independence(t *testing.T) {
 	original := &MemcachedList{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: "memcached.c5c3.io/v1alpha1",
-			Kind:       "MemcachedList",
+			APIVersion: testAPIVersion,
+			Kind:       testKindMemcachedList,
 		},
 		Items: []Memcached{
 			{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "mc-0",
+					Name:   testListItemName,
 					Labels: map[string]string{"index": "0"},
 				},
 			},
@@ -210,7 +210,7 @@ func TestMemcachedListDeepCopy_Independence(t *testing.T) {
 func TestMemcachedListDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	original := &MemcachedList{
 		Items: []Memcached{
-			{ObjectMeta: metav1.ObjectMeta{Name: "mc-0"}},
+			{ObjectMeta: metav1.ObjectMeta{Name: testListItemName}},
 		},
 	}
 
@@ -230,7 +230,7 @@ func TestMemcachedListDeepCopyObject_ReturnsRuntimeObject(t *testing.T) {
 	if len(ml.Items) != 1 {
 		t.Fatalf("expected 1 item, got %d", len(ml.Items))
 	}
-	if ml.Items[0].Name != "mc-0" {
+	if ml.Items[0].Name != testListItemName {
 		t.Errorf("expected item Name=mc-0, got %s", ml.Items[0].Name)
 	}
 }
