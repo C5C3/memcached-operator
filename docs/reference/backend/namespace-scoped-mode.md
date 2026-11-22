@@ -70,17 +70,20 @@ manager --watch-namespaces=" ns1 , ns2 "
 
 ### Startup Logging
 
-When namespaces are specified, the operator logs:
+When namespaces are specified, the operator logs them in sorted order:
 
-```text
-INFO  setup  watching namespaces  {"namespaces": ["staging", "production"]}
+```json
+{"level":"info","ts":"2026-11-22T14:47:04Z","logger":"setup","msg":"watching namespaces","namespaces":["production","staging"]}
 ```
 
 When no namespaces are specified:
 
-```text
-INFO  setup  watching all namespaces
+```json
+{"level":"info","ts":"2026-11-22T14:47:04Z","logger":"setup","msg":"watching all namespaces"}
 ```
+
+With `--zap-devel`, which `make run` passes, the same lines are tab-separated
+console lines (see [Operator Logging](operator-logging.md)).
 
 ---
 

@@ -76,6 +76,7 @@ The manager container runs `/manager` with the following arguments:
 | `--metrics-bind-address=:8443`      | Always                           | Present |
 | `--metrics-secure`                  | Always                           | Present |
 | `--watch-namespaces=<ns1,ns2>`      | `watchNamespaces` is non-empty   | Absent  |
+| `--zap-log-level=<level>`           | `logLevel` is non-empty          | Present |
 
 When `watchNamespaces` contains entries, they are comma-joined:
 
@@ -331,6 +332,12 @@ All values controlling core templates, with types, defaults, and descriptions.
 | Key               | Type   | Default | Description                                     |
 |-------------------|--------|---------|-------------------------------------------------|
 | `watchNamespaces` | `list` | `[]`    | Namespaces to watch; empty means all namespaces |
+
+### Logging
+
+| Key        | Type     | Default | Description                                                                                                                                  |
+|------------|----------|---------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| `logLevel` | `string` | `info`  | Passed as `--zap-log-level`; empty or `null` omits the flag, an unknown value fails the render (see [Operator Logging](operator-logging.md)) |
 
 ### Name Overrides
 

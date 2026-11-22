@@ -755,7 +755,8 @@ spec:
 
 ### Checking Operator Logs
 
-The operator logs contain detailed information about reconciliation activity:
+The operator logs contain detailed information about reconciliation activity.
+Each line is a JSON object with `level`, `ts`, `logger`, and `msg` fields:
 
 ```bash
 kubectl logs -n memcached-operator-system deployment/memcached-operator-controller-manager -c manager -f
@@ -766,6 +767,19 @@ Filter for a specific Memcached instance:
 ```bash
 kubectl logs -n memcached-operator-system deployment/memcached-operator-controller-manager -c manager | grep '"name":"<instance-name>"'
 ```
+
+The operator logs at info level. To see debug-level lines, raise the level. With
+Helm:
+
+```bash
+helm upgrade memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
+  --version <version> \
+  --set logLevel=debug
+```
+
+With Kustomize, add `--zap-log-level=debug` to the manager's arguments with the
+JSON patch shown in [Operator Logging](../reference/backend/operator-logging.md#kustomize), which lists every
+logging flag.
 
 ### Inspecting Managed Resources
 

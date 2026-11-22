@@ -66,7 +66,7 @@ This produces the fullname `test-release-memcached-operator` via the
 ```text
 charts/memcached-operator/tests/
 ├── __snapshot__/                          # Auto-generated snapshot files
-├── deployment_test.yaml                   # Deployment template (56 tests)
+├── deployment_test.yaml                   # Deployment template (65 tests)
 ├── serviceaccount_test.yaml               # ServiceAccount template
 ├── rbac_clusterrole_test.yaml             # ClusterRole + ClusterRoleBinding
 ├── rbac_leader_election_test.yaml         # Leader-election Role + RoleBinding
@@ -271,14 +271,14 @@ label helpers, and `NOTES.txt` to verify fullname/selector helpers:
 
 The most comprehensive test file, organized into 6 sections:
 
-| Section             | Tests                                                                                                                                                                                           | Coverage |
-|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
-| Default rendering   | Document count, kind/apiVersion, replicas, image, resources, serviceAccountName, labels, selectors, namespace, container name/command, ports, probes, pod annotations, termination grace period | REQ-001  |
-| Container args      | `--leader-elect` (toggle), `--health-probe-bind-address`, `--metrics-bind-address`, `--metrics-secure`, `--watch-namespaces` (conditional)                                                      | REQ-007  |
-| Custom image        | Custom tag, custom repository+tag, imagePullSecrets, pullPolicy                                                                                                                                 | REQ-007  |
-| Security context    | Pod securityContext (runAsNonRoot, runAsUser, seccompProfile), container securityContext (allowPrivilegeEscalation, readOnlyRootFilesystem, capabilities.drop)                                  | REQ-007  |
-| Scheduling          | nodeSelector, tolerations, affinity — absent by default, rendered when set                                                                                                                      | REQ-007  |
-| Conditional webhook | Port 9443, volumeMounts, volumes — present/absent based on `webhook.enabled`; fullnameOverride propagation to cert volume secretName                                                            | REQ-002  |
+| Section             | Tests                                                                                                                                                                                                | Coverage |
+|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------|
+| Default rendering   | Document count, kind/apiVersion, replicas, image, resources, serviceAccountName, labels, selectors, namespace, container name/command, ports, probes, pod annotations, termination grace period      | REQ-001  |
+| Container args      | `--leader-elect` (toggle), `--health-probe-bind-address`, `--metrics-bind-address`, `--metrics-secure`, `--watch-namespaces` (conditional), `--zap-log-level` (default, override, omitted, rejected) | REQ-007  |
+| Custom image        | Custom tag, custom repository+tag, imagePullSecrets, pullPolicy                                                                                                                                      | REQ-007  |
+| Security context    | Pod securityContext (runAsNonRoot, runAsUser, seccompProfile), container securityContext (allowPrivilegeEscalation, readOnlyRootFilesystem, capabilities.drop)                                       | REQ-007  |
+| Scheduling          | nodeSelector, tolerations, affinity — absent by default, rendered when set                                                                                                                           | REQ-007  |
+| Conditional webhook | Port 9443, volumeMounts, volumes — present/absent based on `webhook.enabled`; fullnameOverride propagation to cert volume secretName                                                                 | REQ-002  |
 
 ### 2. ServiceAccount (`serviceaccount_test.yaml`)
 
@@ -466,6 +466,7 @@ Shows which test files verify each `values.yaml` toggle:
 | `networkPolicy.enabled`  | `networkpolicy_test`, `integration_test`                                                                                                                                                                                                                          |
 | `rbac.create`            | `rbac_clusterrole_test`, `rbac_leader_election_test`, `rbac_metrics_test`, `chart_metadata_test` (NOTES), `integration_test`                                                                                                                                      |
 | `leaderElection.enabled` | `deployment_test` (args), `rbac_leader_election_test`                                                                                                                                                                                                             |
+| `logLevel`               | `deployment_test` (args)                                                                                                                                                                                                                                          |
 | `serviceAccount.create`  | `serviceaccount_test`, `integration_test`                                                                                                                                                                                                                         |
 | `crds.managedByHelm`     | `crd_template_test`, `chart_metadata_test` (NOTES), `integration_test`                                                                                                                                                                                            |
 
