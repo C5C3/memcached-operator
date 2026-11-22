@@ -9,21 +9,23 @@ operator's `ClusterRole`.
 ## MemcachedReconciler Struct
 
 The reconciler struct embeds the controller-runtime client and carries the
-runtime scheme and an event recorder:
+runtime scheme, an event recorder, and an uncached reader:
 
 ```go
 type MemcachedReconciler struct {
     client.Client
-    Scheme   *runtime.Scheme
-    Recorder events.EventRecorder
+    Scheme    *runtime.Scheme
+    Recorder  events.EventRecorder
+    APIReader client.Reader
 }
 ```
 
-| Field      | Type                   | Description                                                                 |
-|------------|------------------------|-----------------------------------------------------------------------------|
-| `Client`   | `client.Client`        | Embedded controller-runtime client for reading/writing Kubernetes objects   |
-| `Scheme`   | `*runtime.Scheme`      | Runtime scheme for GVK resolution (serialization, deserialization, watches) |
-| `Recorder` | `events.EventRecorder` | Kubernetes event recorder for emitting events on Memcached CRs              |
+| Field       | Type                   | Description                                                                 |
+|-------------|------------------------|-----------------------------------------------------------------------------|
+| `Client`    | `client.Client`        | Embedded controller-runtime client for reading/writing Kubernetes objects   |
+| `Scheme`    | `*runtime.Scheme`      | Runtime scheme for GVK resolution (serialization, deserialization, watches) |
+| `Recorder`  | `events.EventRecorder` | Kubernetes event recorder for emitting events on Memcached CRs              |
+| `APIReader` | `client.Reader`        | Reader that bypasses the cache; `SetupWithManager` sets it when it is nil   |
 
 The struct satisfies the `reconcile.Reconciler` interface by implementing the
 `Reconcile(ctx, ctrl.Request) (ctrl.Result, error)` method.
@@ -34,9 +36,10 @@ The reconciler is created and registered in the operator's main function:
 
 ```go
 if err = (&controller.MemcachedReconciler{
-    Client:   mgr.GetClient(),
-    Scheme:   mgr.GetScheme(),
-    Recorder: mgr.GetEventRecorder("memcached-controller"),
+    Client:    mgr.GetClient(),
+    Scheme:    mgr.GetScheme(),
+    Recorder:  mgr.GetEventRecorder("memcached-controller"),
+    APIReader: mgr.GetAPIReader(),
 }).SetupWithManager(mgr); err != nil {
     setupLog.Error(err, "unable to create controller", "controller", "Memcached")
     os.Exit(1)
@@ -49,6 +52,9 @@ if err = (&controller.MemcachedReconciler{
   `memcached.c5c3.io/v1alpha1` types registered.
 - `mgr.GetEventRecorder("memcached-controller")` creates an event recorder
   that tags events with source component `memcached-controller`.
+- `mgr.GetAPIReader()` returns a reader that goes to the API server without
+  the cache. The reconciler reads Secret payloads through it, and objects the
+  label-filtered cache cannot see (see [Manager Cache](manager-cache.md)).
 
 ---
 
@@ -144,8 +150,11 @@ This means:
 Deployments are not watched with `Owns`. The reconciler only reads and deletes
 the Deployment that earlier releases ran the pods in (see
 [Legacy Deployment Migration](deployment-reconciliation.md#legacy-deployment-migration)).
-That `Get` goes through the cached client, which starts a Deployment informer on
-first use, but a Deployment event does not enqueue a reconcile.
+That `Get` goes through the cached client, which
+starts a Deployment informer on first use that is restricted to labeled Deployments,
+those with `app.kubernetes.io/managed-by: memcached-operator` (see
+[Manager Cache](manager-cache.md)). A Deployment event does not enqueue a
+reconcile.
 
 ### ServiceMonitor Watch
 

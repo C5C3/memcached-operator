@@ -551,6 +551,16 @@ func (r *MemcachedReconciler) deleteLegacyDeployment(ctx context.Context, mc *me
 reference with the CR's UID. A Deployment of the same name that has no owner
 reference, or that another object controls, is never deleted.
 
+### The managed-by Label
+
+The manager caches Deployments only when they carry
+`app.kubernetes.io/managed-by: memcached-operator` (see
+[Manager Cache](manager-cache.md)). Every Deployment an earlier release created
+carries that label, so the cached `Get` finds the legacy Deployments and no
+other, and the operator's own Deployment, labeled `managed-by: kustomize` or
+`Helm`, stays out of the cache. A legacy Deployment whose label was removed is
+not found and so not deleted, even when the CR controls it; delete it by hand.
+
 ### Background Propagation
 
 `client.PropagationPolicy(metav1.DeletePropagationBackground)` makes the delete
@@ -581,9 +591,10 @@ A successful delete emits one event on the Memcached CR:
 
 ### RBAC
 
-The `Get` goes through the manager's cached client, which starts a Deployment
-informer on first use and so needs `list` and `watch` as well as `get`. The
-operator keeps `get`, `list`, `watch`, and `delete` on `apps/deployments`:
+The `Get` goes through the manager's cached client, which
+starts a Deployment informer on first use that is restricted to labeled Deployments,
+and so needs `list` and `watch` as well as `get`. The operator keeps `get`,
+`list`, `watch`, and `delete` on `apps/deployments`:
 
 ```go
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;delete

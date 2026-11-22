@@ -71,9 +71,10 @@ the reconciler deletes that Deployment when the CR controls it (see
 [Legacy Deployment Migration](deployment-reconciliation.md#legacy-deployment-migration)).
 `get` reads the Deployment to check its controller owner reference, and
 `delete` removes it. The `Get` goes through the manager's cached client, which
-starts a Deployment informer on first use and so needs `list` and `watch`. The
-operator never creates, updates, or patches a Deployment, so those verbs are
-not granted.
+starts a Deployment informer on first use that is restricted to labeled Deployments
+(see [Manager Cache](manager-cache.md)); the label-filtered informer still
+needs `list` and `watch`. The operator never creates, updates, or patches a
+Deployment, so those verbs are not granted.
 
 ### Read-Only Resources
 
@@ -83,7 +84,10 @@ not granted.
 
 **Rationale**: The operator reads Secrets to reference them in volume mounts for
 SASL authentication (`spec.security.sasl.secretRef`) and TLS encryption
-(`spec.security.tls.certificateSecretRef`). It never creates, updates, or
+(`spec.security.tls.certificateSecretRef`). `list` and `watch` serve the Secret
+watch, which is metadata-only, so the cache holds no Secret payload. `get`
+serves the live read of each referenced Secret, whose data feeds the secret
+hash (see [Manager Cache](manager-cache.md#secrets)). It never creates, updates, or
 deletes Secrets — credential management is the cluster administrator's
 responsibility. This read-only constraint minimizes the blast radius if the
 operator pod is compromised.
