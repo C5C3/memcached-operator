@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -315,7 +316,9 @@ func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *me
 
 // SetupWithManager sets up the controller with the Manager. A reconciler built without
 // an APIReader gets the manager's API reader, so a manager-run reconciler always reads
-// Secrets live.
+// Secrets live. Secrets are watched as metadata only: the watch needs only the name and
+// namespace of a changed Secret, and a typed Secret read through the cached client
+// would start a second, full Secret informer.
 func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.APIReader == nil {
 		r.APIReader = mgr.GetAPIReader()
@@ -328,7 +331,7 @@ func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&policyv1.PodDisruptionBudget{}).
 		Owns(&networkingv1.NetworkPolicy{}).
 		Owns(&monitoringv1.ServiceMonitor{}).
-		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(mgr.GetClient()))).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(mapSecretToMemcached(mgr.GetClient())), builder.OnlyMetadata).
 		Named("memcached").
 		Complete(r)
 }

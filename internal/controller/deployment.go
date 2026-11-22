@@ -18,13 +18,21 @@ import (
 // memcachedAppName is the app.kubernetes.io/name label value of every Memcached pod.
 const memcachedAppName = "memcached"
 
+// labelKeyManagedBy and labelValueManagedBy form the label that every object the
+// operator creates carries. The manager's cache holds only objects with this label
+// (see CacheOptions).
+const (
+	labelKeyManagedBy   = "app.kubernetes.io/managed-by"
+	labelValueManagedBy = "memcached-operator"
+)
+
 // labelsForMemcached returns the standard Kubernetes recommended labels for a Memcached resource.
 // These labels are used for selectors and must not include mutable fields like version.
 func labelsForMemcached(name string) map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/name":       memcachedAppName,
-		"app.kubernetes.io/instance":   name,
-		"app.kubernetes.io/managed-by": "memcached-operator",
+		"app.kubernetes.io/name":     memcachedAppName,
+		"app.kubernetes.io/instance": name,
+		labelKeyManagedBy:            labelValueManagedBy,
 	}
 }
 
