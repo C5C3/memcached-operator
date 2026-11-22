@@ -3,17 +3,21 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -658,5 +662,300 @@ func TestReconcileResource_DoesNotIncrementMetricOnError(t *testing.T) {
 	}
 	if unchangedAfter != unchangedBefore {
 		t.Errorf("Service/unchanged counter changed on error: before=%v after=%v", unchangedBefore, unchangedAfter)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AlreadyExists path: an object the cache cannot see
+// ---------------------------------------------------------------------------
+
+// cacheMissCounts counts the writes a cacheMissClient sends.
+type cacheMissCounts struct {
+	creates atomic.Int32
+	updates atomic.Int32
+}
+
+// newCacheMissClient wraps base so that a Get of a Service returns NotFound, as the
+// label-filtered cache does for a Service without the managed-by label. updateErr, when
+// not nil, returns the error for the given Update call (1-based) or nil to let it through.
+func newCacheMissClient(base client.WithWatch, counts *cacheMissCounts, updateErr func(call int32) error) client.WithWatch {
+	return interceptor.NewClient(base, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Service); ok {
+				return apierrors.NewNotFound(corev1.Resource("services"), key.Name)
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+		Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			counts.creates.Add(1)
+			return c.Create(ctx, obj, opts...)
+		},
+		Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			call := counts.updates.Add(1)
+			if updateErr != nil {
+				if err := updateErr(call); err != nil {
+					return err
+				}
+			}
+			return c.Update(ctx, obj, opts...)
+		},
+	})
+}
+
+// alreadyExistsMemcached returns the Memcached the AlreadyExists tests reconcile.
+func alreadyExistsMemcached() *memcachedv1beta1.Memcached {
+	return &memcachedv1beta1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: testInstanceNameTest, Namespace: testDefaultNamespace, UID: testOwnerUID},
+	}
+}
+
+// controlledServiceWithoutLabel returns a Service that mc controls and that lacks the
+// managed-by label, with a stale port.
+func controlledServiceWithoutLabel(t *testing.T, mc *memcachedv1beta1.Memcached) *corev1.Service {
+	t.Helper()
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace},
+		Spec:       corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: testStalePortName, Port: 9999}}},
+	}
+	if err := controllerutil.SetControllerReference(mc, svc, testScheme()); err != nil {
+		t.Fatalf("failed to set controller reference: %v", err)
+	}
+	return svc
+}
+
+// reconcileTestService runs reconcileResource for the headless Service of mc.
+func reconcileTestService(r *MemcachedReconciler, mc *memcachedv1beta1.Memcached) (controllerutil.OperationResult, error) {
+	svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace}}
+	return r.reconcileResource(context.Background(), mc, svc, func() error {
+		constructService(mc, svc)
+		return nil
+	}, "Service")
+}
+
+func getStoredService(t *testing.T, c client.Client, mc *memcachedv1beta1.Memcached) *corev1.Service {
+	t.Helper()
+	svc := &corev1.Service{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(mc), svc); err != nil {
+		t.Fatalf("failed to get stored Service: %v", err)
+	}
+	return svc
+}
+
+func TestReconcileResource_AlreadyExists_UpdatesControlledObject(t *testing.T) {
+	mc := alreadyExistsMemcached()
+	base := newFakeClient(mc, controlledServiceWithoutLabel(t, mc))
+	var counts cacheMissCounts
+	recorder := events.NewFakeRecorder(10)
+	r := newTestReconcilerWithRecorder(newCacheMissClient(base, &counts, nil), recorder)
+	r.APIReader = base
+
+	result, err := reconcileTestService(r, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != controllerutil.OperationResultUpdated {
+		t.Errorf("expected OperationResultUpdated, got %v", result)
+	}
+	if got := getStoredService(t, base, mc).Labels[testLabelKeyAppManagedBy]; got != testLabelValueAppManagedBy {
+		t.Errorf("expected the managed-by label %q, got %q", testLabelValueAppManagedBy, got)
+	}
+	if got := drainEvents(recorder); len(got) != 1 || got[0] != "Normal Updated Updated Service test" {
+		t.Errorf("expected one Updated event, got %v", got)
+	}
+}
+
+func TestReconcileResource_AlreadyExists_UnchangedWhenLiveObjectMatches(t *testing.T) {
+	mc := alreadyExistsMemcached()
+	desired := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace}}
+	constructService(mc, desired)
+	if err := controllerutil.SetControllerReference(mc, desired, testScheme()); err != nil {
+		t.Fatalf("failed to set controller reference: %v", err)
+	}
+	base := newFakeClient(mc, desired)
+	var counts cacheMissCounts
+	recorder := events.NewFakeRecorder(10)
+	r := newTestReconcilerWithRecorder(newCacheMissClient(base, &counts, nil), recorder)
+	r.APIReader = base
+
+	result, err := reconcileTestService(r, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != controllerutil.OperationResultNone {
+		t.Errorf("expected OperationResultNone, got %v", result)
+	}
+	if n := counts.updates.Load(); n != 0 {
+		t.Errorf("expected no Update call, got %d", n)
+	}
+	if got := drainEvents(recorder); len(got) != 0 {
+		t.Errorf("expected no event, got %v", got)
+	}
+}
+
+func TestReconcileResource_AlreadyExists_RejectsUncontrolledObject(t *testing.T) {
+	tests := []struct {
+		name string
+		// controllerUID, when set, adds a controller reference to a Memcached with this UID.
+		controllerUID types.UID
+	}{
+		{name: "no owner reference"},
+		{name: "controller reference with another UID", controllerUID: "other-uid"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mc := alreadyExistsMemcached()
+			stored := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace}}
+			if tt.controllerUID != "" {
+				other := alreadyExistsMemcached()
+				other.UID = tt.controllerUID
+				if err := controllerutil.SetControllerReference(other, stored, testScheme()); err != nil {
+					t.Fatalf("failed to set controller reference: %v", err)
+				}
+			}
+			base := newFakeClient(mc, stored)
+			before := getStoredService(t, base, mc)
+			var counts cacheMissCounts
+			recorder := events.NewFakeRecorder(10)
+			r := newTestReconcilerWithRecorder(newCacheMissClient(base, &counts, nil), recorder)
+			r.APIReader = base
+
+			_, err := reconcileTestService(r, mc)
+			if !apierrors.IsAlreadyExists(err) {
+				t.Fatalf("expected an AlreadyExists error, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "exists but is not controlled by Memcached") {
+				t.Errorf("unexpected error message: %v", err)
+			}
+			if after := getStoredService(t, base, mc); !equality.Semantic.DeepEqual(before, after) {
+				t.Errorf("expected the stored Service unchanged, got %+v", after)
+			}
+			if n := counts.updates.Load(); n != 0 {
+				t.Errorf("expected no Update call, got %d", n)
+			}
+			got := drainEvents(recorder)
+			if len(got) != 1 || !strings.HasPrefix(got[0], "Warning AlreadyExists ") {
+				t.Errorf("expected exactly one Warning AlreadyExists event, got %v", got)
+			}
+		})
+	}
+}
+
+func TestReconcileResource_AlreadyExists_LiveReadNotFound(t *testing.T) {
+	mc := alreadyExistsMemcached()
+	base := newFakeClient(mc, controlledServiceWithoutLabel(t, mc))
+	var counts cacheMissCounts
+	recorder := events.NewFakeRecorder(10)
+	r := newTestReconcilerWithRecorder(newCacheMissClient(base, &counts, nil), recorder)
+	r.APIReader = interceptor.NewClient(base, interceptor.Funcs{
+		Get: func(_ context.Context, _ client.WithWatch, key client.ObjectKey, _ client.Object, _ ...client.GetOption) error {
+			return apierrors.NewNotFound(corev1.Resource("services"), key.Name)
+		},
+	})
+
+	_, err := reconcileTestService(r, mc)
+	if !apierrors.IsNotFound(err) {
+		t.Fatalf("expected a NotFound error, got %v", err)
+	}
+	if got := drainEvents(recorder); len(got) != 0 {
+		t.Errorf("expected no event, got %v", got)
+	}
+	if n := counts.creates.Load(); n != 1 {
+		t.Errorf("expected one Create call, got %d", n)
+	}
+}
+
+func TestReconcileResource_AlreadyExists_LiveReadError(t *testing.T) {
+	mc := alreadyExistsMemcached()
+	base := newFakeClient(mc, controlledServiceWithoutLabel(t, mc))
+	var counts cacheMissCounts
+	r := newTestReconciler(newCacheMissClient(base, &counts, nil))
+	r.APIReader = interceptor.NewClient(base, interceptor.Funcs{
+		Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+			return apierrors.NewServiceUnavailable("x")
+		},
+	})
+
+	_, err := reconcileTestService(r, mc)
+	if !apierrors.IsServiceUnavailable(err) {
+		t.Fatalf("expected a ServiceUnavailable error, got %v", err)
+	}
+	if !strings.HasPrefix(err.Error(), "reconciling Service: reading Service") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+	if n := counts.creates.Load(); n != 1 {
+		t.Errorf("expected one Create call, got %d", n)
+	}
+}
+
+func TestReconcileResource_AlreadyExists_UpdateConflictRetries(t *testing.T) {
+	mc := alreadyExistsMemcached()
+	base := newFakeClient(mc, controlledServiceWithoutLabel(t, mc))
+	var counts cacheMissCounts
+	r := newTestReconciler(newCacheMissClient(base, &counts, func(call int32) error {
+		if call == 1 {
+			return apierrors.NewConflict(corev1.Resource("services"), mc.Name, errors.New("the object has been modified"))
+		}
+		return nil
+	}))
+	r.APIReader = base
+
+	result, err := reconcileTestService(r, mc)
+	if err != nil {
+		t.Fatalf("expected the retry to succeed, got %v", err)
+	}
+	if result != controllerutil.OperationResultUpdated {
+		t.Errorf("expected OperationResultUpdated, got %v", result)
+	}
+	if n := counts.updates.Load(); n != 2 {
+		t.Errorf("expected two Update attempts, got %d", n)
+	}
+	if got := getStoredService(t, base, mc).Labels[testLabelKeyAppManagedBy]; got != testLabelValueAppManagedBy {
+		t.Errorf("expected the managed-by label %q, got %q", testLabelValueAppManagedBy, got)
+	}
+}
+
+func TestReconcileResource_AlreadyExists_NilRecorder(t *testing.T) {
+	mc := alreadyExistsMemcached()
+	base := newFakeClient(mc, &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: mc.Name, Namespace: mc.Namespace}})
+	var counts cacheMissCounts
+	r := newTestReconciler(newCacheMissClient(base, &counts, nil))
+	r.APIReader = base
+
+	_, err := reconcileTestService(r, mc)
+	if !apierrors.IsAlreadyExists(err) {
+		t.Fatalf("expected an AlreadyExists error, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "exists but is not controlled by Memcached") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestReconcileResource_AlreadyExists_NilAPIReader(t *testing.T) {
+	mc := alreadyExistsMemcached()
+	base := newFakeClient(mc, controlledServiceWithoutLabel(t, mc))
+	var serviceGets atomic.Int32
+	c := interceptor.NewClient(base, interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Service); ok && serviceGets.Add(1) == 1 {
+				return apierrors.NewNotFound(corev1.Resource("services"), key.Name)
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+	r := newTestReconciler(c)
+
+	result, err := reconcileTestService(r, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != controllerutil.OperationResultUpdated {
+		t.Errorf("expected OperationResultUpdated, got %v", result)
+	}
+	if n := serviceGets.Load(); n != 2 {
+		t.Errorf("expected the live read to go to Client (2 Service Gets), got %d", n)
+	}
+	if got := getStoredService(t, base, mc).Labels[testLabelKeyAppManagedBy]; got != testLabelValueAppManagedBy {
+		t.Errorf("expected the managed-by label %q, got %q", testLabelValueAppManagedBy, got)
 	}
 }
