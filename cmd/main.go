@@ -72,6 +72,16 @@ func parseWatchNamespaces(namespaces string) map[string]cache.Config {
 	return result
 }
 
+// bindLogFlags registers controller-runtime's zap flags on fs and returns the
+// options they fill. The options start in production mode (JSON encoder, info
+// level, stack traces at error and above); --zap-devel switches to development
+// mode.
+func bindLogFlags(fs *flag.FlagSet) *zap.Options {
+	opts := &zap.Options{}
+	opts.BindFlags(fs)
+	return opts
+}
+
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
@@ -90,13 +100,10 @@ func main() {
 	flag.BoolVar(&enableWebhooks, "enable-webhooks", true, "Enable webhook server and admission webhook registration.")
 	flag.StringVar(&watchNamespaces, "watch-namespaces", "", "Comma-separated list of namespaces to watch. Empty means all namespaces (cluster-scoped).")
 
-	opts := zap.Options{
-		Development: true,
-	}
-	opts.BindFlags(flag.CommandLine)
+	logOpts := bindLogFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(logOpts)))
 
 	nsMap := parseWatchNamespaces(watchNamespaces)
 	if nsMap != nil {
