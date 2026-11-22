@@ -129,9 +129,13 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // StatefulSet with nothing to change is reported as unchanged and not updated.
 // Once the StatefulSet is reconciled, it deletes the Deployment that earlier operator
 // releases ran the pods in. It returns the names of any missing Secrets for use by status
-// reconciliation.
+// reconciliation. A Secret read that fails for any reason other than NotFound is returned
+// before the StatefulSet is touched, so the stored secret hash stays as it is.
 func (r *MemcachedReconciler) reconcileStatefulSet(ctx context.Context, mc *memcachedv1beta1.Memcached) ([]string, error) {
-	found, missing := fetchReferencedSecrets(ctx, r.Client, mc)
+	found, missing, err := fetchReferencedSecrets(ctx, r.Client, mc)
+	if err != nil {
+		return nil, err
+	}
 	secretHash := computeSecretHash(found...)
 	restartTrigger := mc.Annotations[AnnotationRestartTrigger]
 

@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -64,10 +66,12 @@ func computeSecretHash(secrets ...*corev1.Secret) string {
 
 // fetchReferencedSecrets collects the Secrets referenced by the Memcached CR's Security spec
 // (SASL credentials and TLS certificates). It returns the found Secrets and the names of
-// any that could not be fetched.
-func fetchReferencedSecrets(ctx context.Context, c client.Client, mc *memcachedv1beta1.Memcached) ([]*corev1.Secret, []string) {
+// those the API server reports as not found. Any other read error is returned at once,
+// with no found or missing Secrets, so the caller can fail the reconcile instead of
+// treating a transient failure as a missing Secret.
+func fetchReferencedSecrets(ctx context.Context, c client.Reader, mc *memcachedv1beta1.Memcached) ([]*corev1.Secret, []string, error) {
 	if mc.Spec.Security == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	names := make(map[string]struct{})
@@ -84,7 +88,7 @@ func fetchReferencedSecrets(ctx context.Context, c client.Client, mc *memcachedv
 	}
 
 	if len(names) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	var found []*corev1.Secret
@@ -94,13 +98,16 @@ func fetchReferencedSecrets(ctx context.Context, c client.Client, mc *memcachedv
 		secret := &corev1.Secret{}
 		key := types.NamespacedName{Namespace: mc.Namespace, Name: name}
 		if err := c.Get(ctx, key, secret); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return nil, nil, fmt.Errorf("fetching Secret %s/%s: %w", mc.Namespace, name, err)
+			}
 			missing = append(missing, name)
 		} else {
 			found = append(found, secret)
 		}
 	}
 
-	return found, missing
+	return found, missing, nil
 }
 
 // mapSecretToMemcached returns a handler.MapFunc that maps a Secret event to
