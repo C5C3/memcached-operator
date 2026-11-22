@@ -32,6 +32,8 @@ var _ = Describe("Memcached Controller SetupWithManager", func() {
 			}
 			err = reconciler.SetupWithManager(mgr)
 			Expect(err).NotTo(HaveOccurred())
+			// A reconciler built without an APIReader gets the manager's.
+			Expect(reconciler.APIReader).NotTo(BeNil())
 
 			// Starting the manager validates that all watches are properly
 			// registered and the informers can be created for the watched types

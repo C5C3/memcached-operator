@@ -32,6 +32,18 @@ type MemcachedReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder events.EventRecorder
+	// APIReader reads from the API server without going through the cache. It serves
+	// the reads whose objects the cache does not hold in full, such as Secret payloads.
+	// SetupWithManager sets it from the manager when it is nil.
+	APIReader client.Reader
+}
+
+// liveReader returns the reader for reads that must not go through the cache.
+func (r *MemcachedReconciler) liveReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 // +kubebuilder:rbac:groups=memcached.c5c3.io,resources=memcacheds,verbs=get;list;watch;create;update;patch;delete
@@ -132,7 +144,7 @@ func (r *MemcachedReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // reconciliation. A Secret read that fails for any reason other than NotFound is returned
 // before the StatefulSet is touched, so the stored secret hash stays as it is.
 func (r *MemcachedReconciler) reconcileStatefulSet(ctx context.Context, mc *memcachedv1beta1.Memcached) ([]string, error) {
-	found, missing, err := fetchReferencedSecrets(ctx, r.Client, mc)
+	found, missing, err := fetchReferencedSecrets(ctx, r.liveReader(), mc)
 	if err != nil {
 		return nil, err
 	}
@@ -301,8 +313,13 @@ func (r *MemcachedReconciler) reconcileNetworkPolicy(ctx context.Context, mc *me
 	return err
 }
 
-// SetupWithManager sets up the controller with the Manager.
+// SetupWithManager sets up the controller with the Manager. A reconciler built without
+// an APIReader gets the manager's API reader, so a manager-run reconciler always reads
+// Secrets live.
 func (r *MemcachedReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.APIReader == nil {
+		r.APIReader = mgr.GetAPIReader()
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&memcachedv1beta1.Memcached{}).
 		Owns(&appsv1.StatefulSet{}).
