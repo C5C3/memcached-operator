@@ -26,6 +26,7 @@
     "apimachinery",
     "APIV",
     "apiserver",
+    "apiutil",
     "appsv",
     "autoscalers",
     "autoscalingv",
