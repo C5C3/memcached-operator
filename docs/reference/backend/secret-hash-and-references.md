@@ -82,16 +82,23 @@ iteration order.
 ```go
 func fetchReferencedSecrets(
     ctx context.Context,
-    c client.Client,
-    mc *memcachedv1alpha1.Memcached,
-) ([]*corev1.Secret, []string)
+    c client.Reader,
+    mc *memcachedv1beta1.Memcached,
+) ([]*corev1.Secret, []string, error)
 ```
 
 Resolves the Secret references from the Memcached CR's `spec.security` into
-actual Secret objects. Returns two slices:
+actual Secret objects. Returns two slices and an error:
 
-- `found` — Secrets that were successfully fetched.
-- `missing` — names of Secrets that could not be fetched (not found or error).
+- `found`: Secrets that were read.
+- `missing`: names of Secrets the API server reports as not found.
+- `error`: the first read error other than NotFound, wrapped as
+  `fetching Secret <namespace>/<name>: <err>`. `found` and `missing` are `nil`
+  then.
+
+`reconcileStatefulSet` passes `r.liveReader()`, the reconciler's `APIReader`,
+so each read goes to the API server: the cache holds Secrets as metadata only
+(see [Manager Cache](manager-cache.md#secrets)).
 
 ### Resolution Logic
 
@@ -103,25 +110,28 @@ actual Secret objects. Returns two slices:
    - `spec.security` nil → no refs collected
    - `spec.security.sasl` nil → SASL ref skipped
    - `spec.security.tls` nil → TLS ref skipped
-3. **Fetch each Secret**: For each unique name, performs `client.Get` with the
+3. **Fetch each Secret**: For each unique name, performs `Get` with the
    Memcached CR's namespace. On success, the Secret is appended to `found`; on
-   any error, the name is appended to `missing`.
+   NotFound, the name is appended to `missing`. Any other error (a timeout, a
+   5xx, a Forbidden, a cancelled context) is returned at once, so a transient
+   failure is never reported as a missing Secret.
 4. **Empty case**: If no refs are collected (neither SASL nor TLS enabled, or
-   both specs are nil), returns `nil, nil`.
+   both specs are nil), returns `nil, nil, nil`.
 
 ### Behavior
 
-| Spec State                     | `found`         | `missing`      |
-|--------------------------------|-----------------|----------------|
-| Neither SASL nor TLS enabled   | `nil`           | `nil`          |
-| `spec.security` is nil         | `nil`           | `nil`          |
-| SASL enabled, Secret exists    | `[saslSecret]`  | `[]`           |
-| SASL enabled, Secret missing   | `[]`            | `["sasl-ref"]` |
-| TLS enabled, Secret exists     | `[tlsSecret]`   | `[]`           |
-| TLS enabled, Secret missing    | `[]`            | `["tls-ref"]`  |
-| Both enabled, both exist       | `[sasl, tls]`   | `[]`           |
-| Both enabled, same Secret name | `[secret]` (1x) | `[]`           |
-| Both enabled, SASL missing     | `[tlsSecret]`   | `["sasl-ref"]` |
+| Spec State                      | `found`         | `missing`      | `error`                              |
+|---------------------------------|-----------------|----------------|--------------------------------------|
+| Neither SASL nor TLS enabled    | `nil`           | `nil`          | `nil`                                |
+| `spec.security` is nil          | `nil`           | `nil`          | `nil`                                |
+| SASL enabled, Secret exists     | `[saslSecret]`  | `[]`           | `nil`                                |
+| SASL enabled, Secret missing    | `[]`            | `["sasl-ref"]` | `nil`                                |
+| TLS enabled, Secret exists      | `[tlsSecret]`   | `[]`           | `nil`                                |
+| TLS enabled, Secret missing     | `[]`            | `["tls-ref"]`  | `nil`                                |
+| Both enabled, both exist        | `[sasl, tls]`   | `[]`           | `nil`                                |
+| Both enabled, same Secret name  | `[secret]` (1x) | `[]`           | `nil`                                |
+| Both enabled, SASL missing      | `[tlsSecret]`   | `["sasl-ref"]` | `nil`                                |
+| A read fails with another error | `nil`           | `nil`          | `fetching Secret <ns>/<name>: <err>` |
 
 ### Relationship to CRD Types
 
@@ -194,10 +204,14 @@ never evaluated, ensuring correct multi-tenant behavior.
 These three functions are integrated into the reconciliation loop as follows:
 
 - **`mapSecretToMemcached`** is registered as a `Watches` handler in
-  `SetupWithManager`, so Secret changes trigger reconciliation of referencing
-  Memcached CRs.
+  `SetupWithManager` with `builder.OnlyMetadata`, so Secret changes trigger
+  reconciliation of referencing Memcached CRs while the cache holds only Secret
+  metadata. The handler uses only the name and namespace of the event object.
 - **`fetchReferencedSecrets`** is called at the start of `reconcileStatefulSet`
-  to resolve Secret refs and identify missing Secrets.
+  with the live reader to resolve Secret refs and identify missing Secrets. A
+  read error other than NotFound ends `reconcileStatefulSet` before it touches
+  the StatefulSet, so the stored secret hash stays as it is and the request is
+  retried with backoff.
 - **`computeSecretHash`** computes a SHA-256 hash over the fetched Secrets,
   which is passed to `constructStatefulSet` along with the restart-trigger
   annotation value from the CR.

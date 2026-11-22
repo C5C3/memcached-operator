@@ -113,6 +113,8 @@ The controller sets up watches for the following resources. All child resource w
 | `ServiceMonitor` | `monitoring.coreos.com` | Detect drift (if monitoring enabled)                 |
 | `NetworkPolicy`  | `networking.k8s.io`     | Detect drift (if network policy enabled)             |
 
+The manager caches these kinds only for objects labeled `app.kubernetes.io/managed-by: memcached-operator`, except `Memcached` resources, and watches Secrets as metadata only, reading their payload from the API server; see [Manager Cache](../reference/backend/manager-cache.md).
+
 When any watched resource changes, the controller enqueues the owning `Memcached` CR for reconciliation. This ensures that if someone manually edits a managed StatefulSet or Service, the operator will detect the drift and restore the desired state.
 
 ---

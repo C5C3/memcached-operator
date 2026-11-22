@@ -110,6 +110,57 @@ Reconciler              CreateOrUpdate         API Server
 
 ---
 
+## AlreadyExists: Objects the Cache Cannot See
+
+The manager caches owned objects only when they carry
+`app.kubernetes.io/managed-by: memcached-operator` (see
+[Manager Cache](manager-cache.md)). An object without the label is NotFound in
+the cache while it exists on the API server, so `CreateOrUpdate` calls Create and
+the API server answers AlreadyExists. The same happens, rarely, when the cache
+lags behind an object the operator has just created. Inside the retry loop,
+`reconcileResource` then calls `updateLive`:
+
+```go
+result, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, mutateWithOwner)
+if apierrors.IsAlreadyExists(err) {
+    result, err = r.updateLive(ctx, mc, obj, mutateWithOwner, resourceKind, err)
+}
+```
+
+`mutateWithOwner` is the caller's `mutate` followed by
+`controllerutil.SetControllerReference`. The success, Conflict, and other-error
+branches then run on the result of `updateLive`.
+
+| Step | Action                                                                                                    |
+|------|-----------------------------------------------------------------------------------------------------------|
+| 1    | Log `Resource exists but is not in the cache, reading it from the API server` with `kind` and `name`      |
+| 2    | Read the object through `r.liveReader()` into a new, empty object of the same type                        |
+| 3    | If the CR does not control the object, emit the `Warning` event and return the error below                |
+| 4    | Copy the live object over `obj`, keep a copy, and call `mutate`                                           |
+| 5    | Return `OperationResultNone` when nothing changed; otherwise `Update` and return `OperationResultUpdated` |
+
+The live read goes into a new object because `obj` still holds the desired
+state of the failed create. The update restores the managed-by label, so the
+object re-enters the cache. `Update` errors are returned unwrapped, so a
+Conflict reaches the retry loop; before returning one, `updateLive` clears the
+`resourceVersion` it copied into `obj`, so the retry's Create is answered with
+AlreadyExists again instead of being rejected for setting a `resourceVersion`.
+
+An object the CR does not control is not modified and not adopted. The
+reconcile fails at that kind and retries with backoff until the object is
+removed or renamed:
+
+| Output | Text                                                                                                                    |
+|--------|-------------------------------------------------------------------------------------------------------------------------|
+| Error  | `<Kind> <namespace>/<name> exists but is not controlled by Memcached <cr-name>: <AlreadyExists error>`                  |
+| Event  | `Warning`, reason `AlreadyExists`, note `<Kind> <name> exists and is not controlled by this Memcached; not adopting it` |
+
+A failed live read, NotFound included, returns
+`reading <Kind> <name> from the API server: <err>`. `deleteOwnedResource` does
+not take this path.
+
+---
+
 ## Idempotent Behavior
 
 The mutate function is called on **every** reconciliation, but
@@ -303,13 +354,15 @@ structured logging, and event emission from `reconcileResource`.
 
 ## Error Handling Summary
 
-| Error Scenario                  | Behavior                                                    |
-|---------------------------------|-------------------------------------------------------------|
-| Mutate function returns error   | Error wrapped with `"reconciling <Kind>: ..."` and returned |
-| API server returns 409 Conflict | Retry up to 5 times, then return conflict error             |
-| API server returns other error  | Error wrapped and returned immediately (no retry)           |
-| Owner reference conflict        | Error from `SetControllerReference`, returned via mutate    |
-| All retries exhausted           | Conflict error returned to controller-runtime for requeue   |
+| Error Scenario                                                | Behavior                                                                                          |
+|---------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
+| Mutate function returns error                                 | Error wrapped with `"reconciling <Kind>: ..."` and returned                                       |
+| API server returns 409 Conflict                               | Retry up to 5 times, then return conflict error                                                   |
+| API server returns other error                                | Error wrapped and returned immediately (no retry)                                                 |
+| Owner reference conflict                                      | Error from `SetControllerReference`, returned via mutate                                          |
+| All retries exhausted                                         | Conflict error returned to controller-runtime for requeue                                         |
+| Create returns AlreadyExists, live read fails                 | Error wrapped as `"reconciling <Kind>: reading <Kind> <name> from the API server: ..."`, no retry |
+| Create returns AlreadyExists, object not controlled by the CR | `Warning` event `AlreadyExists`, object left alone, AlreadyExists error wrapped and returned      |
 
 All errors are returned to controller-runtime, which applies its standard
 exponential backoff requeue strategy.

@@ -13,10 +13,13 @@ By default the operator watches all namespaces (cluster-scoped). Passing the
 listed namespaces. This follows the principle of least privilege: the operator
 creates informers only for the namespaces it manages.
 
-When `--watch-namespaces` is set, the operator populates
-`ctrl.Options.Cache.DefaultNamespaces` with a `map[string]cache.Config` entry
-for each namespace. When the flag is omitted or empty, `DefaultNamespaces`
-remains `nil` and controller-runtime falls back to cluster-wide watches.
+When `--watch-namespaces` is set, the operator builds a
+`map[string]cache.Config` entry for each namespace and passes the map to
+`controller.CacheOptions`, which sets it as `ctrl.Options.Cache.DefaultNamespaces`
+together with the managed-by label selector (see
+[Manager Cache](manager-cache.md)). When the flag is omitted or empty, the map
+is `nil`, `DefaultNamespaces` remains `nil`, and controller-runtime falls back
+to cluster-wide watches.
 
 CRDs are cluster-scoped resources and must still be installed cluster-wide
 regardless of namespace restriction.
@@ -98,9 +101,12 @@ func parseWatchNamespaces(namespaces string) map[string]cache.Config
 | `" ns1 , ns2 "` | `map[string]cache.Config{"ns1": {}, "ns2": {}}`                          |
 | `"ns1,ns2,"`    | `map[string]cache.Config{"ns1": {}, "ns2": {}}` (trailing comma ignored) |
 
-Each map value is an empty `cache.Config{}`. The resulting map is assigned to
-`ctrl.Options.Cache.DefaultNamespaces`, which tells controller-runtime to scope
-its informer cache to only the listed namespaces.
+Each map value is an empty `cache.Config{}`. `cmd/main.go` passes the resulting
+map to `controller.CacheOptions`, which sets it as
+`ctrl.Options.Cache.DefaultNamespaces` and so scopes the informer cache to the
+listed namespaces. controller-runtime applies the default label selector in
+each listed namespace and copies the namespaces into the `ByObject` entries
+for Memcached and Secret, so no extra code is needed for namespace-scoped mode.
 
 ---
 

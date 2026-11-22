@@ -199,6 +199,55 @@ kubectl delete statefulset <statefulset-name> -n <namespace>
 See [Delete the StatefulSet after a downgrade](#delete-the-statefulset-after-a-downgrade)
 for how to list the StatefulSets.
 
+## Upgrading to the label-scoped cache
+
+Releases after v0.7.0 restrict the manager's cache to the objects the operator
+manages. Every kind is cached only for objects labeled
+`app.kubernetes.io/managed-by: memcached-operator`, except Memcached
+resources, and Secrets are cached as metadata only, with their payload read
+from the API server. The operator's memory then grows with the number of
+Memcached instances and Secrets in the watched namespaces, not with every
+Deployment and Secret in the cluster (see
+[Manager Cache](../reference/backend/manager-cache.md)). Three behaviors change.
+
+### Same-named objects are no longer adopted
+
+An object named like a Memcached instance, of a kind the operator creates, that
+the Memcached does not control is no longer overwritten and adopted. The
+reconcile fails with
+`<Kind> <namespace>/<name> exists but is not controlled by Memcached <name>`,
+and a `Warning` event with reason `AlreadyExists` is recorded on the
+Memcached. Delete or rename the object; the operator retries with backoff and
+creates its own. Objects the operator created keep working: they carry the
+label and a controller reference to their Memcached.
+
+### A failed Secret read fails the reconcile
+
+A read of a referenced SASL or TLS Secret that fails with anything other than
+NotFound, a timeout or a 5xx for example, now fails the reconcile, which is
+retried with backoff. The StatefulSet is left as it is, so the pods are not
+restarted, and the failure is no longer reported as a `Degraded` condition
+with reason `SecretNotFound`. A Secret that does not exist is still reported as
+`SecretNotFound`.
+
+### A legacy Deployment without the label is not removed
+
+The operator removes the Deployment that releases up to v0.4.0 ran the pods in
+(see [Upgrading to per-pod server lists](#upgrading-to-per-pod-server-lists)).
+It now finds that Deployment only when it carries the managed-by label, which
+every Deployment those releases created does. A legacy Deployment whose label
+was removed is left in place; delete it by hand:
+
+```bash
+kubectl delete deployment <name> -n <namespace>
+```
+
+### RBAC is unchanged
+
+The ClusterRole, the namespace-scoped Role, and the Helm chart's RBAC keep the
+same rules. The metadata-only Secret watch and the label-filtered Deployment
+informer still need `list` and `watch`.
+
 ## CRD Update
 
 Update the CRD before upgrading the operator. The new operator version may

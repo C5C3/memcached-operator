@@ -421,6 +421,30 @@ Fix: Verify that the ClusterRole and ClusterRoleBinding for the operator are cor
 kubectl apply -k config/default
 ```
 
+**Operator pod OOMKilled**
+
+The operator container exceeds its memory limit and is restarted. The last termination reason is `OOMKilled`:
+
+```bash
+kubectl get pods -n memcached-operator-system -l control-plane=controller-manager \
+  -o jsonpath='{.items[*].status.containerStatuses[*].lastState.terminated.reason}'
+```
+
+Fix: Raise the memory limit to fit the objects the operator caches. The cache grows with the number of Memcached instances and of Secrets in the watched namespaces; see [Manager Cache](../reference/backend/manager-cache.md#sizing-the-memory-limit) for the bytes per object and where the limit is set.
+
+**Reconcile fails with `exists but is not controlled by Memcached`**
+
+An object of a kind the operator creates (StatefulSet, Service, HorizontalPodAutoscaler, PodDisruptionBudget, NetworkPolicy, or ServiceMonitor) already exists with the name the operator would give it, and the Memcached does not control it. The operator does not adopt it.
+
+The reconcile fails with `<Kind> <namespace>/<name> exists but is not controlled by Memcached <name>`, and a `Warning` event with reason `AlreadyExists` is recorded on the Memcached:
+
+```bash
+kubectl get events -n <namespace> --field-selector reason=AlreadyExists
+kubectl logs -n memcached-operator-system deployment/memcached-operator-controller-manager -c manager | grep "exists but is not controlled by Memcached"
+```
+
+Fix: Delete or rename the conflicting object. The operator retries with backoff and creates its own object once the name is free.
+
 **Leader election issues**
 
 In multi-replica operator deployments, only the leader instance performs reconciliation. If leader election is stuck (e.g., a stale lease), no reconciliation occurs.
