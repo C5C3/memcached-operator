@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -416,6 +417,105 @@ func TestFetchReferencedSecrets_ReadErrorIsReturned(t *testing.T) {
 				t.Errorf("expected the message to start with %q, got %q", "fetching Secret default/", err.Error())
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// reconcileStatefulSet Secret read tests
+// ---------------------------------------------------------------------------
+
+func TestReconcileStatefulSet_SecretReadErrorLeavesStatefulSetUntouched(t *testing.T) {
+	mc := saslMemcached(testSASLSecretName)
+	mc.UID = testOwnerUID
+	stored := &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: statefulSetName(mc.Name), Namespace: mc.Namespace},
+		Spec: appsv1.StatefulSetSpec{
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{AnnotationSecretHash: testSecretHash}},
+			},
+		},
+	}
+	c := newFakeClient(mc, stored)
+	before := &appsv1.StatefulSet{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(stored), before); err != nil {
+		t.Fatalf("failed to get stored StatefulSet: %v", err)
+	}
+
+	unavailable := apierrors.NewServiceUnavailable("x")
+	r := newTestReconciler(c)
+	r.APIReader = interceptor.NewClient(newFakeClient(), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Secret); ok {
+				return unavailable
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+
+	missing, err := r.reconcileStatefulSet(context.Background(), mc)
+	if !errors.Is(err, unavailable) {
+		t.Fatalf("expected the Secret read error, got %v", err)
+	}
+	if missing != nil {
+		t.Errorf("expected nil missing, got %v", missing)
+	}
+
+	after := &appsv1.StatefulSet{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(stored), after); err != nil {
+		t.Fatalf("failed to get StatefulSet: %v", err)
+	}
+	if after.ResourceVersion != before.ResourceVersion {
+		t.Errorf("expected resourceVersion %q, got %q", before.ResourceVersion, after.ResourceVersion)
+	}
+	if got := after.Spec.Template.Annotations[AnnotationSecretHash]; got != testSecretHash {
+		t.Errorf("expected secret-hash annotation %q, got %q", testSecretHash, got)
+	}
+}
+
+func TestReconcileStatefulSet_ReadsSecretsThroughAPIReader(t *testing.T) {
+	mc := saslMemcached(testSASLSecretName)
+	mc.UID = testOwnerUID
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: testSASLSecretName, Namespace: testDefaultNamespace},
+		Data:       map[string][]byte{testPasswordFileKey: []byte("pass")},
+	}
+
+	c := interceptor.NewClient(newFakeClient(mc), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*corev1.Secret); ok {
+				t.Errorf("Secret %s read through Client, expected APIReader", key)
+				return apierrors.NewNotFound(schema.GroupResource{Resource: "secrets"}, key.Name)
+			}
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+	r := newTestReconciler(c)
+	r.APIReader = newFakeClient(secret)
+
+	if _, err := r.reconcileStatefulSet(context.Background(), mc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	sts := &appsv1.StatefulSet{}
+	if err := c.Get(context.Background(), client.ObjectKey{Name: statefulSetName(mc.Name), Namespace: mc.Namespace}, sts); err != nil {
+		t.Fatalf("failed to get StatefulSet: %v", err)
+	}
+	if sts.Spec.Template.Annotations[AnnotationSecretHash] == "" {
+		t.Error("expected a non-empty secret-hash annotation")
+	}
+}
+
+func TestLiveReader_FallsBackToClient(t *testing.T) {
+	c := newFakeClient()
+	r := newTestReconciler(c)
+	if r.liveReader() != c {
+		t.Error("expected liveReader to return Client when APIReader is nil")
+	}
+
+	apiReader := newFakeClient()
+	r.APIReader = apiReader
+	if r.liveReader() != apiReader {
+		t.Error("expected liveReader to return APIReader when it is set")
 	}
 }
 
