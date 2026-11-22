@@ -3,12 +3,19 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"regexp"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	memcachedv1beta1 "github.com/c5c3/memcached-operator/api/v1beta1"
 )
@@ -150,7 +157,10 @@ func TestFetchReferencedSecrets_BothExist(t *testing.T) {
 		},
 	}
 
-	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(found) != 2 {
 		t.Errorf("expected 2 found secrets, got %d", len(found))
 	}
@@ -182,7 +192,10 @@ func TestFetchReferencedSecrets_SASLMissing(t *testing.T) {
 		},
 	}
 
-	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(found) != 1 {
 		t.Errorf("expected 1 found secret, got %d", len(found))
 	}
@@ -214,7 +227,10 @@ func TestFetchReferencedSecrets_TLSMissing(t *testing.T) {
 		},
 	}
 
-	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(found) != 1 {
 		t.Errorf("expected 1 found secret, got %d", len(found))
 	}
@@ -231,7 +247,10 @@ func TestFetchReferencedSecrets_NilSecuritySpec(t *testing.T) {
 		Spec:       memcachedv1beta1.MemcachedSpec{},
 	}
 
-	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if found != nil {
 		t.Errorf("expected nil found, got %v", found)
 	}
@@ -253,7 +272,10 @@ func TestFetchReferencedSecrets_NeitherEnabled(t *testing.T) {
 		},
 	}
 
-	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if found != nil {
 		t.Errorf("expected nil found, got %v", found)
 	}
@@ -285,7 +307,10 @@ func TestFetchReferencedSecrets_Dedup(t *testing.T) {
 		},
 	}
 
-	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(found) != 1 {
 		t.Errorf("expected 1 found secret (deduped), got %d", len(found))
 	}
@@ -313,12 +338,84 @@ func TestFetchReferencedSecrets_DedupMissing(t *testing.T) {
 		},
 	}
 
-	found, missing := fetchReferencedSecrets(context.Background(), c, mc)
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, mc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if len(found) != 0 {
 		t.Errorf("expected 0 found secrets, got %d", len(found))
 	}
 	if len(missing) != 1 || missing[0] != testSASLAndTLSSecretName {
 		t.Errorf("expected missing=[shared-secret] (deduped), got %v", missing)
+	}
+}
+
+// saslMemcached returns a Memcached in the default namespace with SASL enabled and
+// its credentials read from the Secret secretName.
+func saslMemcached(secretName string) *memcachedv1beta1.Memcached {
+	return &memcachedv1beta1.Memcached{
+		ObjectMeta: metav1.ObjectMeta{Name: "mc", Namespace: testDefaultNamespace},
+		Spec: memcachedv1beta1.MemcachedSpec{
+			Security: &memcachedv1beta1.SecuritySpec{
+				SASL: &memcachedv1beta1.SASLSpec{
+					Enabled:              true,
+					CredentialsSecretRef: corev1.LocalObjectReference{Name: secretName},
+				},
+			},
+		},
+	}
+}
+
+func TestFetchReferencedSecrets_EmptyRefName(t *testing.T) {
+	var gets atomic.Int32
+	c := interceptor.NewClient(newFakeClient(), interceptor.Funcs{
+		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			gets.Add(1)
+			return c.Get(ctx, key, obj, opts...)
+		},
+	})
+
+	found, missing, err := fetchReferencedSecrets(context.Background(), c, saslMemcached(""))
+	if found != nil || missing != nil || err != nil {
+		t.Errorf("expected nil, nil, nil; got %v, %v, %v", found, missing, err)
+	}
+	if n := gets.Load(); n != 0 {
+		t.Errorf("expected no read for an empty Secret name, got %d", n)
+	}
+}
+
+func TestFetchReferencedSecrets_ReadErrorIsReturned(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{name: "service unavailable", err: apierrors.NewServiceUnavailable("x")},
+		{name: "forbidden", err: apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, testSASLSecretName, errors.New("denied"))},
+		{name: "context canceled", err: context.Canceled},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := interceptor.NewClient(newFakeClient(), interceptor.Funcs{
+				Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+					return tt.err
+				},
+			})
+
+			found, missing, err := fetchReferencedSecrets(context.Background(), c, saslMemcached(testSASLSecretName))
+			if found != nil {
+				t.Errorf("expected nil found, got %v", found)
+			}
+			if missing != nil {
+				t.Errorf("expected nil missing, got %v", missing)
+			}
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("expected an error wrapping %v, got %v", tt.err, err)
+			}
+			if !strings.HasPrefix(err.Error(), "fetching Secret default/") {
+				t.Errorf("expected the message to start with %q, got %q", "fetching Secret default/", err.Error())
+			}
+		})
 	}
 }
 
