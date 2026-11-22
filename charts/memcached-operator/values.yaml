@@ -78,6 +78,11 @@ networkPolicy:
 # -- List of namespaces to watch (empty means all namespaces)
 watchNamespaces: []
 
+# -- Log level of the operator, passed to the manager as --zap-log-level.
+# One of debug, info, error, panic, or an integer greater than 0 for a more
+# verbose debug level. An empty string omits the flag (the manager then logs at info).
+logLevel: info
+
 # -- CRD management configuration
 crds:
   # -- If true, CRD is rendered as a Helm template for helm-managed upgrades

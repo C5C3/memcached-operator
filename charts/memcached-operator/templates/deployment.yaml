@@ -46,6 +46,15 @@ spec:
             {{- if not .Values.webhook.enabled }}
             - --enable-webhooks=false
             {{- end }}
+            {{- if not (kindIs "invalid" .Values.logLevel) }}
+            {{- $logLevel := toString .Values.logLevel }}
+            {{- if $logLevel }}
+            {{- if not (regexMatch "^(debug|info|error|panic|[1-9][0-9]*)$" $logLevel) }}
+            {{- fail (printf "logLevel must be one of debug, info, error, panic, or an integer greater than 0, got %q" $logLevel) }}
+            {{- end }}
+            - --zap-log-level={{ $logLevel }}
+            {{- end }}
+            {{- end }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
