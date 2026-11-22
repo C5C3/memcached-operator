@@ -309,6 +309,61 @@ tests:
           path: spec.template.spec.containers[0].args
           content: "--watch-namespaces=ns1,ns2"
 
+  - it: should include --zap-log-level=info by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--zap-log-level=info"
+
+  - it: should set --zap-log-level from logLevel
+    set:
+      logLevel: debug
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--zap-log-level=debug"
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--zap-log-level=info"
+
+  - it: should accept an integer logLevel
+    set:
+      logLevel: 2
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--zap-log-level=2"
+
+  - it: should omit --zap-log-level when logLevel is empty
+    set:
+      logLevel: ""
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].args
+          count: 4
+
+  - it: should omit --zap-log-level when logLevel is null
+    set:
+      logLevel: null
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers[0].args
+          count: 4
+
+  - it: should fail on an unknown logLevel
+    set:
+      logLevel: warn
+    asserts:
+      - failedTemplate:
+          errorMessage: "logLevel must be one of debug, info, error, panic, or an integer greater than 0, got \"warn\""
+
+  - it: should fail on logLevel 0
+    set:
+      logLevel: 0
+    asserts:
+      - failedTemplate:
+          errorMessage: "logLevel must be one of debug, info, error, panic, or an integer greater than 0, got \"0\""
+
   # ====================================================================
   # Suite 3: Custom image
   # ====================================================================

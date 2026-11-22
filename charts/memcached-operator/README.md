@@ -52,19 +52,20 @@ helm install memcached-operator oci://ghcr.io/c5c3/charts/memcached-operator \
 
 ### Common values
 
-| Key                      | Default           | Description                             |
-|--------------------------|-------------------|-----------------------------------------|
-| `replicaCount`           | `1`               | Number of operator replicas             |
-| `image.repository`       | `controller`      | Container image repository              |
-| `image.tag`              | `""` (appVersion) | Container image tag                     |
-| `webhook.enabled`        | `true`            | Enable admission webhooks               |
-| `certmanager.enabled`    | `true`            | Enable cert-manager for webhook TLS     |
-| `serviceMonitor.enabled` | `false`           | Enable Prometheus ServiceMonitor        |
-| `networkPolicy.enabled`  | `true`            | Enable NetworkPolicy                    |
-| `rbac.create`            | `true`            | Create RBAC resources                   |
-| `leaderElection.enabled` | `true`            | Enable leader election for HA           |
-| `watchNamespaces`        | `[]`              | Namespaces to watch (empty = all)       |
-| `crds.managedByHelm`     | `false`           | Manage CRD lifecycle via Helm templates |
+| Key                      | Default           | Description                                                                   |
+|--------------------------|-------------------|-------------------------------------------------------------------------------|
+| `replicaCount`           | `1`               | Number of operator replicas                                                   |
+| `image.repository`       | `controller`      | Container image repository                                                    |
+| `image.tag`              | `""` (appVersion) | Container image tag                                                           |
+| `webhook.enabled`        | `true`            | Enable admission webhooks                                                     |
+| `certmanager.enabled`    | `true`            | Enable cert-manager for webhook TLS                                           |
+| `serviceMonitor.enabled` | `false`           | Enable Prometheus ServiceMonitor                                              |
+| `networkPolicy.enabled`  | `true`            | Enable NetworkPolicy                                                          |
+| `rbac.create`            | `true`            | Create RBAC resources                                                         |
+| `leaderElection.enabled` | `true`            | Enable leader election for HA                                                 |
+| `watchNamespaces`        | `[]`              | Namespaces to watch (empty = all)                                             |
+| `logLevel`               | `info`            | Operator log level (`debug`, `info`, `error`, `panic`, or an integer above 0) |
+| `crds.managedByHelm`     | `false`           | Manage CRD lifecycle via Helm templates                                       |
 
 See [values.yaml](values.yaml) for the full list of configurable values.
 
