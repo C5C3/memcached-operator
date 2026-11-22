@@ -330,6 +330,10 @@ This compiles and runs the operator binary directly. Webhooks are not active in
 this mode because they require TLS certificates provisioned by cert-manager
 inside the cluster.
 
+`make run` passes `--zap-devel`, so the operator logs tab-separated console
+lines at debug level instead of the JSON lines a deployed operator writes (see
+[Operator Logging](../reference/backend/operator-logging.md)).
+
 ### 3. Apply a sample CR
 
 In a separate terminal:

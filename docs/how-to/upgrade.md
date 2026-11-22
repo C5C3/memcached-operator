@@ -248,6 +248,42 @@ The ClusterRole, the namespace-scoped Role, and the Helm chart's RBAC keep the
 same rules. The metadata-only Secret watch and the label-filtered Deployment
 informer still need `list` and `watch`.
 
+## Upgrading to production logging
+
+Releases after v0.7.0 start the manager's logger in production mode. Neither
+the Helm chart nor the Kustomize manifests passed a logging flag before, so
+every deployment ran in development mode until now (see
+[Operator Logging](../reference/backend/operator-logging.md)). Three behaviors change.
+
+### Lines are JSON objects
+
+Each line is one JSON object instead of a tab-separated console line:
+
+```json
+{"level":"info","ts":"2026-11-22T14:47:04Z","logger":"setup","msg":"watching all namespaces"}
+```
+
+A log parser or alert that reads the console format must switch to JSON.
+
+### Debug-level lines are no longer written
+
+The manager logs at info level and above. Lines the operator and
+controller-runtime log at debug level are dropped.
+
+### Stack traces appear on errors only
+
+Error-level lines still carry a stack trace in the `stacktrace` field. Warnings
+no longer do.
+
+### Getting the previous output back
+
+A Kustomize deployment gets the console output at debug level back by adding
+`--zap-devel` to the manager's arguments, with the JSON patch shown in
+[Operator Logging](../reference/backend/operator-logging.md#kustomize).
+
+A Helm deployment can restore debug verbosity with `logLevel: debug`. The
+chart has no value for the console format, so the lines stay JSON.
+
 ## CRD Update
 
 Update the CRD before upgrading the operator. The new operator version may

@@ -59,6 +59,7 @@ export default defineConfig({
               { text: 'Graceful Shutdown', link: '/reference/backend/graceful-shutdown' },
               { text: 'Exporter Sidecar Injection', link: '/reference/backend/exporter-sidecar-injection' },
               { text: 'Operator Metrics Server', link: '/reference/backend/operator-metrics-server' },
+              { text: 'Operator Logging', link: '/reference/backend/operator-logging' },
               { text: 'Pod Security Contexts', link: '/reference/backend/pod-security-contexts' },
               { text: 'TLS Encryption', link: '/reference/backend/tls-encryption' },
               { text: 'Operator RBAC (Least Privilege)', link: '/reference/backend/operator-rbac-least-privilege' },

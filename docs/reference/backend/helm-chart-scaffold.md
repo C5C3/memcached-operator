@@ -115,6 +115,12 @@ charts/memcached-operator/
 |-------------------|--------|---------|-----------------------------------------------|
 | `watchNamespaces` | `list` | `[]`    | List of namespaces to watch (empty means all) |
 
+### Logging
+
+| Key        | Type     | Default | Description                                                                                               |
+|------------|----------|---------|-----------------------------------------------------------------------------------------------------------|
+| `logLevel` | `string` | `info`  | Operator log level, passed as `--zap-log-level`: `debug`, `info`, `error`, `panic`, or an integer above 0 |
+
 ### CRD Management
 
 | Key                  | Type   | Default | Description                                                           |

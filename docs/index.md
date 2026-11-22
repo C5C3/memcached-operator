@@ -81,6 +81,7 @@ The `reference/backend/` directory contains in-depth implementation references f
 - [Reconciler Scaffold and Watches](reference/backend/reconciler-scaffold-watches.md)
 - [Status Conditions and ObservedGeneration](reference/backend/status-conditions-observedgeneration.md)
 - [Operator Metrics Server](reference/backend/operator-metrics-server.md)
+- [Operator Logging](reference/backend/operator-logging.md)
 - [Exporter Sidecar Injection](reference/backend/exporter-sidecar-injection.md)
 - [Pod Anti-Affinity Presets](reference/backend/pod-anti-affinity-presets.md)
 - [Topology Spread Constraints](reference/backend/topology-spread-constraints.md)
