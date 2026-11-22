@@ -201,7 +201,7 @@ for how to list the StatefulSets.
 
 ## Upgrading to the label-scoped cache
 
-Releases after v0.7.0 restrict the manager's cache to the objects the operator
+v0.8.0 restricts the manager's cache to the objects the operator
 manages. Every kind is cached only for objects labeled
 `app.kubernetes.io/managed-by: memcached-operator`, except Memcached
 resources, and Secrets are cached as metadata only, with their payload read
@@ -250,9 +250,9 @@ informer still need `list` and `watch`.
 
 ## Upgrading to production logging
 
-Releases after v0.7.0 start the manager's logger in production mode. Neither
+v0.8.0 starts the manager's logger in production mode. Neither
 the Helm chart nor the Kustomize manifests passed a logging flag before, so
-every deployment ran in development mode until now (see
+every deployment ran in development mode up to v0.7.0 (see
 [Operator Logging](../reference/backend/operator-logging.md)). Three behaviors change.
 
 ### Lines are JSON objects
@@ -535,15 +535,16 @@ is running correctly and all Memcached instances are healthy.
 
 ## Version Compatibility Matrix
 
-| Operator Version | Kubernetes Version | CRD API Versions                         | cert-manager Version | Notes                                                                                |
-|------------------|--------------------|------------------------------------------|----------------------|--------------------------------------------------------------------------------------|
-| v0.1.0           | v1.28 -- v1.32     | v1alpha1                                 | v1.12+               | Initial release                                                                      |
-| v0.2.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | v1beta1 storage version; see [migration guide](migration-v1beta1.md)                 |
-| v0.3.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `--enable-webhooks` flag                                                             |
-| v0.4.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `Ready` condition, `status.serverList`                                               |
-| v0.5.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | StatefulSet workload; see [per-pod server lists](#upgrading-to-per-pod-server-lists) |
-| v0.6.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | Status update conflicts requeue without an error                                     |
-| v0.7.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `v1alpha1` requests return a deprecation warning                                     |
+| Operator Version | Kubernetes Version | CRD API Versions                         | cert-manager Version | Notes                                                                                                              |
+|------------------|--------------------|------------------------------------------|----------------------|--------------------------------------------------------------------------------------------------------------------|
+| v0.1.0           | v1.28 -- v1.32     | v1alpha1                                 | v1.12+               | Initial release                                                                                                    |
+| v0.2.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | v1beta1 storage version; see [migration guide](migration-v1beta1.md)                                               |
+| v0.3.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `--enable-webhooks` flag                                                                                           |
+| v0.4.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `Ready` condition, `status.serverList`                                                                             |
+| v0.5.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | StatefulSet workload; see [per-pod server lists](#upgrading-to-per-pod-server-lists)                               |
+| v0.6.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | Status update conflicts requeue without an error                                                                   |
+| v0.7.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | `v1alpha1` requests return a deprecation warning                                                                   |
+| v0.8.0           | v1.28 -- v1.32     | v1beta1 (storage), v1alpha1 (deprecated) | v1.12+               | [Label-scoped cache](#upgrading-to-the-label-scoped-cache); [production logging](#upgrading-to-production-logging) |
 
 Check the release notes for each version to confirm compatibility with your
 Kubernetes cluster version. The operator is tested against the Kubernetes
