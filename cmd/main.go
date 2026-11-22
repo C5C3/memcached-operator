@@ -138,7 +138,7 @@ func main() {
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
 		LeaderElectionID:       "d4f3c8a2.c5c3.io",
-		Cache:                  cache.Options{DefaultNamespaces: nsMap},
+		Cache:                  controller.CacheOptions(nsMap),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
